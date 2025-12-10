@@ -1,0 +1,19 @@
+[
+  {
+    "id": "comment-1764793072546",
+    "boardId": "board-1764786672758",
+    "authorName": "jen",
+    "authorEmail": "",
+    "content": "this looks good",
+    "createdAt": "2025-12-03T20:17:52.546Z"
+  },
+  {
+    "id": "comment-1764795538137",
+    "boardId": "board-1764786672758",
+    "authorName": "s",
+    "authorEmail": "",
+    "content": "looks good - sarah",
+    "type": "crit-note",
+    "createdAt": "2025-12-03T20:58:58.137Z"
+  }
+]

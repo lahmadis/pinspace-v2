@@ -1,0 +1,924 @@
+[
+  {
+    "id": "board-1764786672758",
+    "studioId": "studio-a",
+    "studentName": "sarah",
+    "title": "final",
+    "description": "cool",
+    "thumbnailUrl": "/uploads/board-1764786672758.png",
+    "fullImageUrl": "/uploads/board-1764786672758.png",
+    "tags": [],
+    "uploadedAt": "2025-12-03T18:31:12.761Z",
+    "position": {
+      "wallIndex": 2,
+      "x": 0.08559998566001872,
+      "y": 0.23055810809431723,
+      "width": 0.35,
+      "height": 0.16
+    }
+  },
+  {
+    "id": "board-1764796573644",
+    "studioId": "studio-a",
+    "studentName": "sarah",
+    "title": "final",
+    "description": "cool",
+    "thumbnailUrl": "/uploads/board-1764796573644.jpg",
+    "fullImageUrl": "/uploads/board-1764796573644.jpg",
+    "tags": [],
+    "uploadedAt": "2025-12-03T21:16:13.648Z",
+    "position": {
+      "wallIndex": 2,
+      "x": -0.4,
+      "y": -0.04647851223664974,
+      "width": 0.2,
+      "height": 0.2
+    }
+  },
+  {
+    "id": "board-1764859769504",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "Daytime Top Bleacher View",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764859769496.pdf",
+    "fullImageUrl": "/uploads/board-1764859769496.pdf",
+    "tags": [],
+    "uploadedAt": "2025-12-04T14:49:29.504Z"
+  },
+  {
+    "id": "board-1764860180752",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_55_46 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764860180749.png",
+    "fullImageUrl": "/uploads/board-1764860180749.png",
+    "tags": [],
+    "uploadedAt": "2025-12-04T14:56:20.752Z",
+    "position": {
+      "wallIndex": 2,
+      "x": -0.4410994764397906,
+      "y": -0.353359173126615,
+      "width": 0.2,
+      "height": 0.2
+    }
+  },
+  {
+    "id": "board-1764860447551",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "section 2",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764860447545.png",
+    "fullImageUrl": "/uploads/board-1764860447545.png",
+    "tags": [],
+    "uploadedAt": "2025-12-04T15:00:47.551Z",
+    "position": {
+      "wallIndex": 2,
+      "x": -0.4,
+      "y": -0.04647851223664974,
+      "width": 0.2,
+      "height": 0.2
+    }
+  },
+  {
+    "id": "board-1764860457287",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "Daytime Top Bleacher View",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764860457273.pdf",
+    "fullImageUrl": "/uploads/board-1764860457273.pdf",
+    "tags": [],
+    "uploadedAt": "2025-12-04T15:00:57.287Z"
+  },
+  {
+    "id": "board-1764868262609",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_52_04 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764868262604.png",
+    "fullImageUrl": "/uploads/board-1764868262604.png",
+    "tags": [],
+    "uploadedAt": "2025-12-04T17:11:02.609Z",
+    "position": {
+      "wallIndex": 2,
+      "x": -0.03207501495497811,
+      "y": 0.02711246547137778,
+      "width": 0.2,
+      "height": 0.2
+    }
+  },
+  {
+    "id": "board-1764869445220",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "Daytime Axon View",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764869445213.pdf",
+    "fullImageUrl": "/uploads/board-1764869445213.pdf",
+    "tags": [],
+    "uploadedAt": "2025-12-04T17:30:45.220Z"
+  },
+  {
+    "id": "board-1764869457415",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_52_04 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764869457411.png",
+    "fullImageUrl": "/uploads/board-1764869457411.png",
+    "tags": [],
+    "uploadedAt": "2025-12-04T17:30:57.415Z",
+    "position": {
+      "wallIndex": 2,
+      "x": 0.21484208130221888,
+      "y": -0.017429442088744196,
+      "width": 0.2,
+      "height": 0.2
+    }
+  },
+  {
+    "id": "board-1764869471675",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "section 2",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764869471672.png",
+    "fullImageUrl": "/uploads/board-1764869471672.png",
+    "tags": [],
+    "uploadedAt": "2025-12-04T17:31:11.675Z",
+    "position": {
+      "wallIndex": 2,
+      "x": 0.09259391109644904,
+      "y": -0.36020846983403004,
+      "width": 0.2,
+      "height": 0.2
+    }
+  },
+  {
+    "id": "board-1764869517732",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_52_04 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764869517728.png",
+    "fullImageUrl": "/uploads/board-1764869517728.png",
+    "tags": [],
+    "uploadedAt": "2025-12-04T17:31:57.733Z",
+    "position": {
+      "wallIndex": 1,
+      "x": -0.03602470438973662,
+      "y": 0.20623317008436598,
+      "width": 0.2,
+      "height": 0.2
+    }
+  },
+  {
+    "id": "board-1764869529103",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_52_04 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764869529100.png",
+    "fullImageUrl": "/uploads/board-1764869529100.png",
+    "tags": [],
+    "uploadedAt": "2025-12-04T17:32:09.103Z"
+  },
+  {
+    "id": "board-1764870172492",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_52_04 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764870172485.png",
+    "fullImageUrl": "/uploads/board-1764870172485.png",
+    "tags": [],
+    "uploadedAt": "2025-12-04T17:42:52.492Z"
+  },
+  {
+    "id": "board-1764870261734",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_52_04 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764870261730.png",
+    "fullImageUrl": "/uploads/board-1764870261730.png",
+    "tags": [],
+    "uploadedAt": "2025-12-04T17:44:21.734Z"
+  },
+  {
+    "id": "board-1764870445719",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_52_04 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764870445715.png",
+    "fullImageUrl": "/uploads/board-1764870445715.png",
+    "tags": [],
+    "uploadedAt": "2025-12-04T17:47:25.719Z"
+  },
+  {
+    "id": "board-1764870841696",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_52_04 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764870841691.png",
+    "fullImageUrl": "/uploads/board-1764870841691.png",
+    "tags": [],
+    "uploadedAt": "2025-12-04T17:54:01.696Z"
+  },
+  {
+    "id": "board-1764871127435",
+    "studioId": "studio-a",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_52_04 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764871127433.png",
+    "fullImageUrl": "/uploads/board-1764871127433.png",
+    "tags": [],
+    "uploadedAt": "2025-12-04T17:58:47.435Z"
+  },
+  {
+    "id": "board-1",
+    "studioId": "studio-a",
+    "studentName": "Emma Rodriguez",
+    "title": "Factory Reimagined: Cultural Hub",
+    "description": "Converting a 1920s textile factory into a community arts center",
+    "thumbnailUrl": "/placeholder-board-1.jpg",
+    "fullImageUrl": "/placeholder-board-1-full.jpg",
+    "tags": [
+      "adaptive reuse",
+      "industrial",
+      "cultural"
+    ],
+    "uploadedAt": "2023-12-15T00:00:00.000Z",
+    "position": {
+      "wallIndex": 0,
+      "x": 0.07746963953162778,
+      "y": -0.3278578601338522,
+      "width": 0.35,
+      "height": 0.25
+    }
+  },
+  {
+    "id": "board-2",
+    "studioId": "studio-a",
+    "studentName": "James Park",
+    "title": "Warehouse District: Mixed Use",
+    "description": "Transforming waterfront warehouses into residential and retail spaces",
+    "thumbnailUrl": "/placeholder-board-2.jpg",
+    "fullImageUrl": "/placeholder-board-2-full.jpg",
+    "tags": [
+      "waterfront",
+      "mixed-use",
+      "revitalization"
+    ],
+    "uploadedAt": "2023-12-15T00:00:00.000Z",
+    "position": {
+      "wallIndex": 0,
+      "x": 1,
+      "y": 0,
+      "width": 0.35,
+      "height": 0.25
+    }
+  },
+  {
+    "id": "board-1764952294233",
+    "studioId": "studio-c",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_52_04 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764952294230.png",
+    "fullImageUrl": "/uploads/board-1764952294230.png",
+    "tags": [],
+    "uploadedAt": "2025-12-05T16:31:34.233Z",
+    "position": {
+      "wallIndex": 1,
+      "x": 0.1407937977136262,
+      "y": 0.09941496326821238,
+      "width": 0.35,
+      "height": 0.18666666666666665
+    },
+    "comments": [
+      {
+        "id": "comment-1765133980854",
+        "author": "Test User",
+        "text": "Test comment",
+        "timestamp": "2025-12-07T18:59:40.854Z"
+      },
+      {
+        "id": "comment-1765135584693",
+        "author": "Linna",
+        "text": "llooking good",
+        "timestamp": "2025-12-07T19:26:24.694Z"
+      }
+    ]
+  },
+  {
+    "id": "board-1764953332112",
+    "studioId": "studio-c",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_39_32 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764953332108.png",
+    "fullImageUrl": "/uploads/board-1764953332108.png",
+    "tags": [],
+    "uploadedAt": "2025-12-05T16:48:52.112Z",
+    "position": {
+      "wallIndex": 0,
+      "x": -0.24853849088602953,
+      "y": 0.27603636637036433,
+      "width": 0.35,
+      "height": 0.18666666666666665
+    },
+    "comments": [
+      {
+        "id": "comment-1765136871953",
+        "author": "Linna",
+        "text": "looks good",
+        "timestamp": "2025-12-07T19:47:51.953Z"
+      }
+    ]
+  },
+  {
+    "id": "board-1764954293533",
+    "studioId": "studio-c",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_55_46 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764954293525.png",
+    "fullImageUrl": "/uploads/board-1764954293525.png",
+    "tags": [],
+    "uploadedAt": "2025-12-05T17:04:53.533Z",
+    "position": {
+      "wallIndex": 2,
+      "x": 0.005949033752434274,
+      "y": -0.02009451400821982,
+      "width": 0.29166666666666663,
+      "height": 0.35
+    },
+    "comments": [
+      {
+        "id": "comment-1765135593995",
+        "author": "Linna",
+        "text": "look",
+        "timestamp": "2025-12-07T19:26:33.995Z"
+      },
+      {
+        "id": "comment-1765136107354",
+        "author": "Linna",
+        "text": "great work",
+        "timestamp": "2025-12-07T19:35:07.354Z"
+      }
+    ]
+  },
+  {
+    "id": "board-1764955069494",
+    "studioId": "studio-c",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "1763512089505",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764955069492.jpg",
+    "fullImageUrl": "/uploads/board-1764955069492.jpg",
+    "tags": [],
+    "uploadedAt": "2025-12-05T17:17:49.494Z",
+    "position": {
+      "wallIndex": 2,
+      "x": 0.3086887513759462,
+      "y": 0.27920798411391806,
+      "width": 0.35,
+      "height": 0.13391304347826088
+    },
+    "comments": [
+      {
+        "id": "comment-1765136129020",
+        "author": "Linna",
+        "text": "this could be better",
+        "timestamp": "2025-12-07T19:35:29.020Z"
+      }
+    ]
+  },
+  {
+    "id": "board-1764955073899",
+    "studioId": "studio-c",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "1763509222057",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764955073894.jpg",
+    "fullImageUrl": "/uploads/board-1764955073894.jpg",
+    "tags": [],
+    "uploadedAt": "2025-12-05T17:17:53.899Z",
+    "position": {
+      "wallIndex": 1,
+      "x": -0.1487292794900209,
+      "y": -0.21046845340037695,
+      "width": 0.35,
+      "height": 0.13391304347826088
+    }
+  },
+  {
+    "id": "board-1764963145696",
+    "studioId": "studio-c",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "ChatGPT Image Nov 18, 2025, 07_52_04 PM",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1764963145692.png",
+    "fullImageUrl": "/uploads/board-1764963145692.png",
+    "tags": [],
+    "uploadedAt": "2025-12-05T19:32:25.696Z",
+    "position": {
+      "wallIndex": 2,
+      "x": -0.19885724482901335,
+      "y": 0.33901252568229834,
+      "width": 0.35,
+      "height": 0.18666666666666665
+    },
+    "comments": [
+      {
+        "id": "comment-1765135603682",
+        "author": "Linna",
+        "text": "yes",
+        "timestamp": "2025-12-07T19:26:43.682Z"
+      }
+    ]
+  },
+  {
+    "id": "board-1765204872459",
+    "studioId": "studio-arch-y1-02",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "gold simulator notes mark up",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1765204872456.png",
+    "fullImageUrl": "/uploads/board-1765204872456.png",
+    "tags": [],
+    "uploadedAt": "2025-12-08T14:41:12.459Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44"
+  },
+  {
+    "id": "board-1765209431609",
+    "studioId": "studio-1765148862232-zvltmom",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "SPH GO6 - TestFit",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1765209431606.pdf",
+    "fullImageUrl": "/uploads/board-1765209431606.pdf",
+    "tags": [],
+    "uploadedAt": "2025-12-08T15:57:11.609Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "position": {
+      "wallIndex": 1,
+      "x": 0.006940535438070716,
+      "y": 0.22526995019029403,
+      "width": 0.2,
+      "height": 0.2
+    }
+  },
+  {
+    "id": "board-1765209441865",
+    "studioId": "studio-1765148862232-zvltmom",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "Bleachers and Pressbox View",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1765209441858.pdf",
+    "fullImageUrl": "/uploads/board-1765209441858.pdf",
+    "tags": [],
+    "uploadedAt": "2025-12-08T15:57:21.865Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "position": {
+      "wallIndex": 3,
+      "x": -0.13187074188879344,
+      "y": 0.00951848917931164,
+      "width": 0.2,
+      "height": 0.2
+    }
+  },
+  {
+    "id": "board-1765213619866",
+    "studioId": "studio-1765148862232-zvltmom",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "gold simulator notes mark up",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1765213619860.png",
+    "fullImageUrl": "/uploads/board-1765213619860.png",
+    "tags": [],
+    "uploadedAt": "2025-12-08T17:06:59.866Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "position": {
+      "wallIndex": 2,
+      "x": -0.07237992947083904,
+      "y": 0.14119043776010393,
+      "width": 0.2,
+      "height": 0.2
+    }
+  },
+  {
+    "id": "board-1765214102181",
+    "studioId": "studio-1765148862232-zvltmom",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "Nighttime Top Bleacher View",
+    "description": "PDF Document",
+    "thumbnailUrl": "/uploads/board-1765214102177.png",
+    "fullImageUrl": "/uploads/board-1765214102177.png",
+    "tags": [
+      "pdf"
+    ],
+    "uploadedAt": "2025-12-08T17:15:02.181Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "position": {
+      "wallIndex": 2,
+      "x": -0.2885281369930323,
+      "y": -0.19354189807917602,
+      "width": 0.2,
+      "height": 0.2
+    }
+  },
+  {
+    "id": "board-1765214900289",
+    "studioId": "studio-1765148862232-zvltmom",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "Daytime Top Bleacher View",
+    "description": "PDF Document",
+    "thumbnailUrl": "/uploads/board-1765214900272.png",
+    "fullImageUrl": "/uploads/board-1765214900272.png",
+    "tags": [
+      "pdf"
+    ],
+    "uploadedAt": "2025-12-08T17:28:20.289Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "originalWidth": 3360,
+    "originalHeight": 1920,
+    "aspectRatio": 1.75,
+    "position": {
+      "wallIndex": 2,
+      "x": 0.022804623577131145,
+      "y": -0.2855535473950327,
+      "width": 0.5,
+      "height": 0.22857142857142856
+    }
+  },
+  {
+    "id": "board-1765214949579",
+    "studioId": "studio-1765148862232-zvltmom",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "Daytime View of School",
+    "description": "PDF Document",
+    "thumbnailUrl": "/uploads/board-1765214949570.png",
+    "fullImageUrl": "/uploads/board-1765214949570.png",
+    "tags": [
+      "pdf"
+    ],
+    "uploadedAt": "2025-12-08T17:29:09.579Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "originalWidth": 3360,
+    "originalHeight": 1920,
+    "aspectRatio": 1.75,
+    "position": {
+      "wallIndex": 2,
+      "x": 0.24886791199948854,
+      "y": -0.26968953013490526,
+      "width": 0.5,
+      "height": 0.22857142857142856
+    }
+  },
+  {
+    "id": "board-1765215334355",
+    "studioId": "studio-1765148862232-zvltmom",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "1763512089505",
+    "description": "",
+    "thumbnailUrl": "/uploads/board-1765215334353.jpg",
+    "fullImageUrl": "/uploads/board-1765215334353.jpg",
+    "tags": [],
+    "uploadedAt": "2025-12-08T17:35:34.355Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "originalWidth": 1472,
+    "originalHeight": 704,
+    "aspectRatio": 2.090909090909091,
+    "position": {
+      "wallIndex": 2,
+      "x": 0.2686980244849212,
+      "y": 0.0967709490395869,
+      "width": 0.5,
+      "height": 0.191304347826087
+    }
+  },
+  {
+    "id": "board-1765215358710",
+    "studioId": "studio-1765148862232-zvltmom",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "Bleachers and Pressbox View",
+    "description": "PDF Document",
+    "thumbnailUrl": "/uploads/board-1765215358698.png",
+    "fullImageUrl": "/uploads/board-1765215358698.png",
+    "tags": [
+      "pdf"
+    ],
+    "uploadedAt": "2025-12-08T17:35:58.711Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "originalWidth": 3550,
+    "originalHeight": 2700,
+    "aspectRatio": 1.3148148148148149,
+    "position": {
+      "wallIndex": 2,
+      "x": 0.04461775314325378,
+      "y": -0.1459496280597053,
+      "width": 0.5,
+      "height": 0.304225352112676
+    }
+  },
+  {
+    "id": "board-1765215455333",
+    "studioId": "studio-1765148862232-zvltmom",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "Personal_Letter_Lahmadi",
+    "description": "PDF Document",
+    "thumbnailUrl": "/uploads/board-1765215455330.png",
+    "fullImageUrl": "/uploads/board-1765215455330.png",
+    "tags": [
+      "pdf"
+    ],
+    "uploadedAt": "2025-12-08T17:37:35.333Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "originalWidth": 1530,
+    "originalHeight": 1980,
+    "aspectRatio": 0.7727272727272727,
+    "position": {
+      "wallIndex": 2,
+      "x": -0.2449018976220026,
+      "y": 0.29348567488301436,
+      "width": 0.33806818181818177,
+      "height": 0.35
+    }
+  },
+  {
+    "id": "board-1765215486513",
+    "studioId": "studio-1765148862232-zvltmom",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "Bleachers and Pressbox View",
+    "description": "PDF Document",
+    "thumbnailUrl": "/uploads/board-1765215486499.png",
+    "fullImageUrl": "/uploads/board-1765215486499.png",
+    "tags": [
+      "pdf"
+    ],
+    "uploadedAt": "2025-12-08T17:38:06.513Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "originalWidth": 3550,
+    "originalHeight": 2700,
+    "aspectRatio": 1.3148148148148149,
+    "position": {
+      "wallIndex": 2,
+      "x": 0.21317370946220604,
+      "y": 0.32838666313433806,
+      "width": 0.5,
+      "height": 0.304225352112676
+    }
+  },
+  {
+    "id": "board-1765217731744",
+    "studioId": "studio-b",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "11x17 Title Block",
+    "description": "PDF Document",
+    "thumbnailUrl": "/uploads/board-1765217731742.png",
+    "fullImageUrl": "/uploads/board-1765217731742.png",
+    "tags": [
+      "pdf"
+    ],
+    "uploadedAt": "2025-12-08T18:15:31.744Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "originalWidth": 3060,
+    "originalHeight": 1980,
+    "aspectRatio": 1.5454545454545454,
+    "position": {
+      "wallIndex": 0,
+      "x": 0.3599165420222354,
+      "y": 0.3696332971512117,
+      "width": 0.5,
+      "height": 0.25882352941176473
+    }
+  },
+  {
+    "id": "board-1765217734278",
+    "studioId": "studio-b",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "Daytime Top Bleacher View",
+    "description": "PDF Document",
+    "thumbnailUrl": "/uploads/board-1765217734273.png",
+    "fullImageUrl": "/uploads/board-1765217734273.png",
+    "tags": [
+      "pdf"
+    ],
+    "uploadedAt": "2025-12-08T18:15:34.278Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "originalWidth": 3360,
+    "originalHeight": 1920,
+    "aspectRatio": 1.75,
+    "position": {
+      "wallIndex": 0,
+      "x": -0.1398022931821904,
+      "y": 0.0793204500324471,
+      "width": 0.5,
+      "height": 0.22857142857142856
+    }
+  },
+  {
+    "id": "board-1765217734981",
+    "studioId": "studio-b",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "Nightime Axon View",
+    "description": "PDF Document",
+    "thumbnailUrl": "/uploads/board-1765217734976.png",
+    "fullImageUrl": "/uploads/board-1765217734976.png",
+    "tags": [
+      "pdf"
+    ],
+    "uploadedAt": "2025-12-08T18:15:34.981Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "originalWidth": 3360,
+    "originalHeight": 1920,
+    "aspectRatio": 1.75,
+    "position": {
+      "wallIndex": 0,
+      "x": -0.20722467570977277,
+      "y": -0.25541184910448367,
+      "width": 0.5,
+      "height": 0.22857142857142856
+    }
+  },
+  {
+    "id": "board-1765218370122",
+    "studioId": "studio-b",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "SPH GO6 - TestFit",
+    "description": "PDF Document",
+    "thumbnailUrl": "/uploads/board-1765218370118.png",
+    "fullImageUrl": "/uploads/board-1765218370118.png",
+    "tags": [
+      "pdf"
+    ],
+    "uploadedAt": "2025-12-08T18:26:10.122Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "originalWidth": 3060,
+    "originalHeight": 1980,
+    "aspectRatio": 1.5454545454545454,
+    "position": {
+      "wallIndex": 0,
+      "x": 0.14575132693462445,
+      "y": 0.023796135009735587,
+      "width": 0.5,
+      "height": 0.25882352941176473
+    }
+  },
+  {
+    "id": "board-1765221719525",
+    "studioId": "studio-b",
+    "studentName": "sarah lahmadi",
+    "studentEmail": "",
+    "title": "delete title",
+    "description": "PDF Document",
+    "thumbnailUrl": "/uploads/board-1765221719523.png",
+    "fullImageUrl": "/uploads/board-1765221719523.png",
+    "tags": [
+      "pdf"
+    ],
+    "uploadedAt": "2025-12-08T19:21:59.526Z",
+    "ownerId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "ownerName": "sarah lahmadi",
+    "ownerColor": "#ffaa44",
+    "originalWidth": 1980,
+    "originalHeight": 1530,
+    "aspectRatio": 1.2941176470588236,
+    "position": {
+      "wallIndex": 0,
+      "x": 0.17747950694760356,
+      "y": -0.317281800129794,
+      "width": 0.5,
+      "height": 0.3090909090909091
+    }
+  },
+  {
+    "id": "board-1765389755545",
+    "studioId": "new",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "Golf Simulator TestFit",
+    "description": "PDF Document",
+    "thumbnailUrl": "/uploads/board-1765389755542.png",
+    "fullImageUrl": "/uploads/board-1765389755542.png",
+    "tags": [
+      "pdf"
+    ],
+    "uploadedAt": "2025-12-10T18:02:35.545Z",
+    "ownerId": "7df8229d-4855-4f0d-87dc-c3ddbe7480e1",
+    "ownerName": "Anonymous",
+    "ownerColor": "#ff8844",
+    "originalWidth": 3060,
+    "originalHeight": 1980,
+    "aspectRatio": 1.5454545454545454,
+    "position": {
+      "wallIndex": 0,
+      "x": -0.2270547882178856,
+      "y": 0.34425075314082837,
+      "width": 0.5,
+      "height": 0.25882352941176473
+    }
+  },
+  {
+    "id": "board-1765391148235",
+    "studioId": "9f16d592-8ff4-42ef-bf9e-6cbb7660a6c0",
+    "studentName": "Uploaded Board",
+    "studentEmail": "",
+    "title": "Golf Simulator TestFit",
+    "description": "PDF Document",
+    "thumbnailUrl": "/uploads/board-1765391148233.png",
+    "fullImageUrl": "/uploads/board-1765391148233.png",
+    "tags": [
+      "pdf"
+    ],
+    "uploadedAt": "2025-12-10T18:25:48.235Z",
+    "ownerId": "7df8229d-4855-4f0d-87dc-c3ddbe7480e1",
+    "ownerName": "Anonymous",
+    "ownerColor": "#ff8844",
+    "originalWidth": 3060,
+    "originalHeight": 1980,
+    "aspectRatio": 1.5454545454545454,
+    "position": {
+      "wallIndex": 0,
+      "x": -0.22308876571626246,
+      "y": 0.3315594811356366,
+      "width": 0.5,
+      "height": 0.25882352941176473
+    }
+  }
+]

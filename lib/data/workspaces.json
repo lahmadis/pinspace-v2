@@ -1,0 +1,559 @@
+[
+  {
+    "id": "workspace-1765148862232-zvltmom",
+    "name": "Aarons Studio 08",
+    "slug": "aarons-studio-08",
+    "type": "class",
+    "createdBy": "user_36XFsdGMeNRQfc46UvlE0YbD3T5",
+    "studioId": "studio-1765148862232-zvltmom",
+    "inviteCode": "3Z46WG83",
+    "createdAt": "2025-12-07T23:07:42.232Z",
+    "instructor": "Prof. Sarah Lahmadi",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_36XFsdGMeNRQfc46UvlE0YbD3T5", "name": "sarah lahmadi", "role": "instructor", "joinedAt": "2025-12-07T23:07:42.232Z" },
+      { "userId": "user_student_demo_1", "name": "Demo Student 1", "role": "student", "joinedAt": "2025-12-08T01:20:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Architecture", "year": "Year 4" },
+    "publishedAt": "2025-12-08T01:24:22.366Z"
+  },
+  {
+    "id": "workspace-arch-y3-01",
+    "name": "Sarah's Vertical Studio",
+    "slug": "sarah-vertical-studio",
+    "type": "class",
+    "createdBy": "user_prof_sarah",
+    "studioId": "studio-arch-y3-01",
+    "inviteCode": "ARCHY3A",
+    "createdAt": "2025-12-01T15:00:00.000Z",
+    "instructor": "Prof. Sarah Lee",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_sarah", "name": "Prof. Sarah Lee", "role": "instructor", "joinedAt": "2025-12-01T15:00:00.000Z" },
+      { "userId": "user_student_1", "name": "Alex Kim", "role": "student", "joinedAt": "2025-12-01T16:00:00.000Z" },
+      { "userId": "user_student_2", "name": "Maya Johnson", "role": "student", "joinedAt": "2025-12-01T16:10:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Architecture", "year": "Year 3" },
+    "publishedAt": "2025-12-08T15:00:00.000Z"
+  },
+  {
+    "id": "workspace-arch-y2-01",
+    "name": "Civic Architecture Lab",
+    "slug": "civic-architecture-lab",
+    "type": "class",
+    "createdBy": "user_prof_martin",
+    "studioId": "studio-arch-y2-01",
+    "inviteCode": "ARCHY2B",
+    "createdAt": "2025-11-20T15:00:00.000Z",
+    "instructor": "Prof. Martin Cole",
+    "semester": "Spring 2025",
+    "members": [
+      { "userId": "user_prof_martin", "name": "Prof. Martin Cole", "role": "instructor", "joinedAt": "2025-11-20T15:00:00.000Z" },
+      { "userId": "user_student_3", "name": "Sam Patel", "role": "student", "joinedAt": "2025-11-20T15:30:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Architecture", "year": "Year 2" },
+    "publishedAt": "2025-12-08T15:05:00.000Z"
+  },
+  {
+    "id": "workspace-interior-y4-01",
+    "name": "Interior Light Lab",
+    "slug": "interior-light-lab",
+    "type": "class",
+    "createdBy": "user_prof_nina",
+    "studioId": "studio-interior-y4-01",
+    "inviteCode": "INTY4C",
+    "createdAt": "2025-11-05T12:00:00.000Z",
+    "instructor": "Prof. Nina Torres",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_nina", "name": "Prof. Nina Torres", "role": "instructor", "joinedAt": "2025-11-05T12:00:00.000Z" },
+      { "userId": "user_student_4", "name": "Jordan Lee", "role": "student", "joinedAt": "2025-11-05T12:20:00.000Z" },
+      { "userId": "user_student_5", "name": "Priya Desai", "role": "student", "joinedAt": "2025-11-05T12:25:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Interior Design", "year": "Year 4" },
+    "publishedAt": "2025-12-08T15:10:00.000Z"
+  },
+  {
+    "id": "workspace-industrial-y1-01",
+    "name": "Product Foundations",
+    "slug": "product-foundations",
+    "type": "class",
+    "createdBy": "user_prof_owen",
+    "studioId": "studio-industrial-y1-01",
+    "inviteCode": "INDY1A",
+    "createdAt": "2025-10-10T10:00:00.000Z",
+    "instructor": "Prof. Owen Green",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_owen", "name": "Prof. Owen Green", "role": "instructor", "joinedAt": "2025-10-10T10:00:00.000Z" },
+      { "userId": "user_student_6", "name": "Lena Cho", "role": "student", "joinedAt": "2025-10-10T10:20:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Industrial Design", "year": "Year 1" },
+    "publishedAt": "2025-12-08T15:15:00.000Z"
+  },
+  {
+    "id": "workspace-arch-y4-02",
+    "name": "Urban Tectonics Studio",
+    "slug": "urban-tectonics-studio",
+    "type": "class",
+    "createdBy": "user_prof_diaz",
+    "studioId": "studio-arch-y4-02",
+    "inviteCode": "ARCHY4D",
+    "createdAt": "2025-09-12T12:00:00.000Z",
+    "instructor": "Prof. Camila Diaz",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_diaz", "name": "Prof. Camila Diaz", "role": "instructor", "joinedAt": "2025-09-12T12:00:00.000Z" },
+      { "userId": "user_student_7", "name": "Noah Rivera", "role": "student", "joinedAt": "2025-09-12T12:20:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Architecture", "year": "Year 4" },
+    "publishedAt": "2025-12-08T16:00:00.000Z"
+  },
+  {
+    "id": "workspace-arch-y4-03",
+    "name": "Adaptive Reuse Lab",
+    "slug": "adaptive-reuse-lab",
+    "type": "class",
+    "createdBy": "user_prof_diaz",
+    "studioId": "studio-arch-y4-03",
+    "inviteCode": "ARCHY4E",
+    "createdAt": "2025-09-15T12:00:00.000Z",
+    "instructor": "Prof. Camila Diaz",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_diaz", "name": "Prof. Camila Diaz", "role": "instructor", "joinedAt": "2025-09-15T12:00:00.000Z" },
+      { "userId": "user_student_8", "name": "Ethan Ward", "role": "student", "joinedAt": "2025-09-15T12:20:00.000Z" },
+      { "userId": "user_student_9", "name": "Sofia Nguyen", "role": "student", "joinedAt": "2025-09-15T12:25:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Architecture", "year": "Year 4" },
+    "publishedAt": "2025-12-08T16:05:00.000Z"
+  },
+  {
+    "id": "workspace-arch-y3-02",
+    "name": "Waterfront Housing",
+    "slug": "waterfront-housing",
+    "type": "class",
+    "createdBy": "user_prof_sarah",
+    "studioId": "studio-arch-y3-02",
+    "inviteCode": "ARCHY3B",
+    "createdAt": "2025-12-02T15:00:00.000Z",
+    "instructor": "Prof. Sarah Lee",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_sarah", "name": "Prof. Sarah Lee", "role": "instructor", "joinedAt": "2025-12-02T15:00:00.000Z" },
+      { "userId": "user_student_10", "name": "Isabella Chen", "role": "student", "joinedAt": "2025-12-02T15:30:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Architecture", "year": "Year 3" },
+    "publishedAt": "2025-12-08T16:10:00.000Z"
+  },
+  {
+    "id": "workspace-arch-y3-03",
+    "name": "Structural Systems Studio",
+    "slug": "structural-systems-studio",
+    "type": "class",
+    "createdBy": "user_prof_sarah",
+    "studioId": "studio-arch-y3-03",
+    "inviteCode": "ARCHY3C",
+    "createdAt": "2025-12-03T15:00:00.000Z",
+    "instructor": "Prof. Sarah Lee",
+    "semester": "Spring 2025",
+    "members": [
+      { "userId": "user_prof_sarah", "name": "Prof. Sarah Lee", "role": "instructor", "joinedAt": "2025-12-03T15:00:00.000Z" },
+      { "userId": "user_student_11", "name": "Leo Fernandez", "role": "student", "joinedAt": "2025-12-03T15:30:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Architecture", "year": "Year 3" },
+    "publishedAt": "2025-12-08T16:15:00.000Z"
+  },
+  {
+    "id": "workspace-arch-y2-02",
+    "name": "Materials + Methods",
+    "slug": "materials-and-methods",
+    "type": "class",
+    "createdBy": "user_prof_martin",
+    "studioId": "studio-arch-y2-02",
+    "inviteCode": "ARCHY2C",
+    "createdAt": "2025-11-25T15:00:00.000Z",
+    "instructor": "Prof. Martin Cole",
+    "semester": "Spring 2025",
+    "members": [
+      { "userId": "user_prof_martin", "name": "Prof. Martin Cole", "role": "instructor", "joinedAt": "2025-11-25T15:00:00.000Z" },
+      { "userId": "user_student_12", "name": "Hana Park", "role": "student", "joinedAt": "2025-11-25T15:30:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Architecture", "year": "Year 2" },
+    "publishedAt": "2025-12-08T16:20:00.000Z"
+  },
+  {
+    "id": "workspace-arch-y2-03",
+    "name": "Climate Responsive Design",
+    "slug": "climate-responsive-design",
+    "type": "class",
+    "createdBy": "user_prof_martin",
+    "studioId": "studio-arch-y2-03",
+    "inviteCode": "ARCHY2D",
+    "createdAt": "2025-11-28T15:00:00.000Z",
+    "instructor": "Prof. Martin Cole",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_martin", "name": "Prof. Martin Cole", "role": "instructor", "joinedAt": "2025-11-28T15:00:00.000Z" },
+      { "userId": "user_student_13", "name": "Omar Haddad", "role": "student", "joinedAt": "2025-11-28T15:30:00.000Z" },
+      { "userId": "user_student_14", "name": "Ava Brooks", "role": "student", "joinedAt": "2025-11-28T15:35:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Architecture", "year": "Year 2" },
+    "publishedAt": "2025-12-08T16:25:00.000Z"
+  },
+  {
+    "id": "workspace-arch-y1-01",
+    "name": "Foundations Studio A",
+    "slug": "foundations-studio-a",
+    "type": "class",
+    "createdBy": "user_prof_ian",
+    "studioId": "studio-arch-y1-01",
+    "inviteCode": "ARCHY1A",
+    "createdAt": "2025-09-05T10:00:00.000Z",
+    "instructor": "Prof. Ian Wright",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_ian", "name": "Prof. Ian Wright", "role": "instructor", "joinedAt": "2025-09-05T10:00:00.000Z" },
+      { "userId": "user_student_15", "name": "Mila Zhang", "role": "student", "joinedAt": "2025-09-05T10:30:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Architecture", "year": "Year 1" },
+    "publishedAt": "2025-12-08T16:30:00.000Z"
+  },
+  {
+    "id": "workspace-arch-y1-02",
+    "name": "Foundations Studio B",
+    "slug": "foundations-studio-b",
+    "type": "class",
+    "createdBy": "user_prof_ian",
+    "studioId": "studio-arch-y1-02",
+    "inviteCode": "ARCHY1B",
+    "createdAt": "2025-09-07T10:00:00.000Z",
+    "instructor": "Prof. Ian Wright",
+    "semester": "Spring 2026",
+    "members": [
+      { "userId": "user_prof_ian", "name": "Prof. Ian Wright", "role": "instructor", "joinedAt": "2025-09-07T10:00:00.000Z" },
+      { "userId": "user_student_16", "name": "Diego Morales", "role": "student", "joinedAt": "2025-09-07T10:30:00.000Z" },
+      { "userId": "user_student_17", "name": "Sara Ibrahim", "role": "student", "joinedAt": "2025-09-07T10:40:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Architecture", "year": "Year 1" },
+    "publishedAt": "2025-12-08T16:35:00.000Z"
+  },
+  {
+    "id": "workspace-interior-y3-01",
+    "name": "Hospitality Interiors",
+    "slug": "hospitality-interiors",
+    "type": "class",
+    "createdBy": "user_prof_nina",
+    "studioId": "studio-interior-y3-01",
+    "inviteCode": "INTY3A",
+    "createdAt": "2025-10-01T12:00:00.000Z",
+    "instructor": "Prof. Nina Torres",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_nina", "name": "Prof. Nina Torres", "role": "instructor", "joinedAt": "2025-10-01T12:00:00.000Z" },
+      { "userId": "user_student_18", "name": "Keira Lawson", "role": "student", "joinedAt": "2025-10-01T12:20:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Interior Design", "year": "Year 3" },
+    "publishedAt": "2025-12-08T16:40:00.000Z"
+  },
+  {
+    "id": "workspace-interior-y3-02",
+    "name": "Healthcare Interiors",
+    "slug": "healthcare-interiors",
+    "type": "class",
+    "createdBy": "user_prof_nina",
+    "studioId": "studio-interior-y3-02",
+    "inviteCode": "INTY3B",
+    "createdAt": "2025-10-05T12:00:00.000Z",
+    "instructor": "Prof. Nina Torres",
+    "semester": "Spring 2025",
+    "members": [
+      { "userId": "user_prof_nina", "name": "Prof. Nina Torres", "role": "instructor", "joinedAt": "2025-10-05T12:00:00.000Z" },
+      { "userId": "user_student_19", "name": "Aaron Patel", "role": "student", "joinedAt": "2025-10-05T12:20:00.000Z" },
+      { "userId": "user_student_20", "name": "Sienna Cole", "role": "student", "joinedAt": "2025-10-05T12:25:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Interior Design", "year": "Year 3" },
+    "publishedAt": "2025-12-08T16:45:00.000Z"
+  },
+  {
+    "id": "workspace-interior-y2-01",
+    "name": "Retail Experiences",
+    "slug": "retail-experiences",
+    "type": "class",
+    "createdBy": "user_prof_mila",
+    "studioId": "studio-interior-y2-01",
+    "inviteCode": "INTY2A",
+    "createdAt": "2025-09-20T12:00:00.000Z",
+    "instructor": "Prof. Mila Santos",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_mila", "name": "Prof. Mila Santos", "role": "instructor", "joinedAt": "2025-09-20T12:00:00.000Z" },
+      { "userId": "user_student_21", "name": "Ian Brooks", "role": "student", "joinedAt": "2025-09-20T12:20:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Interior Design", "year": "Year 2" },
+    "publishedAt": "2025-12-08T16:50:00.000Z"
+  },
+  {
+    "id": "workspace-interior-y2-02",
+    "name": "Residential Concepts",
+    "slug": "residential-concepts",
+    "type": "class",
+    "createdBy": "user_prof_mila",
+    "studioId": "studio-interior-y2-02",
+    "inviteCode": "INTY2B",
+    "createdAt": "2025-09-25T12:00:00.000Z",
+    "instructor": "Prof. Mila Santos",
+    "semester": "Spring 2026",
+    "members": [
+      { "userId": "user_prof_mila", "name": "Prof. Mila Santos", "role": "instructor", "joinedAt": "2025-09-25T12:00:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Interior Design", "year": "Year 2" },
+    "publishedAt": "2025-12-08T16:55:00.000Z"
+  },
+  {
+    "id": "workspace-interior-y1-01",
+    "name": "Spatial Fundamentals",
+    "slug": "spatial-fundamentals",
+    "type": "class",
+    "createdBy": "user_prof_lucas",
+    "studioId": "studio-interior-y1-01",
+    "inviteCode": "INTY1A",
+    "createdAt": "2025-08-30T12:00:00.000Z",
+    "instructor": "Prof. Lucas Meyer",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_lucas", "name": "Prof. Lucas Meyer", "role": "instructor", "joinedAt": "2025-08-30T12:00:00.000Z" },
+      { "userId": "user_student_22", "name": "Eli Turner", "role": "student", "joinedAt": "2025-08-30T12:15:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Interior Design", "year": "Year 1" },
+    "publishedAt": "2025-12-08T17:00:00.000Z"
+  },
+  {
+    "id": "workspace-industrial-y2-01",
+    "name": "Design for Manufacture",
+    "slug": "design-for-manufacture",
+    "type": "class",
+    "createdBy": "user_prof_owen",
+    "studioId": "studio-industrial-y2-01",
+    "inviteCode": "INDY2A",
+    "createdAt": "2025-10-20T10:00:00.000Z",
+    "instructor": "Prof. Owen Green",
+    "semester": "Spring 2026",
+    "members": [
+      { "userId": "user_prof_owen", "name": "Prof. Owen Green", "role": "instructor", "joinedAt": "2025-10-20T10:00:00.000Z" },
+      { "userId": "user_student_23", "name": "Nina Brooks", "role": "student", "joinedAt": "2025-10-20T10:20:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Industrial Design", "year": "Year 2" },
+    "publishedAt": "2025-12-08T17:05:00.000Z"
+  },
+  {
+    "id": "workspace-industrial-y2-02",
+    "name": "Soft Goods Lab",
+    "slug": "soft-goods-lab",
+    "type": "class",
+    "createdBy": "user_prof_owen",
+    "studioId": "studio-industrial-y2-02",
+    "inviteCode": "INDY2B",
+    "createdAt": "2025-10-25T10:00:00.000Z",
+    "instructor": "Prof. Owen Green",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_owen", "name": "Prof. Owen Green", "role": "instructor", "joinedAt": "2025-10-25T10:00:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Industrial Design", "year": "Year 2" },
+    "publishedAt": "2025-12-08T17:10:00.000Z"
+  },
+  {
+    "id": "workspace-industrial-y3-01",
+    "name": "Wearables Studio",
+    "slug": "wearables-studio",
+    "type": "class",
+    "createdBy": "user_prof_kai",
+    "studioId": "studio-industrial-y3-01",
+    "inviteCode": "INDY3A",
+    "createdAt": "2025-11-02T10:00:00.000Z",
+    "instructor": "Prof. Kai Matsuda",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_kai", "name": "Prof. Kai Matsuda", "role": "instructor", "joinedAt": "2025-11-02T10:00:00.000Z" },
+      { "userId": "user_student_24", "name": "Riley Chen", "role": "student", "joinedAt": "2025-11-02T10:20:00.000Z" },
+      { "userId": "user_student_25", "name": "Grace Lee", "role": "student", "joinedAt": "2025-11-02T10:25:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Industrial Design", "year": "Year 3" },
+    "publishedAt": "2025-12-08T17:15:00.000Z"
+  },
+  {
+    "id": "workspace-industrial-y3-02",
+    "name": "Designing for Mobility",
+    "slug": "designing-for-mobility",
+    "type": "class",
+    "createdBy": "user_prof_kai",
+    "studioId": "studio-industrial-y3-02",
+    "inviteCode": "INDY3B",
+    "createdAt": "2025-11-06T10:00:00.000Z",
+    "instructor": "Prof. Kai Matsuda",
+    "semester": "Spring 2026",
+    "members": [
+      { "userId": "user_prof_kai", "name": "Prof. Kai Matsuda", "role": "instructor", "joinedAt": "2025-11-06T10:00:00.000Z" },
+      { "userId": "user_student_26", "name": "Liam Patel", "role": "student", "joinedAt": "2025-11-06T10:20:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Industrial Design", "year": "Year 3" },
+    "publishedAt": "2025-12-08T17:20:00.000Z"
+  },
+  {
+    "id": "workspace-industrial-y4-01",
+    "name": "Capstone: Future Mobility",
+    "slug": "capstone-future-mobility",
+    "type": "class",
+    "createdBy": "user_prof_kai",
+    "studioId": "studio-industrial-y4-01",
+    "inviteCode": "INDY4A",
+    "createdAt": "2025-11-15T10:00:00.000Z",
+    "instructor": "Prof. Kai Matsuda",
+    "semester": "Spring 2026",
+    "members": [
+      { "userId": "user_prof_kai", "name": "Prof. Kai Matsuda", "role": "instructor", "joinedAt": "2025-11-15T10:00:00.000Z" },
+      { "userId": "user_student_27", "name": "Jade Nguyen", "role": "student", "joinedAt": "2025-11-15T10:20:00.000Z" },
+      { "userId": "user_student_28", "name": "Evan Rossi", "role": "student", "joinedAt": "2025-11-15T10:25:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Industrial Design", "year": "Year 4" },
+    "publishedAt": "2025-12-08T17:25:00.000Z"
+  },
+  {
+    "id": "workspace-industrial-masters-01",
+    "name": "Graduate ID Studio",
+    "slug": "graduate-id-studio",
+    "type": "class",
+    "createdBy": "user_prof_elena",
+    "studioId": "studio-industrial-masters-01",
+    "inviteCode": "INDM1A",
+    "createdAt": "2025-12-01T10:00:00.000Z",
+    "instructor": "Prof. Elena Rossi",
+    "semester": "Spring 2026",
+    "members": [
+      { "userId": "user_prof_elena", "name": "Prof. Elena Rossi", "role": "instructor", "joinedAt": "2025-12-01T10:00:00.000Z" },
+      { "userId": "user_student_29", "name": "Kai Turner", "role": "student", "joinedAt": "2025-12-01T10:20:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Industrial Design", "year": "Masters" },
+    "publishedAt": "2025-12-08T17:30:00.000Z"
+  },
+  {
+    "id": "workspace-arch-masters-01",
+    "name": "Advanced Urbanism",
+    "slug": "advanced-urbanism",
+    "type": "class",
+    "createdBy": "user_prof_diaz",
+    "studioId": "studio-arch-masters-01",
+    "inviteCode": "ARCHM1A",
+    "createdAt": "2025-12-04T12:00:00.000Z",
+    "instructor": "Prof. Camila Diaz",
+    "semester": "Spring 2026",
+    "members": [
+      { "userId": "user_prof_diaz", "name": "Prof. Camila Diaz", "role": "instructor", "joinedAt": "2025-12-04T12:00:00.000Z" },
+      { "userId": "user_student_30", "name": "Olivia Carter", "role": "student", "joinedAt": "2025-12-04T12:20:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Architecture", "year": "Masters" },
+    "publishedAt": "2025-12-08T17:35:00.000Z"
+  },
+  {
+    "id": "workspace-arch-y4-04",
+    "name": "Adaptive Skins",
+    "slug": "adaptive-skins",
+    "type": "class",
+    "createdBy": "user_prof_elena",
+    "studioId": "studio-arch-y4-04",
+    "inviteCode": "ARCHY4F",
+    "createdAt": "2025-12-06T12:00:00.000Z",
+    "instructor": "Prof. Elena Rossi",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_elena", "name": "Prof. Elena Rossi", "role": "instructor", "joinedAt": "2025-12-06T12:00:00.000Z" },
+      { "userId": "user_student_31", "name": "Ben Carter", "role": "student", "joinedAt": "2025-12-06T12:20:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Architecture", "year": "Year 4" },
+    "publishedAt": "2025-12-08T17:40:00.000Z"
+  },
+  {
+    "id": "workspace-interior-y4-02",
+    "name": "Sustainable Interiors",
+    "slug": "sustainable-interiors",
+    "type": "class",
+    "createdBy": "user_prof_nina",
+    "studioId": "studio-interior-y4-02",
+    "inviteCode": "INTY4D",
+    "createdAt": "2025-12-02T12:00:00.000Z",
+    "instructor": "Prof. Nina Torres",
+    "semester": "Fall 2025",
+    "members": [
+      { "userId": "user_prof_nina", "name": "Prof. Nina Torres", "role": "instructor", "joinedAt": "2025-12-02T12:00:00.000Z" },
+      { "userId": "user_student_32", "name": "Zoe Park", "role": "student", "joinedAt": "2025-12-02T12:20:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Interior Design", "year": "Year 4" },
+    "publishedAt": "2025-12-08T17:45:00.000Z"
+  },
+  {
+    "id": "workspace-interior-masters-01",
+    "name": "Interiors Research Lab",
+    "slug": "interiors-research-lab",
+    "type": "class",
+    "createdBy": "user_prof_lucas",
+    "studioId": "studio-interior-masters-01",
+    "inviteCode": "INTM1A",
+    "createdAt": "2025-12-07T12:00:00.000Z",
+    "instructor": "Prof. Lucas Meyer",
+    "semester": "Spring 2026",
+    "members": [
+      { "userId": "user_prof_lucas", "name": "Prof. Lucas Meyer", "role": "instructor", "joinedAt": "2025-12-07T12:00:00.000Z" },
+      { "userId": "user_student_33", "name": "Caleb Wright", "role": "student", "joinedAt": "2025-12-07T12:20:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Interior Design", "year": "Masters" },
+    "publishedAt": "2025-12-08T17:50:00.000Z"
+  },
+  {
+    "id": "workspace-industrial-y4-02",
+    "name": "Design for Circularity",
+    "slug": "design-for-circularity",
+    "type": "class",
+    "createdBy": "user_prof_elena",
+    "studioId": "studio-industrial-y4-02",
+    "inviteCode": "INDY4B",
+    "createdAt": "2025-12-03T10:00:00.000Z",
+    "instructor": "Prof. Elena Rossi",
+    "semester": "Spring 2026",
+    "members": [
+      { "userId": "user_prof_elena", "name": "Prof. Elena Rossi", "role": "instructor", "joinedAt": "2025-12-03T10:00:00.000Z" },
+      { "userId": "user_student_34", "name": "Marcus Lee", "role": "student", "joinedAt": "2025-12-03T10:20:00.000Z" }
+    ],
+    "isPublic": true,
+    "networkMetadata": { "department": "Industrial Design", "year": "Year 4" },
+    "publishedAt": "2025-12-08T17:55:00.000Z"
+  }
+]

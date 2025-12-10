@@ -1,0 +1,128 @@
+{
+  "studio-1765148862232-zvltmom": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      }
+    ],
+    "layoutType": "zigzag"
+  },
+  "9f16d592-8ff4-42ef-bf9e-6cbb7660a6c0": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      }
+    ],
+    "layoutType": "zigzag"
+  },
+  "d9cccd6a-a61c-4297-a95d-1a963edc77ed": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 10
+      },
+      {
+        "height": 10,
+        "width": 10
+      },
+      {
+        "height": 10,
+        "width": 10
+      },
+      {
+        "height": 10,
+        "width": 10
+      }
+    ],
+    "layoutType": "square"
+  },
+  "11c57df7-e188-48a4-860f-08eec743d071": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      }
+    ],
+    "layoutType": "zigzag"
+  },
+  "810cf387-9060-451c-868e-e9c58836853f": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      }
+    ],
+    "layoutType": "zigzag"
+  },
+  "347472f6-182b-4f67-b7c7-159609b40d04": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      }
+    ],
+    "layoutType": "zigzag"
+  }
+}
