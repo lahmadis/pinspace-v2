@@ -1,7 +1,6 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload } from 'lucide-react'
 import Image from 'next/image'
 import type { Board } from '@/types'
 
@@ -65,7 +64,9 @@ export function EditModeOverlay({
                 onClick={onUpload}
                 className="w-full mb-6 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
               >
-                <Upload size={20} />
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
                 Add Your Board
               </button>
 
