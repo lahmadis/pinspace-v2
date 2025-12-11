@@ -149,8 +149,9 @@ export default function WallCanvasEditor({
       // Convert PDF to image before uploading
       if (isPDF) {
         console.log('🔄 Converting PDF to image for display...')
-        const { convertPDFToImage } = await import('@/lib/pdfToImage')
-        const result = await convertPDFToImage(file)
+        const { convertPDFToImages } = await import('@/lib/pdfToImage')
+        const results = await convertPDFToImages(file)
+        const result = results[0] // Use first page
         uploadFile = result.imageFile
         width = result.width
         height = result.height

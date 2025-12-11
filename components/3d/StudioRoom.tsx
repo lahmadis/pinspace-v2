@@ -429,6 +429,7 @@ export default function StudioRoom(props: StudioRoomProps) {
       let imageAspectRatio: number
       
       // Use stored aspect ratio if available, otherwise load image
+      let img: HTMLImageElement | null = null
       if (draggingFromSidebar.aspectRatio) {
         imageAspectRatio = draggingFromSidebar.aspectRatio
         console.log('📐 Using stored aspect ratio:', imageAspectRatio.toFixed(3))
@@ -441,19 +442,22 @@ export default function StudioRoom(props: StudioRoomProps) {
           return
         }
         
-        const img = new Image()
+        img = new Image()
         img.crossOrigin = 'anonymous'
         img.src = imageUrl
         
         await new Promise<void>((resolve, reject) => {
+          if (!img) return reject(new Error('Image not initialized'))
           img.onload = () => resolve()
           img.onerror = () => reject(new Error('Failed to load image'))
           // Timeout after 5 seconds
           setTimeout(() => reject(new Error('Image load timeout')), 5000)
         })
         
-        imageAspectRatio = img.naturalWidth / img.naturalHeight
-        console.log(`📐 Image dimensions: ${img.naturalWidth}x${img.naturalHeight}, aspect: ${imageAspectRatio.toFixed(2)}`)
+        if (img) {
+          imageAspectRatio = img.naturalWidth / img.naturalHeight
+          console.log(`📐 Image dimensions: ${img.naturalWidth}x${img.naturalHeight}, aspect: ${imageAspectRatio.toFixed(2)}`)
+        }
       }
       
       // Scale board to be max 35% of wall dimensions while maintaining aspect ratio
@@ -473,7 +477,9 @@ export default function StudioRoom(props: StudioRoomProps) {
         boardWidth = maxHeightPercent * imageAspectRatio * (editingWallDimensions.height / editingWallDimensions.width)
       }
       
-      console.log(`📐 Image dimensions: ${img.naturalWidth}x${img.naturalHeight}, aspect: ${imageAspectRatio.toFixed(2)}`)
+      if (img) {
+        console.log(`📐 Image dimensions: ${img.naturalWidth}x${img.naturalHeight}, aspect: ${imageAspectRatio.toFixed(2)}`)
+      }
       console.log(`📏 Board size on wall: ${(boardWidth * 100).toFixed(1)}% x ${(boardHeight * 100).toFixed(1)}%`)
       console.log(`✅ Dropping board ${draggingFromSidebar.id} at position:`, { x: localX, y: localY })
       

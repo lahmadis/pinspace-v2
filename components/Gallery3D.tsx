@@ -28,6 +28,7 @@ type GalleryStudio = {
   boards?: Board[]
   galleryPosition?: { x: number; z: number }
   studentCount?: number
+  wallConfig?: { walls: Array<{ width: number; height: number }>; layoutType?: string }
 }
 
 const DEFAULT_FLOOR = { width: 12, depth: 10 }
@@ -322,7 +323,6 @@ function StudioLabel({
         outlineOpacity={0.45}
         anchorX="center"
         anchorY="bottom"
-        billboard
         onPointerOver={(e) => e.stopPropagation()}
         onPointerDown={(e) => {
           e.stopPropagation()
@@ -821,7 +821,8 @@ function MovementController({
     setAvatarPos(updated)
 
     // Entrance proximity (front edge center of closest studio)
-    let closest: { studio: GalleryStudio; entrance: THREE.Vector3; dist: number } | null = null
+    type ClosestStudio = { studio: GalleryStudio; entrance: THREE.Vector3; dist: number }
+    let closest: ClosestStudio | null = null
     const entranceNear = studios.some((studio) => {
       const pos = studio.galleryPosition || { x: 0, z: 0 }
       const { depth } = getFootprint(studio)
@@ -833,7 +834,7 @@ function MovementController({
       return dist < ENTRANCE_DISTANCE
     })
     setNearEntrance(entranceNear)
-    if (closest && closest.dist < ENTRANCE_DISTANCE) {
+    if (closest !== null && closest.dist < ENTRANCE_DISTANCE) {
       safeSetPromptStudio({ studio: closest.studio, entrance: closest.entrance })
     } else {
       safeSetPromptStudio(null)

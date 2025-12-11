@@ -433,9 +433,13 @@ export default function BubbleNetwork({
     }
     
     // Limit connections and prioritize by type
-    const priorityOrder = ['instructor', 'year', 'semester'] as const
+    const priorityOrder = ['instructor', 'year', 'semester', 'department'] as const
     return lines
-      .sort((a, b) => priorityOrder.indexOf(a.type) - priorityOrder.indexOf(b.type))
+      .sort((a, b) => {
+        const aIndex = priorityOrder.indexOf(a.type as typeof priorityOrder[number])
+        const bIndex = priorityOrder.indexOf(b.type as typeof priorityOrder[number])
+        return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex)
+      })
       .slice(0, MAX_CONNECTIONS)
   }, [positions])
 
