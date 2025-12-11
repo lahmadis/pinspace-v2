@@ -15,7 +15,7 @@ export async function GET() {
     // Fetch all public workspaces
     const { data: publicWorkspaces, error } = await supabase
       .from('workspaces')
-      .select('id, network_metadata')
+      .select('*')
       .eq('is_public', true)
       .not('published_at', 'is', null)
 
