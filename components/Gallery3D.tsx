@@ -823,7 +823,9 @@ function MovementController({
     // Entrance proximity (front edge center of closest studio)
     type ClosestStudio = { studio: GalleryStudio; entrance: THREE.Vector3; dist: number }
     let closest: ClosestStudio | null = null
-    const entranceNear = studios.some((studio) => {
+    let entranceNear = false
+    
+    for (const studio of studios) {
       const pos = studio.galleryPosition || { x: 0, z: 0 }
       const { depth } = getFootprint(studio)
       const entrance = new THREE.Vector3(pos.x, 0, pos.z + depth / 2 + 0.2)
@@ -831,8 +833,11 @@ function MovementController({
       if (closest === null || dist < closest.dist) {
         closest = { studio, entrance, dist }
       }
-      return dist < ENTRANCE_DISTANCE
-    })
+      if (dist < ENTRANCE_DISTANCE) {
+        entranceNear = true
+      }
+    }
+    
     setNearEntrance(entranceNear)
     if (closest !== null && closest.dist < ENTRANCE_DISTANCE) {
       safeSetPromptStudio({ studio: closest.studio, entrance: closest.entrance })
