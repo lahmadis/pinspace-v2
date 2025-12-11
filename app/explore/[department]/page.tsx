@@ -34,13 +34,13 @@ type StudioItem = {
 }
 
 export default function DepartmentPage({ params }: { params: { department: string } }) {
-  const meta = DEPT_MAP[params.department]
-  if (!meta) return notFound()
-
   const searchParams = useSearchParams()
   const router = useRouter()
   const viewParam = searchParams.get('view')
   const [viewMode, setViewMode] = useState<ViewMode>(viewParam === 'all' ? 'all' : 'years')
+  
+  const meta = DEPT_MAP[params.department]
+  if (!meta) return notFound()
 
   const [yearNodes, setYearNodes] = useState<BubbleNode[]>([])
   const [years, setYears] = useState<YearItem[]>([])

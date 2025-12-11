@@ -329,7 +329,6 @@ function StudioLabel({
           e.stopPropagation()
           onClick?.()
         }}
-        style={{ cursor: onClick ? 'pointer' : 'default' }}
       >
         {name}
       </Text>
