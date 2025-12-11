@@ -226,26 +226,18 @@ export default function DepartmentPage({ params }: { params: { department: strin
             <p className="text-gray-600 mt-2">Browse by year or see the full network of studios.</p>
             <div className="mt-4 flex items-center gap-3 text-sm">
               <span className="text-gray-700 font-semibold">View:</span>
-              {(() => {
-                const isYearsView = viewMode === 'years'
-                const isAllView = viewMode === 'all'
-                return (
-                  <>
-                    <button
-                      onClick={() => setViewMode('years')}
-                      className={`px-3 py-1 rounded-full border text-sm ${isYearsView ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                    >
-                      By Year
-                    </button>
-                    <button
-                      onClick={() => setViewMode('all')}
-                      className={`px-3 py-1 rounded-full border text-sm ${isAllView ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                    >
-                      View All Studios
-                    </button>
-                  </>
-                )
-              })()}
+              <button
+                onClick={() => setViewMode('years')}
+                className={`px-3 py-1 rounded-full border text-sm ${viewMode === 'years' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+              >
+                By Year
+              </button>
+              <button
+                onClick={() => setViewMode('all')}
+                className={`px-3 py-1 rounded-full border text-sm ${viewMode === 'all' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+              >
+                View All Studios
+              </button>
             </div>
           </div>
 
