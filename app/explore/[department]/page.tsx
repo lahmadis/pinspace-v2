@@ -38,15 +38,14 @@ export default function DepartmentPage({ params }: { params: { department: strin
   const router = useRouter()
   const viewParam = searchParams.get('view')
   const [viewMode, setViewMode] = useState<ViewMode>(viewParam === 'all' ? 'all' : 'years')
-  
-  const meta = DEPT_MAP[params.department]
-  if (!meta) return notFound()
-
   const [yearNodes, setYearNodes] = useState<BubbleNode[]>([])
   const [years, setYears] = useState<YearItem[]>([])
   const [studioNodes, setStudioNodes] = useState<BubbleNode[]>([])
   const [studios, setStudios] = useState<StudioItem[]>([])
   const [yearFilter, setYearFilter] = useState<string>('All Years')
+  
+  const meta = DEPT_MAP[params.department]
+  if (!meta) return notFound()
 
   // sync URL
   useEffect(() => {
