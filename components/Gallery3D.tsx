@@ -29,6 +29,7 @@ type GalleryStudio = {
   galleryPosition?: { x: number; z: number }
   studentCount?: number
   wallConfig?: { walls: Array<{ width: number; height: number }>; layoutType?: string }
+  isMock?: boolean
 }
 
 const DEFAULT_FLOOR = { width: 12, depth: 10 }

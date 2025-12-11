@@ -19,6 +19,8 @@ const YEAR_COLORS: Record<string, string> = {
   'Masters': '#EC4899',
 }
 
+type ViewMode = 'years' | 'all'
+
 type YearItem = { year: string; slug: string; studioCount: number }
 type StudioItem = {
   id: string
@@ -38,7 +40,7 @@ export default function DepartmentPage({ params }: { params: { department: strin
   const searchParams = useSearchParams()
   const router = useRouter()
   const viewParam = searchParams.get('view')
-  const [viewMode, setViewMode] = useState<'years' | 'all'>(viewParam === 'all' ? 'all' : 'years')
+  const [viewMode, setViewMode] = useState<ViewMode>(viewParam === 'all' ? 'all' : 'years')
 
   const [yearNodes, setYearNodes] = useState<BubbleNode[]>([])
   const [years, setYears] = useState<YearItem[]>([])
@@ -225,19 +227,23 @@ export default function DepartmentPage({ params }: { params: { department: strin
             <h1 className="text-3xl font-bold text-gray-900 mt-1">{meta.name}</h1>
             <p className="text-gray-600 mt-2">Browse by year or see the full network of studios.</p>
             {(() => {
-              const currentMode: 'years' | 'all' = viewMode
+              const getViewState = (mode: ViewMode) => ({
+                isYears: mode === 'years',
+                isAll: mode === 'all'
+              })
+              const viewState = getViewState(viewMode)
               return (
                 <div className="mt-4 flex items-center gap-3 text-sm">
                   <span className="text-gray-700 font-semibold">View:</span>
                   <button
                     onClick={() => setViewMode('years')}
-                    className={`px-3 py-1 rounded-full border text-sm ${currentMode === 'years' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                    className={`px-3 py-1 rounded-full border text-sm ${viewState.isYears ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
                   >
                     By Year
                   </button>
                   <button
                     onClick={() => setViewMode('all')}
-                    className={`px-3 py-1 rounded-full border text-sm ${currentMode === 'all' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                    className={`px-3 py-1 rounded-full border text-sm ${viewState.isAll ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
                   >
                     View All Studios
                   </button>

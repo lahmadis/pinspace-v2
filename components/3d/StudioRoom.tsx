@@ -426,7 +426,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     }
     
     try {
-      let imageAspectRatio: number
+      let imageAspectRatio: number = 1 // Default to 1:1 if we can't determine
       
       // Use stored aspect ratio if available, otherwise load image
       let img: HTMLImageElement | null = null
@@ -454,7 +454,7 @@ export default function StudioRoom(props: StudioRoomProps) {
           setTimeout(() => reject(new Error('Image load timeout')), 5000)
         })
         
-        if (img) {
+        if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
           imageAspectRatio = img.naturalWidth / img.naturalHeight
           console.log(`📐 Image dimensions: ${img.naturalWidth}x${img.naturalHeight}, aspect: ${imageAspectRatio.toFixed(2)}`)
         }
