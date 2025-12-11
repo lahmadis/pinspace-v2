@@ -238,24 +238,24 @@ export default function CommentPanel({ boardId, boardTitle, onClose }: CommentPa
                 >
                   <div className="flex items-start gap-3">
                     {/* Avatar Circle */}
-                    <div className={`flex-shrink-0 w-10 h-10 rounded-full ${getAvatarColor(comment.author)} flex items-center justify-center text-white font-bold text-sm shadow-md`}>
-                      {getInitials(comment.author)}
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-full ${getAvatarColor(comment.authorName)} flex items-center justify-center text-white font-bold text-sm shadow-md`}>
+                      {getInitials(comment.authorName)}
                     </div>
                     
                     <div className="flex-1 min-w-0">
                       {/* Author and Timestamp */}
                       <div className="flex items-center justify-between gap-2 mb-2">
                         <span className="font-bold text-[#1a1a1a] text-sm">
-                          {comment.author}
+                          {comment.authorName}
                         </span>
                         <span className="text-xs text-[#666666] font-medium whitespace-nowrap">
-                          {formatTimestamp(comment.timestamp)}
+                          {formatTimestamp(comment.createdAt)}
                         </span>
                       </div>
                       
                       {/* Comment Text */}
                       <p className="text-[#1a1a1a] leading-relaxed whitespace-pre-wrap">
-                        {comment.text}
+                        {comment.content}
                       </p>
                     </div>
                   </div>

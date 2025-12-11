@@ -153,8 +153,8 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          text: newComment.trim(),
-          author: authorName
+          content: newComment.trim(),
+          authorName: authorName
         }),
       })
 
@@ -376,22 +376,22 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
                 className="flex gap-3 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
               >
                 {/* Avatar */}
-                <div className={`flex-shrink-0 w-10 h-10 rounded-full ${getAvatarColor(comment.author)} flex items-center justify-center text-white font-bold text-sm shadow-sm`}>
-                  {getInitials(comment.author)}
+                <div className={`flex-shrink-0 w-10 h-10 rounded-full ${getAvatarColor(comment.authorName)} flex items-center justify-center text-white font-bold text-sm shadow-sm`}>
+                  {getInitials(comment.authorName)}
                 </div>
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline justify-between gap-2 mb-1.5">
                     <span className="font-bold text-gray-900 text-sm">
-                      {comment.author}
+                      {comment.authorName}
                     </span>
                     <span className="text-xs text-gray-500 whitespace-nowrap">
-                      {formatTimestamp(comment.timestamp)}
+                      {formatTimestamp(comment.createdAt)}
                     </span>
                   </div>
                   <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                    {comment.text}
+                    {comment.content}
                   </p>
                 </div>
               </div>

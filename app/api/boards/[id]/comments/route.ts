@@ -25,7 +25,22 @@ export async function GET(
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
 
-    const comments = board.comments || []
+    // Transform comments to new format (support both old and new formats)
+    const comments = (board.comments || []).map((comment: any) => {
+      // If already in new format, return as-is
+      if (comment.authorName && comment.content && comment.createdAt) {
+        return comment
+      }
+      // Transform old format to new format
+      return {
+        id: comment.id,
+        boardId: boardId,
+        authorName: comment.author || 'Anonymous',
+        content: comment.text || '',
+        createdAt: comment.timestamp || comment.createdAt || new Date().toISOString()
+      }
+    })
+    
     console.log(`📖 [Comments API] GET - Board ${boardId} has ${comments.length} comments`)
 
     return NextResponse.json({ comments })
@@ -42,10 +57,10 @@ export async function POST(
 ) {
   try {
     const boardId = params.id
-    const { text, author } = await request.json()
+    const { content, authorName } = await request.json()
 
-    if (!text || typeof text !== 'string' || text.trim().length === 0) {
-      return NextResponse.json({ error: 'Comment text is required' }, { status: 400 })
+    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+      return NextResponse.json({ error: 'Comment content is required' }, { status: 400 })
     }
 
     const dataPath = path.join(process.cwd(), 'lib', 'data', 'boards.json')
@@ -63,12 +78,13 @@ export async function POST(
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
 
-    // Create new comment
+    // Create new comment with new format
     const newComment = {
       id: `comment-${Date.now()}`,
-      author: author || 'Anonymous', // Use provided author or default
-      text: text.trim(),
-      timestamp: new Date().toISOString()
+      boardId: boardId,
+      authorName: authorName || 'Anonymous', // Use provided authorName or default
+      content: content.trim(),
+      createdAt: new Date().toISOString()
     }
 
     // Add comment to board

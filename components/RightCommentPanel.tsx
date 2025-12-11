@@ -100,7 +100,7 @@ export default function RightCommentPanel({ board, onClose }: RightCommentPanelP
       const response = await fetch(`/api/boards/${board.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: newComment.trim(), author: authorName }),
+        body: JSON.stringify({ content: newComment.trim(), authorName: authorName }),
       })
       if (!response.ok) throw new Error('Failed to post')
       const data = await response.json()
@@ -167,15 +167,15 @@ export default function RightCommentPanel({ board, onClose }: RightCommentPanelP
 
           {!loading && comments.map((comment) => (
             <div key={comment.id} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
-              <div className={`w-8 h-8 rounded-full ${getAvatarColor(comment.author)} flex items-center justify-center text-white font-bold text-xs flex-shrink-0`}>
-                {getInitials(comment.author)}
+              <div className={`w-8 h-8 rounded-full ${getAvatarColor(comment.authorName)} flex items-center justify-center text-white font-bold text-xs flex-shrink-0`}>
+                {getInitials(comment.authorName)}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline justify-between mb-1">
-                  <span className="font-semibold text-gray-900 text-sm">{comment.author}</span>
-                  <span className="text-xs text-gray-500">{formatTimestamp(comment.timestamp)}</span>
+                  <span className="font-semibold text-gray-900 text-sm">{comment.authorName}</span>
+                  <span className="text-xs text-gray-500">{formatTimestamp(comment.createdAt)}</span>
                 </div>
-                <p className="text-sm text-gray-700 leading-relaxed">{comment.text}</p>
+                <p className="text-sm text-gray-700 leading-relaxed">{comment.content}</p>
               </div>
             </div>
           ))}
