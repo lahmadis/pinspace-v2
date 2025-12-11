@@ -65,6 +65,7 @@ export default function DepartmentPage({ params }: { params: { department: strin
         setYears(data)
         setYearNodes(data.map((y) => ({
           id: y.slug,
+          name: y.year,
           label: y.year,
           count: y.studioCount,
           url: `/explore/${params.department}/${y.slug}`,
