@@ -67,9 +67,12 @@ export interface Board {
 
 export interface Comment {
   id: string
-  author: string
-  text: string
-  timestamp: string
+  boardId?: string
+  authorName: string
+  authorEmail?: string
+  content: string
+  type?: string
+  createdAt: string
 }
 
 export interface WorkspaceMember {
