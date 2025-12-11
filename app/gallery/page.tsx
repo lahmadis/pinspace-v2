@@ -3,13 +3,22 @@
 import Link from 'next/link'
 import Gallery3D from '@/components/Gallery3D'
 import { useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 
-export default function GalleryPage() {
+function GalleryContent() {
   const searchParams = useSearchParams()
   const avatarColor = searchParams?.get('color') || '#6366f1'
   const department = searchParams?.get('department') || null
   const year = searchParams?.get('year') || null
 
+  return (
+    <main className="w-full h-screen">
+      <Gallery3D avatarColor={avatarColor} department={department} year={year} />
+    </main>
+  )
+}
+
+export default function GalleryPage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="absolute top-4 left-6 z-20 text-text-primary">
@@ -25,9 +34,9 @@ export default function GalleryPage() {
         </Link>
       </div>
 
-      <main className="w-full h-screen">
-        <Gallery3D avatarColor={avatarColor} department={department} year={year} />
-      </main>
+      <Suspense fallback={<main className="w-full h-screen" />}>
+        <GalleryContent />
+      </Suspense>
     </div>
   )
 }
