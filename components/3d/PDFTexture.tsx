@@ -76,7 +76,8 @@ export function PDFTextureMaterial({ pdfUrl, hovered = false }: PDFTextureMateri
         const page = await pdf.getPage(1)
         if (cancelled) return
 
-        const viewport = page.getViewport({ scale: 3 })
+        // Reduced scale from 3x to 2x for better performance on Vercel
+        const viewport = page.getViewport({ scale: 2 })
         console.log('📄 [PDFTexture] Viewport size:', viewport.width, 'x', viewport.height)
         
         const canvas = document.createElement('canvas')

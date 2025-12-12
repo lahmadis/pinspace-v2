@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/server'
 
+// Cache public workspaces for 60 seconds to improve performance
+export const revalidate = 60
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
@@ -76,10 +78,15 @@ export async function GET(request: NextRequest) {
       members: [], // Not including full member list for public endpoint
     }))
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       departments,
       workspaces: transformedWorkspaces,
     })
+    
+    // Add caching headers for better performance
+    response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120')
+    
+    return response
   } catch (error) {
     console.error('Error fetching public workspaces:', error)
     return NextResponse.json({ 

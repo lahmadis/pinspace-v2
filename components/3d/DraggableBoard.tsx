@@ -36,10 +36,15 @@ function BoardTexture({ imageUrl }: { imageUrl: string }) {
   // It needs to be outside try-catch as hooks must be called unconditionally
   const texture = useTexture(imageUrl)
   
-  // Configure texture
+  // Configure texture for performance
   useEffect(() => {
     if (texture) {
       texture.colorSpace = THREE.SRGBColorSpace
+      texture.generateMipmaps = true
+      texture.minFilter = THREE.LinearMipmapLinearFilter
+      texture.magFilter = THREE.LinearFilter
+      // Limit anisotropy for better performance
+      texture.anisotropy = 4
       texture.needsUpdate = true
     }
   }, [texture])

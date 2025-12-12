@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
 
+// Cache boards for 30 seconds (shorter than public workspaces since boards change more frequently)
+export const revalidate = 30
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = supabaseServer()
@@ -74,7 +77,12 @@ export async function GET(request: NextRequest) {
     }))
 
     console.log('Returning boards:', transformedBoards.length)
-    return NextResponse.json({ boards: transformedBoards })
+    const response = NextResponse.json({ boards: transformedBoards })
+    
+    // Add caching headers for better performance
+    response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60')
+    
+    return response
   }
   catch (error: any) {
     console.error('Unexpected error in GET /api/boards:', error)

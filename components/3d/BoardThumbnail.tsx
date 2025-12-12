@@ -80,14 +80,15 @@ function BoardImage({
   
   const texture = useTexture(imageUrl)
   
-  // Configure texture for better quality
+  // Configure texture for better quality and performance
   useEffect(() => {
     if (texture) {
       texture.colorSpace = THREE.SRGBColorSpace
       texture.generateMipmaps = true
       texture.minFilter = THREE.LinearMipmapLinearFilter
       texture.magFilter = THREE.LinearFilter
-      texture.anisotropy = gl.capabilities.getMaxAnisotropy()
+      // Limit anisotropy to 4 for better performance (instead of max)
+      texture.anisotropy = Math.min(4, gl.capabilities.getMaxAnisotropy())
       texture.needsUpdate = true
     }
   }, [texture, gl])

@@ -20,6 +20,17 @@ const nextConfig = {
         pathname: '/storage/v1/object/public/**',
       },
     ],
+    // Optimize images for better performance
+    formats: ['image/avif', 'image/webp'],
+    minimumCacheTTL: 60,
+  },
+  // Enable compression
+  compress: true,
+  // Optimize production builds
+  swcMinify: true,
+  // Reduce bundle size
+  experimental: {
+    optimizePackageImports: ['three', '@react-three/fiber', '@react-three/drei'],
   },
 }
 
