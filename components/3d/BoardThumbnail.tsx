@@ -78,7 +78,19 @@ function BoardImage({
     )
   }
   
-  const texture = useTexture(imageUrl)
+  // Use lazy loading - delay texture loading to avoid blocking initial render
+  const [textureUrl, setTextureUrl] = useState<string | null>(null)
+  
+  // Delay texture loading slightly to avoid blocking initial render
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setTextureUrl(imageUrl)
+    }, 100) // Small delay to let initial render complete
+    return () => clearTimeout(timer)
+  }, [imageUrl])
+  
+  // Always call useTexture (hooks rule), but use placeholder if not ready
+  const texture = useTexture(textureUrl || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
   
   // Configure texture for better quality and performance
   useEffect(() => {
@@ -87,17 +99,21 @@ function BoardImage({
       texture.generateMipmaps = true
       texture.minFilter = THREE.LinearMipmapLinearFilter
       texture.magFilter = THREE.LinearFilter
-      // Limit anisotropy to 4 for better performance (instead of max)
-      texture.anisotropy = Math.min(4, gl.capabilities.getMaxAnisotropy())
+      // Limit anisotropy to 2 for better performance on Vercel (reduced from 4)
+      texture.anisotropy = Math.min(2, gl.capabilities.getMaxAnisotropy())
       texture.needsUpdate = true
     }
   }, [texture, gl])
+  
+  // Show fallback while texture URL is not set
+  const usePlaceholder = textureUrl === null
   
   return (
     <mesh ref={meshRef} castShadow receiveShadow>
       <boxGeometry args={[width, height, BOARD_THICKNESS]} />
       <meshStandardMaterial
-        map={texture}
+        map={usePlaceholder ? undefined : texture}
+        color={usePlaceholder ? '#e5e7eb' : undefined}
         roughness={0.7}
         metalness={0.0}
         emissive={isHighlighted ? '#6366f1' : (hovered ? '#6366f1' : '#000000')}

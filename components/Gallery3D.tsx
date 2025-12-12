@@ -423,8 +423,12 @@ function BoardProximityDetector({
 }) {
   const INTERACTION_DISTANCE = 120 // 120 inches = 10 feet - max distance for interaction
   const { camera, raycaster } = useThree()
+  const frameCount = useRef(0)
   
+  // Throttle to every 3rd frame (20fps instead of 60fps) for better performance
   useFrame(() => {
+    frameCount.current++
+    if (frameCount.current % 3 !== 0) return // Skip 2 out of 3 frames
     // Cast a ray from camera center forward to detect which board is being looked at
     // This matches the blue highlight behavior - board turns blue when in camera view
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera) // Center of screen (0, 0)

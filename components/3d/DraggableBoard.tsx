@@ -32,9 +32,18 @@ function BoardTexture({ imageUrl }: { imageUrl: string }) {
     return <meshStandardMaterial color="#ff4444" side={THREE.DoubleSide} />
   }
   
-  // useTexture can handle both local paths and external URLs (including Supabase)
-  // It needs to be outside try-catch as hooks must be called unconditionally
-  const texture = useTexture(imageUrl)
+  // Lazy load texture to avoid blocking initial render
+  const [textureUrl, setTextureUrl] = useState<string | null>(null)
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setTextureUrl(imageUrl)
+    }, 50) // Small delay for better performance
+    return () => clearTimeout(timer)
+  }, [imageUrl])
+  
+  // Always call useTexture (hooks rule), but use placeholder if not ready
+  const texture = useTexture(textureUrl || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
   
   // Configure texture for performance
   useEffect(() => {
@@ -43,13 +52,19 @@ function BoardTexture({ imageUrl }: { imageUrl: string }) {
       texture.generateMipmaps = true
       texture.minFilter = THREE.LinearMipmapLinearFilter
       texture.magFilter = THREE.LinearFilter
-      // Limit anisotropy for better performance
-      texture.anisotropy = 4
+      // Limit anisotropy to 2 for better performance on Vercel
+      texture.anisotropy = 2
       texture.needsUpdate = true
     }
   }, [texture])
   
-  return <meshStandardMaterial map={texture} side={THREE.DoubleSide} />
+  const usePlaceholder = textureUrl === null
+  
+  return <meshStandardMaterial 
+    map={usePlaceholder ? undefined : texture} 
+    color={usePlaceholder ? '#e5e7eb' : undefined}
+    side={THREE.DoubleSide} 
+  />
 }
 
 export function DraggableBoard({
