@@ -74,7 +74,6 @@ export default function GalleryAvatarModal({ isOpen, onClose, onEnter }: Gallery
                 className="w-28 h-28 rounded-full flex items-center justify-center text-white font-bold text-xl transition-all"
                 style={avatarPreviewStyle}
               >
-                {appearance[0]}
               </div>
               <div className="text-center px-6">
                 <p className="text-sm text-slate-600">Pick a color and vibe for your avatar before entering the 3D gallery.</p>
@@ -99,25 +98,6 @@ export default function GalleryAvatarModal({ isOpen, onClose, onEnter }: Gallery
 
           {/* Right: Form */}
           <div className="md:w-3/5 p-6 space-y-5">
-            <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-2">Appearance</label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {APPEARANCES.map((option) => (
-                  <button
-                    key={option}
-                    onClick={() => setAppearance(option)}
-                    className={`px-4 py-3 rounded-xl border text-sm font-semibold transition-all ${
-                      appearance === option
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm'
-                        : 'border-slate-200 text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/40'
-                    }`}
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-800 mb-2">Department</label>
@@ -146,11 +126,6 @@ export default function GalleryAvatarModal({ isOpen, onClose, onEnter }: Gallery
                   ))}
                 </select>
               </div>
-            </div>
-
-            <div className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/60 text-sm text-indigo-900">
-              <p className="font-semibold">What happens next?</p>
-              <p className="text-indigo-800 mt-1">We will drop you into the new Gallery Mode to explore studios in 3D space.</p>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
