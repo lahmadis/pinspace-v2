@@ -19,6 +19,11 @@ interface DraggableBoardProps {
   onDragEnd: (boardId: string, localX: number, localY: number, width?: number, height?: number) => void
   onDelete: (boardId: string) => void
   onCommentClick?: (board: Board) => void
+  onSelect?: () => void
+  onDeselect?: () => void
+  isSelected?: boolean
+  workspaceId?: string // Workspace/studio ID to check membership
+  isWorkspaceMember?: boolean // Whether user is a member of the workspace
 }
 
 function BoardTexture({ imageUrl }: { imageUrl: string }) {
@@ -27,13 +32,19 @@ function BoardTexture({ imageUrl }: { imageUrl: string }) {
     return <meshStandardMaterial color="#ff4444" side={THREE.DoubleSide} />
   }
   
-  try {
-    const texture = useTexture(imageUrl)
-    texture.colorSpace = THREE.SRGBColorSpace
-    return <meshStandardMaterial map={texture} side={THREE.DoubleSide} />
-  } catch (error) {
-    return <meshStandardMaterial color="#e0e0e0" side={THREE.DoubleSide} />
-  }
+  // useTexture can handle both local paths and external URLs (including Supabase)
+  // It needs to be outside try-catch as hooks must be called unconditionally
+  const texture = useTexture(imageUrl)
+  
+  // Configure texture
+  useEffect(() => {
+    if (texture) {
+      texture.colorSpace = THREE.SRGBColorSpace
+      texture.needsUpdate = true
+    }
+  }, [texture])
+  
+  return <meshStandardMaterial map={texture} side={THREE.DoubleSide} />
 }
 
 export function DraggableBoard({
@@ -45,7 +56,12 @@ export function DraggableBoard({
   initialLocalPosition = { x: 0, y: 0 },
   onDragEnd,
   onDelete,
-  onCommentClick
+  onCommentClick,
+  onSelect,
+  onDeselect,
+  isSelected = false,
+  workspaceId,
+  isWorkspaceMember = false
 }: DraggableBoardProps) {
   const [user, setUser] = useState<any>(null)
   
@@ -61,13 +77,32 @@ export function DraggableBoard({
     return () => subscription.unsubscribe()
   }, [])
   
-  // Check if current user owns this board
+  // Check if current user can edit this board
+  // Can edit if: owns the board OR is a member of the workspace
   const isOwner = !board.ownerId || (user && board.ownerId === user.id)
-  const isLocked = !isOwner
+  const canEdit = isOwner || isWorkspaceMember
+  const isLocked = !canEdit
+  
   const meshRef = useRef<THREE.Mesh>(null)
   const [localPosition, setLocalPosition] = useState(initialLocalPosition)
   const [isHovered, setIsHovered] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  
+  // Debug logging for delete button visibility
+  useEffect(() => {
+    if (isHovered) {
+      console.log('🔍 [DraggableBoard] Hover state:', {
+        boardId: board.id,
+        isHovered,
+        isDragging,
+        isOwner,
+        isLocked,
+        hasOwnerId: !!board.ownerId,
+        userId: user?.id,
+        boardOwnerId: board.ownerId
+      })
+    }
+  }, [isHovered, isDragging, isOwner, isLocked, board.id, board.ownerId, user?.id])
   
   // Store position in ref for immediate access during drag
   const positionRef = useRef(initialLocalPosition)
@@ -99,38 +134,58 @@ export function DraggableBoard({
   
   const { camera, gl, raycaster } = useThree()
   
-  const SCALE = 0.5
+  // Scene scale: 1 unit = 1 inch
+  // So an 8ft × 10ft wall = 96 × 120 units
+  const SCALE = 12 // Convert feet to inches (1 ft = 12 inches)
   const scaledWallWidth = wallDimensions.width * SCALE
   const scaledWallHeight = wallDimensions.height * SCALE
   
-  // Calculate board size based on aspect ratio
-  let boardWidthPercent = localPosition.width ?? 0.25
-  let boardHeightPercent = localPosition.height ?? 0.25
+  // Calculate board size using physical dimensions directly in inches
+  // With 1 unit = 1 inch, physical dimensions map directly to 3D units
+  let boardWidth: number | undefined
+  let boardHeight: number | undefined
   
-  // If board has aspect ratio, calculate proper dimensions
-  if (board.aspectRatio && !localPosition.width) {
-    // Start with a base size (e.g., 25% of wall height)
-    const baseHeightPercent = 0.30 // 30% of wall height as base
-    boardHeightPercent = baseHeightPercent
-    boardWidthPercent = baseHeightPercent * board.aspectRatio * (wallDimensions.height / wallDimensions.width)
+  // First, try to use physical dimensions if available (they represent the actual board size)
+  if (board.physicalWidth && board.physicalHeight) {
+    boardWidth = board.physicalWidth  // Direct: inches → units
+    boardHeight = board.physicalHeight // Direct: inches → units
     
-    // Clamp to reasonable sizes
-    const maxWidthPercent = 0.45
-    const maxHeightPercent = 0.50
-    if (boardWidthPercent > maxWidthPercent) {
-      const scale = maxWidthPercent / boardWidthPercent
-      boardWidthPercent = maxWidthPercent
-      boardHeightPercent = boardHeightPercent * scale
-    }
-    if (boardHeightPercent > maxHeightPercent) {
-      const scale = maxHeightPercent / boardHeightPercent
-      boardHeightPercent = maxHeightPercent
-      boardWidthPercent = boardWidthPercent * scale
+    // Clamp to ensure board doesn't exceed wall size
+    const wallWidthInches = wallDimensions.width * 12
+    const wallHeightInches = wallDimensions.height * 12
+    boardWidth = Math.min(boardWidth, wallWidthInches)
+    boardHeight = Math.min(boardHeight, wallHeightInches)
+    
+    console.log(`📐 [DraggableBoard] Using physical dimensions: ${board.physicalWidth}" x ${board.physicalHeight}" = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
+  }
+  
+  // Fallback for existing boards without physical dimensions: default to 8.5×11 inches (standard letter size)
+  if (boardWidth === undefined || boardHeight === undefined) {
+    const DEFAULT_WIDTH_INCHES = 8.5
+    const DEFAULT_HEIGHT_INCHES = 11
+    
+    // Try to use saved percentage dimensions if available
+    if (localPosition.width && localPosition.height) {
+      const wallWidthInches = wallDimensions.width * 12
+      const wallHeightInches = wallDimensions.height * 12
+      boardWidth = localPosition.width * wallWidthInches
+      boardHeight = localPosition.height * wallHeightInches
+      console.log(`📐 [DraggableBoard] Using saved percentage dimensions: ${(localPosition.width * 100).toFixed(1)}% x ${(localPosition.height * 100).toFixed(1)}% = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
+    } else {
+      // Final fallback: use default 8.5×11 inches
+      boardWidth = DEFAULT_WIDTH_INCHES
+      boardHeight = DEFAULT_HEIGHT_INCHES
+      console.log(`📐 [DraggableBoard] No dimensions found - using default: ${DEFAULT_WIDTH_INCHES}" x ${DEFAULT_HEIGHT_INCHES}" = ${boardWidth} x ${boardHeight} units`)
     }
   }
   
-  const boardWidth = scaledWallWidth * boardWidthPercent
-  const boardHeight = scaledWallHeight * boardHeightPercent
+  // Ensure we have valid dimensions
+  if (boardWidth === undefined || boardHeight === undefined || boardWidth <= 0 || boardHeight <= 0) {
+    // Final safety fallback
+    boardWidth = 8.5
+    boardHeight = 11
+    console.warn(`⚠️ [DraggableBoard] Invalid dimensions for board ${board.id} - using default 8.5×11"`)
+  }
 
   const updatePosition = (clientX: number, clientY: number) => {
     const wallNormal = new THREE.Vector3(
@@ -157,8 +212,17 @@ export function DraggableBoard({
       const localX = localOffset.x * cosR - localOffset.z * sinR
       const localY = localOffset.y
       
-      let normalizedX = THREE.MathUtils.clamp(localX / scaledWallWidth, -0.5, 0.5)
-      let normalizedY = THREE.MathUtils.clamp(localY / scaledWallHeight, -0.5, 0.5)
+      // Apply drag offset so board follows cursor from where it was clicked
+      // The offset is stored in wall space (inches), so we can subtract directly
+      const offsetX = dragOffset.current ? dragOffset.current.x : 0
+      const offsetY = dragOffset.current ? dragOffset.current.y : 0
+      
+      // Subtract offset so the click point stays under the cursor
+      const adjustedX = localX - offsetX
+      const adjustedY = localY - offsetY
+      
+      let normalizedX = THREE.MathUtils.clamp(adjustedX / scaledWallWidth, -0.5, 0.5)
+      let normalizedY = THREE.MathUtils.clamp(adjustedY / scaledWallHeight, -0.5, 0.5)
 
       const newPos = {
         x: normalizedX,
@@ -179,15 +243,69 @@ export function DraggableBoard({
     onDragEndRef.current = onDragEnd
   }, [onDragEnd])
   
+  // Track if we actually dragged (to distinguish click from drag)
+  const dragStartPosition = useRef<{ x: number; y: number } | null>(null)
+  // Track the offset from click point to board center (in local board space)
+  const dragOffset = useRef<{ x: number; y: number } | null>(null)
+  
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
     console.log('🖱️ POINTER DOWN on board:', board.id)
     console.log('🖱️ onDragEnd function exists:', typeof onDragEnd === 'function')
     e.stopPropagation()
     
+    // Store initial position to detect if this is a drag or just a click
+    dragStartPosition.current = { x: e.clientX, y: e.clientY }
+    
+    // Calculate offset from click point to board center (in local board space)
+    // The intersection point is in world space, we need to convert to local board space
+    if (e.intersections && e.intersections.length > 0) {
+      const intersection = e.intersections[0]
+      const worldClickPoint = intersection.point
+      
+      // Calculate current board position in world space
+      const currentBoardX = localPosition.x * scaledWallWidth
+      const currentBoardY = localPosition.y * scaledWallHeight
+      const currentBoardZ = 2.2 // Board is clearly in front of wall (wall depth is 4 inches)
+      
+      // Transform to board's local space (accounting for wall rotation and position)
+      const boardWorldPosition = new THREE.Vector3(
+        wallPosition.x + currentBoardX,
+        wallPosition.y + currentBoardY,
+        wallPosition.z + currentBoardZ
+      )
+      
+      // Get the offset from board center to click point in world space
+      const offset = new THREE.Vector3()
+      offset.copy(worldClickPoint).sub(boardWorldPosition)
+      
+      // Rotate offset to board's local space (inverse of wall rotation)
+      const cosR = Math.cos(-wallRotation)
+      const sinR = Math.sin(-wallRotation)
+      const localOffsetX = offset.x * cosR - offset.z * sinR
+      const localOffsetY = offset.y
+      
+      // Store offset in wall space (inches), not normalized
+      dragOffset.current = {
+        x: localOffsetX,
+        y: localOffsetY
+      }
+      
+      console.log('📍 Drag offset calculated:', dragOffset.current, 'board size:', boardWidth, boardHeight)
+    } else {
+      // Fallback: no offset if we can't calculate it
+      dragOffset.current = { x: 0, y: 0 }
+    }
+    
     // Prevent dragging if board is locked
     if (isLocked) {
       console.log('🔒 Board is locked - cannot drag')
       return
+    }
+    
+    // Deselect board when starting to drag
+    if (onDeselect && isSelected) {
+      console.log('🖱️ [DraggableBoard] Deselecting board because drag started')
+      onDeselect()
     }
     
     setIsDragging(true)
@@ -203,6 +321,23 @@ export function DraggableBoard({
       console.log('🖱️🖱️🖱️ POINTER UP FIRED! board:', board.id)
       console.log('🖱️🖱️🖱️ Current positionRef:', JSON.stringify(positionRef.current))
       gl.domElement.style.cursor = 'grab'
+      
+      // Check if this was a click (no significant movement) or a drag
+      const wasClick = dragStartPosition.current && 
+        Math.abs(e.clientX - dragStartPosition.current.x) < 5 && 
+        Math.abs(e.clientY - dragStartPosition.current.y) < 5
+      
+      console.log('🖱️ [DraggableBoard] Pointer up - wasClick:', wasClick, 'onSelect exists:', !!onSelect, 'movement:', dragStartPosition.current ? {
+        x: Math.abs(e.clientX - dragStartPosition.current.x),
+        y: Math.abs(e.clientY - dragStartPosition.current.y)
+      } : 'no start pos')
+      
+      // If it was just a click (no significant movement), select the board
+      // wasClick being true means there was minimal movement, so it's a click, not a drag
+      if (wasClick && onSelect) {
+        console.log('🖱️ Click detected (not drag) - selecting board:', board.id)
+        onSelect()
+      }
       
       // Mark that we just finished dragging to prevent sync from resetting position
       justFinishedDragging.current = true
@@ -228,6 +363,8 @@ export function DraggableBoard({
       
       // Then update local dragging state
       setIsDragging(false)
+      dragStartPosition.current = null
+      dragOffset.current = null // Clear drag offset
       
       // Clean up listeners
       window.removeEventListener('pointermove', handleMove)
@@ -240,37 +377,54 @@ export function DraggableBoard({
 
   const handleDeleteClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
-    const confirmed = window.confirm('Remove this board from the wall?')
-    if (confirmed) {
-      onDelete(board.id)
-    }
+    onDelete(board.id)
   }
 
-  const getWorldPosition = (localX: number, localY: number): THREE.Vector3 => {
-    const offsetX = localX * scaledWallWidth
-    const offsetY = localY * scaledWallHeight
-    const offsetZ = 0.1
-    
-    const localOffset = new THREE.Vector3(offsetX, offsetY, offsetZ)
-    localOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), wallRotation)
-    
-    return wallPosition.clone().add(localOffset)
-  }
-
-  const worldPosition = getWorldPosition(localPosition.x, localPosition.y)
+  // Calculate board position in wall's local space (matching WallSystem approach)
+  // Boards are positioned in a group that's rotated with the wall
+  const boardX = localPosition.x * scaledWallWidth
+  const boardY = localPosition.y * scaledWallHeight
+  // Check board's side property to determine which side of wall to place it on
+  // If no side specified, default to front (for backwards compatibility)
+  const boardSide = board.position?.side || 'front'
+  // Wall depth is 4 inches, so place boards at 2.2 (half wall depth + small offset) to be clearly in front
+  const boardZ = boardSide === 'back' ? -2.2 : 2.2
+  const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
   const hasImage = board.fullImageUrl || board.thumbnailUrl
   const imageUrl = board.fullImageUrl || board.thumbnailUrl || ''
   const isPDF = imageUrl.toLowerCase().endsWith('.pdf')
+  
+  // Debug: Log image URL for newly uploaded boards
+  useEffect(() => {
+    if (!hasImage) {
+      console.warn('⚠️ [DraggableBoard] Board has no image URL:', board.id, {
+        fullImageUrl: board.fullImageUrl,
+        thumbnailUrl: board.thumbnailUrl
+      })
+    } else {
+      console.log('🖼️ [DraggableBoard] Rendering board with image:', board.id, imageUrl)
+    }
+  }, [board.id, hasImage, imageUrl, board.fullImageUrl, board.thumbnailUrl])
 
-  const deleteButtonSize = Math.min(boardWidth, boardHeight) * 0.15
+  // Calculate delete button size and position
+  // With 1 unit = 1 inch scale, boards are much larger, so button should scale appropriately
+  const deleteButtonSize = Math.min(boardWidth, boardHeight) * 0.12 // Slightly smaller relative size
   const deleteButtonX = boardWidth / 2 - deleteButtonSize / 2 - deleteButtonSize * 0.3
   const deleteButtonY = boardHeight / 2 - deleteButtonSize / 2 - deleteButtonSize * 0.3
 
+  // Position the group at the wall position, then position board within group's local space
   return (
-    <group position={worldPosition} rotation={[0, wallRotation, 0]}>
+    <group position={wallPosition} rotation={[0, wallRotation, 0]}>
+      <group position={[boardX, boardY, boardZ]}>
       <mesh
         ref={meshRef}
         onPointerDown={handlePointerDown}
+        onClick={(e) => {
+          // Stop propagation so the invisible wall plane doesn't get the click
+          e.stopPropagation()
+        }}
+        // Make sure boards render in front of the invisible wall plane
+        renderOrder={1}
         onPointerOver={(e) => {
           console.log('🖱️ HOVER detected on board:', board.id)
           e.stopPropagation()
@@ -285,81 +439,48 @@ export function DraggableBoard({
           if (!isDragging) gl.domElement.style.cursor = 'default'
         }}
       >
-        <planeGeometry args={[boardWidth, boardHeight]} />
+        {/* Use boxGeometry instead of planeGeometry to give boards thickness */}
+        <boxGeometry args={[boardWidth, boardHeight, BOARD_THICKNESS]} />
         {isPDF ? (
-          <Suspense fallback={<meshStandardMaterial color="#f3f4f6" side={THREE.DoubleSide} />}>
+          <Suspense fallback={<meshStandardMaterial color="#f3f4f6" />}>
             <PDFTextureMaterial pdfUrl={imageUrl} hovered={isHovered} />
           </Suspense>
         ) : hasImage ? (
-          <Suspense fallback={<meshStandardMaterial color="#cccccc" side={THREE.DoubleSide} />}>
+          <Suspense fallback={<meshStandardMaterial color="#cccccc" />}>
             <BoardTexture imageUrl={imageUrl} />
           </Suspense>
         ) : (
           <meshStandardMaterial 
             color={isHovered ? "#f8f8f8" : "#ffffff"} 
-            side={THREE.DoubleSide}
             emissive={isHovered ? "#444444" : "#000000"}
             emissiveIntensity={0.1}
           />
         )}
       </mesh>
       
-      <lineSegments position={[0, 0, 0.001]}>
-        <edgesGeometry args={[new THREE.PlaneGeometry(boardWidth, boardHeight)]} />
+      {/* Border edges for the box geometry */}
+      <lineSegments position={[0, 0, 0]}>
+        <edgesGeometry args={[new THREE.BoxGeometry(boardWidth, boardHeight, BOARD_THICKNESS)]} />
         <lineBasicMaterial 
           color={
-            isLocked 
-              ? (isHovered ? "#999999" : "#666666")  // Gray for locked boards
-              : (isHovered ? "#4444ff" : "#333333")  // Blue for owned boards
+            isSelected
+              ? "#4444ff"  // Blue border when selected (indicates it can be deleted with backspace)
+              : isLocked 
+                ? (isHovered ? "#999999" : "#666666")  // Gray for locked boards
+                : (isHovered ? "#4444ff" : "#333333")  // Blue for owned boards
           } 
-          linewidth={2} 
+          linewidth={isSelected ? 5 : 2} 
         />
       </lineSegments>
-
-      {/* Delete button - Only show for owned boards */}
-      {isHovered && !isDragging && isOwner && (
-        <Html
-          position={[deleteButtonX, deleteButtonY, 0.1]}
-          center
-          distanceFactor={10}
-          style={{ pointerEvents: 'auto' }}
-        >
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              const confirmed = window.confirm('Remove this board from the wall?')
-              if (confirmed) {
-                onDelete(board.id)
-              }
-            }}
-            onMouseEnter={() => {
-              gl.domElement.style.cursor = 'pointer'
-            }}
-            onMouseLeave={() => {
-              gl.domElement.style.cursor = 'grab'
-            }}
-            style={{
-              width: '28px',
-              height: '28px',
-              borderRadius: '50%',
-              backgroundColor: '#ef4444',
-              border: 'none',
-              color: 'white',
-              fontSize: '18px',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-              transition: 'transform 0.1s',
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            ×
-          </button>
-        </Html>
+      
+      {/* Additional thicker border for selected state */}
+      {isSelected && (
+        <lineSegments position={[0, 0, 0]}>
+          <edgesGeometry args={[new THREE.BoxGeometry(boardWidth + 0.3, boardHeight + 0.3, BOARD_THICKNESS + 0.02)]} />
+          <lineBasicMaterial color="#4444ff" linewidth={3} />
+        </lineSegments>
       )}
+
 
       {/* Lock icon - Show for boards not owned by current user */}
       {isHovered && !isDragging && isLocked && (
@@ -408,27 +529,35 @@ export function DraggableBoard({
       )}
 
       {/* Owner name tooltip - only show on hover */}
-      {isHovered && board.ownerName && !isDragging && (
-        <Html
-          position={[0, -boardHeight / 2 - 0.05, 0.01]}
-          center
-          distanceFactor={10}
-          style={{ pointerEvents: 'none' }}
-        >
-          <div style={{
-            background: 'rgba(0, 0, 0, 0.8)',
-            color: 'white',
-            padding: '6px 12px',
-            borderRadius: '6px',
-            fontSize: '12px',
-            fontWeight: 500,
-            whiteSpace: 'nowrap',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-          }}>
-            {board.ownerName}
-          </div>
-        </Html>
-      )}
+      {(() => {
+        // Get the display name: prefer studentName, fallback to ownerName
+        // Only show if we have a valid name (not empty, "Anonymous", or "Uploaded Board")
+        const displayName = (board.studentName && board.studentName !== 'Anonymous' && board.studentName !== 'Uploaded Board'
+          ? board.studentName 
+          : (board.ownerName && board.ownerName !== 'Anonymous' && board.ownerName !== 'Uploaded Board' ? board.ownerName : null))
+        
+        return isHovered && displayName && !isDragging ? (
+          <Html
+            position={[0, -boardHeight / 2 - 0.05, 0.01]}
+            center
+            distanceFactor={10}
+            style={{ pointerEvents: 'none' }}
+          >
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.8)',
+              color: 'white',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 500,
+              whiteSpace: 'nowrap',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}>
+              {displayName}
+            </div>
+          </Html>
+        ) : null
+      })()}
 
       {/* Comment Count Bubble - Clean minimal design */}
       {board.comments && board.comments.length > 0 && onCommentClick && !isDragging && (
@@ -466,6 +595,7 @@ export function DraggableBoard({
           </Text>
         </group>
       )}
+      </group>
     </group>
   )
 }

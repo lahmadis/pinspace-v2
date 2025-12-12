@@ -69,6 +69,8 @@ export async function GET(request: NextRequest) {
       originalWidth: board.original_width,
       originalHeight: board.original_height,
       aspectRatio: board.aspect_ratio ? parseFloat(board.aspect_ratio) : undefined,
+      physicalWidth: board.physical_width ? parseFloat(board.physical_width) : undefined,
+      physicalHeight: board.physical_height ? parseFloat(board.physical_height) : undefined,
     }))
 
     console.log('Returning boards:', transformedBoards.length)
@@ -131,12 +133,51 @@ export async function PUT(request: NextRequest) {
     if (board.studentName) updateData.student_name = board.studentName
     if (board.studentEmail) updateData.student_email = board.studentEmail
 
-    // Update board in Supabase
+    // Check if user is a member of the workspace (owner or member)
+    // First, get the board to find its workspace
+    const { data: boardData, error: boardFetchError } = await supabase
+      .from('boards')
+      .select('workspace_id, owner_id')
+      .eq('id', board.id)
+      .single()
+
+    if (boardFetchError || !boardData) {
+      console.error('❌ [API] Board not found:', boardFetchError)
+      return NextResponse.json({ error: 'Board not found' }, { status: 404 })
+    }
+
+    // Check if user owns the workspace
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('owner_id')
+      .eq('id', boardData.workspace_id)
+      .single()
+
+    const isWorkspaceOwner = workspace?.owner_id === userId
+
+    // Check if user is a member of the workspace
+    const { data: membership } = await supabase
+      .from('workspace_members')
+      .select('*')
+      .eq('workspace_id', boardData.workspace_id)
+      .eq('user_id', userId)
+      .single()
+
+    // Allow if: user owns the board OR user is a member of the workspace
+    const canEdit = boardData.owner_id === userId || isWorkspaceOwner || membership
+
+    if (!canEdit) {
+      console.error('❌ [API] User not authorized to edit this board')
+      return NextResponse.json({ 
+        error: 'Not authorized to edit this board. You must be a member of the workspace.' 
+      }, { status: 403 })
+    }
+
+    // Update board in Supabase (remove owner_id restriction since workspace members can edit)
     const { data: updatedBoard, error } = await supabase
       .from('boards')
       .update(updateData)
       .eq('id', board.id)
-      .eq('owner_id', userId) // Ensure user owns the board
       .select()
       .single()
 
@@ -149,7 +190,7 @@ export async function PUT(request: NextRequest) {
     }
 
     if (!updatedBoard) {
-      return NextResponse.json({ error: 'Board not found or unauthorized' }, { status: 404 })
+      return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
 
     console.log('✅ [API] Successfully updated board:', board.id)
@@ -214,12 +255,52 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'boardId required' }, { status: 400 })
     }
 
-    // Delete board from Supabase (RLS will ensure user owns it)
+    // Check if user is a member of the workspace before allowing delete
+    // First, get the board to find its workspace
+    const { data: boardData, error: boardFetchError } = await supabase
+      .from('boards')
+      .select('workspace_id, owner_id, owner_name')
+      .eq('id', boardId)
+      .single()
+
+    if (boardFetchError || !boardData) {
+      console.error('❌ [API] Board not found:', boardFetchError)
+      return NextResponse.json({ error: 'Board not found' }, { status: 404 })
+    }
+
+    // Check if user owns the workspace
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('owner_id')
+      .eq('id', boardData.workspace_id)
+      .single()
+
+    const isWorkspaceOwner = workspace?.owner_id === userId
+
+    // Check if user is a member of the workspace
+    const { data: membership } = await supabase
+      .from('workspace_members')
+      .select('*')
+      .eq('workspace_id', boardData.workspace_id)
+      .eq('user_id', userId)
+      .single()
+
+    // Allow delete if: user owns the board OR user is a member of the workspace
+    const canDelete = boardData.owner_id === userId || isWorkspaceOwner || membership
+
+    if (!canDelete) {
+      console.error('❌ [API] User not authorized to delete this board')
+      return NextResponse.json({ 
+        error: 'Not authorized to delete this board',
+        ownerName: boardData.owner_name || undefined
+      }, { status: 403 })
+    }
+
+    // Delete board from Supabase (workspace members can delete)
     const { error } = await supabase
       .from('boards')
       .delete()
       .eq('id', boardId)
-      .eq('owner_id', userId)
 
     if (error) {
       console.error('Error deleting board:', error)

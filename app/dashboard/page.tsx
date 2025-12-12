@@ -110,13 +110,6 @@ export default function DashboardPage() {
             <h1 className="text-2xl font-bold text-gray-900">PinSpace</h1>
             <p className="text-sm text-gray-600">3D Studio Network</p>
           </Link>
-          
-          <button
-            onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')}
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-          >
-            Sign Out
-          </button>
         </div>
       </div>
 
@@ -239,12 +232,40 @@ export default function DashboardPage() {
                         Open Studio
                       </Link>
                       {isOwner && (
-                        <Link
-                          href={`/workspace/${workspace.id}/settings`}
-                          className="block w-full px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-semibold text-center"
-                        >
-                          Settings
-                        </Link>
+                        <>
+                          <Link
+                            href={`/workspace/${workspace.id}/settings`}
+                            className="block w-full px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-semibold text-center"
+                          >
+                            Settings
+                          </Link>
+                          <button
+                            onClick={async (e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              if (confirm(`Are you sure you want to delete "${workspace.name}"? This action cannot be undone and will delete all boards in this studio.`)) {
+                                try {
+                                  const res = await fetch(`/api/workspaces/${workspace.id}`, {
+                                    method: 'DELETE'
+                                  })
+                                  if (res.ok) {
+                                    // Refresh the workspaces list
+                                    fetchUserStudios()
+                                  } else {
+                                    const error = await res.json()
+                                    alert(`Failed to delete studio: ${error.error || 'Unknown error'}`)
+                                  }
+                                } catch (err) {
+                                  console.error('Error deleting workspace:', err)
+                                  alert('Failed to delete studio. Please try again.')
+                                }
+                              }
+                            }}
+                            className="block w-full px-4 py-3 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors font-semibold text-center"
+                          >
+                            Delete Studio
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>

@@ -115,3 +115,86 @@ export async function GET(
   }
 }
 
+// DELETE workspace
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = supabaseServer()
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+    
+    if (sessionError) {
+      console.error('Session error:', sessionError)
+      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+    }
+    
+    const userId = session?.user?.id
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const workspaceId = params.id
+    console.log('Deleting workspace:', workspaceId)
+
+    // Fetch workspace to check ownership
+    const { data: workspace, error: fetchError } = await supabase
+      .from('workspaces')
+      .select('*')
+      .eq('id', workspaceId)
+      .single()
+
+    if (fetchError || !workspace) {
+      console.error('Error fetching workspace:', fetchError)
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+
+    // Check if user owns the workspace
+    const isOwner = workspace.owner_id === userId
+    
+    if (!isOwner) {
+      return NextResponse.json({ 
+        error: 'Only workspace owners can delete workspaces' 
+      }, { status: 403 })
+    }
+
+    // Delete all workspace members first (cascade delete should handle this, but being explicit)
+    const { error: membersError } = await supabase
+      .from('workspace_members')
+      .delete()
+      .eq('workspace_id', workspaceId)
+
+    if (membersError) {
+      console.error('Error deleting workspace members:', membersError)
+      // Continue with workspace deletion even if member deletion fails
+    }
+
+    // Delete the workspace
+    const { error: deleteError } = await supabase
+      .from('workspaces')
+      .delete()
+      .eq('id', workspaceId)
+      .eq('owner_id', userId) // Double-check ownership
+
+    if (deleteError) {
+      console.error('Error deleting workspace:', deleteError)
+      return NextResponse.json({ 
+        error: 'Failed to delete workspace', 
+        details: deleteError.message || deleteError 
+      }, { status: 500 })
+    }
+
+    console.log('✅ [API] Workspace deleted:', workspaceId)
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('Unexpected error deleting workspace:', error)
+    return NextResponse.json({ 
+      error: 'Internal Server Error', 
+      details: error?.message || String(error) 
+    }, { status: 500 })
+  }
+}
+

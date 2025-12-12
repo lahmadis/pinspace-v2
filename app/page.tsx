@@ -137,12 +137,6 @@ export default function Home() {
                 <span className="relative z-10">Enter the Network</span>
               </button>
             </Link>
-            
-            <Link href="/upload">
-              <button className="px-8 py-4 bg-background-card border border-primary text-primary hover:bg-primary hover:text-white rounded-lg font-medium transition-all duration-300 hover:scale-105 min-w-[200px]">
-                Upload Your Board
-              </button>
-            </Link>
 
             <button
               onClick={() => setShowGalleryModal(true)}

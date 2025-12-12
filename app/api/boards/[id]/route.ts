@@ -69,6 +69,8 @@ export async function GET(
       originalWidth: board.original_width,
       originalHeight: board.original_height,
       aspectRatio: board.aspect_ratio ? parseFloat(board.aspect_ratio) : undefined,
+      physicalWidth: board.physical_width ? parseFloat(board.physical_width) : undefined,
+      physicalHeight: board.physical_height ? parseFloat(board.physical_height) : undefined,
     }
 
     return NextResponse.json({ board: transformedBoard })

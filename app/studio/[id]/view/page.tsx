@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
@@ -22,27 +22,82 @@ interface WallConfig {
 
 export default function StudioViewPage() {
   const params = useParams()
+  const searchParams = useSearchParams()
   const studioId = params.id as string
   
   const [boards, setBoards] = useState<Board[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null)
+  const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
 
-  // Wall configuration (same as edit mode)
-  const wallConfig: WallConfig = {
-    walls: [
-      { height: 10, width: 8 },
-      { height: 10, width: 8 },
-      { height: 10, width: 8 },
-      { height: 10, width: 8 }
-    ],
-    layoutType: 'zigzag'
-  }
+  // Load wall config
+  useEffect(() => {
+    const loadWallConfig = async () => {
+      try {
+        // Try API first
+        const resConfig = await fetch(`/api/studios/${studioId}/wall-config`)
+        if (resConfig.ok) {
+          const data = await resConfig.json()
+          if (data?.config) {
+            setWallConfig(data.config)
+            return
+          }
+        }
+      } catch (e) {
+        console.warn('Wall config API fetch failed, falling back to localStorage', e)
+      }
+
+      // Fallback: localStorage
+      const savedConfigKey = `studio-${studioId}-wall-config`
+      const savedConfig = localStorage.getItem(savedConfigKey)
+      if (savedConfig) {
+        setWallConfig(JSON.parse(savedConfig))
+      } else {
+        // Default config
+        setWallConfig({
+          walls: [
+            { height: 10, width: 8 },
+            { height: 10, width: 8 },
+            { height: 10, width: 8 },
+            { height: 10, width: 8 }
+          ],
+          layoutType: 'zigzag'
+        })
+      }
+    }
+    loadWallConfig()
+  }, [studioId])
 
   useEffect(() => {
     fetchBoards()
   }, [studioId])
+  
+  // Open board from URL query param after boards are loaded
+  useEffect(() => {
+    const boardIdFromUrl = searchParams.get('boardId')
+    if (boardIdFromUrl && boards.length > 0) {
+      console.log('🔍 [View Mode] Looking for board with ID:', boardIdFromUrl)
+      console.log('📋 [View Mode] Available boards:', boards.map(b => ({ id: b.id, title: b.title })))
+      const boardToOpen = boards.find(b => b.id === boardIdFromUrl)
+      if (boardToOpen) {
+        // Only update if it's a different board
+        if (!selectedBoard || selectedBoard.id !== boardToOpen.id) {
+          console.log('✅ [View Mode] Found and opening board:', boardToOpen.title, boardToOpen.id)
+          setSelectedBoard(boardToOpen)
+        }
+      } else {
+        console.warn('⚠️ [View Mode] Board not found with ID:', boardIdFromUrl)
+        // Clear selection if board not found
+        if (selectedBoard) {
+          setSelectedBoard(null)
+        }
+      }
+    } else if (!boardIdFromUrl && selectedBoard) {
+      // Clear selection if no boardId in URL
+      setSelectedBoard(null)
+    }
+  }, [boards, searchParams])
 
   const fetchBoards = async () => {
     try {
@@ -120,17 +175,17 @@ export default function StudioViewPage() {
   return (
     <div className="relative w-full h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Top Navigation Bar */}
-      <div className="absolute top-0 left-0 right-0 z-10 bg-white/90 backdrop-blur-sm border-b border-gray-200">
+      <div className="absolute top-0 left-0 right-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link 
-              href={`/studio/${studioId}`}
+              href={searchParams.get('returnTo') === 'gallery' ? '/gallery' : '/explore'}
               className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
             >
               <svg className="w-5 h-5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
                 <path d="M15 19l-7-7 7-7"></path>
               </svg>
-              <span className="font-medium">Back to Edit</span>
+              <span className="font-medium">Back to {searchParams.get('returnTo') === 'gallery' ? 'Gallery' : 'Network'}</span>
             </Link>
           </div>
 
@@ -141,13 +196,6 @@ export default function StudioViewPage() {
             </div>
             <div className="w-px h-6 bg-gray-300"></div>
             <span className="text-sm text-gray-500">{boards.length} boards</span>
-            <div className="w-px h-6 bg-gray-300"></div>
-            <button
-              onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')}
-              className="bg-white rounded-lg shadow-lg px-4 py-2 border border-gray-200 hover:bg-gray-50 transition-colors text-sm font-medium"
-            >
-              Sign Out
-            </button>
           </div>
         </div>
       </div>
@@ -171,31 +219,56 @@ export default function StudioViewPage() {
         <directionalLight position={[-10, 10, -5]} intensity={0.4} />
         
         {/* Wall System with Boards */}
-        <WallSystem 
-          boards={boards} 
-          wallConfig={wallConfig}
-          onWallClick={() => {}} // No wall click in view mode
-          editingWall={null}
-          onBoardClick={handleBoardClick}
-        />
+        {wallConfig && (
+          <WallSystem 
+            boards={boards} 
+            wallConfig={wallConfig}
+            onWallClick={() => {}} // No wall click in view mode
+            editingWall={null}
+            onBoardClick={handleBoardClick}
+          />
+        )}
         
-        {/* Camera Controls */}
-        <OrbitControls 
-          enableDamping
-          dampingFactor={0.05}
-          minDistance={3}
-          maxDistance={20}
-          maxPolarAngle={Math.PI / 2}
-          enablePan={true}
-          enableRotate={true}
-          enableZoom={true}
-        />
-        
-        <PerspectiveCamera 
-          makeDefault 
-          position={[0, 3.2, 7]} 
-          fov={35}
-        />
+        {/* Camera Controls - scaled based on wall dimensions */}
+        {(() => {
+          // Find the largest wall dimension to scale camera controls
+          const maxWallWidth = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.width)) : 8
+          const maxWallHeight = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.height)) : 10
+          const maxDimension = Math.max(maxWallWidth, maxWallHeight) // in feet
+          
+          // Scale camera controls based on wall size
+          // Base scale: for 8ft walls, we use 50-800 inches
+          // For larger walls, scale proportionally
+          const scaleFactor = maxDimension / 8 // 8ft is our baseline
+          const minDistance = 50 * scaleFactor   // Scale minimum zoom
+          const maxDistance = 800 * scaleFactor   // Scale maximum zoom
+          const targetHeight = 50 * scaleFactor   // Scale target height
+          const cameraHeight = 50 * scaleFactor   // Scale camera height
+          const cameraDistance = 80 * scaleFactor // Scale camera distance
+          
+          return (
+            <>
+              <OrbitControls 
+                enableDamping
+                dampingFactor={0.05}
+                minDistance={minDistance}   // Scaled minimum zoom
+                maxDistance={maxDistance}   // Scaled maximum zoom
+                maxPolarAngle={Math.PI / 2}
+                minPolarAngle={Math.PI / 6}  // Prevent looking from too high above (30 degrees minimum)
+                enablePan={true}
+                enableRotate={true}
+                enableZoom={true}
+                target={[0, targetHeight, 0]}  // Scaled target height
+              />
+              
+              <PerspectiveCamera 
+                makeDefault 
+                position={[0, cameraHeight, cameraDistance]}  // Scaled camera position
+                fov={50}  // Wider FOV to see more of the room
+              />
+            </>
+          )
+        })()}
       </Canvas>
 
       {/* Lightbox Modal */}

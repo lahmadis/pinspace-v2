@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useState, useRef, useEffect, Suspense } from 'react'
-import { useRouter } from 'next/navigation'
 import { Board } from '@/types'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
@@ -61,16 +60,18 @@ function BoardImage({
   meshRef: React.RefObject<THREE.Mesh>
 }) {
   const { gl } = useThree()
+  const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
+  
   // Handle PDFs - show red placeholder
   if (imageUrl.toLowerCase().endsWith('.pdf')) {
     return (
       <mesh ref={meshRef} castShadow receiveShadow>
-        <planeGeometry args={[width, height]} />
+        <boxGeometry args={[width, height, BOARD_THICKNESS]} />
         <meshStandardMaterial
           color="#ff4444"
           roughness={0.7}
           metalness={0.0}
-          emissive={isHighlighted ? '#ef4444' : (hovered ? '#6366f1' : '#000000')}
+          emissive={isHighlighted ? '#6366f1' : (hovered ? '#6366f1' : '#000000')}
           emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
         />
       </mesh>
@@ -90,15 +91,15 @@ function BoardImage({
       texture.needsUpdate = true
     }
   }, [texture, gl])
-
+  
   return (
     <mesh ref={meshRef} castShadow receiveShadow>
-      <planeGeometry args={[width, height]} />
+      <boxGeometry args={[width, height, BOARD_THICKNESS]} />
       <meshStandardMaterial
         map={texture}
         roughness={0.7}
         metalness={0.0}
-        emissive={isHighlighted ? '#ef4444' : (hovered ? '#6366f1' : '#000000')}
+        emissive={isHighlighted ? '#6366f1' : (hovered ? '#6366f1' : '#000000')}
         emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
       />
     </mesh>
@@ -121,6 +122,8 @@ function BoardFallback({
   isHighlighted?: boolean
   meshRef: React.RefObject<THREE.Mesh>
 }) {
+  const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
+  
   // Generate a unique color based on board ID
   const getColorFromId = (id: string) => {
     const hash = id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
@@ -130,12 +133,12 @@ function BoardFallback({
 
   return (
     <mesh ref={meshRef} castShadow receiveShadow>
-      <planeGeometry args={[width, height]} />
+      <boxGeometry args={[width, height, BOARD_THICKNESS]} />
       <meshStandardMaterial
         color={hovered ? '#e0e7ff' : getColorFromId(boardId)}
         roughness={0.7}
         metalness={0.0}
-        emissive={isHighlighted ? '#ef4444' : (hovered ? '#6366f1' : '#000000')}
+        emissive={isHighlighted ? '#6366f1' : (hovered ? '#6366f1' : '#000000')}
         emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
       />
     </mesh>
@@ -160,31 +163,39 @@ function BoardPDF({
   isHighlighted?: boolean
   meshRef: React.RefObject<THREE.Mesh>
 }) {
+  const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
   return (
     <mesh ref={meshRef} castShadow receiveShadow>
-      <planeGeometry args={[width, height]} />
+      <boxGeometry args={[width, height, BOARD_THICKNESS]} />
       <PDFTextureMaterial pdfUrl={pdfUrl} hovered={hovered} />
     </mesh>
   )
 }
 
 export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted }: BoardThumbnailProps) {
-  const router = useRouter()
   const [hovered, setHovered] = useState(false)
   const [stickyHovered, setStickyHovered] = useState(false)
   const [showComments, setShowComments] = useState(false)
   const meshRef = useRef<THREE.Mesh>(null)
   const stickyRef = useRef<THREE.Group>(null)
+  
+  // Combined hover state: true if pointer hovered OR board is highlighted (in camera view)
+  const isHovered = hovered || !!isHighlighted
 
   // Check if we have a valid image URL
   const imageUrl = board.fullImageUrl || board.thumbnailUrl
   const isPDF = imageUrl?.toLowerCase().endsWith('.pdf')
-  const hasValidImage = imageUrl && imageUrl.startsWith('/uploads/') && !isPDF
+  // Allow both local /uploads/ paths and external URLs (e.g., Supabase storage)
+  const hasValidImage = imageUrl && (
+    imageUrl.startsWith('/uploads/') || 
+    imageUrl.startsWith('http://') || 
+    imageUrl.startsWith('https://')
+  ) && !isPDF
 
   // Subtle animation on hover
   useFrame(() => {
     if (meshRef.current) {
-      const targetZ = hovered ? 0.15 : 0
+      const targetZ = isHovered ? 0.15 : 0
       meshRef.current.position.z += (targetZ - meshRef.current.position.z) * 0.1
     }
     
@@ -206,11 +217,12 @@ export default function BoardThumbnail({ board, position, width, height, onClick
   })
 
   const handleClick = () => {
+    // Only call onClick if provided - no default navigation
     if (onClick) {
       onClick(board)
-    } else {
-      router.push(`/board/${board.id}`)
     }
+    // Removed default navigation to board detail page
+    // Clicking boards now only triggers the onClick handler (e.g., for selection or lightbox)
   }
 
   return (
@@ -227,7 +239,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           title={board.title}
           width={width}
           height={height}
-          hovered={hovered}
+          hovered={isHovered}
           isHighlighted={isHighlighted}
           meshRef={meshRef}
         />
@@ -238,7 +250,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               boardId={board.id}
               width={width}
               height={height}
-              hovered={hovered}
+              hovered={isHovered}
               isHighlighted={isHighlighted}
               meshRef={meshRef}
             />
@@ -249,7 +261,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               boardId={board.id}
               width={width}
               height={height}
-              hovered={hovered}
+              hovered={isHovered}
               isHighlighted={isHighlighted}
               meshRef={meshRef}
             />
@@ -258,7 +270,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               imageUrl={imageUrl!}
               width={width}
               height={height}
-              hovered={hovered}
+              hovered={isHovered}
               isHighlighted={isHighlighted}
               meshRef={meshRef}
             />
@@ -269,51 +281,59 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           boardId={board.id}
           width={width}
           height={height}
-          hovered={hovered}
+          hovered={isHovered}
           isHighlighted={isHighlighted}
           meshRef={meshRef}
         />
       )}
 
       {/* Owner name tooltip - only show on hover */}
-      {hovered && board.ownerName && (
-        <Html
-          position={[0, -height / 2 - 0.1, 0.1]}
-          center
-          distanceFactor={10}
-          style={{ pointerEvents: 'none' }}
-        >
-          <div style={{
-            background: 'rgba(0, 0, 0, 0.8)',
-            color: 'white',
-            padding: '6px 12px',
-            borderRadius: '6px',
-            fontSize: '12px',
-            fontWeight: 500,
-            whiteSpace: 'nowrap',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-          }}>
-            {board.ownerName}
-          </div>
-        </Html>
-      )}
+      {(() => {
+        // Get the display name: prefer studentName, fallback to ownerName
+        // Only show if we have a valid name (not empty, "Anonymous", or "Uploaded Board")
+        const displayName = (board.studentName && board.studentName !== 'Anonymous' && board.studentName !== 'Uploaded Board'
+          ? board.studentName 
+          : (board.ownerName && board.ownerName !== 'Anonymous' && board.ownerName !== 'Uploaded Board' ? board.ownerName : null))
+        
+        return isHovered && displayName ? (
+          <Html
+            position={[0, -height / 2 - 0.1, 0.1]}
+            center
+            distanceFactor={10}
+            style={{ pointerEvents: 'none' }}
+          >
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.8)',
+              color: 'white',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 500,
+              whiteSpace: 'nowrap',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}>
+              {displayName}
+            </div>
+          </Html>
+        ) : null
+      })()}
 
       {/* Frame around board when hovered or highlighted */}
-      {(hovered || isHighlighted) && (
+      {(isHovered || isHighlighted) && (
         <>
           <lineSegments position={[0, 0, 0.002]}>
             <edgesGeometry
               attach="geometry"
               args={[new THREE.PlaneGeometry(width + 0.03, height + 0.03)]}
             />
-            <lineBasicMaterial attach="material" color={isHighlighted ? '#ef4444' : '#6366f1'} linewidth={3} />
+            <lineBasicMaterial attach="material" color="#6366f1" linewidth={3} />
           </lineSegments>
           
           {/* Subtle glow effect */}
           <mesh position={[0, 0, -0.001]}>
             <planeGeometry args={[width + 0.1, height + 0.1]} />
             <meshBasicMaterial
-              color={isHighlighted ? '#ef4444' : '#6366f1'}
+              color="#6366f1"
               transparent
               opacity={0.1}
             />

@@ -52,6 +52,7 @@ export default function StudioPage() {
   const [showShareModal, setShowShareModal] = useState(false)
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isEditMode, setIsEditMode] = useState(false)
 
   // Load boards and wall config (API + localStorage fallback)
   useEffect(() => {
@@ -169,63 +170,60 @@ export default function StudioPage() {
 
       {!showWallConfig && wallConfig && (
         <>
-          {/* Top Left - Logo and Dashboard */}
-          <div className="fixed top-4 left-4 z-40 flex items-center gap-3">
-            {/* PinSpace Logo - links to home */}
-            <button
-              onClick={() => router.push('/')}
-              className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg shadow-lg transition-all font-bold text-lg tracking-tight"
-            >
-              PinSpace
-            </button>
+          {/* Top Left - Logo and Dashboard - Hide when in edit mode */}
+          {!isEditMode && (
+            <div className="fixed top-4 left-4 z-40 flex items-center gap-3">
+              {/* PinSpace Logo - links to home */}
+              <button
+                onClick={() => router.push('/')}
+                className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg shadow-lg transition-all font-bold text-lg tracking-tight"
+              >
+                PinSpace
+              </button>
 
-            {/* Back to Dashboard */}
-            <button
-              onClick={() => router.push('/dashboard')}
-              className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-700 rounded-lg shadow-lg border border-gray-200 transition-colors font-medium text-sm flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-                <path d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-              </svg>
-              Dashboard
-            </button>
-          </div>
+              {/* Back to Dashboard */}
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-700 rounded-lg shadow-lg border border-gray-200 transition-colors font-medium text-sm flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+                  <path d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+                Dashboard
+              </button>
+            </div>
+          )}
 
-          {/* Top-right buttons */}
-          <div className="fixed top-4 right-4 z-40 flex items-center gap-3">
-            {/* User button */}
-            <button
-              onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')}
-              className="bg-white rounded-lg shadow-lg px-4 py-2 border border-gray-200 hover:bg-gray-50 transition-colors text-sm font-medium"
-            >
-              Sign Out
-            </button>
-
-            {/* Share button */}
-            <button
-              onClick={() => setShowShareModal(true)}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-lg transition-colors font-medium text-sm flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-                <path d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path>
-              </svg>
-              Share
-            </button>
-            
-            {/* Reconfigure button */}
-            <button
-              onClick={handleReconfigureWalls}
-              className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-700 rounded-lg shadow-lg border border-gray-200 transition-colors font-medium text-sm"
-            >
-              ⚙️ Reconfigure Walls
-            </button>
-          </div>
+          {/* Top-right buttons - Hide when in edit mode */}
+          {!isEditMode && (
+            <div className="fixed top-4 right-4 z-40 flex items-center gap-3">
+              {/* Share button */}
+              <button
+                onClick={() => setShowShareModal(true)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-lg transition-colors font-medium text-sm flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+                  <path d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path>
+                </svg>
+                Share
+              </button>
+              
+              {/* Reconfigure button */}
+              <button
+                onClick={handleReconfigureWalls}
+                className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-700 rounded-lg shadow-lg border border-gray-200 transition-colors font-medium text-sm"
+              >
+                ⚙️ Reconfigure Walls
+              </button>
+            </div>
+          )}
 
           <StudioRoom 
             studioId={studioId} 
             boards={boards}
             wallConfig={wallConfig}
             onBoardUpdate={handleBoardUpdate}
+            onEditModeChange={setIsEditMode}
           />
         </>
       )}

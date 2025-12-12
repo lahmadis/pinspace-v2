@@ -54,6 +54,7 @@ export interface Board {
     y: number
     width?: number  // Stored as 0-1 decimal of wall width
     height?: number // Stored as 0-1 decimal of wall height
+    side?: 'front' | 'back' // Which side of the wall (defaults to 'front')
   }
   // Board ownership
   ownerId?: string      // User ID who created/owns this board
@@ -63,6 +64,9 @@ export interface Board {
   originalWidth?: number   // Original image/PDF width in pixels
   originalHeight?: number  // Original image/PDF height in pixels
   aspectRatio?: number     // width / height
+  // Physical dimensions in inches (for realistic sizing on walls)
+  physicalWidth?: number   // Physical width in inches (e.g., 36 for a 3ft wide board)
+  physicalHeight?: number  // Physical height in inches (e.g., 72 for a 6ft tall board)
 }
 
 export interface Comment {

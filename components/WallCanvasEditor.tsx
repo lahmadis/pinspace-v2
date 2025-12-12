@@ -146,57 +146,172 @@ export default function WallCanvasEditor({
       let aspectRatio = 1
       const isPDF = file.type === 'application/pdf'
       
-      // Convert PDF to image before uploading
+      // Physical dimensions in inches (for PDFs, extracted from PDF metadata)
+      let physicalWidth: number | undefined
+      let physicalHeight: number | undefined
+      
+      // Handle PDFs with multiple pages
       if (isPDF) {
-        console.log('🔄 Converting PDF to image for display...')
+        console.log('🔄 Converting PDF (multi-page support)...')
         const { convertPDFToImages } = await import('@/lib/pdfToImage')
-        const results = await convertPDFToImages(file)
-        const result = results[0] // Use first page
-        uploadFile = result.imageFile
-        width = result.width
-        height = result.height
-        aspectRatio = result.aspectRatio
-        console.log('✅ PDF converted to image:', result.imageFile.name)
+        const pages = await convertPDFToImages(file)
+        
+        console.log(`✅ PDF converted to ${pages.length} page(s)`)
+        
+        // Upload each page as a separate board
+        let uploadedCount = 0
+        const uploadedBoards: Board[] = []
+        
+        for (const page of pages) {
+          const pageTitle = pages.length > 1 
+            ? `${file.name.replace(/\.[^/.]+$/, '')} - Page ${page.pageNumber}`
+            : file.name.replace(/\.[^/.]+$/, '')
+          
+          const formData = new FormData()
+          formData.append('image', page.imageFile)
+          formData.append('studioId', studioId)
+          formData.append('title', pageTitle)
+          formData.append('studentName', 'Uploaded Board')
+          formData.append('description', 'PDF Document')
+          formData.append('tags', 'pdf')
+          
+          // Add dimensions
+          formData.append('originalWidth', page.width.toString())
+          formData.append('originalHeight', page.height.toString())
+          formData.append('aspectRatio', page.aspectRatio.toString())
+          
+          // Add physical dimensions if available
+          if (page.physicalWidth && page.physicalHeight) {
+            formData.append('physicalWidth', page.physicalWidth.toString())
+            formData.append('physicalHeight', page.physicalHeight.toString())
+            console.log(`📐 [WallCanvasEditor] Page ${page.pageNumber} physical dimensions: ${page.physicalWidth.toFixed(2)}" x ${page.physicalHeight.toFixed(2)}"`)
+          }
+
+          const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+          })
+
+          if (response.ok) {
+            const data = await response.json()
+            const newBoard = data.board as Board
+            setAvailableBoardsState((prev: Board[]) => [...prev, newBoard])
+            uploadedBoards.push(newBoard)
+            uploadedCount++
+            console.log(`✅ Uploaded page ${page.pageNumber}/${pages.length}`)
+          } else {
+            const error = await response.text()
+            console.error(`❌ Failed to upload page ${page.pageNumber}:`, error)
+          }
+        }
+        
+        // Auto-place all uploaded PDF pages on the wall in a grid layout
+        if (uploadedBoards.length > 0) {
+          setPlacedBoards((prev) => {
+            const newPlacedBoards = [...prev]
+            
+            // Calculate grid layout: try to fit pages in a reasonable grid
+            const cols = Math.ceil(Math.sqrt(uploadedBoards.length))
+            const rows = Math.ceil(uploadedBoards.length / cols)
+            
+            // Spacing between boards (as percentage of wall)
+            const spacingX = 15 // 15% spacing horizontally
+            const spacingY = 15 // 15% spacing vertically
+            const boardWidth = (100 - spacingX * (cols + 1)) / cols // Width per board
+            const boardHeight = (100 - spacingY * (rows + 1)) / rows // Height per board
+            
+            uploadedBoards.forEach((board, index) => {
+              // Skip if already placed
+              if (newPlacedBoards.some(pb => pb.board.id === board.id)) {
+                return
+              }
+              
+              const col = index % cols
+              const row = Math.floor(index / cols)
+              
+              // Calculate position: spacing + (col * (boardWidth + spacing))
+              const x = spacingX + col * (boardWidth + spacingX) + boardWidth / 2
+              const y = spacingY + row * (boardHeight + spacingY) + boardHeight / 2
+              
+              newPlacedBoards.push({ board, x, y })
+            })
+            
+            return newPlacedBoards
+          })
+        }
+        
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ''
+        }
+        
+        if (uploadedCount === pages.length) {
+          alert(`PDF converted and uploaded successfully! ${uploadedCount} page(s) added.`)
+        } else {
+          alert(`Uploaded ${uploadedCount} of ${pages.length} page(s). Some pages may have failed.`)
+        }
       } else {
-        // Get image dimensions
+        // Handle regular images
         const { getImageDimensions } = await import('@/lib/getImageDimensions')
         const dims = await getImageDimensions(file)
         width = dims.width
         height = dims.height
         aspectRatio = dims.aspectRatio
-      }
-      
-      const formData = new FormData()
-      formData.append('image', uploadFile)
-      formData.append('studioId', studioId)
-      formData.append('title', file.name.replace(/\.[^/.]+$/, ''))
-      formData.append('studentName', 'Uploaded Board')
-      formData.append('description', isPDF ? 'PDF Document' : '')
-      formData.append('tags', isPDF ? 'pdf' : '')
-      
-      // Add dimensions
-      formData.append('originalWidth', width.toString())
-      formData.append('originalHeight', height.toString())
-      formData.append('aspectRatio', aspectRatio.toString())
-
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        const newBoard = data.board as Board
-        setAvailableBoardsState((prev: Board[]) => [...prev, newBoard])
-        if (fileInputRef.current) {
-          fileInputRef.current.value = ''
+        uploadFile = file
+        // For images, try to extract physical dimensions if available (e.g., from EXIF)
+        // This is optional - images may not have physical dimensions
+        if ('physicalWidth' in dims && 'physicalHeight' in dims) {
+          physicalWidth = (dims as any).physicalWidth
+          physicalHeight = (dims as any).physicalHeight
         }
-        if (isPDF) {
-          alert('PDF converted to image and uploaded successfully!')
+        
+        const formData = new FormData()
+        formData.append('image', uploadFile)
+        formData.append('studioId', studioId)
+        formData.append('title', file.name.replace(/\.[^/.]+$/, ''))
+        formData.append('studentName', 'Uploaded Board')
+        formData.append('description', '')
+        formData.append('tags', '')
+        
+        // Add dimensions
+        formData.append('originalWidth', width.toString())
+        formData.append('originalHeight', height.toString())
+        formData.append('aspectRatio', aspectRatio.toString())
+        
+        // Add physical dimensions if available
+        if (physicalWidth && physicalHeight) {
+          formData.append('physicalWidth', physicalWidth.toString())
+          formData.append('physicalHeight', physicalHeight.toString())
+          console.log(`📐 [WallCanvasEditor] Sending physical dimensions: ${physicalWidth.toFixed(2)}" x ${physicalHeight.toFixed(2)}"`)
         }
-      } else {
-        const error = await response.text()
-        alert('Upload failed: ' + error)
+
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          const newBoard = data.board as Board
+          setAvailableBoardsState((prev: Board[]) => [...prev, newBoard])
+          
+          // Auto-place the board on the wall (centered initially)
+          // User can drag it to reposition
+          setPlacedBoards((prev) => {
+            // Check if board is already placed
+            if (prev.some(pb => pb.board.id === newBoard.id)) {
+              return prev
+            }
+            // Place at center of wall (50%, 50%)
+            return [...prev, { board: newBoard, x: 50, y: 50 }]
+          })
+          
+          if (fileInputRef.current) {
+            fileInputRef.current.value = ''
+          }
+        } else {
+          const error = await response.text()
+          alert('Upload failed: ' + error)
+        }
       }
     } catch (error) {
       console.error('Upload error:', error)
@@ -436,13 +551,13 @@ export default function WallCanvasEditor({
         </motion.aside>
 
         {/* Canvas */}
-        <div className="flex-1 p-8 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="flex-1 p-1 pl-2 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-start">
           <motion.div
             ref={canvasRef}
             id="wall-canvas"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="relative bg-[#e8e4dc] rounded-2xl shadow-2xl border-4 border-[#d4d4d4] overflow-hidden mx-auto"
+            className="relative bg-[#e8e4dc] rounded-2xl shadow-2xl border-4 border-[#d4d4d4] overflow-hidden"
             onMouseMove={(e) => {
               if (draggingBoard) {
                 const canvas = e.currentTarget
@@ -457,9 +572,10 @@ export default function WallCanvasEditor({
             style={{ 
               aspectRatio: wallAspectRatio,
               width: '100%',
-              maxWidth: '90vw',
-              maxHeight: 'calc(100vh - 180px)', // Account for header padding
-              height: 'auto'
+              maxWidth: 'calc(100vw - 330px)', // Sidebar (320px) + minimal left padding (10px)
+              maxHeight: 'calc(100vh - 70px)', // Header + minimal padding
+              height: 'auto',
+              marginLeft: '0' // Remove left margin to minimize white space
             }}
           >
               {/* Corkboard texture */}

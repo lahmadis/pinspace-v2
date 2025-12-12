@@ -201,13 +201,6 @@ export default function WorkspaceSettingsPage() {
               <p className="text-sm text-gray-600">Workspace Settings</p>
             </div>
           </div>
-          
-          <button
-            onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')}
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-          >
-            Sign Out
-          </button>
         </div>
       </div>
 

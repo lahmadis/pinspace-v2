@@ -37,6 +37,15 @@ export async function POST(request: NextRequest) {
     const originalWidth = formData.get('originalWidth') as string | null
     const originalHeight = formData.get('originalHeight') as string | null
     const aspectRatio = formData.get('aspectRatio') as string | null
+    // Physical dimensions in inches
+    const physicalWidth = formData.get('physicalWidth') as string | null
+    const physicalHeight = formData.get('physicalHeight') as string | null
+    
+    if (physicalWidth && physicalHeight) {
+      console.log(`📐 [API Upload] Received physical dimensions: ${physicalWidth}" x ${physicalHeight}"`)
+    } else {
+      console.log(`⚠️ [API Upload] No physical dimensions provided for ${title}`)
+    }
     
     // Optional position data
     const wallIndex = formData.get('position_wall_index')
@@ -118,6 +127,12 @@ export async function POST(request: NextRequest) {
       original_width: originalWidth ? parseInt(originalWidth) : null,
       original_height: originalHeight ? parseInt(originalHeight) : null,
       aspect_ratio: aspectRatio ? parseFloat(aspectRatio) : null,
+      physical_width: physicalWidth ? parseFloat(physicalWidth) : null,
+      physical_height: physicalHeight ? parseFloat(physicalHeight) : null,
+    }
+    
+    if (boardData.physical_width && boardData.physical_height) {
+      console.log(`💾 [API Upload] Saving physical dimensions to DB: ${boardData.physical_width}" x ${boardData.physical_height}"`)
     }
 
     const { data: savedBoard, error: dbError } = await supabase
@@ -151,6 +166,8 @@ export async function POST(request: NextRequest) {
         wallIndex: savedBoard.position_wall_index,
         x: parseFloat(savedBoard.position_x),
         y: parseFloat(savedBoard.position_y),
+        width: savedBoard.position_width ? parseFloat(savedBoard.position_width) : undefined,
+        height: savedBoard.position_height ? parseFloat(savedBoard.position_height) : undefined,
       } : undefined,
       ownerId: savedBoard.owner_id,
       ownerName: savedBoard.owner_name,
@@ -158,6 +175,8 @@ export async function POST(request: NextRequest) {
       originalWidth: savedBoard.original_width,
       originalHeight: savedBoard.original_height,
       aspectRatio: savedBoard.aspect_ratio ? parseFloat(savedBoard.aspect_ratio) : undefined,
+      physicalWidth: savedBoard.physical_width ? parseFloat(savedBoard.physical_width) : undefined,
+      physicalHeight: savedBoard.physical_height ? parseFloat(savedBoard.physical_height) : undefined,
     }
 
     console.log('✅ Board uploaded and saved to database:', boardId)

@@ -65,7 +65,7 @@ export async function GET() {
         memberCount: memberCounts[w.id] || 0,
         count: memberCounts[w.id] || 0,
         color: BUBBLE_COLOR, // Same color for all - connections differentiate
-        url: `/studio/${w.id}`,
+        url: `/studio/${w.id}/view`,
         studioId: w.id,
       }
     })

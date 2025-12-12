@@ -116,8 +116,8 @@ export default function NetworkView({
     } else if (node.type === 'year') {
       onSelectYear(node.id)
     } else if (node.type === 'studio') {
-      // Navigate to 3D room view
-      window.location.href = `/studio/${node.id}`
+      // Navigate to 3D room view (view mode for public network)
+      window.location.href = `/studio/${node.id}/view`
     }
   }
 

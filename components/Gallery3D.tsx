@@ -1,7 +1,7 @@
 'use client'
 
-import { Canvas, useFrame } from '@react-three/fiber'
-import { Text } from '@react-three/drei'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Text, Html } from '@react-three/drei'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Board } from '@/types'
@@ -35,19 +35,32 @@ type GalleryStudio = {
 const DEFAULT_FLOOR = { width: 12, depth: 10 }
 const SPACING = 6
 const AVATAR_RADIUS = 0.6
-const MOVE_SPEED = 3.2
+// Movement speed scaled for 1 unit = 1 inch
+// Normal walking speed: ~3-4 mph = ~70-90 inches/second
+// Scale from old 3.2 units/sec to ~80 inches/sec
+const MOVE_SPEED = 80 // 80 inches per second (~4.5 mph walking speed)
 const SPRINT_MULTIPLIER = 1.8
-const CAMERA_RADIUS = 5.5
-const CAMERA_HEIGHT = 3.4
-const AIM_RADIUS = 3.2
+// Camera settings scaled for 1 unit = 1 inch
+// Camera should be about 66 inches (5.5ft) away for comfortable third-person view
+const CAMERA_RADIUS = 66 // 66 inches = 5.5 feet
+// Camera height should be at eye level with avatar's head (head is at 58 inches)
+const CAMERA_HEIGHT = 58 // 58 inches = eye level with avatar head
+// When aiming, camera gets closer
+const AIM_RADIUS = 40 // 40 inches = ~3.3 feet
 const AIM_FOV = 48
-const GRAVITY = 12
-const JUMP_VELOCITY = 5
+// Gravity and jump scaled for 1 unit = 1 inch
+// Gravity: ~386 inches/sec² (32 ft/sec²)
+// Scale from old 12 to ~386
+const GRAVITY = 386 // 386 inches/sec² ≈ 32 ft/sec²
+// Jump velocity: enough to jump ~12 inches (1 foot)
+// Scale from old 5 to ~120 inches/sec
+const JUMP_VELOCITY = 120 // 120 inches/sec initial jump velocity
 const ORBIT_LERP = 0.1
 const PITCH_MIN = -0.6
 const PITCH_MAX = 1.2
 const MINIMAP_SCALE = 4
-const ENTRANCE_DISTANCE = 3
+// Entrance detection distance in inches
+const ENTRANCE_DISTANCE = 36 // 36 inches = 3 feet
 const MAX_RENDER_STUDIOS = 30
 const BOARD_RENDER_DISTANCE = 28
 const DEFAULT_ROOM = { width: 20, depth: 15, height: 10 }
@@ -204,11 +217,28 @@ function Ground({ onHover }: { onHover: (hovered: boolean) => void }) {
 function Avatar({ position, color = '#6366f1', isWalking, heading }: { position: Vec3; color?: string; isWalking: boolean; heading: number }) {
   const groupRef = useRef<THREE.Group>(null)
   const bodyRef = useRef<THREE.Mesh>(null)
+  
+  // Scale factor: 5.5 feet = 66 inches
+  // Original avatar was ~2.9 units tall, so scale by 66/2.9 ≈ 22.76
+  // For cleaner numbers, let's make it exactly 66" tall
+  // Body: 2.2 units tall, positioned at y=1.5, so top is at 2.6
+  // Head: at y=2.7 with radius 0.2, so top is at 2.9
+  // Total: 2.9 units → should be 66 inches
+  const SCALE = 66 / 2.9 // ≈ 22.76
+  const BODY_HEIGHT = 2.2 * SCALE // ≈ 50 inches
+  const BODY_Y = 33 // Body center at 33" (half of 66")
+  const HEAD_Y = 58 // Head center at 58" (body top ~58" + head radius)
+  const HEAD_RADIUS = 4.5 // Head radius ~4.5"
+  const ARM_LENGTH = 0.6 * SCALE // ≈ 13.6"
+  const LEG_LENGTH = 1.2 * SCALE // ≈ 27.3"
+  const ARM_Y = 50 // Arms at ~50" height
+  const LEG_Y = 13.6 // Legs at ~13.6" height
+  
   useFrame((state) => {
     const t = state.clock.getElapsedTime()
-    const bob = isWalking ? Math.sin(t * 8) * 0.04 : 0
+    const bob = isWalking ? Math.sin(t * 8) * 0.9 : 0 // Scale bob animation too
     if (bodyRef.current) {
-      bodyRef.current.position.y = 1.5 + bob
+      bodyRef.current.position.y = BODY_Y + bob
     }
     if (groupRef.current) {
       groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, heading, 0.2)
@@ -218,40 +248,40 @@ function Avatar({ position, color = '#6366f1', isWalking, heading }: { position:
   return (
     <group position={[position.x, position.y, position.z]} ref={groupRef}>
       {/* Head */}
-      <mesh position={[0, 2.7, 0]} castShadow>
-        <sphereGeometry args={[0.2, 24, 24]} />
+      <mesh position={[0, HEAD_Y, 0]} castShadow>
+        <sphereGeometry args={[HEAD_RADIUS, 24, 24]} />
         <meshStandardMaterial color={color} roughness={0.4} metalness={0.1} />
       </mesh>
 
       {/* Body (capsule-like) */}
-      <mesh ref={bodyRef} position={[0, 1.5, 0]} castShadow>
-        <cylinderGeometry args={[0.22, 0.26, 2.2, 16]} />
+      <mesh ref={bodyRef} position={[0, BODY_Y, 0]} castShadow>
+        <cylinderGeometry args={[0.22 * SCALE, 0.26 * SCALE, BODY_HEIGHT, 16]} />
         <meshStandardMaterial color={color} roughness={0.4} metalness={0.1} />
       </mesh>
 
       {/* Arms */}
-      <mesh position={[0.32, 2.1, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
-        <cylinderGeometry args={[0.07, 0.07, 0.6, 12]} />
+      <mesh position={[0.32 * SCALE, ARM_Y, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
+        <cylinderGeometry args={[0.07 * SCALE, 0.07 * SCALE, ARM_LENGTH, 12]} />
         <meshStandardMaterial color={color} roughness={0.4} metalness={0.1} />
       </mesh>
-      <mesh position={[-0.32, 2.1, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
-        <cylinderGeometry args={[0.07, 0.07, 0.6, 12]} />
+      <mesh position={[-0.32 * SCALE, ARM_Y, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
+        <cylinderGeometry args={[0.07 * SCALE, 0.07 * SCALE, ARM_LENGTH, 12]} />
         <meshStandardMaterial color={color} roughness={0.4} metalness={0.1} />
       </mesh>
 
       {/* Legs */}
-      <mesh position={[0.1, 0.4, 0]} rotation={[0, 0, Math.PI / 2.2]} castShadow>
-        <cylinderGeometry args={[0.1, 0.1, 1.2, 12]} />
+      <mesh position={[0.1 * SCALE, LEG_Y, 0]} rotation={[0, 0, Math.PI / 2.2]} castShadow>
+        <cylinderGeometry args={[0.1 * SCALE, 0.1 * SCALE, LEG_LENGTH, 12]} />
         <meshStandardMaterial color={color} roughness={0.4} metalness={0.1} />
       </mesh>
-      <mesh position={[-0.1, 0.4, 0]} rotation={[0, 0, -Math.PI / 2.2]} castShadow>
-        <cylinderGeometry args={[0.1, 0.1, 1.2, 12]} />
+      <mesh position={[-0.1 * SCALE, LEG_Y, 0]} rotation={[0, 0, -Math.PI / 2.2]} castShadow>
+        <cylinderGeometry args={[0.1 * SCALE, 0.1 * SCALE, LEG_LENGTH, 12]} />
         <meshStandardMaterial color={color} roughness={0.4} metalness={0.1} />
       </mesh>
 
       {/* Soft shadow decal */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]} receiveShadow>
-        <circleGeometry args={[0.35, 32]} />
+        <circleGeometry args={[0.35 * SCALE, 32]} />
         <meshBasicMaterial color="#000000" opacity={0.18} transparent />
       </mesh>
     </group>
@@ -285,7 +315,8 @@ function CameraRig({
     )
 
     camera.position.lerp(desired, ORBIT_LERP)
-    lookAt.current.set(target.x, target.y + 1.6, target.z)
+    // Look at avatar's head level (58 inches = eye level)
+    lookAt.current.set(target.x, target.y + 58, target.z)
     camera.lookAt(lookAt.current.x, lookAt.current.y, lookAt.current.z)
     const targetFov = aimingRef.current ? AIM_FOV : 55
     camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.1)
@@ -342,12 +373,14 @@ function StudioPlot({
   onTeleport,
   nearby,
   renderBoards,
+  highlightedBoardId,
 }: {
   studio: GalleryStudio
   position: Vec3
   onTeleport: () => void
   nearby?: boolean
   renderBoards: boolean
+  highlightedBoardId?: string | null
 }) {
   const { width, depth } = getFootprint(studio)
   const wallConfig = studio.wallConfig || buildWallConfig({ width, depth })
@@ -360,6 +393,7 @@ function StudioPlot({
         wallConfig={{ ...wallConfig, layoutType: wallConfig.layoutType || 'square' } as any}
         onWallClick={() => {}}
         editingWall={null}
+        highlightedBoardId={highlightedBoardId}
       />
       {/* Outline and label */}
       <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -378,16 +412,227 @@ function StudioPlot({
   )
 }
 
+function BoardProximityDetector({
+  studios,
+  avatarPos,
+  onNearbyBoardChange,
+}: {
+  studios: GalleryStudio[]
+  avatarPos: Vec3
+  onNearbyBoardChange: (board: { board: Board; studio: GalleryStudio; position: THREE.Vector3 } | null) => void
+}) {
+  const INTERACTION_DISTANCE = 120 // 120 inches = 10 feet - max distance for interaction
+  const { camera, raycaster } = useThree()
+  
+  useFrame(() => {
+    // Cast a ray from camera center forward to detect which board is being looked at
+    // This matches the blue highlight behavior - board turns blue when in camera view
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera) // Center of screen (0, 0)
+    
+    let closestBoard: { board: Board; studio: GalleryStudio; position: THREE.Vector3; distance: number } | null = null
+    let closestDistance = Infinity
+    
+    // Check all boards in all studios
+    studios.forEach((studio) => {
+      const studioPos = studio.galleryPosition || { x: 0, z: 0 }
+      const wallConfig = studio.wallConfig || buildWallConfig(getFootprint(studio))
+      const boards = studio.boards || []
+      
+      boards.forEach((board) => {
+        if (!board.position) return
+        
+        // Calculate board world position (same logic as before)
+        const wallIndex = board.position.wallIndex ?? 0
+        const wall = wallConfig.walls?.[wallIndex]
+        if (!wall) return
+        
+        const wallTransform = getWallTransform(wall, wallIndex, wallConfig)
+        const boardX = board.position.x * wallTransform.width
+        const boardY = board.position.y * wallTransform.height
+        const boardZ = board.position.side === 'back' ? -2.2 : 2.2
+        
+        const localPos = new THREE.Vector3(boardX, boardY, boardZ)
+        localPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), wallTransform.rotationY)
+        
+        const worldPos = new THREE.Vector3(
+          studioPos.x + wallTransform.x + localPos.x,
+          wallTransform.height / 2 + localPos.y,
+          studioPos.z + wallTransform.z + localPos.z
+        )
+        
+        // Get board dimensions
+        const boardWidth = board.physicalWidth || 8.5
+        const boardHeight = board.physicalHeight || 11
+        
+        // Create a plane representing the board surface
+        // Board normal: forward direction in world space (perpendicular to wall)
+        const wallForward = new THREE.Vector3(
+          Math.sin(wallTransform.rotationY),
+          0,
+          Math.cos(wallTransform.rotationY)
+        ).normalize()
+        
+        const boardPlane = new THREE.Plane()
+        boardPlane.setFromNormalAndCoplanarPoint(wallForward, worldPos)
+        
+        // Check if camera ray intersects the board plane
+        const intersection = new THREE.Vector3()
+        if (raycaster.ray.intersectPlane(boardPlane, intersection)) {
+          // Check if intersection point is within board bounds
+          const localIntersection = intersection.clone().sub(worldPos)
+          
+          // Transform intersection to board's local space (accounting for wall rotation)
+          const cosR = Math.cos(-wallTransform.rotationY)
+          const sinR = Math.sin(-wallTransform.rotationY)
+          const localX = localIntersection.x * cosR - localIntersection.z * sinR
+          const localY = localIntersection.y
+          
+          // Check if within board bounds (with some margin)
+          const halfWidth = boardWidth / 2 + 2 // Add 2 inch margin
+          const halfHeight = boardHeight / 2 + 2
+          
+          if (Math.abs(localX) < halfWidth && Math.abs(localY) < halfHeight) {
+            // Ray intersects the board! Check distance
+            const distance = camera.position.distanceTo(worldPos)
+            
+            if (distance < INTERACTION_DISTANCE && distance < closestDistance) {
+              closestBoard = { board, studio, position: worldPos, distance }
+              closestDistance = distance
+            }
+          }
+        }
+      })
+    })
+    
+    // Update nearby board
+    if (closestBoard) {
+      const boardData: { board: Board; studio: GalleryStudio; position: THREE.Vector3; distance: number } = closestBoard
+      const { board, studio, position, distance } = boardData
+      console.log('📍 [Proximity] Board in camera view detected:', {
+        boardId: board.id,
+        boardTitle: board.title,
+        distance: distance.toFixed(2),
+        studioId: studio.id,
+        position: position
+      })
+      onNearbyBoardChange({ board, studio, position })
+    } else {
+      onNearbyBoardChange(null)
+    }
+  })
+  
+  return null
+}
+
+// Helper function to get wall transform (matches WallSystem logic exactly)
+function getWallTransform(wall: { width: number; height: number }, wallIndex: number, wallConfig: any) {
+  const SCALE = 12 // 1 unit = 1 inch, so 8ft = 96 units
+  const layoutType = wallConfig.layoutType || 'square'
+  const walls = wallConfig.walls || []
+  const width = wall.width * SCALE
+  const height = wall.height * SCALE
+  let x = 0
+  let z = 0
+  let rotationY = 0
+  
+  switch (layoutType) {
+    case 'zigzag': {
+      const WALL_DEPTH = 4
+      const OVERLAP = WALL_DEPTH / 2
+      let currentX = 0
+      let currentZ = 0
+      
+      for (let i = 0; i < wallIndex; i++) {
+        const prevWidth = walls[i].width * SCALE
+        if (i % 2 === 0) {
+          currentX += prevWidth - (i > 0 ? OVERLAP : 0)
+        } else {
+          currentZ += prevWidth - OVERLAP
+        }
+      }
+      
+      if (wallIndex % 2 === 0) {
+        x = currentX + width / 2 - (wallIndex > 0 ? OVERLAP / 2 : 0)
+        z = currentZ
+        rotationY = 0
+      } else {
+        x = currentX
+        z = currentZ + width / 2 - OVERLAP / 2
+        rotationY = Math.PI / 2
+      }
+      
+      // Center the entire zigzag around the origin
+      let totalXExtent = 0
+      let totalZExtent = 0
+      let tempX = 0
+      let tempZ = 0
+      
+      for (let i = 0; i < walls.length; i++) {
+        const w = walls[i].width * SCALE
+        if (i % 2 === 0) {
+          tempX += w - (i > 0 ? OVERLAP : 0)
+          totalXExtent = Math.max(totalXExtent, tempX)
+        } else {
+          tempZ += w - OVERLAP
+          totalZExtent = Math.max(totalZExtent, tempZ)
+        }
+      }
+      
+      x -= totalXExtent / 2
+      z -= totalZExtent / 2
+      break
+    }
+    
+    case 'square': {
+      const wallWidths = walls.map((w: { width: number; height: number }) => w.width * SCALE)
+      if (wallIndex === 0) {
+        x = 0
+        z = wallWidths[0] / 2
+        rotationY = 0
+      } else if (wallIndex === 1) {
+        x = wallWidths[0] / 2
+        z = 0
+        rotationY = Math.PI / 2
+      } else if (wallIndex === 2) {
+        x = 0
+        z = -wallWidths[2] / 2
+        rotationY = Math.PI
+      } else if (wallIndex === 3) {
+        x = -wallWidths[0] / 2
+        z = 0
+        rotationY = -Math.PI / 2
+      }
+      break
+    }
+    
+    default: {
+      // Fallback for other layouts
+      const spacing = width + 24
+      x = wallIndex * spacing - (walls.length * spacing) / 2
+      z = 0
+      rotationY = 0
+    }
+  }
+  
+  return { x, z, rotationY, width, height }
+}
+
 function SceneContents({
   studios,
   onTeleport,
   nearbyStudioId,
   avatarPos,
+  onNearbyBoardChange,
+  highlightedBoardId,
+  nearbyBoard,
 }: {
   studios: GalleryStudio[]
   onTeleport: (studio: GalleryStudio) => void
   nearbyStudioId?: string | null
   avatarPos: Vec3
+  onNearbyBoardChange: (board: { board: Board; studio: GalleryStudio; position: THREE.Vector3 } | null) => void
+  highlightedBoardId?: string | null
+  nearbyBoard?: { board: Board; studio: GalleryStudio; position: THREE.Vector3 } | null
 }) {
   const studiosSorted = useMemo(() => {
     const withDist = studios.map((s) => {
@@ -404,18 +649,18 @@ function SceneContents({
     <>
       <ambientLight intensity={0.55} />
       <directionalLight
-        position={[8, 12, 6]}
+        position={[96, 144, 72]} // Scaled: 8ft, 12ft, 6ft
         intensity={1}
         castShadow
         shadow-bias={-0.0001}
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
-        shadow-camera-near={0.5}
-        shadow-camera-far={120}
-        shadow-camera-left={-60}
-        shadow-camera-right={60}
-        shadow-camera-top={60}
-        shadow-camera-bottom={-60}
+        shadow-camera-near={6} // 6 inches
+        shadow-camera-far={1440} // 1440 inches = 120 feet
+        shadow-camera-left={-720} // -720 inches = -60 feet
+        shadow-camera-right={720} // 720 inches = 60 feet
+        shadow-camera-top={720} // 720 inches = 60 feet
+        shadow-camera-bottom={-720} // -720 inches = -60 feet
       />
       {/* Soft spotlights */}
       {studiosSorted.map(({ studio }, i) => {
@@ -423,10 +668,10 @@ function SceneContents({
         return (
           <spotLight
             key={`spot-${studio.id}`}
-            position={[pos.x, 9, pos.z]}
+            position={[pos.x, 108, pos.z]} // 108 inches = 9 feet high
             angle={0.9}
             intensity={0.35}
-            distance={18}
+            distance={216} // 216 inches = 18 feet
             penumbra={0.6}
             color={i % 2 === 0 ? '#c7d2fe' : '#e0f2fe'}
             shadow-bias={-0.0001}
@@ -436,6 +681,13 @@ function SceneContents({
 
       {/* Ambient particles */}
       <Particles />
+      
+      {/* Board proximity detector */}
+      <BoardProximityDetector
+        studios={studios}
+        avatarPos={avatarPos}
+        onNearbyBoardChange={onNearbyBoardChange}
+      />
 
       {studiosSorted.map(({ studio }) => (
         <StudioPlot
@@ -445,8 +697,22 @@ function SceneContents({
           onTeleport={() => onTeleport(studio)}
           nearby={nearbyStudioId === studio.id}
           renderBoards={true}
+          highlightedBoardId={highlightedBoardId}
         />
       ))}
+      
+      {/* "E" interaction prompt for nearby boards - must be inside Canvas */}
+      {nearbyBoard && (
+        <Html
+          position={[nearbyBoard.position.x, nearbyBoard.position.y + 12, nearbyBoard.position.z]}
+          center
+          style={{ pointerEvents: 'none' }}
+        >
+          <div className="bg-black/80 text-white px-4 py-2 rounded-lg font-bold text-xl border-2 border-white shadow-lg">
+            E
+          </div>
+        </Html>
+      )}
     </>
   )
 }
@@ -472,11 +738,39 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
   const [nearEntrance, setNearEntrance] = useState(false)
   const [promptStudio, setPromptStudio] = useState<{ studio: GalleryStudio; entrance: THREE.Vector3 } | null>(null)
   const [selectedBoard, setSelectedBoard] = useState<{ board: Board; studio: GalleryStudio } | null>(null)
+  const [nearbyBoard, setNearbyBoard] = useState<{ board: Board; studio: GalleryStudio; position: THREE.Vector3 } | null>(null)
+  const nearbyBoardRef = useRef<{ board: Board; studio: GalleryStudio; position: THREE.Vector3 } | null>(null)
   const router = useRouter()
-  // Start avatar near center of expected cluster
+  
+  // Keep ref in sync with state
   useEffect(() => {
-    avatarRef.current = { x: 25, y: 0, z: 15 }
-    setAvatarPos({ x: 25, y: 0, z: 15 })
+    nearbyBoardRef.current = nearbyBoard
+  }, [nearbyBoard])
+  // Start avatar near center of expected cluster, or restore from saved position
+  useEffect(() => {
+    const savedState = sessionStorage.getItem('galleryState')
+    if (savedState) {
+      try {
+        const state = JSON.parse(savedState)
+        if (state.avatarPos) {
+          avatarRef.current = state.avatarPos
+          setAvatarPos(state.avatarPos)
+          // Restore camera state
+          if (state.cameraYaw !== undefined) orbitRef.current.yaw = state.cameraYaw
+          if (state.cameraPitch !== undefined) orbitRef.current.pitch = state.cameraPitch
+          if (state.cameraRadius !== undefined) orbitRef.current.radius = state.cameraRadius
+          console.log('📍 [Gallery] Restored position from session:', state)
+        }
+      } catch (e) {
+        console.warn('Failed to restore gallery state:', e)
+        // Fallback to default
+        avatarRef.current = { x: 25, y: 0, z: 15 }
+        setAvatarPos({ x: 25, y: 0, z: 15 })
+      }
+    } else {
+      avatarRef.current = { x: 25, y: 0, z: 15 }
+      setAvatarPos({ x: 25, y: 0, z: 15 })
+    }
   }, [])
   const teleportToStudio = (studio: GalleryStudio) => {
     const entrance = getEntrancePosition(studio)
@@ -516,8 +810,33 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
       if (e.key === 'ArrowLeft') orbitRef.current.yaw -= 0.1
       if (e.key === 'ArrowRight') orbitRef.current.yaw += 0.1
 
-      if (isDown && e.key.toLowerCase() === 'e' && promptStudio?.studio) {
-        enterStudio(promptStudio.studio)
+      if (isDown && e.key.toLowerCase() === 'e') {
+        // Check if near a board first (priority over studio entrance)
+        // Use ref to get the most current value at the moment E is pressed
+        const currentNearbyBoard = nearbyBoardRef.current
+        if (currentNearbyBoard) {
+          // Save current gallery position before navigating
+          const galleryState = {
+            avatarPos: { ...avatarRef.current },
+            cameraYaw: orbitRef.current.yaw,
+            cameraPitch: orbitRef.current.pitch,
+            cameraRadius: orbitRef.current.radius
+          }
+          sessionStorage.setItem('galleryState', JSON.stringify(galleryState))
+          console.log('💾 [Gallery] Saved position before navigation:', galleryState)
+          
+          // Navigate to studio view page with boardId query param to open lightbox directly
+          const studioId = currentNearbyBoard.studio.studioId || currentNearbyBoard.studio.id
+          console.log('🎯 [Gallery] Pressing E on board:', {
+            boardId: currentNearbyBoard.board.id,
+            boardTitle: currentNearbyBoard.board.title,
+            studioId: studioId,
+            allBoardIds: currentNearbyBoard.studio.boards?.map(b => ({ id: b.id, title: b.title }))
+          })
+          router.push(`/studio/${studioId}/view?boardId=${currentNearbyBoard.board.id}&returnTo=gallery`)
+        } else if (promptStudio?.studio) {
+          enterStudio(promptStudio.studio)
+        }
       }
     }
     const down = (e: KeyboardEvent) => handler(e, true)
@@ -528,11 +847,35 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
     }
-  }, [])
+  }, [nearbyBoard, promptStudio, router])
 
   useEffect(() => {
     const fetchStudios = async () => {
-      setLoading(true)
+      // Check for cached studios data first for instant loading
+      const cachedData = sessionStorage.getItem('galleryStudiosCache')
+      if (cachedData) {
+        try {
+          const cached = JSON.parse(cachedData)
+          const cacheTimestamp = cached.timestamp || 0
+          const cacheAge = Date.now() - cacheTimestamp
+          // Use cache if it's less than 5 minutes old
+          if (cacheAge < 5 * 60 * 1000) {
+            console.log('📦 [Gallery] Using cached studios data for instant load')
+            setStudios(cached.studios || [])
+            setLoading(false)
+            // Still fetch fresh data in background
+          } else {
+            console.log('📦 [Gallery] Cache expired, fetching fresh data')
+            setLoading(true)
+          }
+        } catch (e) {
+          console.error('Error parsing cached studios:', e)
+          setLoading(true)
+        }
+      } else {
+        setLoading(true)
+      }
+      
       try {
         const res = await fetch('/api/explore/studios')
         if (!res.ok) throw new Error('Failed to load studios')
@@ -617,6 +960,11 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
         })
 
         setStudios(placed)
+        // Cache the studios data for instant loading next time
+        sessionStorage.setItem('galleryStudiosCache', JSON.stringify({
+          studios: placed,
+          timestamp: Date.now()
+        }))
       } catch (err) {
         console.error(err)
         setStudios([])
@@ -651,16 +999,16 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
     <div className="relative w-full h-full">
       <Canvas
         shadows
-        camera={{ position: [0, 5, 8], fov: 55 }}
+        camera={{ position: [0, 60, 96], fov: 55 }} // 60" high, 96" away (8 feet) - scaled for 1 unit = 1 inch
         style={{ cursor: canvasCursor }}
         onContextMenu={(e) => e.preventDefault()}
         onWheel={(e) => {
           e.preventDefault()
           const delta = e.deltaY
           const next = THREE.MathUtils.clamp(
-            orbitRef.current.radius + (delta > 0 ? 0.4 : -0.4),
-            3,
-            8
+            orbitRef.current.radius + (delta > 0 ? 6 : -6), // 6 inches per scroll step
+            40, // Minimum zoom: 40 inches (~3.3ft)
+            120 // Maximum zoom: 120 inches (10ft)
           )
           orbitRef.current.radius = next
         }}
@@ -689,12 +1037,15 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
         }}
       >
         <color attach="background" args={['#f8fafc']} />
-        <fog attach="fog" args={['#f8fafc', 40, 140]} />
+        <fog attach="fog" args={['#f8fafc', 480, 1680]} /> {/* Scaled: 40ft near, 140ft far */}
         <SceneContents
           studios={studios}
           avatarPos={avatarPos}
+          highlightedBoardId={nearbyBoard?.board.id}
           onTeleport={teleportToStudio}
           nearbyStudioId={promptStudio?.studio.id}
+          onNearbyBoardChange={setNearbyBoard}
+          nearbyBoard={nearbyBoard}
         />
         {/* Ground interaction layer */}
         <Ground

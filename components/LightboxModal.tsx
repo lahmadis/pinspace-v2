@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { Comment, Board } from '@/types'
 
@@ -57,6 +58,8 @@ function getAvatarColor(name: string): string {
 }
 
 export default function LightboxModal({ board, allBoards, onClose, onNavigate }: LightboxModalProps) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [user, setUser] = useState<any>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(false)
@@ -183,7 +186,18 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
 
   const handleClose = () => {
     setIsVisible(false)
-    setTimeout(onClose, 200)
+    
+    // Check if we should return to gallery
+    const returnTo = searchParams.get('returnTo')
+    if (returnTo === 'gallery') {
+      // Navigate back to gallery after a short delay for animation
+      setTimeout(() => {
+        router.push('/gallery')
+      }, 200)
+    } else {
+      // Just close the modal normally
+      setTimeout(onClose, 200)
+    }
   }
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
