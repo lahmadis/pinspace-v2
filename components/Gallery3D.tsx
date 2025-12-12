@@ -61,7 +61,8 @@ const PITCH_MAX = 1.2
 const MINIMAP_SCALE = 4
 // Entrance detection distance in inches
 const ENTRANCE_DISTANCE = 36 // 36 inches = 3 feet
-const MAX_RENDER_STUDIOS = 30
+// Reduced from 30 to 15 for better performance - only render closest studios
+const MAX_RENDER_STUDIOS = 15
 const BOARD_RENDER_DISTANCE = 28
 const DEFAULT_ROOM = { width: 20, depth: 15, height: 10 }
 // Reduce booth spacing: ~1.5 units (~4-5ft) between studios
@@ -425,10 +426,11 @@ function BoardProximityDetector({
   const { camera, raycaster } = useThree()
   const frameCount = useRef(0)
   
-  // Throttle to every 3rd frame (20fps instead of 60fps) for better performance
+  // Throttle to every 5th frame (12fps instead of 60fps) for much better performance
   useFrame(() => {
     frameCount.current++
-    if (frameCount.current % 3 !== 0) return // Skip 2 out of 3 frames
+    if (frameCount.current % 5 !== 0) return // Skip 4 out of 5 frames
+    
     // Cast a ray from camera center forward to detect which board is being looked at
     // This matches the blue highlight behavior - board turns blue when in camera view
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera) // Center of screen (0, 0)
@@ -436,9 +438,17 @@ function BoardProximityDetector({
     let closestBoard: { board: Board; studio: GalleryStudio; position: THREE.Vector3; distance: number } | null = null
     let closestDistance = Infinity
     
-    // Check all boards in all studios
+    // Only check boards in rendered studios (already filtered by distance)
     studios.forEach((studio) => {
       const studioPos = studio.galleryPosition || { x: 0, z: 0 }
+      
+      // Early exit: skip studios that are too far away
+      const studioDistance = Math.hypot(
+        studioPos.x - camera.position.x,
+        studioPos.z - camera.position.z
+      )
+      if (studioDistance > INTERACTION_DISTANCE * 1.5) return // Skip studios beyond interaction range
+      
       const wallConfig = studio.wallConfig || buildWallConfig(getFootprint(studio))
       const boards = studio.boards || []
       
@@ -491,34 +501,27 @@ function BoardProximityDetector({
           const localX = localIntersection.x * cosR - localIntersection.z * sinR
           const localY = localIntersection.y
           
-          // Check if within board bounds (with some margin)
-          const halfWidth = boardWidth / 2 + 2 // Add 2 inch margin
-          const halfHeight = boardHeight / 2 + 2
-          
-          if (Math.abs(localX) < halfWidth && Math.abs(localY) < halfHeight) {
-            // Ray intersects the board! Check distance
-            const distance = camera.position.distanceTo(worldPos)
-            
-            if (distance < INTERACTION_DISTANCE && distance < closestDistance) {
-              closestBoard = { board, studio, position: worldPos, distance }
-              closestDistance = distance
-            }
-          }
+        // Early distance check before expensive intersection calculations
+        const distance = camera.position.distanceTo(worldPos)
+        if (distance > INTERACTION_DISTANCE || distance >= closestDistance) return
+        
+        // Check if within board bounds (with some margin)
+        const halfWidth = boardWidth / 2 + 2 // Add 2 inch margin
+        const halfHeight = boardHeight / 2 + 2
+        
+        if (Math.abs(localX) < halfWidth && Math.abs(localY) < halfHeight) {
+          // Ray intersects the board!
+          closestBoard = { board, studio, position: worldPos, distance }
+          closestDistance = distance
+        }
         }
       })
     })
     
-    // Update nearby board
+    // Update nearby board (removed expensive console.log for performance)
     if (closestBoard) {
       const boardData: { board: Board; studio: GalleryStudio; position: THREE.Vector3; distance: number } = closestBoard
-      const { board, studio, position, distance } = boardData
-      console.log('📍 [Proximity] Board in camera view detected:', {
-        boardId: board.id,
-        boardTitle: board.title,
-        distance: distance.toFixed(2),
-        studioId: studio.id,
-        position: position
-      })
+      const { board, studio, position } = boardData
       onNearbyBoardChange({ board, studio, position })
     } else {
       onNearbyBoardChange(null)
@@ -686,24 +689,30 @@ function SceneContents({
       {/* Ambient particles */}
       <Particles />
       
-      {/* Board proximity detector */}
+      {/* Board proximity detector - only check rendered studios for performance */}
       <BoardProximityDetector
-        studios={studios}
+        studios={studiosSorted.map(({ studio }) => studio)}
         avatarPos={avatarPos}
         onNearbyBoardChange={onNearbyBoardChange}
       />
 
-      {studiosSorted.map(({ studio }) => (
-        <StudioPlot
-          key={studio.id}
-          studio={studio}
-          position={{ x: studio.galleryPosition?.x ?? 0, y: 0, z: studio.galleryPosition?.z ?? 0 }}
-          onTeleport={() => onTeleport(studio)}
-          nearby={nearbyStudioId === studio.id}
-          renderBoards={true}
-          highlightedBoardId={highlightedBoardId}
-        />
-      ))}
+      {studiosSorted.map(({ studio, dist }) => {
+        // Only render boards for studios within 200 inches (16.7 feet) for performance
+        const MAX_BOARD_RENDER_DISTANCE = 200
+        const shouldRenderBoards = dist < MAX_BOARD_RENDER_DISTANCE
+        
+        return (
+          <StudioPlot
+            key={studio.id}
+            studio={studio}
+            position={{ x: studio.galleryPosition?.x ?? 0, y: 0, z: studio.galleryPosition?.z ?? 0 }}
+            onTeleport={() => onTeleport(studio)}
+            nearby={nearbyStudioId === studio.id}
+            renderBoards={shouldRenderBoards}
+            highlightedBoardId={highlightedBoardId}
+          />
+        )
+      })}
       
       {/* "E" interaction prompt for nearby boards - must be inside Canvas */}
       {nearbyBoard && (
