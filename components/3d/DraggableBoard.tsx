@@ -114,25 +114,34 @@ export function DraggableBoard({
   // Track if we just finished dragging to avoid resetting position
   const justFinishedDragging = useRef(false)
   
-  // Sync position when props change (but not right after we finished dragging)
-  useEffect(() => {
-    if (justFinishedDragging.current) {
+ // Sync position when props change (but not right after we finished dragging)
+useEffect(() => {
+  if (justFinishedDragging.current) {
+    // 🎯 Keep the flag set for 2 seconds to give save time to complete
+    const timer = setTimeout(() => {
       justFinishedDragging.current = false
-      return
-    }
+      console.log('📍 [DraggableBoard] Re-enabled position sync after drag')
+    }, 2000)
+    return () => clearTimeout(timer)
+  }
+  
+  if (!isDragging) {
+    // Only sync if position actually changed from external source
+    const propsPos = initialLocalPosition
+    const currentPos = positionRef.current
     
-    if (!isDragging) {
-      // Only sync if position actually changed from external source
-      const propsPos = initialLocalPosition
-      const currentPos = positionRef.current
-      
-      if (propsPos.x !== currentPos.x || propsPos.y !== currentPos.y) {
-        console.log('📍 Syncing position from props:', propsPos)
-        positionRef.current = propsPos
-        setLocalPosition(propsPos)
-      }
+    // Use a small epsilon for comparison (floating point tolerance)
+    const epsilon = 0.001
+    const xChanged = Math.abs(propsPos.x - currentPos.x) > epsilon
+    const yChanged = Math.abs(propsPos.y - currentPos.y) > epsilon
+    
+    if (xChanged || yChanged) {
+      console.log('📍 Syncing position from props:', propsPos)
+      positionRef.current = propsPos
+      setLocalPosition(propsPos)
     }
-  }, [initialLocalPosition.x, initialLocalPosition.y, isDragging])
+  }
+}, [initialLocalPosition.x, initialLocalPosition.y, isDragging])
   
   console.log('🎨 [DraggableBoard] Rendering board:', board.id, 'at position:', localPosition)
   
@@ -216,13 +225,23 @@ export function DraggableBoard({
       const localX = localOffset.x * cosR - localOffset.z * sinR
       const localY = localOffset.y
       
+      
+      // 🎯 Fix for vertical walls: detect if wall is vertical and invert X direction
+      const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+      const isVerticalWall = (
+        (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
+        (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
+      )
+      
+      // For vertical walls, invert X direction so dragging right moves board right (not left)
+      const adjustedLocalX = isVerticalWall ? -localX : localX
       // Apply drag offset so board follows cursor from where it was clicked
       // The offset is stored in wall space (inches), so we can subtract directly
       const offsetX = dragOffset.current ? dragOffset.current.x : 0
       const offsetY = dragOffset.current ? dragOffset.current.y : 0
       
       // Subtract offset so the click point stays under the cursor
-      const adjustedX = localX - offsetX
+      const adjustedX = adjustedLocalX - offsetX
       const adjustedY = localY - offsetY
       
       let normalizedX = THREE.MathUtils.clamp(adjustedX / scaledWallWidth, -0.5, 0.5)
@@ -260,39 +279,51 @@ export function DraggableBoard({
     // Store initial position to detect if this is a drag or just a click
     dragStartPosition.current = { x: e.clientX, y: e.clientY }
     
+      justFinishedDragging.current = false
     // Calculate offset from click point to board center (in local board space)
-    // The intersection point is in world space, we need to convert to local board space
-    if (e.intersections && e.intersections.length > 0) {
-      const intersection = e.intersections[0]
-      const worldClickPoint = intersection.point
-      
-      // Calculate current board position in world space
-      const currentBoardX = localPosition.x * scaledWallWidth
-      const currentBoardY = localPosition.y * scaledWallHeight
-      const currentBoardZ = 2.2 // Board is clearly in front of wall (wall depth is 4 inches)
-      
-      // Transform to board's local space (accounting for wall rotation and position)
-      const boardWorldPosition = new THREE.Vector3(
-        wallPosition.x + currentBoardX,
-        wallPosition.y + currentBoardY,
-        wallPosition.z + currentBoardZ
-      )
-      
-      // Get the offset from board center to click point in world space
-      const offset = new THREE.Vector3()
-      offset.copy(worldClickPoint).sub(boardWorldPosition)
-      
-      // Rotate offset to board's local space (inverse of wall rotation)
-      const cosR = Math.cos(-wallRotation)
-      const sinR = Math.sin(-wallRotation)
-      const localOffsetX = offset.x * cosR - offset.z * sinR
-      const localOffsetY = offset.y
-      
-      // Store offset in wall space (inches), not normalized
-      dragOffset.current = {
-        x: localOffsetX,
-        y: localOffsetY
-      }
+if (e.intersections && e.intersections.length > 0) {
+  const intersection = e.intersections[0]
+  const worldClickPoint = intersection.point
+  
+  // Calculate current board position in world space
+  const currentBoardX = localPosition.x * scaledWallWidth
+  const currentBoardY = localPosition.y * scaledWallHeight
+  const currentBoardZ = 2.2 // Board is clearly in front of wall (wall depth is 4 inches)
+  
+  // Transform to board's local space (accounting for wall rotation and position)
+  const boardWorldPosition = new THREE.Vector3(
+    wallPosition.x + currentBoardX,
+    wallPosition.y + currentBoardY,
+    wallPosition.z + currentBoardZ
+  )
+  
+  // Get the offset from board center to click point in world space
+  const offset = new THREE.Vector3()
+  offset.copy(worldClickPoint).sub(boardWorldPosition)
+  
+  // Rotate offset to board's local space (inverse of wall rotation)
+  const cosR = Math.cos(-wallRotation)
+  const sinR = Math.sin(-wallRotation)
+  const localOffsetX = offset.x * cosR - offset.z * sinR
+  const localOffsetY = offset.y
+  
+  // 🎯 Detect vertical walls and invert offset X (same as drag movement)
+  const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+  const isVerticalWall = (
+    (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
+    (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
+  )
+  
+  // For vertical walls, invert X offset to match inverted X drag direction
+  const adjustedOffsetX = isVerticalWall ? -localOffsetX : localOffsetX
+  
+  // Store offset in wall space (inches), not normalized
+  dragOffset.current = {
+    x: adjustedOffsetX,
+    y: localOffsetY
+  }
+  
+  console.log('📍 Drag offset calculated:', dragOffset.current, 'vertical wall:', isVerticalWall)
       
       console.log('📍 Drag offset calculated:', dragOffset.current, 'board size:', boardWidth, boardHeight)
     } else {
@@ -361,6 +392,9 @@ export function DraggableBoard({
         console.log('🎯🎯🎯 Calling onDragEndRef.current...')
         onDragEndRef.current(board.id, finalPos.x, finalPos.y, finalPos.width, finalPos.height)
         console.log('🎯🎯🎯 onDragEnd called successfully!')
+
+         // 🎯 CRITICAL: Update local state immediately to prevent reset
+    setLocalPosition(finalPos)
       } catch (err) {
         console.error('❌❌❌ onDragEnd FAILED:', err)
       }
@@ -391,8 +425,21 @@ export function DraggableBoard({
   // Check board's side property to determine which side of wall to place it on
   // If no side specified, default to front (for backwards compatibility)
   const boardSide = board.position?.side || 'front'
-  // Wall depth is 4 inches, so place boards at 2.2 (half wall depth + small offset) to be clearly in front
-  const boardZ = boardSide === 'back' ? -2.2 : 2.2
+  
+  // 🎯 Calculate correct Z based on wall rotation (fixes zigzag issue)
+  const getOutwardZ = (rotation: number) => {
+    const normalizedRotation = ((rotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+    const isVerticalWall = (
+      (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
+      (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
+    )
+    return isVerticalWall ? -2.2 : 2.2
+  }
+  
+  const outwardZ = getOutwardZ(wallRotation)
+  const boardZ = boardSide === 'back' ? -outwardZ : outwardZ
+  
+  console.log(`🧱 DraggableBoard on wall: rotation=${wallRotation.toFixed(2)}, outwardZ=${outwardZ}, side=${boardSide}, finalZ=${boardZ}`)
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
   const hasImage = board.fullImageUrl || board.thumbnailUrl
   const imageUrl = board.fullImageUrl || board.thumbnailUrl || ''

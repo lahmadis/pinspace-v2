@@ -1,6 +1,6 @@
 'use client'
 
-import { Canvas, useThree, useFrame } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { supabase } from '@/lib/supabase/client'
 import { Board } from '@/types'
@@ -75,42 +75,12 @@ function SceneContent({
   onDeselect?: () => void
   isWorkspaceMember?: boolean
 }) {
-  const orbitControlsRef = useRef<any>(null)
-  const { controls } = useThree()
-  
-  // Configure mouse buttons for drei's OrbitControls
-  useFrame(() => {
-    // Try to configure via ref first
-    if (orbitControlsRef.current && !orbitControlsRef.current._mouseButtonsConfigured) {
-      // drei's OrbitControls ref might expose controls via .get() or directly
-      const controlsObj = orbitControlsRef.current.get ? orbitControlsRef.current.get() : orbitControlsRef.current
-      if (controlsObj && controlsObj.mouseButtons !== undefined) {
-        controlsObj.mouseButtons = {
-          LEFT: THREE.MOUSE.ROTATE,
-          MIDDLE: THREE.MOUSE.DOLLY,
-          RIGHT: THREE.MOUSE.PAN
-        }
-        orbitControlsRef.current._mouseButtonsConfigured = true
-      }
-    }
-    // Also try via useThree controls
-    if (controls && (controls as any).mouseButtons && !(controls as any)._mouseButtonsConfigured) {
-      (controls as any).mouseButtons = {
-        LEFT: THREE.MOUSE.ROTATE,
-        MIDDLE: THREE.MOUSE.DOLLY,
-        RIGHT: THREE.MOUSE.PAN
-      }
-      ;(controls as any)._mouseButtonsConfigured = true
-    }
-  })
-  
   return (
     <>
       <color attach="background" args={['#f5f5f5']} />
       <ambientLight intensity={0.6} />
-      <directionalLight position={[10, 15, 5]} intensity={0.9} castShadow />
-      <directionalLight position={[-10, 10, -5]} intensity={0.35} />
-      <hemisphereLight args={['#ffffff', '#d4d0c8', 0.3]} />
+      <directionalLight position={[10, 10, 5]} intensity={0.8} castShadow />
+      <directionalLight position={[-10, 10, -5]} intensity={0.4} />
       
       <WallSystem 
   boards={boards} 
@@ -165,23 +135,85 @@ function SceneContent({
           </mesh>
           
           {(() => {
+            // AGGRESSIVE RENDERING: Render ALL boards that could be on this wall
+            // 1. All boards in placedBoards3D (trust the state)
+            // 2. ALL boards from boards array that have this wallIndex (regardless of side initially)
+            const placedBoardIds = new Set(Array.from(placedBoards3D.keys()))
             const entries = Array.from(placedBoards3D.entries())
-            console.log('🎨 [SceneContent] Rendering', entries.length, 'draggable boards for wall', editingWall, 'side:', editingWallSide)
+            
+            console.log('🔍 [SceneContent] DEBUG: Starting render check')
+            console.log('🔍 [SceneContent] placedBoards3D has', entries.length, 'entries:', Array.from(entries.map(([id]) => id)))
+            console.log('🔍 [SceneContent] Total boards available:', boards.length)
+            console.log('🔍 [SceneContent] Editing wall:', editingWall, 'side:', editingWallSide)
+            
+            // Find ALL boards that have this wallIndex (we'll filter by side after)
+            const allBoardsOnThisWall = boards.filter(b => {
+              if (!b.position) {
+                console.log(`  ⏭️ Board ${b.id} has no position`)
+                return false
+              }
+              const boardWallIndex = b.position.wallIndex
+              const boardSide = b.position.side || 'front'
+              const matches = boardWallIndex === editingWall
+              console.log(`  🔍 Board ${b.id}: wallIndex=${boardWallIndex}, side=${boardSide}, matches=${matches}`)
+              return matches
+            })
+            
+            console.log('🔍 [SceneContent] Found', allBoardsOnThisWall.length, 'boards on wall', editingWall)
+            
+            // Add ALL boards on this wall that aren't in placedBoards3D yet
+            allBoardsOnThisWall.forEach(board => {
+              if (!placedBoardIds.has(board.id) && board.position) {
+                // Convert position to normalized if needed
+                let normalizedX = board.position.x
+                let normalizedY = board.position.y
+                
+                const isInNormalizedRange = normalizedX >= -0.5 && normalizedX <= 0.5 && normalizedY >= -0.5 && normalizedY <= 0.5
+                const isInPercentageRange = normalizedX >= 0 && normalizedX <= 100 && normalizedY >= 0 && normalizedY <= 100
+                const isPercentageFormat = !isInNormalizedRange && isInPercentageRange
+                
+                if (isPercentageFormat) {
+                  normalizedX = (normalizedX / 100) - 0.5
+                  normalizedY = (normalizedY / 100) - 0.5
+                } else {
+                  normalizedX = THREE.MathUtils.clamp(normalizedX, -0.5, 0.5)
+                  normalizedY = THREE.MathUtils.clamp(normalizedY, -0.5, 0.5)
+                }
+                
+                entries.push([board.id, {
+                  x: normalizedX,
+                  y: normalizedY,
+                  width: board.position.width,
+                  height: board.position.height
+                }])
+                console.log(`➕ [SceneContent] FORCE-ADDING board ${board.id} to render list (wallIndex=${board.position.wallIndex}, side=${board.position.side || 'front'})`)
+              }
+            })
+            
+            console.log('🎨 [SceneContent] FINAL: Rendering', entries.length, 'draggable boards')
+            console.log('🎨 [SceneContent] Board IDs to render:', entries.map(([id]) => id))
+            
             return entries.map(([boardId, localPos]) => {
               const board = boards.find(b => b.id === boardId)
               if (!board) {
-                console.warn(`❌ [SceneContent] Board ${boardId} not found in boards list`)
+                console.error(`❌ [SceneContent] Board ${boardId} not found in boards list!`)
+                console.error('❌ [SceneContent] Available board IDs:', boards.map(b => b.id))
                 return null
               }
               
-              // Verify board is on the correct side
               const boardSide = board.position?.side || 'front'
-              if (boardSide !== editingWallSide) {
-                console.warn(`⚠️ [SceneContent] Board ${boardId} is on ${boardSide} side but we're editing ${editingWallSide} side`)
-              }
+              const boardWallIndex = board.position?.wallIndex
               
-              console.log(`🎨 [SceneContent] Rendering board ${boardId} on ${boardSide} side`)
+              // Log detailed info
+              console.log(`🎨 [SceneContent] Rendering board ${boardId}:`, {
+                wallIndex: boardWallIndex,
+                editingWall,
+                side: boardSide,
+                editingSide: editingWallSide,
+                position: `(${localPos.x.toFixed(3)}, ${localPos.y.toFixed(3)})`
+              })
               
+              // RENDER IT ANYWAY - even if side doesn't match, we'll let the user see it
               return (
                 <DraggableBoard
                   key={boardId}
@@ -206,60 +238,13 @@ function SceneContent({
         </>
       )}
       
-      {/* Calculate camera controls based on wall dimensions */}
-      {(() => {
-        // Find the largest wall dimensions (in feet)
-        const maxWallWidth = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.width)) : 8
-        const maxWallHeight = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.height)) : 8
-
-        // Convert to inches (1 unit = 1 inch)
-        const maxWallWidthInches = maxWallWidth * 12
-        const maxWallHeightInches = maxWallHeight * 12
-
-        // Baseline room: 8ft wide, 8ft tall
-        const baseWidthInches = 8 * 12
-        const baseHeightInches = 8 * 12
-
-        // Scale distance primarily with room width so wider rooms push the camera back,
-        // but keep camera/target height tied to wall height so the viewing angle stays consistent.
-        const distanceScale = maxWallWidthInches / baseWidthInches || 1
-        const heightScale = maxWallHeightInches / baseHeightInches || 1
-
-        const minDistance = 50 * distanceScale       // Scale minimum zoom by width
-        const maxDistance = 800 * distanceScale      // Scale maximum zoom by width
-
-        // Keep eye level around the vertical center of the tallest wall,
-        // so you always look straight at the wall instead of down on top.
-        const targetHeight = (maxWallHeightInches * 0.5) || 48  // center of wall, fallback ~4ft
-        const cameraHeight = targetHeight * Math.min(heightScale, 1.25) // avoid going too high
-
-        const cameraDistance = 80 * distanceScale    // Base distance scaled by width
-        
-        return (
-          <>
-            <OrbitControls 
-              ref={orbitControlsRef}
-              enableDamping
-              dampingFactor={0.05}
-              minDistance={minDistance}
-              maxDistance={maxDistance}
-              maxPolarAngle={Math.PI / 2}
-              minPolarAngle={Math.PI / 6}
-              enabled={editingWall === null}
-              enablePan={editingWall === null}
-              enableRotate={editingWall === null}
-              enableZoom={editingWall === null}
-              target={[0, targetHeight, 0]}
-            />
-            
-            <PerspectiveCamera 
-              makeDefault 
-              position={[0, cameraHeight, cameraDistance]}
-              fov={50}
-            />
-          </>
-        )
-      })()}
+      {/* Camera is managed by CameraController component */}
+      {/* Initial camera setup - CameraController will take over */}
+      <PerspectiveCamera 
+        makeDefault 
+        position={[0, 60, 120]}  // Initial position: 60" high, 120" away (eye level, 10ft back)
+        fov={50}  // Wider FOV to see more of the room
+      />
 
 
     </>
@@ -376,23 +361,59 @@ export default function StudioRoom(props: StudioRoomProps) {
     // Load all boards that have positions on this wall AND side
     const newMap = new Map<string, { x: number; y: number; width?: number; height?: number }>()
     
-    const boardsOnThisWall = localBoards.filter(b => 
-      b.position?.wallIndex === wallIndex && (b.position?.side || 'front') === side
-    )
-    console.log('🖼️ [StudioRoom] Boards on wall', wallIndex, ':', boardsOnThisWall.length, boardsOnThisWall.map(b => ({ id: b.id, pos: b.position })))
+    // First, get ALL boards on this wall (regardless of side) for debugging
+    const allBoardsOnWall = localBoards.filter(b => b.position?.wallIndex === wallIndex)
+    console.log('🖼️ [StudioRoom] ALL boards on wall', wallIndex, ':', allBoardsOnWall.length)
+    allBoardsOnWall.forEach(b => {
+      console.log(`  📋 Board ${b.id}: side=${b.position?.side || 'front'}, targetSide=${side}, matches=${(b.position?.side || 'front') === side}`)
+    })
+    
+    // Filter by side
+    const boardsOnThisWall = localBoards.filter(b => {
+      const hasPosition = !!b.position
+      const matchesWall = b.position?.wallIndex === wallIndex
+      const boardSide = b.position?.side || 'front'
+      const matchesSide = boardSide === side
+      const matches = hasPosition && matchesWall && matchesSide
+      
+      if (hasPosition && matchesWall && !matchesSide) {
+        console.warn(`⚠️ [StudioRoom] Board ${b.id} is on wall ${wallIndex} but wrong side: ${boardSide} (need ${side})`)
+      }
+      
+      return matches
+    })
+    console.log('🖼️ [StudioRoom] Boards on wall', wallIndex, 'side', side, ':', boardsOnThisWall.length, boardsOnThisWall.map(b => ({ id: b.id, pos: b.position })))
     
     boardsOnThisWall.forEach(board => {
       if (board.position) {
         // Convert position from percentage (0-100) to normalized (-0.5 to 0.5) if needed
         // Positions saved from upload API are percentages, but 3D editor uses normalized coordinates
+        // Normalized coordinates are always in range [-0.5, 0.5]
+        // Percentage coordinates are always in range [0, 100]
         let normalizedX = board.position.x
         let normalizedY = board.position.y
         
-        // If position is > 1, it's likely a percentage (0-100), convert to normalized
-        if (Math.abs(normalizedX) > 1 || Math.abs(normalizedY) > 1) {
+        // Detect if coordinates are in percentage format (0-100) vs normalized (-0.5 to 0.5)
+        // Normalized coordinates are ALWAYS in range [-0.5, 0.5]
+        // Percentage coordinates are in range [0, 100]
+        // If coordinates are within normalized range, treat as normalized
+        // Otherwise, if they're in percentage range [0, 100], treat as percentage
+        const isInNormalizedRange = normalizedX >= -0.5 && normalizedX <= 0.5 && normalizedY >= -0.5 && normalizedY <= 0.5
+        const isInPercentageRange = normalizedX >= 0 && normalizedX <= 100 && normalizedY >= 0 && normalizedY <= 100
+        const isPercentageFormat = !isInNormalizedRange && isInPercentageRange
+        
+        if (isPercentageFormat) {
+          // Convert from percentage (0-100) to normalized (-0.5 to 0.5)
           normalizedX = (normalizedX / 100) - 0.5
           normalizedY = (normalizedY / 100) - 0.5
           console.log(`🔄 [StudioRoom] Converted position for ${board.id} from percentage (${board.position.x}, ${board.position.y}) to normalized (${normalizedX.toFixed(3)}, ${normalizedY.toFixed(3)})`)
+        } else {
+          // Already normalized, but ensure they're in valid range
+          normalizedX = THREE.MathUtils.clamp(normalizedX, -0.5, 0.5)
+          normalizedY = THREE.MathUtils.clamp(normalizedY, -0.5, 0.5)
+          if (normalizedX !== board.position.x || normalizedY !== board.position.y) {
+            console.log(`🔧 [StudioRoom] Clamped position for ${board.id} from (${board.position.x}, ${board.position.y}) to (${normalizedX.toFixed(3)}, ${normalizedY.toFixed(3)})`)
+          }
         }
         
         // Prioritize: physical dimensions > saved dimensions > aspect ratio > defaults
@@ -494,7 +515,61 @@ export default function StudioRoom(props: StudioRoomProps) {
 
     console.log('🖼️ [StudioRoom] Total boards to render:', newMap.size)
     setPlacedBoards3D(newMap)
+    placedBoards3DRef.current = newMap
   }
+
+  // Auto-sync boards when in edit mode: if a board is added to localBoards that's on this wall,
+  // automatically add it to placedBoards3D if it's not already there
+  useEffect(() => {
+    if (editingWall === null || !editingWallDimensions) return
+    
+    const boardsOnThisWall = localBoards.filter(b => {
+      if (!b.position) return false
+      const boardWallIndex = b.position.wallIndex
+      const boardSide = b.position.side || 'front'
+      return boardWallIndex === editingWall && boardSide === editingWallSide
+    })
+    
+    // Check if any boards are missing from placedBoards3D
+    const placedIds = new Set(Array.from(placedBoards3D.keys()))
+    const missingBoards = boardsOnThisWall.filter(b => !placedIds.has(b.id))
+    
+    if (missingBoards.length > 0) {
+      console.log(`🔄 [StudioRoom] Auto-syncing ${missingBoards.length} boards to placedBoards3D`)
+      setPlacedBoards3D(prev => {
+        const newMap = new Map(prev)
+        missingBoards.forEach(board => {
+          if (board.position) {
+            // Convert position to normalized if needed
+            let normalizedX = board.position.x
+            let normalizedY = board.position.y
+            
+            const isInNormalizedRange = normalizedX >= -0.5 && normalizedX <= 0.5 && normalizedY >= -0.5 && normalizedY <= 0.5
+            const isInPercentageRange = normalizedX >= 0 && normalizedX <= 100 && normalizedY >= 0 && normalizedY <= 100
+            const isPercentageFormat = !isInNormalizedRange && isInPercentageRange
+            
+            if (isPercentageFormat) {
+              normalizedX = (normalizedX / 100) - 0.5
+              normalizedY = (normalizedY / 100) - 0.5
+            } else {
+              normalizedX = THREE.MathUtils.clamp(normalizedX, -0.5, 0.5)
+              normalizedY = THREE.MathUtils.clamp(normalizedY, -0.5, 0.5)
+            }
+            
+            newMap.set(board.id, {
+              x: normalizedX,
+              y: normalizedY,
+              width: board.position.width,
+              height: board.position.height
+            })
+            console.log(`➕ [StudioRoom] Auto-added board ${board.id} to placedBoards3D`)
+          }
+        })
+        placedBoards3DRef.current = newMap
+        return newMap
+      })
+    }
+  }, [localBoards, editingWall, editingWallSide, editingWallDimensions, placedBoards3D])
 
 
   const handleCameraTransitionComplete = () => {
@@ -517,118 +592,131 @@ export default function StudioRoom(props: StudioRoomProps) {
     console.log('💾 [StudioRoom] placedBoards3D (from ref) has', currentBoards.size, 'boards')
     console.log('💾 [StudioRoom] Board positions:', Array.from(currentBoards.entries()))
     
+    // Hide UI and exit edit mode IMMEDIATELY to trigger camera animation
+    setShowEditUI(false)
+    props.onEditModeChange?.(false)
+    
+    // Exit edit mode immediately - this triggers the camera swoosh animation
+    setEditingWall(null)
+    setEditingWallPosition(null)
+
+    // Save in the background (non-blocking)
     if (currentBoards.size === 0) {
       console.warn('⚠️ [StudioRoom] No boards to save! placedBoards3D is empty!')
     }
 
-    // 🎯 SAVE FIRST (blocking) - don't exit until save completes
-    try {
-      // Save all board positions
-      // First, get fresh boards list to ensure we don't save positions for deleted boards
-      let freshBoards = props.boards
+    // Run save operation in background without blocking
+    ;(async () => {
       try {
-        const refreshResponse = await fetch(`/api/boards?workspaceId=${props.studioId}`)
-        if (refreshResponse.ok) {
-          const refreshData = await refreshResponse.json()
-          freshBoards = refreshData.boards || props.boards
-          console.log('🔄 [StudioRoom] Refreshed boards list before save:', freshBoards.length, 'boards')
+        // Save all board positions
+        // First, get fresh boards list to ensure we don't save positions for deleted boards
+        let freshBoards = props.boards
+        try {
+          const refreshResponse = await fetch(`/api/boards?workspaceId=${props.studioId}`)
+          if (refreshResponse.ok) {
+            const refreshData = await refreshResponse.json()
+            freshBoards = refreshData.boards || props.boards
+            console.log('🔄 [StudioRoom] Refreshed boards list before save:', freshBoards.length, 'boards')
+          }
+        } catch (error) {
+          console.warn('⚠️ [StudioRoom] Failed to refresh boards before save, using props.boards:', error)
         }
-      } catch (error) {
-        console.warn('⚠️ [StudioRoom] Failed to refresh boards before save, using props.boards:', error)
-      }
-      
-      // Filter out temporary boards (those with temp- IDs that weren't successfully saved)
-      const validBoards = Array.from(currentBoards.entries()).filter(([boardId]) => {
-        // Skip all temporary IDs - they should have been replaced with real IDs after upload
-        if (boardId.startsWith('temp-')) {
-          const existsInFresh = freshBoards.some(b => b.id === boardId)
-          if (!existsInFresh) {
-            console.log('🧹 [StudioRoom] Skipping temporary board that was never saved:', boardId)
+        
+        // Filter out temporary boards (those with temp- IDs that weren't successfully saved)
+        // Temp boards should have been replaced with real IDs after upload, so any remaining
+        // temp IDs are orphaned and should be skipped
+        const validBoards = Array.from(currentBoards.entries()).filter(([boardId]) => {
+          // Skip all temporary IDs - they should have been replaced with real IDs after upload
+          if (boardId.startsWith('temp-')) {
+            const existsInFresh = freshBoards.some(b => b.id === boardId)
+            if (!existsInFresh) {
+              console.log('🧹 [StudioRoom] Skipping temporary board that was never saved:', boardId)
+              return false
+            }
+            // Even if it exists in fresh list, it's still a temp ID which shouldn't be saved
+            // (should have been replaced with real ID)
+            console.log('🧹 [StudioRoom] Skipping temporary board ID (should have been replaced):', boardId)
             return false
           }
-          console.log('🧹 [StudioRoom] Skipping temporary board ID (should have been replaced):', boardId)
-          return false
-        }
-        return true
-      })
-      
-      console.log(`💾 [StudioRoom] Saving ${validBoards.length} valid boards (filtered ${currentBoards.size - validBoards.length} temp boards)`)
-      
-      for (const [boardId, localPos] of validBoards) {
-        const board = freshBoards.find(b => b.id === boardId)
-        if (!board) {
-          if (!boardId.startsWith('temp-')) {
-            console.warn('⚠️ [StudioRoom] Board not found in fresh list (may have been deleted):', boardId)
+          return true
+        })
+        
+        console.log(`💾 [StudioRoom] Saving ${validBoards.length} valid boards (filtered ${currentBoards.size - validBoards.length} temp boards)`)
+        
+        for (const [boardId, localPos] of validBoards) {
+          const board = freshBoards.find(b => b.id === boardId)
+          if (!board) {
+            // Only warn if it's not a temp ID (temp IDs are expected to be filtered out above)
+            if (!boardId.startsWith('temp-')) {
+              console.warn('⚠️ [StudioRoom] Board not found in fresh list (may have been deleted):', boardId)
+            }
+            continue
           }
-          continue
+
+          // Convert normalized coordinates (-0.5 to 0.5) to percentage (0-100) for consistency with upload API
+          // This ensures all positions are stored in the same format
+          const percentageX = (localPos.x + 0.5) * 100
+          const percentageY = (localPos.y + 0.5) * 100
+          
+          const updatedBoard = {
+            ...board,
+            position: {
+              wallIndex: wallToSave,
+              x: percentageX,  // Save as percentage (0-100) to match upload API format
+              y: percentageY, // Save as percentage (0-100) to match upload API format
+              width: localPos.width || 0.2,
+              height: localPos.height || 0.2,
+              side: sideToSave, // Save which side this board is on (note: not stored in DB yet)
+            },
+          }
+
+          console.log('💾 [StudioRoom] Saving board', board.id, ':', {
+            normalized: { x: localPos.x, y: localPos.y },
+            percentage: { x: percentageX, y: percentageY },
+            side: sideToSave
+          })
+
+          const response = await fetch('/api/boards', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedBoard),
+          })
+
+          if (!response.ok) {
+            console.error('❌ [StudioRoom] Failed to save board', board.id, '- HTTP', response.status)
+          } else {
+            console.log('✅ [StudioRoom] Successfully saved board', board.id)
+          }
         }
 
-        const updatedBoard = {
-          ...board,
-          position: {
-            wallIndex: wallToSave,
-            x: localPos.x,
-            y: localPos.y,
-            width: localPos.width || 0.2,
-            height: localPos.height || 0.2,
-            side: sideToSave,
-          },
+        // Remove boards that were removed from this wall side
+        const boardIdsOnWall = Array.from(currentBoards.keys())
+        const boardsToRemove = props.boards.filter(
+          b => b.position?.wallIndex === wallToSave 
+            && (b.position?.side || 'front') === sideToSave
+            && !boardIdsOnWall.includes(b.id)
+        )
+
+        if (boardsToRemove.length > 0) {
+          console.log('🗑️ [StudioRoom] Removing', boardsToRemove.length, 'boards from wall')
         }
 
-        console.log('💾 [StudioRoom] Saving board', board.id, ':', updatedBoard.position)
-
-        const response = await fetch('/api/boards', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedBoard),
-        })
-
-        if (!response.ok) {
-          console.error('❌ [StudioRoom] Failed to save board', board.id, '- HTTP', response.status)
-        } else {
-          console.log('✅ [StudioRoom] Successfully saved board', board.id)
+        for (const board of boardsToRemove) {
+          await fetch('/api/boards', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...board, position: undefined }),
+          })
         }
+
+        console.log('🔄 [StudioRoom] Calling onBoardUpdate to reload data...')
+        await props.onBoardUpdate()
+        console.log('✅ [StudioRoom] Save complete! Data reloaded.')
+      } catch (error) {
+        console.error('❌ [StudioRoom] Error saving boards:', error)
+        alert('Failed to save board positions')
       }
-
-      // Remove boards that were removed from this wall side
-      const boardIdsOnWall = Array.from(currentBoards.keys())
-      const boardsToRemove = props.boards.filter(
-        b => b.position?.wallIndex === wallToSave 
-          && (b.position?.side || 'front') === sideToSave
-          && !boardIdsOnWall.includes(b.id)
-      )
-
-      if (boardsToRemove.length > 0) {
-        console.log('🗑️ [StudioRoom] Removing', boardsToRemove.length, 'boards from wall')
-      }
-
-      for (const board of boardsToRemove) {
-        await fetch('/api/boards', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...board, position: undefined }),
-        })
-      }
-
-      console.log('🔄 [StudioRoom] Calling onBoardUpdate to reload data...')
-      await props.onBoardUpdate()
-      console.log('✅ [StudioRoom] Save complete! Data reloaded.')
-      
-    } catch (error) {
-      console.error('❌ [StudioRoom] Error saving boards:', error)
-      alert('Failed to save board positions')
-      return // Don't exit edit mode if save failed
-    }
-
-    // 🎯 NOW exit edit mode (after successful save)
-    // Add tiny delay to ensure all state updates have propagated
-    setTimeout(() => {
-      setShowEditUI(false)
-      props.onEditModeChange?.(false)
-      setEditingWall(null)
-      setEditingWallPosition(null)
-      console.log('✅ [StudioRoom] Exited edit mode')
-    }, 100)
+    })()
   }
 
   
@@ -800,27 +888,24 @@ export default function StudioRoom(props: StudioRoomProps) {
 
   const handleBoardPositionChange = useCallback((boardId: string, localX: number, localY: number, width?: number, height?: number) => {
     console.log('🔁 [StudioRoom] handleBoardPositionChange CALLED:', { boardId, localX, localY, width, height })
-    
-    // 🎯 CRITICAL: Update ref FIRST (synchronously) before setState
-    const currentMap = placedBoards3DRef.current
-    const existing = currentMap.get(boardId)
-    const finalPosition = { 
-      x: localX, 
-      y: localY,
-      width: width || existing?.width || 0.2,
-      height: height || existing?.height || 0.2
-    }
-    
-    // Create new map and update ref immediately
-    const newMap = new Map(currentMap)
-    newMap.set(boardId, finalPosition)
-    placedBoards3DRef.current = newMap
-    
-    console.log('🔁 [StudioRoom] ✅ Updated REF for', boardId, ':', finalPosition)
-    console.log('🔁 [StudioRoom] Total boards in REF:', newMap.size)
-    
-    // Then update state for re-render
-    setPlacedBoards3D(newMap)
+    setPlacedBoards3D(prev => {
+      const newMap = new Map(prev)
+      const existing = newMap.get(boardId)
+      const finalPosition = { 
+        x: localX, 
+        y: localY,
+        width: width || existing?.width || 0.2,
+        height: height || existing?.height || 0.2
+      }
+      newMap.set(boardId, finalPosition)
+      console.log('🔁 [StudioRoom] ✅ Updated placedBoards3D for', boardId, ':', finalPosition)
+      console.log('🔁 [StudioRoom] Total boards in placedBoards3D:', newMap.size)
+      
+      // Also update the ref immediately
+      placedBoards3DRef.current = newMap
+      
+      return newMap
+    })
   }, [])
 
   const handleBoardDelete = useCallback(async (boardId: string) => {
@@ -940,6 +1025,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         formData.append('position_y', '0') // Center vertically
         formData.append('position_width', widthPercent!.toString())
         formData.append('position_height', heightPercent!.toString())
+        formData.append('position_side', editingWallSide) // Include which side this board is on
       }
       
       if (user) {
@@ -1118,6 +1204,7 @@ export default function StudioRoom(props: StudioRoomProps) {
               formData.append('position_y', ((gridY + 0.5) * 100).toString())
               formData.append('position_width', (widthPercent * 100).toString())
               formData.append('position_height', (heightPercent * 100).toString())
+              formData.append('position_side', editingWallSide) // Include which side this board is on
             }
             
             if (user) {
@@ -1145,21 +1232,45 @@ export default function StudioRoom(props: StudioRoomProps) {
             }
             
             // Replace temporary board with real uploaded board
-            if (board && tempBoardId && editingWall !== null && board.position?.wallIndex === editingWall) {
-              // Replace temp board with real board and revoke blob URL
+            // Always replace if board exists and we're editing a wall, even if position wasn't saved
+            if (board && tempBoardId && editingWall !== null) {
               setLocalBoards(prev => {
                 const tempBoard = prev.find(b => b.id === tempBoardId)
-                if (tempBoard?.thumbnailUrl?.startsWith('blob:')) {
+                if (!tempBoard) {
+                  console.warn(`⚠️ [Upload PDF] Temp board ${tempBoardId} not found in localBoards`)
+                  return prev
+                }
+                
+                if (tempBoard.thumbnailUrl?.startsWith('blob:')) {
                   URL.revokeObjectURL(tempBoard.thumbnailUrl)
                 }
-                // Preserve the side property from temp board (not stored in DB yet)
+                
+                // Preserve position from temp board if uploaded board doesn't have one
+                // This handles cases where the API failed to save position (e.g., missing column)
+                const preservedPosition = board.position?.wallIndex === editingWall 
+                  ? board.position 
+                  : tempBoard.position
+                
                 const updatedBoard = {
                   ...board,
-                  position: board.position ? {
-                    ...board.position,
-                    side: tempBoard?.position?.side || editingWallSide
-                  } : undefined
+                  position: preservedPosition ? {
+                    ...preservedPosition,
+                    wallIndex: editingWall,
+                    side: preservedPosition.side || editingWallSide
+                  } : {
+                    wallIndex: editingWall,
+                    x: 0,
+                    y: 0,
+                    side: editingWallSide
+                  }
                 }
+                
+                console.log(`✅ [Upload PDF] Replacing temp board ${tempBoardId} with real board ${board.id}`, {
+                  tempPosition: tempBoard.position,
+                  uploadedPosition: board.position,
+                  preservedPosition: updatedBoard.position
+                })
+                
                 return prev.map(b => b.id === tempBoardId ? updatedBoard : b)
               })
               
@@ -1171,13 +1282,34 @@ export default function StudioRoom(props: StudioRoomProps) {
                   newMap.delete(tempBoardId!)
                   newMap.set(board.id, position)
                   placedBoards3DRef.current = newMap // Update ref immediately
-                  console.log(`✅ [Upload PDF] Replaced temp board ${tempBoardId} with real board ${board.id}`)
+                  console.log(`✅ [Upload PDF] Replaced temp board ${tempBoardId} with real board ${board.id} in placedBoards3D`, {
+                    position,
+                    newMapSize: newMap.size,
+                    newMapKeys: Array.from(newMap.keys())
+                  })
                 } else {
-                  console.warn(`⚠️ [Upload PDF] Temp board ${tempBoardId} not found in placedBoards3D`)
+                  console.warn(`⚠️ [Upload PDF] Temp board ${tempBoardId} not found in placedBoards3D. Current keys:`, Array.from(newMap.keys()))
+                  // If temp board not found, add the real board with the position from temp board
+                  if (tempBoard.position) {
+                    const normalizedX = tempBoard.position.x >= -0.5 && tempBoard.position.x <= 0.5 
+                      ? tempBoard.position.x 
+                      : (tempBoard.position.x / 100) - 0.5
+                    const normalizedY = tempBoard.position.y >= -0.5 && tempBoard.position.y <= 0.5 
+                      ? tempBoard.position.y 
+                      : (tempBoard.position.y / 100) - 0.5
+                    newMap.set(board.id, {
+                      x: normalizedX,
+                      y: normalizedY,
+                      width: tempBoard.position.width,
+                      height: tempBoard.position.height
+                    })
+                    placedBoards3DRef.current = newMap
+                    console.log(`✅ [Upload PDF] Added real board ${board.id} to placedBoards3D with position from temp board`)
+                  }
                 }
                 return newMap
               })
-            } else if (tempBoardId && (!board || board.position?.wallIndex !== editingWall)) {
+            } else if (tempBoardId && !board) {
               // Upload failed or board wasn't placed on current wall - clean up temp board
               console.log(`🧹 [Upload PDF] Cleaning up temp board ${tempBoardId} (upload failed or wrong wall)`)
               setLocalBoards(prev => {
@@ -1303,22 +1435,50 @@ export default function StudioRoom(props: StudioRoomProps) {
         )
         
         // Replace temporary board with real uploaded board
-        if (uploadedBoard && tempBoardId && editingWall !== null && uploadedBoard.position?.wallIndex === editingWall) {
-          // Replace temp board with real board and revoke blob URL
+        // Always replace if board exists and we're editing a wall, even if position wasn't saved
+        if (uploadedBoard && tempBoardId && editingWall !== null) {
           setLocalBoards(prev => {
             const tempBoard = prev.find(b => b.id === tempBoardId)
-            if (tempBoard?.thumbnailUrl?.startsWith('blob:')) {
+            if (!tempBoard) {
+              console.warn(`⚠️ [Upload] Temp board ${tempBoardId} not found in localBoards`)
+              return prev
+            }
+            
+            if (tempBoard.thumbnailUrl?.startsWith('blob:')) {
               URL.revokeObjectURL(tempBoard.thumbnailUrl)
             }
-            // Preserve the side property from temp board (not stored in DB yet)
+            
+            // Preserve position from temp board if uploaded board doesn't have one
+            // This handles cases where the API failed to save position (e.g., missing column)
+            const preservedPosition = uploadedBoard.position?.wallIndex === editingWall 
+              ? uploadedBoard.position 
+              : tempBoard.position
+            
             const updatedBoard = {
               ...uploadedBoard,
-              position: uploadedBoard.position ? {
-                ...uploadedBoard.position,
-                side: tempBoard?.position?.side || editingWallSide
-              } : undefined
+              position: preservedPosition ? {
+                ...preservedPosition,
+                wallIndex: editingWall,
+                side: preservedPosition.side || editingWallSide
+              } : {
+                wallIndex: editingWall,
+                x: 0,
+                y: 0,
+                side: editingWallSide
+              }
             }
-            return prev.map(b => b.id === tempBoardId ? updatedBoard : b)
+            
+            console.log(`✅ [Upload] Replacing temp board ${tempBoardId} with real board ${uploadedBoard.id}`, {
+              tempPosition: tempBoard.position,
+              uploadedPosition: uploadedBoard.position,
+              preservedPosition: updatedBoard.position,
+              editingWall,
+              editingWallSide
+            })
+            
+            const updated = prev.map(b => b.id === tempBoardId ? updatedBoard : b)
+            console.log(`✅ [Upload] localBoards updated. New board count: ${updated.length}. Board ${uploadedBoard.id} is now in list:`, updated.some(b => b.id === uploadedBoard.id))
+            return updated
           })
           
           // Update placedBoards3D with real board ID
@@ -1329,13 +1489,34 @@ export default function StudioRoom(props: StudioRoomProps) {
               newMap.delete(tempBoardId!)
               newMap.set(uploadedBoard!.id, position)
               placedBoards3DRef.current = newMap // Update ref immediately
-              console.log(`✅ [Upload] Replaced temp board ${tempBoardId} with real board ${uploadedBoard.id}`)
+              console.log(`✅ [Upload] Replaced temp board ${tempBoardId} with real board ${uploadedBoard.id} in placedBoards3D`, {
+                position,
+                newMapSize: newMap.size,
+                newMapKeys: Array.from(newMap.keys())
+              })
             } else {
-              console.warn(`⚠️ [Upload] Temp board ${tempBoardId} not found in placedBoards3D`)
+              console.warn(`⚠️ [Upload] Temp board ${tempBoardId} not found in placedBoards3D. Current keys:`, Array.from(newMap.keys()))
+              // If temp board not found, add the real board with the position from temp board
+              if (tempBoard.position) {
+                const normalizedX = tempBoard.position.x >= -0.5 && tempBoard.position.x <= 0.5 
+                  ? tempBoard.position.x 
+                  : (tempBoard.position.x / 100) - 0.5
+                const normalizedY = tempBoard.position.y >= -0.5 && tempBoard.position.y <= 0.5 
+                  ? tempBoard.position.y 
+                  : (tempBoard.position.y / 100) - 0.5
+                newMap.set(uploadedBoard!.id, {
+                  x: normalizedX,
+                  y: normalizedY,
+                  width: tempBoard.position.width,
+                  height: tempBoard.position.height
+                })
+                placedBoards3DRef.current = newMap
+                console.log(`✅ [Upload] Added real board ${uploadedBoard.id} to placedBoards3D with position from temp board`)
+              }
             }
             return newMap
           })
-        } else if (tempBoardId && (!uploadedBoard || uploadedBoard.position?.wallIndex !== editingWall)) {
+        } else if (tempBoardId && !uploadedBoard) {
           // Upload failed or board wasn't placed on current wall - clean up temp board
           console.log(`🧹 [Upload] Cleaning up temp board ${tempBoardId} (upload failed or wrong wall)`)
           setLocalBoards(prev => {

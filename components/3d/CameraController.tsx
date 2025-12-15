@@ -92,17 +92,35 @@ export function CameraController({
         distance = baseDistance * 1.05 // Only 5% margin for very close view in 2D edit mode
         console.log(`📷 [Camera] Wall dimensions: ${wallWidthInches}" × ${wallHeightInches}", calculated distance: ${distance.toFixed(0)}" (${(distance/12).toFixed(1)}ft)`)
       }
-      // Calculate the forward direction of the wall (pointing away from the wall's front face)
-      // The wall's front face normal is the direction we want to position the camera
-      const wallForward = new THREE.Vector3(
-        Math.sin(wallRotation),
-        0,
-        Math.cos(wallRotation)
-      ).normalize()
-      
-      // Position camera directly in front of the wall, perpendicular to it
-      const offset = wallForward.multiplyScalar(distance)
-      targetPosition.current.copy(wallPosition).add(offset)
+     // 🎯 Calculate which direction is "outward" for this wall (same logic as board placement)
+// Normalize rotation to 0-2π range
+const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+
+// Check if this is a vertical wall (rotation ≈ π/2 or 3π/2)
+const isVerticalWall = (
+  (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
+  (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
+)
+
+// For vertical walls, boards are at -Z, so camera should be on -Z side
+// For horizontal walls, boards are at +Z, so camera should be on +Z side
+const zDirection = isVerticalWall ? -1 : 1
+
+console.log(`📷 [Camera] Wall rotation: ${(wallRotation * 180 / Math.PI).toFixed(0)}°, vertical: ${isVerticalWall}, zDirection: ${zDirection}`)
+
+// Calculate the forward direction of the wall (pointing away from the wall's front face)
+const wallForward = new THREE.Vector3(
+  Math.sin(wallRotation),
+  0,
+  Math.cos(wallRotation)
+).normalize()
+
+// Apply Z direction correction for vertical walls
+wallForward.multiplyScalar(zDirection)
+
+// Position camera directly in front of the wall, perpendicular to it
+const offset = wallForward.multiplyScalar(distance)
+targetPosition.current.copy(wallPosition).add(offset)
       // Position camera at wall center height (wallPosition.y is already at center)
       targetPosition.current.y = wallPosition.y
       
@@ -144,6 +162,12 @@ export function CameraController({
       controlsRef.current = new OrbitControls(camera, gl.domElement)
       controlsRef.current.enableDamping = true
       controlsRef.current.dampingFactor = 0.05
+      // Configure mouse buttons: left = rotate, right = pan
+      controlsRef.current.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN
+      }
     }
 
     if (isAnimating.current) {

@@ -31,6 +31,25 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
   // So an 8ft × 10ft wall = 96 × 120 units
   const SCALE = 12 // Convert feet to inches (1 ft = 12 inches)
   
+  // 🎯 Helper function to determine which Z direction is "outward" for a wall
+  const getOutwardZ = (rotation: number) => {
+    // Normalize rotation to 0-2π range
+    const normalizedRotation = ((rotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+    
+    // For zigzag walls:
+    // - Horizontal walls (rotation ≈ 0 or π): front is +Z
+    // - Vertical walls (rotation ≈ π/2 or 3π/2): front is -Z (because of rotation)
+    
+    // Check if rotation is closer to π/2 (90°) or 3π/2 (270°)
+    const isVerticalWall = (
+      (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
+      (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
+    )
+    
+    // Vertical walls need negative Z to face outward
+    return isVerticalWall ? -2.2 : 2.2
+  }
+  
   const getWallTransform = (index: number) => {
     const wall = wallConfig.walls[index]
     const width = wall.width * SCALE
@@ -182,7 +201,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
       {/* 600 inches = 50 feet, which should cover most room layouts */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <planeGeometry args={[600, 600]} />
-        <meshStandardMaterial color="#cccccc" />
+        <meshStandardMaterial color="#d4d0c8" roughness={0.8} metalness={0.0} />
       </mesh>
 
       {wallConfig.walls.map((wall, wallIndex) => {
@@ -223,36 +242,16 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
   onClick={(e) => {
     e.stopPropagation()
     
-    // Detect which face was clicked (front or back)
-    const intersection = e.intersections[0]
-    let isBackFace = false
-    
-    if (intersection && intersection.face && e.ray) {
-      // Get the face normal in world space
-      const faceNormal = intersection.face.normal.clone()
-      faceNormal.transformDirection(intersection.object.matrixWorld)
-      
-      // Calculate wall's front normal (where boards are - positive Z in local space)
-      // Local +Z transforms to world: (sin(rotation), 0, cos(rotation))
-      const wallFrontNormal = new THREE.Vector3(
-        Math.sin(transform.rotationY),
-        0,
-        Math.cos(transform.rotationY)
-      ).normalize()
-      
-      // Check if clicked face normal is pointing in same direction as front normal
-      // If dot product is positive, it's the front face; negative = back face
-      const dotProduct = faceNormal.dot(wallFrontNormal)
-      isBackFace = dotProduct < -0.3 // Back face if opposite direction
-    }
+    // 🎯 ALWAYS edit front side for simplicity and consistency
+    // This prevents confusion with zigzag layouts where walls face different directions
+    const isBackFace = false
     
     const position = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
-    // If back face, flip rotation 180° to adjust coordinate system
-    const rotation = isBackFace ? transform.rotationY + Math.PI : transform.rotationY
+    const rotation = transform.rotationY
     
     console.log('🖼️ [WallSystem] Wall clicked:', {
       wallIndex,
-      side: isBackFace ? 'back' : 'front',
+      side: 'front',
       rotation,
       position: { x: position.x, y: position.y, z: position.z }
     })
@@ -263,7 +262,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
   receiveShadow
 >
               <boxGeometry args={[transform.width, transform.height, 4]} />
-              <meshStandardMaterial color="#e8e4dc" />
+              <meshStandardMaterial color="#f8f8f5" roughness={0.9} metalness={0.0} />
             </mesh>
 
             {boardsOnWall.map((board) => {
@@ -334,9 +333,11 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
               // Saved y=+0.5 means bottom in 2D → should be -height/2 in 3D
               const boardY = board.position.y * transform.height
 
-              // Place board on correct side: front = +2.2, back = -2.2
-              // Wall depth is 4 inches, so 2.2 places boards clearly in front/behind (half wall depth + small offset)
-              const boardZ = boardSide === 'back' ? -2.2 : 2.2
+              // 🎯 Calculate correct Z based on wall rotation (fixes zigzag issue)
+              const outwardZ = getOutwardZ(transform.rotationY)
+              const boardZ = boardSide === 'back' ? -outwardZ : outwardZ
+              
+              console.log(`🧱 Board on wall ${wallIndex}: rotation=${transform.rotationY.toFixed(2)}, outwardZ=${outwardZ}, side=${boardSide}, finalZ=${boardZ}`)
               
               console.log(`   💾 LOADED: x=${board.position.x.toFixed(3)}, y=${board.position.y.toFixed(3)}, side=${boardSide}`)
               console.log(`   🎯 3D Position: x=${boardX.toFixed(2)}, y=${boardY.toFixed(2)}, z=${boardZ.toFixed(2)} (side: ${boardSide})`)

@@ -129,19 +129,40 @@
     "walls": [
       {
         "height": 10,
-        "width": 20
+        "width": 8
       },
       {
         "height": 10,
-        "width": 20
+        "width": 8
       },
       {
         "height": 10,
-        "width": 20
+        "width": 8
       },
       {
         "height": 10,
-        "width": 20
+        "width": 8
+      }
+    ],
+    "layoutType": "zigzag"
+  },
+  "d13a4906-8584-4a54-928a-b64cd88f85d2": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
       }
     ],
     "layoutType": "zigzag"
