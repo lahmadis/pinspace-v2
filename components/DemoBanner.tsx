@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
 import { isDemoMode } from '@/lib/demoMode'
 
 interface DemoBannerProps {
@@ -10,11 +9,10 @@ interface DemoBannerProps {
 
 export default function DemoBanner({ message = '🎭 Demo Mode - Sample Data for Demonstration' }: DemoBannerProps) {
   const [show, setShow] = useState(false)
-  const searchParams = useSearchParams()
 
   useEffect(() => {
-    setShow(isDemoMode(searchParams))
-  }, [searchParams])
+    setShow(isDemoMode())
+  }, [])
 
   if (!show) return null
 

@@ -1,12 +1,12 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { useState } from 'react'
 import NetworkView from '@/components/network/NetworkView'
 import DemoBanner from '@/components/DemoBanner'
 import { getSchools, getYearsBySchool, getStudiosByYear, type DemoSchool } from '@/lib/mockData'
 import { School } from '@/types'
 
-function DemoNetworkPageInner() {
+export default function DemoNetworkPage() {
   const [selectedSchool, setSelectedSchool] = useState<DemoSchool | null>(null)
   const [selectedYear, setSelectedYear] = useState<string | null>(null)
   
@@ -64,13 +64,5 @@ function DemoNetworkPageInner() {
         </div>
       </div>
     </div>
-  )
-}
-
-export default function DemoNetworkPage() {
-  return (
-    <Suspense fallback={null}>
-      <DemoNetworkPageInner />
-    </Suspense>
   )
 }
