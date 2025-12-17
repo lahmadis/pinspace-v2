@@ -1,11 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
+import { getDemoBoards, transformDemoBoard } from '@/lib/mockData'
 
 // Cache boards for 30 seconds (shorter than public workspaces since boards change more frequently)
 export const revalidate = 30
 
 export async function GET(request: NextRequest) {
   try {
+    const searchParams = request.nextUrl.searchParams
+    const isDemo = searchParams.get('demo') === 'true'
+    const workspaceId = searchParams.get('workspaceId') || searchParams.get('studioId') // Support both for backward compatibility
+
+    if (!workspaceId) {
+      return NextResponse.json({ error: 'workspaceId or studioId required' }, { status: 400 })
+    }
+
+    // Demo mode: return mock data
+    if (isDemo) {
+      const demoBoards = getDemoBoards(workspaceId)
+      const transformedBoards = demoBoards.map(transformDemoBoard)
+      console.log(`✅ [DEMO MODE] Returning ${transformedBoards.length} demo boards for studio ${workspaceId}`)
+      return NextResponse.json({ boards: transformedBoards })
+    }
+
+    // Normal mode: use Supabase
     const supabase = supabaseServer()
     const {
       data: { session },
@@ -20,13 +38,6 @@ export async function GET(request: NextRequest) {
     const userId = session?.user?.id
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const searchParams = request.nextUrl.searchParams
-    const workspaceId = searchParams.get('workspaceId') || searchParams.get('studioId') // Support both for backward compatibility
-
-    if (!workspaceId) {
-      return NextResponse.json({ error: 'workspaceId or studioId required' }, { status: 400 })
     }
 
     console.log('Fetching boards for workspace:', workspaceId)

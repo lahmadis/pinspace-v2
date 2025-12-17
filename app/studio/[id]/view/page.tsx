@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
@@ -9,6 +9,8 @@ import { supabase } from '@/lib/supabase/client'
 import { Board } from '@/types'
 import WallSystem from '@/components/3d/WallSystem'
 import LightboxModal from '@/components/LightboxModal'
+import DemoBanner from '@/components/DemoBanner'
+import { addDemoParam } from '@/lib/demoMode'
 
 interface WallDimensions {
   height: number
@@ -25,6 +27,9 @@ export default function StudioViewPage() {
   const searchParams = useSearchParams()
   const studioId = params.id as string
   
+  // Check if it's a demo studio (starts with "demo-studio-") or has demo=true param
+  const isDemoStudio = studioId.startsWith('demo-studio-')
+  const isDemo = searchParams?.get('demo') === 'true' || isDemoStudio
   const [boards, setBoards] = useState<Board[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -35,8 +40,11 @@ export default function StudioViewPage() {
   useEffect(() => {
     const loadWallConfig = async () => {
       try {
-        // Try API first
-        const resConfig = await fetch(`/api/studios/${studioId}/wall-config`)
+        // Try API first - include demo param if in demo mode
+        const configUrl = isDemo 
+          ? `/api/studios/${studioId}/wall-config?demo=true`
+          : `/api/studios/${studioId}/wall-config`
+        const resConfig = await fetch(configUrl)
         if (resConfig.ok) {
           const data = await resConfig.json()
           if (data?.config) {
@@ -71,7 +79,7 @@ export default function StudioViewPage() {
 
   useEffect(() => {
     fetchBoards()
-  }, [studioId])
+  }, [studioId, isDemo])
   
   // Open board from URL query param after boards are loaded
   useEffect(() => {
@@ -103,7 +111,12 @@ export default function StudioViewPage() {
     try {
       setLoading(true)
       setError(null)
-      const response = await fetch(`/api/boards?studioId=${studioId}`)
+      // Always include demo=true for demo studios, even if not in URL params
+      const url = isDemo 
+        ? `/api/boards?workspaceId=${studioId}&demo=true` 
+        : `/api/boards?workspaceId=${studioId}`
+      console.log('🔍 [View Mode] Fetching boards from:', url, 'isDemo:', isDemo)
+      const response = await fetch(url)
       
       if (!response.ok) {
         throw new Error('Failed to fetch boards')
@@ -174,12 +187,30 @@ export default function StudioViewPage() {
 
   return (
     <div className="relative w-full h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <DemoBanner />
+      
       {/* Top Navigation Bar */}
       <div className="absolute top-0 left-0 right-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link 
-              href={searchParams.get('returnTo') === 'gallery' ? '/gallery' : '/explore'}
+              href={(() => {
+                const returnTo = searchParams.get('returnTo') === 'gallery' ? '/gallery' : '/explore'
+                // Preserve demo mode when returning
+                if (isDemo) {
+                  const params = new URLSearchParams()
+                  // Get original gallery params from URL if available
+                  const originalParams = window.location.search
+                  if (originalParams.includes('color=') || originalParams.includes('department=')) {
+                    // Preserve gallery filters
+                    const urlParams = new URLSearchParams(originalParams)
+                    urlParams.set('demo', 'true')
+                    return `${returnTo}?${urlParams.toString()}`
+                  }
+                  return `${returnTo}?demo=true`
+                }
+                return returnTo
+              })()}
               className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
             >
               <svg className="w-5 h-5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
@@ -217,6 +248,20 @@ export default function StudioViewPage() {
         <ambientLight intensity={0.6} />
         <directionalLight position={[10, 10, 5]} intensity={0.8} castShadow />
         <directionalLight position={[-10, 10, -5]} intensity={0.4} />
+        
+        {/* Floor/Ground - large enough to prevent walls from looking like they're floating */}
+        <mesh
+          position={[0, 0, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          receiveShadow
+        >
+          <planeGeometry args={[10000, 10000]} />
+          <meshStandardMaterial
+            color="#e5e7eb"
+            roughness={0.95}
+            metalness={0}
+          />
+        </mesh>
         
         {/* Wall System with Boards */}
         {wallConfig && (

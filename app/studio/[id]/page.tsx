@@ -1,12 +1,13 @@
 'use client'
 
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
 import { Board } from '@/types'
 import WallConfigModal from '@/components/WallConfigModal'
 import ShareModal from '@/components/ShareModal'
+import DemoBanner from '@/components/DemoBanner'
 
 const StudioRoom = dynamic(() => import('@/components/3d/StudioRoom'), {
   ssr: false,
@@ -45,6 +46,7 @@ const DEFAULT_CONFIG: WallConfig = {
 export default function StudioPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const studioId = params.id as string
   
   const [boards, setBoards] = useState<Board[]>([])
@@ -54,12 +56,15 @@ export default function StudioPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isEditMode, setIsEditMode] = useState(false)
 
+  const isDemo = searchParams?.get('demo') === 'true'
+
   // Load boards and wall config (API + localStorage fallback)
   useEffect(() => {
     const loadData = async () => {
       try {
         // Load boards (studioId is actually workspaceId now)
-        const response = await fetch(`/api/boards?workspaceId=${studioId}`)
+        const url = isDemo ? `/api/boards?workspaceId=${studioId}&demo=true` : `/api/boards?workspaceId=${studioId}`
+        const response = await fetch(url)
         if (response.ok) {
           const data = await response.json()
           setBoards(data.boards || [])
@@ -154,6 +159,7 @@ export default function StudioPage() {
 
   return (
     <>
+      <DemoBanner />
       {showWallConfig && (
         <WallConfigModal
           onConfirm={handleWallConfigConfirm}

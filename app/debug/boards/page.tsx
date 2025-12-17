@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+export const dynamic = 'force-dynamic'
+
+import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 
 interface BoardInfo {
@@ -12,7 +14,7 @@ interface BoardInfo {
   position_side: string | null
 }
 
-export default function DebugBoardsPage() {
+function DebugBoardsPageInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const studioId = searchParams.get('id') || searchParams.get('studioId') || searchParams.get('workspaceId') || ''
@@ -297,6 +299,14 @@ export default function DebugBoardsPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function DebugBoardsPage() {
+  return (
+    <Suspense fallback={null}>
+      <DebugBoardsPageInner />
+    </Suspense>
   )
 }
 

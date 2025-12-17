@@ -32,7 +32,8 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
   const SCALE = 12 // Convert feet to inches (1 ft = 12 inches)
   
   // 🎯 Helper function to determine which Z direction is "outward" for a wall
-  const getOutwardZ = (rotation: number) => {
+  // Returns 1 for +Z direction, -1 for -Z direction
+  const getOutwardZDirection = (rotation: number): number => {
     // Normalize rotation to 0-2π range
     const normalizedRotation = ((rotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
     
@@ -46,8 +47,8 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
       (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
     )
     
-    // Vertical walls need negative Z to face outward
-    return isVerticalWall ? -2.2 : 2.2
+    // Return direction: -1 for vertical walls (front faces -Z), +1 for horizontal walls (front faces +Z)
+    return isVerticalWall ? -1 : 1
   }
   
   const getWallTransform = (index: number) => {
@@ -196,13 +197,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
 
   return (
     <group>
-      {/* Floor - scaled to match 1 unit = 1 inch convention */}
-      {/* Make floor large enough to cover the entire room (walls can be 8-10ft, room might be 30-40ft across) */}
-      {/* 600 inches = 50 feet, which should cover most room layouts */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <planeGeometry args={[600, 600]} />
-        <meshStandardMaterial color="#d4d0c8" roughness={0.8} metalness={0.0} />
-      </mesh>
+      {/* Floor removed - using gallery's unified floor instead */}
 
       {wallConfig.walls.map((wall, wallIndex) => {
         const transform = getWallTransform(wallIndex)
@@ -260,9 +255,16 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
   }}
   castShadow
   receiveShadow
+  renderOrder={0}
 >
               <boxGeometry args={[transform.width, transform.height, 4]} />
-              <meshStandardMaterial color="#f8f8f5" roughness={0.9} metalness={0.0} />
+              <meshStandardMaterial 
+                color="#f8f8f5" 
+                roughness={0.9} 
+                metalness={0.0}
+                depthWrite={true}
+                depthTest={true}
+              />
             </mesh>
 
             {boardsOnWall.map((board) => {
@@ -333,14 +335,48 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
               // Saved y=+0.5 means bottom in 2D → should be -height/2 in 3D
               const boardY = board.position.y * transform.height
 
-              // 🎯 Calculate correct Z based on wall rotation (fixes zigzag issue)
-              const outwardZ = getOutwardZ(transform.rotationY)
-              const boardZ = boardSide === 'back' ? -outwardZ : outwardZ
+              // 🎯 Position board flush with wall surface
+              // Wall depth is 4 inches, so wall surface is at WALL_DEPTH/2 = 2 inches from center
+              // Board should be positioned at the wall surface, not sticking out
+              const WALL_DEPTH = 4 // Wall thickness: 4 inches
+              const WALL_SURFACE_OFFSET = WALL_DEPTH / 2 // 2 inches from wall center to surface
+              const BOARD_OFFSET = 0.2 // Offset to prevent z-fighting and ensure boards are always visible (0.2 inches = 5mm)
               
-              console.log(`🧱 Board on wall ${wallIndex}: rotation=${transform.rotationY.toFixed(2)}, outwardZ=${outwardZ}, side=${boardSide}, finalZ=${boardZ}`)
+              // Determine which direction is "outward" for this wall (1 for +Z, -1 for -Z)
+              const outwardDirection = getOutwardZDirection(transform.rotationY)
+              
+              // Position board at wall surface:
+              // - Front side: same direction as outward (outwardDirection * WALL_SURFACE_OFFSET)
+              // - Back side: opposite direction (-outwardDirection * WALL_SURFACE_OFFSET)
+              // Ensure boards are ALWAYS outside the wall geometry (z > 2 or z < -2)
+              const baseZ = (boardSide === 'back' ? -outwardDirection : outwardDirection) * WALL_SURFACE_OFFSET
+              const boardZ = baseZ + (boardSide === 'back' ? -BOARD_OFFSET : BOARD_OFFSET)
+              
+              // Safety check: ensure board is never inside the wall (between -2 and +2)
+              // Wall geometry extends from -2 to +2 inches (WALL_DEPTH = 4, so ±2 from center)
+              const WALL_INNER_BOUND = WALL_SURFACE_OFFSET // 2 inches
+              const WALL_OUTER_BOUND = WALL_SURFACE_OFFSET + BOARD_OFFSET // 2.2 inches
+              
+              // Clamp board Z to ensure it's always outside the wall
+              let finalBoardZ = boardZ
+              if (boardSide === 'back') {
+                // Back boards must be at z <= -WALL_OUTER_BOUND (at least -2.2)
+                finalBoardZ = Math.min(boardZ, -WALL_OUTER_BOUND)
+                if (finalBoardZ !== boardZ) {
+                  console.warn(`⚠️ Board ${board.id} on back side clamped from z=${boardZ.toFixed(2)} to ${finalBoardZ.toFixed(2)}`)
+                }
+              } else {
+                // Front boards must be at z >= WALL_OUTER_BOUND (at least 2.2)
+                finalBoardZ = Math.max(boardZ, WALL_OUTER_BOUND)
+                if (finalBoardZ !== boardZ) {
+                  console.warn(`⚠️ Board ${board.id} on front side clamped from z=${boardZ.toFixed(2)} to ${finalBoardZ.toFixed(2)}`)
+                }
+              }
+              
+              console.log(`🧱 Board on wall ${wallIndex}: rotation=${transform.rotationY.toFixed(2)}, outwardDirection=${outwardDirection}, side=${boardSide}, finalZ=${finalBoardZ.toFixed(2)}`)
               
               console.log(`   💾 LOADED: x=${board.position.x.toFixed(3)}, y=${board.position.y.toFixed(3)}, side=${boardSide}`)
-              console.log(`   🎯 3D Position: x=${boardX.toFixed(2)}, y=${boardY.toFixed(2)}, z=${boardZ.toFixed(2)} (side: ${boardSide})`)
+              console.log(`   🎯 3D Position: x=${boardX.toFixed(2)}, y=${boardY.toFixed(2)}, z=${finalBoardZ.toFixed(2)} (side: ${boardSide})`)
               console.log(`   📏 3D Size: ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units (${boardWidth.toFixed(2)}" x ${boardHeight.toFixed(2)}")`)
               if (board.physicalWidth && board.physicalHeight) {
                 console.log(`   ✅ Physical dimensions: ${board.physicalWidth}" x ${board.physicalHeight}"`)
@@ -353,7 +389,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
                 <BoardThumbnail
                   key={board.id}
                   board={board}
-                  position={[boardX, boardY, boardZ]}
+                  position={[boardX, boardY, finalBoardZ]}
                   width={boardWidth}
                   height={boardHeight}
                   onClick={onBoardClick}

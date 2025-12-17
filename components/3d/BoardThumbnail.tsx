@@ -4,8 +4,7 @@ import React, { useState, useRef, useEffect, Suspense } from 'react'
 import { Board } from '@/types'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
-import { Text, useTexture, Html } from '@react-three/drei'
-import CommentPanel from '@/components/CommentPanel'
+import { useTexture, Html } from '@react-three/drei'
 import { PDFTextureMaterial } from './PDFTexture'
 
 interface BoardThumbnailProps {
@@ -65,7 +64,7 @@ function BoardImage({
   // Handle PDFs - show red placeholder
   if (imageUrl.toLowerCase().endsWith('.pdf')) {
     return (
-      <mesh ref={meshRef} castShadow receiveShadow>
+      <mesh ref={meshRef} castShadow receiveShadow renderOrder={1}>
         <boxGeometry args={[width, height, BOARD_THICKNESS]} />
         <meshStandardMaterial
           color="#ff4444"
@@ -73,6 +72,8 @@ function BoardImage({
           metalness={0.0}
           emissive={isHighlighted ? '#6366f1' : (hovered ? '#6366f1' : '#000000')}
           emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
+          depthWrite={true}
+          depthTest={true}
         />
       </mesh>
     )
@@ -95,7 +96,7 @@ function BoardImage({
   }, [texture, gl])
   
   return (
-    <mesh ref={meshRef} castShadow receiveShadow>
+    <mesh ref={meshRef} castShadow receiveShadow renderOrder={1}>
       <boxGeometry args={[width, height, BOARD_THICKNESS]} />
       <meshStandardMaterial
         map={texture}
@@ -103,6 +104,8 @@ function BoardImage({
         metalness={0.0}
         emissive={isHighlighted ? '#6366f1' : (hovered ? '#6366f1' : '#000000')}
         emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
+        depthWrite={true}
+        depthTest={true}
       />
     </mesh>
   )
@@ -134,7 +137,7 @@ function BoardFallback({
   }
 
   return (
-    <mesh ref={meshRef} castShadow receiveShadow>
+    <mesh ref={meshRef} castShadow receiveShadow renderOrder={1}>
       <boxGeometry args={[width, height, BOARD_THICKNESS]} />
       <meshStandardMaterial
         color={hovered ? '#e0e7ff' : getColorFromId(boardId)}
@@ -142,6 +145,8 @@ function BoardFallback({
         metalness={0.0}
         emissive={isHighlighted ? '#6366f1' : (hovered ? '#6366f1' : '#000000')}
         emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
+        depthWrite={true}
+        depthTest={true}
       />
     </mesh>
   )
@@ -167,7 +172,7 @@ function BoardPDF({
 }) {
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
   return (
-    <mesh ref={meshRef} castShadow receiveShadow>
+    <mesh ref={meshRef} castShadow receiveShadow renderOrder={1}>
       <boxGeometry args={[width, height, BOARD_THICKNESS]} />
       <PDFTextureMaterial pdfUrl={pdfUrl} hovered={hovered} />
     </mesh>
@@ -176,10 +181,7 @@ function BoardPDF({
 
 export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted }: BoardThumbnailProps) {
   const [hovered, setHovered] = useState(false)
-  const [stickyHovered, setStickyHovered] = useState(false)
-  const [showComments, setShowComments] = useState(false)
   const meshRef = useRef<THREE.Mesh>(null)
-  const stickyRef = useRef<THREE.Group>(null)
   
   // Combined hover state: true if pointer hovered OR board is highlighted (in camera view)
   const isHovered = hovered || !!isHighlighted
@@ -200,37 +202,22 @@ export default function BoardThumbnail({ board, position, width, height, onClick
       const targetZ = isHovered ? 0.15 : 0
       meshRef.current.position.z += (targetZ - meshRef.current.position.z) * 0.1
     }
-    
-    // Animate sticky note on hover
-    if (stickyRef.current) {
-      const targetScale = stickyHovered ? 1.15 : 1
-      const currentScale = stickyRef.current.scale.x
-      stickyRef.current.scale.set(
-        currentScale + (targetScale - currentScale) * 0.15,
-        currentScale + (targetScale - currentScale) * 0.15,
-        1
-      )
-      
-      // Slight rotation bounce on hover
-      const targetRotation = stickyHovered ? -0.2 : -0.15
-      const currentRotation = stickyRef.current.rotation.z
-      stickyRef.current.rotation.z = currentRotation + (targetRotation - currentRotation) * 0.15
-    }
   })
 
-  const handleClick = () => {
+  const handleClick = (e: any) => {
+    // Disabled in gallery mode - only E key opens boards
     // Only call onClick if provided - no default navigation
     if (onClick) {
+      e.stopPropagation() // Prevent event bubbling
       onClick(board)
     }
-    // Removed default navigation to board detail page
-    // Clicking boards now only triggers the onClick handler (e.g., for selection or lightbox)
+    // If onClick is undefined, do nothing (gallery mode - E key only)
   }
 
   return (
     <group 
       position={position}
-      onClick={handleClick}
+      onClick={onClick ? handleClick : undefined} // Only attach click handler if onClick is provided
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
     >
@@ -343,120 +330,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
         </>
       )}
 
-      {/* Comment Count Sticky Note */}
-      {board.comments && board.comments.length > 0 && (
-        <>
-          <group 
-            ref={stickyRef}
-            position={[
-              width / 2 + width * 0.03, // Stick out more from corner
-              height / 2 + height * 0.03, 
-              0.12 // Further in front
-            ]}
-            rotation={[0, 0, -0.15]} // Initial rotation
-            onClick={(e) => {
-              e.stopPropagation()
-              console.log('💬 [Sticky Note] Clicked - Opening comments for board:', board.id)
-              // Use onClick prop if provided (view mode), otherwise open modal
-              if (onClick) {
-                onClick(board)
-              } else {
-                setShowComments(true)
-              }
-            }}
-            onPointerOver={(e) => {
-              e.stopPropagation()
-              setStickyHovered(true)
-              document.body.style.cursor = 'pointer'
-            }}
-            onPointerOut={(e) => {
-              e.stopPropagation()
-              setStickyHovered(false)
-              document.body.style.cursor = 'default'
-            }}
-          >
-            {/* Soft shadow (multiple layers for depth) */}
-            <mesh position={[0.015, -0.015, -0.003]}>
-              <planeGeometry args={[width * 0.14, height * 0.14]} />
-              <meshBasicMaterial 
-                color="#000000" 
-                transparent 
-                opacity={0.1}
-              />
-            </mesh>
-            <mesh position={[0.008, -0.008, -0.002]}>
-              <planeGeometry args={[width * 0.14, height * 0.14]} />
-              <meshBasicMaterial 
-                color="#000000" 
-                transparent 
-                opacity={0.15}
-              />
-            </mesh>
-
-            {/* Sticky note background with gradient effect */}
-            <mesh>
-              <planeGeometry args={[width * 0.14, height * 0.14]} />
-              <meshStandardMaterial 
-                color="#ffd966"
-                roughness={0.6}
-                metalness={0.0}
-                emissive={stickyHovered ? "#ffed4e" : "#ffd966"}
-                emissiveIntensity={stickyHovered ? 0.4 : 0.2}
-              />
-            </mesh>
-
-            {/* Glow effect on hover */}
-            {stickyHovered && (
-              <mesh position={[0, 0, -0.001]}>
-                <planeGeometry args={[width * 0.18, height * 0.18]} />
-                <meshBasicMaterial 
-                  color="#ffd966"
-                  transparent 
-                  opacity={0.3}
-                />
-              </mesh>
-            )}
-
-            {/* Corner curl effect */}
-            <mesh position={[width * 0.06, width * 0.06, 0.001]} rotation={[0, 0, Math.PI / 4]}>
-              <planeGeometry args={[width * 0.03, height * 0.03]} />
-              <meshStandardMaterial 
-                color="#f4c430"
-                roughness={0.7}
-                metalness={0.0}
-              />
-            </mesh>
-
-            {/* Comment count text - larger and bolder */}
-            <Text
-              position={[0, 0, 0.002]}
-              fontSize={width * 0.10}
-              color="#5a4a0a"
-              anchorX="center"
-              anchorY="middle"
-              fontWeight={800}
-              outlineWidth={0.002}
-              outlineColor="#ffffff"
-            >
-              {board.comments.length}
-            </Text>
-          </group>
-
-          {/* Comment Panel Overlay */}
-          {showComments && (
-            <Html center>
-              <CommentPanel
-                boardId={board.id}
-                boardTitle={board.title}
-                onClose={() => {
-                  console.log('💬 [Comment Panel] Closing')
-                  setShowComments(false)
-                }}
-              />
-            </Html>
-          )}
-        </>
-      )}
+      {/* Sticky notes removed - comments accessible via board click */}
     </group>
   )
 }

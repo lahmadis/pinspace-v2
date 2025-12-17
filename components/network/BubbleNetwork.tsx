@@ -303,10 +303,11 @@ export default function BubbleNetwork({
 
     // Create simulation nodes with initial positions spread across canvas
     const simNodes: BubbleNode[] = nodes.map((n, i) => {
-      // Spread nodes across the entire canvas using golden angle distribution
+      // Spread nodes across a much larger area using golden angle distribution
       const goldenAngle = Math.PI * (3 - Math.sqrt(5))
       const angle = i * goldenAngle
-      const radius = Math.sqrt(i / nodes.length) * Math.min(width, height) * 0.4
+      // Increased spread radius to 0.8 (was 0.4) to give bubbles more room
+      const radius = Math.sqrt(i / nodes.length) * Math.min(width, height) * 0.8
       
       return {
       ...n,
@@ -325,25 +326,15 @@ export default function BubbleNetwork({
     // Create new force simulation
     const simulation = d3.forceSimulation(simNodes)
       .force('charge', d3.forceManyBody()
-        .strength(-200) // Negative = repulsion, spread bubbles apart
+        .strength(-400) // Increased repulsion to spread bubbles further apart
       )
-      .force('center', d3.forceCenter(width / 2, height / 2).strength(0.05))
+      .force('center', d3.forceCenter(width / 2, height / 2).strength(0.01)) // Reduced center pull
       .force('collision', d3.forceCollide<BubbleNode>()
-        .radius(d => (d.radius || 60) + 15)
+        .radius(d => (d.radius || 60) + 30) // Increased spacing between bubbles
         .strength(0.9)
       )
-      .force('x', d3.forceX(width / 2).strength(0.02))
-      .force('y', d3.forceY(height / 2).strength(0.02))
-      .force('bounds', () => {
-        // Keep nodes within bounds with padding
-        const padding = 80
-        for (const node of simNodes) {
-          if (node.x !== undefined && node.y !== undefined && node.radius) {
-            node.x = Math.max(padding, Math.min(width - padding, node.x))
-            node.y = Math.max(padding, Math.min(height - padding, node.y))
-          }
-        }
-      })
+      // Removed x and y forces - let bubbles spread naturally
+      // Removed bounds force - let bubbles breathe and spread beyond container edges
       .alphaDecay(0.1) // Very fast stabilization
       .velocityDecay(0.8) // Very high friction
       .alphaMin(0.001)

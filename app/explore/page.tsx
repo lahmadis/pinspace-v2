@@ -1,9 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+export const dynamic = 'force-dynamic'
+
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
+import DemoBanner from '@/components/DemoBanner'
 
 type StudioResponse = {
   studios: BubbleNode[]
@@ -11,8 +14,9 @@ type StudioResponse = {
 }
 
 
-export default function ExplorePage() {
+function ExplorePageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [nodes, setNodes] = useState<BubbleNode[]>([])
   const [totalStudios, setTotalStudios] = useState(0)
   const [totalStudents, setTotalStudents] = useState(0)
@@ -25,10 +29,13 @@ export default function ExplorePage() {
   const [selectedYear, setSelectedYear] = useState<string | number | null>(null)
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
 
+  const isDemo = searchParams?.get('demo') === 'true'
+
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch('/api/explore/studios', { cache: 'no-store' })
+        const url = isDemo ? '/api/explore/studios?demo=true' : '/api/explore/studios'
+        const res = await fetch(url, { cache: 'no-store' })
         if (res.ok) {
           const data: StudioResponse = await res.json()
           setNodes(data.studios || [])
@@ -40,11 +47,16 @@ export default function ExplorePage() {
       }
     }
     load()
-  }, [])
+  }, [isDemo])
 
   const handleClick = (node: BubbleNode) => {
+    const demoParam = isDemo ? '?demo=true' : ''
+    
     if (viewMode === 'flat') {
-      if (node.url) router.push(node.url)
+      if (node.url) {
+        const url = node.url.includes('?') ? `${node.url}&demo=true` : `${node.url}${demoParam}`
+        router.push(url)
+      }
       return
     }
 
@@ -55,7 +67,10 @@ export default function ExplorePage() {
       setSelectedDepartment(node.department || node.label)
       setHierarchyLevel('studios')
     } else {
-      if (node.url) router.push(node.url)
+      if (node.url) {
+        const url = node.url.includes('?') ? `${node.url}&demo=true` : `${node.url}${demoParam}`
+        router.push(url)
+      }
     }
   }
 
@@ -106,8 +121,9 @@ export default function ExplorePage() {
 
   return (
     <div className="min-h-screen bg-slate-900">
+      <DemoBanner />
       {/* Floating Header */}
-      <header className="fixed top-0 left-0 right-0 z-40 border-b border-slate-700/50 bg-slate-900/90 backdrop-blur-md">
+      <header className={`fixed ${isDemo ? 'top-12' : 'top-0'} left-0 right-0 z-40 border-b border-slate-700/50 bg-slate-900/90 backdrop-blur-md`}>
         <div className="max-w-full px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link 
@@ -195,5 +211,13 @@ export default function ExplorePage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function ExplorePage() {
+  return (
+    <Suspense fallback={null}>
+      <ExplorePageInner />
+    </Suspense>
   )
 }

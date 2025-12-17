@@ -1,21 +1,73 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/server'
+import { getDemoStudios, getDemoTotals } from '@/lib/mockData'
+
+// Mark dynamic to allow searchParams access during rendering
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 // Single color for all bubbles - connections differentiate relationships
 const BUBBLE_COLOR = '#6366f1' // Indigo
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    // Check for demo mode and filters
+    const searchParams = request.nextUrl.searchParams
+    const isDemo = searchParams.get('demo') === 'true'
+    const department = searchParams.get('department')
+    const year = searchParams.get('year')
+    
+    if (isDemo) {
+      // Return mock data for demo mode with filters applied
+      let studios = getDemoStudios()
+      
+      // Filter by department if provided
+      if (department) {
+        studios = studios.filter(s => {
+          const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
+          return norm(s.department) === norm(department)
+        })
+      }
+      
+      // Filter by year if provided
+      if (year) {
+        studios = studios.filter(s => {
+          const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
+          const numOnly = (val: any) => {
+            const m = `${val || ''}`.match(/\d+/)
+            return m ? m[0] : `${val || ''}`
+          }
+          const studioYearStr = norm(typeof s.year === 'string' ? s.year : `${s.year}`)
+          const studioYearNum = numOnly(s.year)
+          const targetYearStr = norm(year)
+          const targetYearNum = numOnly(year)
+          return studioYearStr === targetYearStr || studioYearNum === targetYearNum
+        })
+      }
+      
+      const totals = getDemoTotals()
+      console.log(`✅ [DEMO MODE] Returning ${studios.length} filtered demo studios (dept: ${department || 'all'}, year: ${year || 'all'})`)
+      return NextResponse.json({ studios, totals })
+    }
+    
     // Use service role client to bypass RLS for public endpoint
     // This allows us to fetch public workspaces without authentication
     const supabase = supabaseServiceRole()
     
-    // Fetch all public workspaces from Supabase
-    const { data: publicWorkspaces, error } = await supabase
+    // Build query with filters
+    let query = supabase
       .from('workspaces')
       .select('*')
       .eq('is_public', true)
       .not('published_at', 'is', null) // Only include workspaces that have been published
+    
+    // Filter by department if provided (stored in network_metadata JSON)
+    if (department) {
+      query = query.eq('network_metadata->>department', department)
+    }
+    
+    // Fetch public workspaces from Supabase (with filters applied)
+    const { data: publicWorkspaces, error } = await query
 
     if (error) {
       console.error('Error fetching public workspaces:', error)
@@ -40,8 +92,35 @@ export async function GET() {
       }
     }
 
+    // Filter by year if provided (client-side since year is parsed from metadata)
+    let filteredWorkspaces = publicWorkspaces || []
+    if (year) {
+      filteredWorkspaces = filteredWorkspaces.filter((w) => {
+        const wYear = w.network_metadata?.year
+        const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
+        const numOnly = (val: any) => {
+          const m = `${val || ''}`.match(/\d+/)
+          return m ? m[0] : `${val || ''}`
+        }
+        let yearNum: number | string = 1
+        if (wYear === 'Masters') {
+          yearNum = 'Masters'
+        } else if (typeof wYear === 'string') {
+          const match = wYear.match(/\d+/)
+          yearNum = match ? parseInt(match[0]) : 1
+        } else if (typeof wYear === 'number') {
+          yearNum = wYear
+        }
+        const studioYearStr = norm(typeof yearNum === 'string' ? yearNum : `${yearNum}`)
+        const studioYearNum = numOnly(yearNum)
+        const targetYearStr = norm(year)
+        const targetYearNum = numOnly(year)
+        return studioYearStr === targetYearStr || studioYearNum === targetYearNum
+      })
+    }
+    
     // Transform workspaces into studio nodes for the bubble network
-    const studios = (publicWorkspaces || []).map((w) => {
+    const studios = filteredWorkspaces.map((w) => {
       const year = w.network_metadata?.year
       // Parse year - could be "Year 1", "Year 2", etc. or just a number or "Masters"
       let yearNum: number | string = 1

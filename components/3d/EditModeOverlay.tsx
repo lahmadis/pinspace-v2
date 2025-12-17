@@ -5,12 +5,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 interface EditModeOverlayProps {
   isVisible: boolean
   wallIndex: number
-  availableBoards: any[] // Keep for API compatibility but not used
-  wallDimensions: { width: number; height: number } | null
   onClose: () => void
   onUpload: () => void
-  onBoardSelect: (board: any) => void // Keep for API compatibility but not used
-  onBoardDragStart: (board: any) => void // Keep for API compatibility but not used
+  availableBoards?: any[] // Optional - kept for API compatibility but not used
+  wallDimensions?: { width: number; height: number } | null // Optional - kept for API compatibility but not used
+  onBoardSelect?: (board: any) => void // Optional - kept for API compatibility but not used
+  onBoardDragStart?: (board: any) => void // Optional - kept for API compatibility but not used
 }
 
 export function EditModeOverlay({

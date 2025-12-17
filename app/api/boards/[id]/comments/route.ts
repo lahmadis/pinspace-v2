@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { getDemoBoards, transformDemoBoard, DEMO_STUDIOS } from '@/lib/mockData'
 
 // GET /api/boards/[id]/comments - Get all comments for a board
 export async function GET(
@@ -8,6 +9,30 @@ export async function GET(
 ) {
   try {
     const boardId = params.id
+    const searchParams = request.nextUrl.searchParams
+    const isDemo = searchParams.get('demo') === 'true'
+
+    // Demo mode: return comments from mock data
+    if (isDemo) {
+      // Search through all demo studios to find the board
+      let foundBoard = null
+      for (const studio of DEMO_STUDIOS) {
+        const boards = getDemoBoards(studio.id)
+        const board = boards.find(b => b.id === boardId)
+        if (board) {
+          foundBoard = transformDemoBoard(board)
+          break
+        }
+      }
+      
+      if (foundBoard && foundBoard.comments) {
+        console.log(`✅ [DEMO MODE] Returning ${foundBoard.comments.length} comments for board ${boardId}`)
+        return NextResponse.json({ comments: foundBoard.comments })
+      }
+      
+      // If board not found, return empty comments
+      return NextResponse.json({ comments: [] })
+    }
 
     // Try with regular client first (RLS policies should handle public boards)
     const supabase = supabaseServer()
@@ -107,10 +132,43 @@ export async function POST(
 ) {
   try {
     const boardId = params.id
+    const searchParams = request.nextUrl.searchParams
+    const isDemo = searchParams.get('demo') === 'true'
     const { content, authorName } = await request.json()
 
     if (!content || typeof content !== 'string' || content.trim().length === 0) {
       return NextResponse.json({ error: 'Comment content is required' }, { status: 400 })
+    }
+
+    // Demo mode: return a mock comment (not persisted, just for demo)
+    if (isDemo) {
+      // Verify board exists in demo data
+      let foundBoard = null
+      for (const studio of DEMO_STUDIOS) {
+        const boards = getDemoBoards(studio.id)
+        const board = boards.find(b => b.id === boardId)
+        if (board) {
+          foundBoard = transformDemoBoard(board)
+          break
+        }
+      }
+      
+      if (!foundBoard) {
+        return NextResponse.json({ error: 'Board not found' }, { status: 404 })
+      }
+
+      // Create a mock comment response (not actually saved, but returned for demo)
+      const mockComment = {
+        id: `demo-comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        boardId: boardId,
+        authorName: authorName || 'Demo User',
+        content: content.trim(),
+        createdAt: new Date().toISOString(),
+        type: 'peer' as const
+      }
+
+      console.log(`💬 [DEMO MODE] Mock comment posted to board ${boardId}:`, mockComment)
+      return NextResponse.json({ comment: mockComment, success: true })
     }
 
     const supabase = supabaseServer()

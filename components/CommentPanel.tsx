@@ -72,8 +72,10 @@ export default function CommentPanel({ boardId, boardTitle, onClose }: CommentPa
         setLoading(true)
         setError(null)
         
-        // Fetch comments
-        const commentsResponse = await fetch(`/api/boards/${boardId}/comments`)
+        // Fetch comments - preserve demo mode if in URL
+        const isDemo = window.location.search.includes('demo=true')
+        const commentsUrl = isDemo ? `/api/boards/${boardId}/comments?demo=true` : `/api/boards/${boardId}/comments`
+        const commentsResponse = await fetch(commentsUrl)
         if (!commentsResponse.ok) {
           throw new Error('Failed to fetch comments')
         }

@@ -11,3 +11,4 @@ WHERE position_side IS NULL AND position_wall_index IS NOT NULL;
 
 
 
+

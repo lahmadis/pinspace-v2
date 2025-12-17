@@ -1,17 +1,24 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+export const dynamic = 'force-dynamic'
+
+import { Suspense, useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import GalleryAvatarModal, { AvatarFormValues } from '@/components/GalleryAvatarModal'
+import DemoBanner from '@/components/DemoBanner'
+import { isDemoMode } from '@/lib/demoMode'
 
-export default function Home() {
+function HomeInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [showGalleryModal, setShowGalleryModal] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  
+  const isDemo = isDemoMode(searchParams)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -33,12 +40,22 @@ export default function Home() {
       department: values.department,
       year: values.year,
     })
+    // Preserve demo mode if active
+    if (isDemo) {
+      params.set('demo', 'true')
+    }
     setShowGalleryModal(false)
     router.push(`/gallery?${params.toString()}`)
   }
 
-  return (
+  const handleTryDemo = () => {
+    // Add demo=true to current URL and navigate to refresh
+    router.push('/?demo=true')
+  }
+
+  const content = (
     <div className="min-h-screen bg-background relative overflow-hidden">
+      <DemoBanner />
       {/* Auth buttons in top-right */}
       <div className="absolute top-6 right-6 z-20 flex items-center gap-3">
         {loading ? (
@@ -132,7 +149,7 @@ export default function Home() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.8 }}
           >
-            <Link href="/explore">
+            <Link href={isDemo ? "/explore?demo=true" : "/explore"}>
               <button className="group relative px-8 py-4 bg-primary hover:bg-primary-light text-white rounded-lg font-medium transition-all duration-300 hover:scale-105 hover:shadow-lg min-w-[200px]">
                 <span className="relative z-10">Enter the Network</span>
               </button>
@@ -144,6 +161,15 @@ export default function Home() {
             >
               Enter Gallery
             </button>
+
+            {!isDemo && (
+              <button
+                onClick={handleTryDemo}
+                className="px-8 py-4 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 rounded-lg font-medium transition-all duration-300 hover:scale-105 hover:shadow-lg min-w-[200px] shadow-md border-2 border-yellow-500"
+              >
+                🎭 Try Demo Mode
+              </button>
+            )}
           </motion.div>
 
           {/* Feature Pills */}
@@ -186,5 +212,15 @@ export default function Home() {
         onEnter={handleEnterGallery}
       />
     </div>
+  )
+
+  return content
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeInner />
+    </Suspense>
   )
 }

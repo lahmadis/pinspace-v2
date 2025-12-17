@@ -131,7 +131,12 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
     try {
       setLoading(true)
       setError(null)
-      const response = await fetch(`/api/boards/${board.id}/comments`)
+      // Check if we're in demo mode
+      const isDemo = searchParams.get('demo') === 'true' || window.location.pathname.includes('demo-studio-')
+      const url = isDemo 
+        ? `/api/boards/${board.id}/comments?demo=true`
+        : `/api/boards/${board.id}/comments`
+      const response = await fetch(url)
       
       if (!response.ok) {
         throw new Error('Failed to fetch comments')
@@ -152,7 +157,13 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
 
     try {
       setPosting(true)
-      const response = await fetch(`/api/boards/${board.id}/comments`, {
+      setError(null)
+      // Check if we're in demo mode
+      const isDemo = searchParams.get('demo') === 'true' || window.location.pathname.includes('demo-studio-')
+      const url = isDemo 
+        ? `/api/boards/${board.id}/comments?demo=true`
+        : `/api/boards/${board.id}/comments`
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -192,7 +203,44 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
     if (returnTo === 'gallery') {
       // Navigate back to gallery after a short delay for animation
       setTimeout(() => {
-        router.push('/gallery')
+        // Check if we're in demo mode
+        const isDemo = searchParams.get('demo') === 'true' || window.location.pathname.includes('demo-studio-')
+        
+        // Preserve gallery params from current URL (they should be there from the E key handler)
+        const urlParams = new URLSearchParams()
+        const department = searchParams.get('department')
+        const year = searchParams.get('year')
+        const color = searchParams.get('color')
+        const appearance = searchParams.get('appearance')
+        
+        // Also try to get params from referrer as fallback
+        if (document.referrer) {
+          try {
+            const referrerUrl = new URL(document.referrer)
+            referrerUrl.searchParams.forEach((value, key) => {
+              if (['color', 'department', 'year', 'appearance'].includes(key)) {
+                // Only use referrer value if not already in current URL
+                if (!urlParams.has(key)) {
+                  urlParams.set(key, value)
+                }
+              }
+            })
+          } catch (e) {
+            // Ignore referrer parsing errors
+          }
+        }
+        
+        // Use current URL params if available (they're more reliable)
+        if (department) urlParams.set('department', department)
+        if (year) urlParams.set('year', year)
+        if (color) urlParams.set('color', color)
+        if (appearance) urlParams.set('appearance', appearance)
+        
+        if (isDemo) {
+          urlParams.set('demo', 'true')
+        }
+        
+        router.push(`/gallery?${urlParams.toString()}`)
       }, 200)
     } else {
       // Just close the modal normally

@@ -1290,18 +1290,19 @@ export default function StudioRoom(props: StudioRoomProps) {
                 } else {
                   console.warn(`⚠️ [Upload PDF] Temp board ${tempBoardId} not found in placedBoards3D. Current keys:`, Array.from(newMap.keys()))
                   // If temp board not found, add the real board with the position from temp board
-                  if (tempBoard.position) {
-                    const normalizedX = tempBoard.position.x >= -0.5 && tempBoard.position.x <= 0.5 
-                      ? tempBoard.position.x 
-                      : (tempBoard.position.x / 100) - 0.5
-                    const normalizedY = tempBoard.position.y >= -0.5 && tempBoard.position.y <= 0.5 
-                      ? tempBoard.position.y 
-                      : (tempBoard.position.y / 100) - 0.5
+                  const tempPosition = placedBoards3D.get(tempBoardId)
+                  if (tempPosition) {
+                    const normalizedX = tempPosition.x >= -0.5 && tempPosition.x <= 0.5 
+                      ? tempPosition.x 
+                      : (tempPosition.x / 100) - 0.5
+                    const normalizedY = tempPosition.y >= -0.5 && tempPosition.y <= 0.5 
+                      ? tempPosition.y 
+                      : (tempPosition.y / 100) - 0.5
                     newMap.set(board.id, {
                       x: normalizedX,
                       y: normalizedY,
-                      width: tempBoard.position.width,
-                      height: tempBoard.position.height
+                      width: tempPosition.width,
+                      height: tempPosition.height
                     })
                     placedBoards3DRef.current = newMap
                     console.log(`✅ [Upload PDF] Added real board ${board.id} to placedBoards3D with position from temp board`)
@@ -1497,18 +1498,19 @@ export default function StudioRoom(props: StudioRoomProps) {
             } else {
               console.warn(`⚠️ [Upload] Temp board ${tempBoardId} not found in placedBoards3D. Current keys:`, Array.from(newMap.keys()))
               // If temp board not found, add the real board with the position from temp board
-              if (tempBoard.position) {
-                const normalizedX = tempBoard.position.x >= -0.5 && tempBoard.position.x <= 0.5 
-                  ? tempBoard.position.x 
-                  : (tempBoard.position.x / 100) - 0.5
-                const normalizedY = tempBoard.position.y >= -0.5 && tempBoard.position.y <= 0.5 
-                  ? tempBoard.position.y 
-                  : (tempBoard.position.y / 100) - 0.5
+              const tempPosition = placedBoards3D.get(tempBoardId)
+              if (tempPosition) {
+                const normalizedX = tempPosition.x >= -0.5 && tempPosition.x <= 0.5 
+                  ? tempPosition.x 
+                  : (tempPosition.x / 100) - 0.5
+                const normalizedY = tempPosition.y >= -0.5 && tempPosition.y <= 0.5 
+                  ? tempPosition.y 
+                  : (tempPosition.y / 100) - 0.5
                 newMap.set(uploadedBoard!.id, {
                   x: normalizedX,
                   y: normalizedY,
-                  width: tempBoard.position.width,
-                  height: tempBoard.position.height
+                  width: tempPosition.width,
+                  height: tempPosition.height
                 })
                 placedBoards3DRef.current = newMap
                 console.log(`✅ [Upload] Added real board ${uploadedBoard.id} to placedBoards3D with position from temp board`)
