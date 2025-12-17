@@ -49,8 +49,8 @@ function HomeInner() {
   }
 
   const handleTryDemo = () => {
-    // Add demo=true to current URL and navigate to refresh
-    router.push('/?demo=true')
+    // Jump straight into demo experience
+    router.push('/demo?demo=true')
   }
 
   const content = (
