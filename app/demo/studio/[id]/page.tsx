@@ -71,6 +71,7 @@ export default function DemoStudioRoomPage() {
   }
 
   return (
+    <Suspense fallback={null}>
     <div className="relative w-full h-screen overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100">
       {/* Demo Banner */}
       <DemoBanner 
@@ -192,5 +193,6 @@ export default function DemoStudioRoomPage() {
         </motion.div>
       )}
     </div>
+    </Suspense>
   )
 }
