@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as d3 from 'd3'
+import { throttle, debounce } from '@/lib/throttleDebounce'
 
 // ============================================================================
 // TYPES
@@ -91,13 +92,6 @@ const ANIMATION_DURATION = 300
 // HELPER FUNCTIONS
 // ============================================================================
 
-function debounce<T extends (...args: any[]) => void>(fn: T, ms: number): T {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null
-  return ((...args: Parameters<T>) => {
-    if (timeoutId) clearTimeout(timeoutId)
-    timeoutId = setTimeout(() => fn(...args), ms)
-  }) as T
-}
 
 function generateBezierPath(
   x1: number,
@@ -282,8 +276,14 @@ export default function BubbleNetwork({
     }
 
     updateDimensions()
-    window.addEventListener('resize', updateDimensions)
-    return () => window.removeEventListener('resize', updateDimensions)
+    
+    // PERF: Debounce resize handler to 100ms to avoid excessive dimension updates
+    // Resize events fire very frequently, so we wait until user stops resizing
+    // before recalculating dimensions. UI responsiveness improvement.
+    const debouncedUpdateDimensions = debounce(updateDimensions, 100)
+    
+    window.addEventListener('resize', debouncedUpdateDimensions)
+    return () => window.removeEventListener('resize', debouncedUpdateDimensions)
   }, [fullScreen, headerHeight])
 
   // ============================================================================
@@ -509,9 +509,11 @@ export default function BubbleNetwork({
     node.fy = node.y
   }, [])
 
-  const handleDrag = useCallback((node: BubbleNode, event: React.MouseEvent) => {
-    if (!isDragging) return
-    
+  // PERF: Throttle drag handler to 50ms for smooth but efficient UI updates
+  // This limits position updates to ~20fps during drag, reducing React re-renders
+  // while maintaining smooth visual feedback. UI responsiveness improvement.
+  const handleDragThrottled = useMemo(
+    () => throttle((node: BubbleNode, event: React.MouseEvent) => {
     const rect = svgRef.current?.getBoundingClientRect()
     if (!rect) return
     
@@ -525,11 +527,18 @@ export default function BubbleNetwork({
     node.x = x
     node.y = y
     
-    // Update position immediately - no simulation needed
+      // Update position - no simulation needed
     setPositions(prev => prev.map(n => 
       n.id === node.id ? { ...n, x, y, fx: x, fy: y } : n
     ))
-  }, [isDragging, transform])
+    }, 50),
+    [transform]
+  )
+  
+  const handleDrag = useCallback((node: BubbleNode, event: React.MouseEvent) => {
+    if (!isDragging) return
+    handleDragThrottled(node, event)
+  }, [isDragging, handleDragThrottled])
 
   const handleDragEnd = useCallback((node: BubbleNode) => {
     setIsDragging(false)

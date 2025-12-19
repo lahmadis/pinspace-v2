@@ -197,7 +197,7 @@ export function useBoardState(
       const board = boardsRef.current.find(b => b.id === boardId)
       if (!board) {
         console.warn('⚠️ [useBoardState] Board not found:', boardId)
-        return
+        return Promise.resolve() // Return a resolved promise instead of undefined
       }
       
       // Convert to API format (0-100)
@@ -232,9 +232,28 @@ export function useBoardState(
         throw new Error(`API error: ${response.status}`)
       }
       
-      console.log('✅ [useBoardState] Position saved successfully')
+      // Update the board in the boards array with new position (in API format)
+      // This ensures WallSystem sees the updated position immediately
+      setBoards(prev => prev.map(b => {
+        if (b.id === boardId) {
+          return {
+            ...b,
+            position: {
+              wallIndex,
+              x: apiX,
+              y: apiY,
+              width: apiWidth,
+              height: apiHeight,
+            }
+          }
+        }
+        return b
+      }))
+      
+      console.log('✅ [useBoardState] Position saved successfully and boards array updated')
     } catch (error: any) {
       console.error('❌ [useBoardState] Failed to save position:', error)
+      throw error // Re-throw so caller knows save failed
     }
   }, [normalizedToApi, decimalToApi])
   

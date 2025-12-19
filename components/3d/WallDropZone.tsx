@@ -1,8 +1,9 @@
 'use client'
 
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
+import { throttle } from '@/lib/throttleDebounce'
 
 interface WallDropZoneProps {
   wallPosition: THREE.Vector3
@@ -74,6 +75,17 @@ export function WallDropZone({
     }
   }
 
+  // PERF: Throttle dragover handler to 50ms for smooth but efficient UI updates
+  // This limits hover position updates to ~20fps during drag, reducing React re-renders
+  // while maintaining smooth visual feedback. UI responsiveness improvement.
+  // Recreate throttled function when dependencies change
+  const throttledUpdateHoverPosition = useMemo(
+    () => throttle((clientX: number, clientY: number) => {
+      updateHoverPosition(clientX, clientY)
+    }, 50),
+    [gl, camera, raycaster, wallPosition, wallRotation, scaledWidth, scaledHeight]
+  )
+
   // Listen for HTML drag events
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
@@ -81,8 +93,8 @@ export function WallDropZone({
       e.dataTransfer!.dropEffect = 'copy'
       setIsDragging(true)
       
-      // Update hover position during drag
-      updateHoverPosition(e.clientX, e.clientY)
+      // Update hover position during drag (throttled)
+      throttledUpdateHoverPosition(e.clientX, e.clientY)
     }
 
     const handleDrop = (e: DragEvent) => {
@@ -133,7 +145,7 @@ export function WallDropZone({
       gl.domElement.removeEventListener('drop', handleDrop)
       gl.domElement.removeEventListener('dragleave', handleDragLeave)
     }
-  }, [hoverPosition, onDrop, onDragCancel, gl, camera, raycaster, wallPosition, wallRotation, scaledWidth, scaledHeight])
+  }, [hoverPosition, onDrop, onDragCancel, gl, throttledUpdateHoverPosition])
 
   // Calculate preview position in world space (MUST match DraggableBoard's getWorldPosition exactly)
   const getPreviewPosition = () => {

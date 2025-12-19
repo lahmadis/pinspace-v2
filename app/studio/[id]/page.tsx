@@ -8,14 +8,15 @@ import { Board } from '@/types'
 import WallConfigModal from '@/components/WallConfigModal'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
+import { ArrowLeft, Share2, Settings } from 'lucide-react'
 
 const StudioRoom = dynamic(() => import('@/components/3d/StudioRoom'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-screen flex items-center justify-center bg-background">
+    <div className="w-full h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary mx-auto mb-4"></div>
-        <p className="text-text-muted">Loading 3D Studio...</p>
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 mx-auto mb-4"></div>
+        <p className="text-gray-600">Loading 3D Studio...</p>
       </div>
     </div>
   ),
@@ -148,10 +149,10 @@ export default function StudioPage() {
 
   if (isLoading) {
     return (
-      <div className="w-full h-screen flex items-center justify-center bg-background">
+      <div className="w-full h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-text-muted">Loading Studio...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading Studio...</p>
         </div>
       </div>
     )
@@ -178,11 +179,11 @@ export default function StudioPage() {
         <>
           {/* Top Left - Logo and Dashboard - Hide when in edit mode */}
           {!isEditMode && (
-            <div className="fixed top-4 left-4 z-40 flex items-center gap-3">
+            <div className="fixed top-4 left-4 z-40 flex items-center gap-2.5">
               {/* PinSpace Logo - links to home */}
               <button
                 onClick={() => router.push('/')}
-                className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg shadow-lg transition-all font-bold text-lg tracking-tight"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-colors font-semibold text-base"
               >
                 PinSpace
               </button>
@@ -190,11 +191,9 @@ export default function StudioPage() {
               {/* Back to Dashboard */}
               <button
                 onClick={() => router.push('/dashboard')}
-                className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-700 rounded-lg shadow-lg border border-gray-200 transition-colors font-medium text-sm flex items-center gap-2"
+                className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-lg shadow-sm border border-gray-200 transition-colors font-medium text-sm flex items-center gap-2"
               >
-                <svg className="w-4 h-4" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-                  <path d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-                </svg>
+                <ArrowLeft className="w-4 h-4" />
                 Dashboard
               </button>
             </div>
@@ -202,24 +201,23 @@ export default function StudioPage() {
 
           {/* Top-right buttons - Hide when in edit mode */}
           {!isEditMode && (
-            <div className="fixed top-4 right-4 z-40 flex items-center gap-3">
+            <div className="fixed top-4 right-4 z-40 flex items-center gap-2.5">
               {/* Share button */}
               <button
                 onClick={() => setShowShareModal(true)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-lg transition-colors font-medium text-sm flex items-center gap-2"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-colors font-medium text-sm flex items-center gap-2"
               >
-                <svg className="w-4 h-4" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-                  <path d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path>
-                </svg>
+                <Share2 className="w-4 h-4" />
                 Share
               </button>
               
               {/* Reconfigure button */}
               <button
                 onClick={handleReconfigureWalls}
-                className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-700 rounded-lg shadow-lg border border-gray-200 transition-colors font-medium text-sm"
+                className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-lg shadow-sm border border-gray-200 transition-colors font-medium text-sm flex items-center gap-2"
               >
-                ⚙️ Reconfigure Walls
+                <Settings className="w-4 h-4" />
+                Reconfigure Walls
               </button>
             </div>
           )}

@@ -33,9 +33,9 @@ export function CameraController({
   
   // Track previous editingWall to detect transitions
   const prevEditingWall = useRef<number | null>(null)
+  // Track if we need to animate once wallPosition is ready
+  const pendingAnimation = useRef<boolean>(false)
   
-  
-
   // Animation state
   const isAnimating = useRef(false)
   const animationProgress = useRef(0)
@@ -45,25 +45,43 @@ export function CameraController({
   const targetTarget = useRef(new THREE.Vector3())
 
   useEffect(() => {
-    // Detect transition: null -> wallIndex (entering edit mode)
+    console.log('📷 [Camera] Effect run - editingWall:', editingWall, 'wallPosition:', wallPosition ? 'exists' : 'null', 'prev:', prevEditingWall.current, 'wallDimensions:', wallDimensions)
+    
     const enteringEditMode = prevEditingWall.current === null && editingWall !== null
-    // Detect transition: wallIndex -> null (exiting edit mode)
+    const switchingWalls = prevEditingWall.current !== null && 
+                          editingWall !== null && 
+                          prevEditingWall.current !== editingWall
     const exitingEditMode = prevEditingWall.current !== null && editingWall === null
     
-    if (enteringEditMode && wallPosition) {
-      // About to enter edit mode - save current camera position
+    console.log('📷 [Camera] Transition detection:', { 
+      enteringEditMode, 
+      switchingWalls, 
+      exitingEditMode,
+      pendingAnimation: pendingAnimation.current,
+      hasWallPosition: !!wallPosition,
+      conditionMet: (enteringEditMode || switchingWalls || pendingAnimation.current) && editingWall !== null && wallPosition
+    })
+    
+    // Save camera position when transitioning (even if wallPosition isn't ready yet)
+    if (enteringEditMode || switchingWalls) {
       savedCameraPosition.current = camera.position.clone()
       if (controlsRef.current) {
         savedCameraTarget.current = controlsRef.current.target.clone()
       }
-      console.log('📷 [Camera] Saved position before entering edit mode')
+      console.log('📷 [Camera] Saved position before entering/switching edit mode, wall:', editingWall)
+      // Mark that we need to animate once wallPosition is ready
+      pendingAnimation.current = true
     }
     
-    if (editingWall !== null && wallPosition) {
+    // Animate when entering edit mode or switching walls - only if we have wallPosition
+    // IMPORTANT: Check pendingAnimation FIRST to handle cases where wallPosition updates after editingWall
+    // This ensures animation triggers even if state updates happen in different render cycles
+    if ((pendingAnimation.current || enteringEditMode || switchingWalls) && editingWall !== null && wallPosition) {
       // Entering/editing a wall - animate camera to wall
-      console.log('📷 [Camera] Animating to wall', editingWall)
+      console.log('📷 [Camera] Animating to wall', editingWall, 'prev:', prevEditingWall.current, 'entering:', enteringEditMode, 'switching:', switchingWalls, 'pending:', pendingAnimation.current)
       isAnimating.current = true
       animationProgress.current = 0
+      pendingAnimation.current = false // Clear the pending flag
       
       // Current position is our start position
       startPosition.current.copy(camera.position)
@@ -92,35 +110,23 @@ export function CameraController({
         distance = baseDistance * 1.05 // Only 5% margin for very close view in 2D edit mode
         console.log(`📷 [Camera] Wall dimensions: ${wallWidthInches}" × ${wallHeightInches}", calculated distance: ${distance.toFixed(0)}" (${(distance/12).toFixed(1)}ft)`)
       }
-     // 🎯 Calculate which direction is "outward" for this wall (same logic as board placement)
-// Normalize rotation to 0-2π range
-const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+      
+      // 🎯 Use the wallRotation directly - it's already adjusted by WallSystem to account for which face was clicked
+      // The wallRotation passed here is the adjustedRotation from WallSystem, which points toward the clicked face
+      // Calculate the normal vector pointing outward from the clicked face
+      // In the wall's local space, +Z is the front face, so the normal is (0, 0, 1)
+      // Transform this to world space using the wall's rotation
+      const wallForward = new THREE.Vector3(
+        Math.sin(wallRotation),
+        0,
+        Math.cos(wallRotation)
+      ).normalize()
 
-// Check if this is a vertical wall (rotation ≈ π/2 or 3π/2)
-const isVerticalWall = (
-  (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
-  (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
-)
+      console.log(`📷 [Camera] Using wallRotation: ${(wallRotation * 180 / Math.PI).toFixed(0)}° (already adjusted for clicked face)`)
 
-// For vertical walls, boards are at -Z, so camera should be on -Z side
-// For horizontal walls, boards are at +Z, so camera should be on +Z side
-const zDirection = isVerticalWall ? -1 : 1
-
-console.log(`📷 [Camera] Wall rotation: ${(wallRotation * 180 / Math.PI).toFixed(0)}°, vertical: ${isVerticalWall}, zDirection: ${zDirection}`)
-
-// Calculate the forward direction of the wall (pointing away from the wall's front face)
-const wallForward = new THREE.Vector3(
-  Math.sin(wallRotation),
-  0,
-  Math.cos(wallRotation)
-).normalize()
-
-// Apply Z direction correction for vertical walls
-wallForward.multiplyScalar(zDirection)
-
-// Position camera directly in front of the wall, perpendicular to it
-const offset = wallForward.multiplyScalar(distance)
-targetPosition.current.copy(wallPosition).add(offset)
+      // Position camera directly in front of the wall, perpendicular to it
+      const offset = wallForward.multiplyScalar(distance)
+      targetPosition.current.copy(wallPosition).add(offset)
       // Position camera at wall center height (wallPosition.y is already at center)
       targetPosition.current.y = wallPosition.y
       
@@ -155,7 +161,7 @@ targetPosition.current.copy(wallPosition).add(offset)
     
     // Update previous value AFTER handling transitions
     prevEditingWall.current = editingWall
-  }, [editingWall, wallPosition, wallRotation, camera])
+  }, [editingWall, wallPosition, wallRotation, wallDimensions, camera])
 
   useFrame((state, delta) => {
     if (!controlsRef.current) {

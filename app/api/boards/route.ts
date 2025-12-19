@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
         y: parseFloat(board.position_y),
         width: board.position_width ? parseFloat(board.position_width) : undefined,
         height: board.position_height ? parseFloat(board.position_height) : undefined,
+        side: board.position_side || 'front',
       } : undefined,
       ownerId: board.owner_id,
       ownerName: board.owner_name,
@@ -144,6 +145,7 @@ export async function PUT(request: NextRequest) {
       updateData.position_y = board.position.y.toString()
       if (board.position.width !== undefined) updateData.position_width = board.position.width.toString()
       if (board.position.height !== undefined) updateData.position_height = board.position.height.toString()
+      if (board.position.side) updateData.position_side = board.position.side
     }
     
     if (board.title) updateData.title = board.title
@@ -233,6 +235,7 @@ export async function PUT(request: NextRequest) {
         y: parseFloat(updatedBoard.position_y),
         width: updatedBoard.position_width ? parseFloat(updatedBoard.position_width) : undefined,
         height: updatedBoard.position_height ? parseFloat(updatedBoard.position_height) : undefined,
+        side: updatedBoard.position_side || 'front',
       } : undefined,
       ownerId: updatedBoard.owner_id,
       ownerName: updatedBoard.owner_name,

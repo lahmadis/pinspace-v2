@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
     const posY = formData.get('position_y')
     const positionWidth = formData.get('position_width')
     const positionHeight = formData.get('position_height')
+    const positionSide = formData.get('position_side') as string | null
 
     if (!file || !studentName || !title || !workspaceId) {
       return NextResponse.json({ error: 'Missing required fields (image, studentName, title, workspaceId)' }, { status: 400 })
@@ -124,6 +125,7 @@ export async function POST(request: NextRequest) {
       position_y: posY ? parseFloat(posY as string) : null,
       position_width: positionWidth ? parseFloat(positionWidth as string) : null,
       position_height: positionHeight ? parseFloat(positionHeight as string) : null,
+      position_side: positionSide && (positionSide === 'front' || positionSide === 'back') ? positionSide : null,
       original_width: originalWidth ? parseInt(originalWidth) : null,
       original_height: originalHeight ? parseInt(originalHeight) : null,
       aspect_ratio: aspectRatio ? parseFloat(aspectRatio) : null,
@@ -168,6 +170,7 @@ export async function POST(request: NextRequest) {
         y: parseFloat(savedBoard.position_y),
         width: savedBoard.position_width ? parseFloat(savedBoard.position_width) : undefined,
         height: savedBoard.position_height ? parseFloat(savedBoard.position_height) : undefined,
+        side: savedBoard.position_side || 'front',
       } : undefined,
       ownerId: savedBoard.owner_id,
       ownerName: savedBoard.owner_name,

@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Board } from '@/types'
 import PDFRenderer from './PDFRenderer'
+import { throttle } from '@/lib/throttleDebounce'
 
 interface WallDimensions {
   height: number
@@ -325,6 +326,23 @@ export default function WallCanvasEditor({
     fileInputRef.current?.click()
   }
 
+  // PERF: Throttle mouse move handler to 50ms for smooth but efficient UI updates
+  // This limits drag preview updates to ~20fps during drag, reducing React re-renders
+  // while maintaining smooth visual feedback. UI responsiveness improvement.
+  const handleMouseMove = useMemo(
+    () => throttle((e: React.MouseEvent<HTMLDivElement>) => {
+      if (draggingBoard) {
+        const canvas = e.currentTarget
+        const rect = canvas.getBoundingClientRect()
+        setDragPosition({
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        })
+      }
+    }, 50),
+    [draggingBoard]
+  )
+
   const handleSave = () => {
     console.log('=== SAVING BOARD POSITIONS ===')
     console.log(`Wall: ${wallIndex + 1}, Boards: ${placedBoards.length}`)
@@ -558,16 +576,7 @@ export default function WallCanvasEditor({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             className="relative bg-[#e8e4dc] rounded-2xl shadow-2xl border-4 border-[#d4d4d4] overflow-hidden"
-            onMouseMove={(e) => {
-              if (draggingBoard) {
-                const canvas = e.currentTarget
-                const rect = canvas.getBoundingClientRect()
-                setDragPosition({
-                  x: e.clientX - rect.left,
-                  y: e.clientY - rect.top
-                })
-              }
-            }}
+            onMouseMove={handleMouseMove}
             onMouseUp={handleDrop}
             style={{ 
               aspectRatio: wallAspectRatio,

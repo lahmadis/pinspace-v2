@@ -467,185 +467,190 @@ if (e.intersections && e.intersections.length > 0) {
   return (
     <group position={wallPosition} rotation={[0, wallRotation, 0]}>
       <group position={[boardX, boardY, boardZ]}>
-      <mesh
-        ref={meshRef}
-        onPointerDown={handlePointerDown}
-        onClick={(e) => {
-          // Stop propagation so the invisible wall plane doesn't get the click
-          e.stopPropagation()
-        }}
-        // Make sure boards render in front of the invisible wall plane
-        renderOrder={1}
-        onPointerOver={(e) => {
-          console.log('🖱️ HOVER detected on board:', board.id)
-          e.stopPropagation()
-          setIsHovered(true)
-          if (!isDragging) {
-            gl.domElement.style.cursor = isLocked ? 'not-allowed' : 'grab'
-          }
-        }}
-        onPointerOut={(e) => {
-          e.stopPropagation()
-          setIsHovered(false)
-          if (!isDragging) gl.domElement.style.cursor = 'default'
-        }}
-      >
-        {/* Use boxGeometry instead of planeGeometry to give boards thickness */}
-        <boxGeometry args={[boardWidth, boardHeight, BOARD_THICKNESS]} />
-        {isPDF ? (
-          <Suspense fallback={<meshStandardMaterial color="#f3f4f6" />}>
-            <PDFTextureMaterial pdfUrl={imageUrl} hovered={isHovered} />
-          </Suspense>
-        ) : hasImage ? (
-          <Suspense fallback={<meshStandardMaterial color="#cccccc" />}>
-            <BoardTexture imageUrl={imageUrl} />
-          </Suspense>
-        ) : (
-          <meshStandardMaterial 
-            color={isHovered ? "#f8f8f8" : "#ffffff"} 
-            emissive={isHovered ? "#444444" : "#000000"}
-            emissiveIntensity={0.1}
-          />
-        )}
-      </mesh>
-      
-      {/* Border edges for the box geometry */}
-      <lineSegments position={[0, 0, 0]}>
-        <edgesGeometry args={[new THREE.BoxGeometry(boardWidth, boardHeight, BOARD_THICKNESS)]} />
-        <lineBasicMaterial 
-          color={
-            isSelected
-              ? "#4444ff"  // Blue border when selected (indicates it can be deleted with backspace)
-              : isLocked 
-                ? (isHovered ? "#999999" : "#666666")  // Gray for locked boards
-                : (isHovered ? "#4444ff" : "#333333")  // Blue for owned boards
-          } 
-          linewidth={isSelected ? 5 : 2} 
-        />
-      </lineSegments>
-      
-      {/* Additional thicker border for selected state */}
-      {isSelected && (
+        <mesh
+          ref={meshRef}
+          onPointerDown={handlePointerDown}
+          onClick={(e) => {
+            // Stop propagation so the invisible wall plane doesn't get the click
+            e.stopPropagation()
+            
+            // Select the board when clicked
+            if (onSelect) {
+              onSelect()
+            }
+          }}
+          // Make sure boards render in front of the invisible wall plane
+          renderOrder={1}
+          onPointerOver={(e) => {
+            console.log('🖱️ HOVER detected on board:', board.id)
+            e.stopPropagation()
+            setIsHovered(true)
+            if (!isDragging) {
+              gl.domElement.style.cursor = isLocked ? 'not-allowed' : 'grab'
+            }
+          }}
+          onPointerOut={(e) => {
+            e.stopPropagation()
+            setIsHovered(false)
+            if (!isDragging) gl.domElement.style.cursor = 'default'
+          }}
+        >
+          {/* Use boxGeometry instead of planeGeometry to give boards thickness */}
+          <boxGeometry args={[boardWidth, boardHeight, BOARD_THICKNESS]} />
+          {isPDF ? (
+            <Suspense fallback={<meshStandardMaterial color="#f3f4f6" />}>
+              <PDFTextureMaterial pdfUrl={imageUrl} hovered={isHovered} />
+            </Suspense>
+          ) : hasImage ? (
+            <Suspense fallback={<meshStandardMaterial color="#cccccc" />}>
+              <BoardTexture imageUrl={imageUrl} />
+            </Suspense>
+          ) : (
+            <meshStandardMaterial 
+              color={isHovered ? "#f8f8f8" : "#ffffff"} 
+              emissive={isHovered ? "#444444" : "#000000"}
+              emissiveIntensity={0.1}
+            />
+          )}
+        </mesh>
+        
+        {/* Border edges for the box geometry */}
         <lineSegments position={[0, 0, 0]}>
-          <edgesGeometry args={[new THREE.BoxGeometry(boardWidth + 0.3, boardHeight + 0.3, BOARD_THICKNESS + 0.02)]} />
-          <lineBasicMaterial color="#4444ff" linewidth={3} />
+          <edgesGeometry args={[new THREE.BoxGeometry(boardWidth, boardHeight, BOARD_THICKNESS)]} />
+          <lineBasicMaterial 
+            color={
+              isSelected
+                ? "#4444ff"  // Blue border when selected (indicates it can be deleted with backspace)
+                : isLocked 
+                  ? (isHovered ? "#999999" : "#666666")  // Gray for locked boards
+                  : (isHovered ? "#4444ff" : "#333333")  // Blue for owned boards
+            } 
+            linewidth={isSelected ? 5 : 2} 
+          />
         </lineSegments>
-      )}
+        
+        {/* Additional thicker border for selected state */}
+        {isSelected && (
+          <lineSegments position={[0, 0, 0]}>
+            <edgesGeometry args={[new THREE.BoxGeometry(boardWidth + 0.3, boardHeight + 0.3, BOARD_THICKNESS + 0.02)]} />
+            <lineBasicMaterial color="#4444ff" linewidth={3} />
+          </lineSegments>
+        )}
 
 
-      {/* Lock icon - Show for boards not owned by current user */}
-      {isHovered && !isDragging && isLocked && (
-        <group position={[deleteButtonX, deleteButtonY, 0.002]}>
-          {/* Lock icon background */}
-          <mesh>
-            <circleGeometry args={[deleteButtonSize / 2, 32]} />
-            <meshBasicMaterial color="#666666" transparent opacity={0.9} />
-          </mesh>
+        {/* Lock icon - Show for boards not owned by current user */}
+        {isHovered && !isDragging && isLocked && (
+          <group position={[deleteButtonX, deleteButtonY, 0.002]}>
+            {/* Lock icon background */}
+            <mesh>
+              <circleGeometry args={[deleteButtonSize / 2, 32]} />
+              <meshBasicMaterial color="#666666" transparent opacity={0.9} />
+            </mesh>
 
-          {/* Lock icon using HTML emoji */}
-          <Html
-            center
-            distanceFactor={10}
-            style={{
-              pointerEvents: 'none',
-              userSelect: 'none',
-              fontSize: `${deleteButtonSize * 8}px`,
-              transform: 'translate(-50%, -50%)'
-            }}
-          >
-            🔒
-          </Html>
-
-          {/* Tooltip */}
-          {board.ownerName && (
+            {/* Lock icon using HTML emoji */}
             <Html
-              position={[0, deleteButtonSize * 0.8, 0]}
               center
               distanceFactor={10}
               style={{
                 pointerEvents: 'none',
                 userSelect: 'none',
-                background: 'rgba(0, 0, 0, 0.8)',
-                color: 'white',
-                padding: '4px 8px',
-                borderRadius: '4px',
-                fontSize: '11px',
-                whiteSpace: 'nowrap'
+                fontSize: `${deleteButtonSize * 8}px`,
+                transform: 'translate(-50%, -50%)'
               }}
             >
-              This board belongs to {board.ownerName}
+              ��
             </Html>
-          )}
-        </group>
-      )}
 
-      {/* Owner name tooltip - only show on hover */}
-      {(() => {
-        // Get the display name: prefer studentName, fallback to ownerName
-        // Only show if we have a valid name (not empty, "Anonymous", or "Uploaded Board")
-        const displayName = (board.studentName && board.studentName !== 'Anonymous' && board.studentName !== 'Uploaded Board'
-          ? board.studentName 
-          : (board.ownerName && board.ownerName !== 'Anonymous' && board.ownerName !== 'Uploaded Board' ? board.ownerName : null))
-        
-        return isHovered && displayName && !isDragging ? (
-          <Html
-            position={[0, -boardHeight / 2 - 0.05, 0.01]}
-            center
-            distanceFactor={10}
-            style={{ pointerEvents: 'none' }}
-          >
-            <div style={{
-              background: 'rgba(0, 0, 0, 0.8)',
-              color: 'white',
-              padding: '6px 12px',
-              borderRadius: '6px',
-              fontSize: '12px',
-              fontWeight: 500,
-              whiteSpace: 'nowrap',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}>
-              {displayName}
-            </div>
-          </Html>
-        ) : null
-      })()}
+            {/* Tooltip */}
+            {board.ownerName && (
+              <Html
+                position={[0, deleteButtonSize * 0.8, 0]}
+                center
+                distanceFactor={10}
+                style={{
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                  background: 'rgba(0, 0, 0, 0.8)',
+                  color: 'white',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                This board belongs to {board.ownerName}
+              </Html>
+            )}
+          </group>
+        )}
 
-      {/* Comment Count Bubble - Clean minimal design */}
-      {board.comments && board.comments.length > 0 && onCommentClick && !isDragging && (
-        <group position={[boardWidth / 2 - boardWidth * 0.12, boardHeight / 2 - boardHeight * 0.12, 0.003]}>
-          {/* Blue circular badge */}
-          <mesh
-            onClick={(e) => {
-              e.stopPropagation()
-              console.log('💬 [Comment Bubble] Clicked for board:', board.id)
-              onCommentClick(board)
-            }}
-            onPointerOver={(e) => {
-              e.stopPropagation()
-              gl.domElement.style.cursor = 'pointer'
-            }}
-            onPointerOut={(e) => {
-              e.stopPropagation()
-              if (!isDragging) gl.domElement.style.cursor = isHovered ? 'grab' : 'default'
-            }}
-          >
-            <circleGeometry args={[Math.min(boardWidth, boardHeight) * 0.08, 32]} />
-            <meshBasicMaterial color="#4444ff" transparent opacity={0.95} />
-          </mesh>
+        {/* Owner name tooltip - only show on hover */}
+        {(() => {
+          // Get the display name: prefer studentName, fallback to ownerName
+          // Only show if we have a valid name (not empty, "Anonymous", or "Uploaded Board")
+          const displayName = (board.studentName && board.studentName !== 'Anonymous' && board.studentName !== 'Uploaded Board'
+            ? board.studentName 
+            : (board.ownerName && board.ownerName !== 'Anonymous' && board.ownerName !== 'Uploaded Board' ? board.ownerName : null))
+          
+          return isHovered && displayName && !isDragging ? (
+            <Html
+              position={[0, -boardHeight / 2 - 0.05, 0.01]}
+              center
+              distanceFactor={10}
+              style={{ pointerEvents: 'none' }}
+            >
+              <div style={{
+                background: 'rgba(0, 0, 0, 0.8)',
+                color: 'white',
+                padding: '6px 12px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+              }}>
+                {displayName}
+              </div>
+            </Html>
+          ) : null
+        })()}
 
-          {/* Comment count text */}
-          <Text
-            position={[0, 0, 0.002]}
-            fontSize={Math.min(boardWidth, boardHeight) * 0.06}
-            color="#ffffff"
-            anchorX="center"
-            anchorY="middle"
-            fontWeight={700}
-          >
-            {board.comments.length}
-          </Text>
-        </group>
-      )}
+        {/* Comment Count Bubble - Clean minimal design */}
+        {board.comments && board.comments.length > 0 && onCommentClick && !isDragging && (
+          <group position={[boardWidth / 2 - boardWidth * 0.12, boardHeight / 2 - boardHeight * 0.12, 0.003]}>
+            {/* Blue circular badge */}
+            <mesh
+              onClick={(e) => {
+                e.stopPropagation()
+                console.log('💬 [Comment Bubble] Clicked for board:', board.id)
+                onCommentClick(board)
+              }}
+              onPointerOver={(e) => {
+                e.stopPropagation()
+                gl.domElement.style.cursor = 'pointer'
+              }}
+              onPointerOut={(e) => {
+                e.stopPropagation()
+                if (!isDragging) gl.domElement.style.cursor = isHovered ? 'grab' : 'default'
+              }}
+            >
+              <circleGeometry args={[Math.min(boardWidth, boardHeight) * 0.08, 32]} />
+              <meshBasicMaterial color="#4444ff" transparent opacity={0.95} />
+            </mesh>
+
+            {/* Comment count text */}
+            <Text
+              position={[0, 0, 0.002]}
+              fontSize={Math.min(boardWidth, boardHeight) * 0.06}
+              color="#ffffff"
+              anchorX="center"
+              anchorY="middle"
+              fontWeight={700}
+            >
+              {board.comments.length}
+            </Text>
+          </group>
+        )}
       </group>
     </group>
   )

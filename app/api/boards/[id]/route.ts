@@ -62,6 +62,7 @@ export async function GET(
         y: parseFloat(board.position_y),
         width: board.position_width ? parseFloat(board.position_width) : undefined,
         height: board.position_height ? parseFloat(board.position_height) : undefined,
+        side: board.position_side || 'front',
       } : undefined,
       ownerId: board.owner_id,
       ownerName: board.owner_name,

@@ -19,7 +19,7 @@ interface WallConfig {
 interface WallSystemProps {
   boards: Board[]
   wallConfig: WallConfig
-  onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, isBackFace?: boolean) => void
+  onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number) => void
   editingWall: number | null
   onBoardClick?: (board: Board) => void
   highlightedBoardId?: string | null // ID of the board currently in camera view (for blue tint)
@@ -234,25 +234,52 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
           >
             {/* Both faces clickable - detect which side was clicked */}
             <mesh
-  onClick={(e) => {
-    e.stopPropagation()
-    
-    // 🎯 ALWAYS edit front side for simplicity and consistency
-    // This prevents confusion with zigzag layouts where walls face different directions
-    const isBackFace = false
-    
-    const position = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
-    const rotation = transform.rotationY
-    
-    console.log('🖼️ [WallSystem] Wall clicked:', {
-      wallIndex,
-      side: 'front',
-      rotation,
-      position: { x: position.x, y: position.y, z: position.z }
-    })
-    
-    onWallClick?.(wallIndex, wall, position, rotation, isBackFace)
-  }}
+              onClick={(e) => {
+                e.stopPropagation()
+                
+                const position = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
+                const rotation = transform.rotationY
+                
+                // 🎯 Detect which side of the wall was clicked using intersection point
+                let isBackFace = false
+                if (e.intersections && e.intersections.length > 0) {
+                  const intersection = e.intersections[0]
+                  const intersectionPoint = intersection.point
+                  
+                  // Calculate wall center in world space
+                  const wallCenter = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
+                  
+                  // Calculate wall front face normal (direction the front face points)
+                  // For a wall rotated by 'rotation', the front face normal in world space is (sin(rotation), 0, cos(rotation))
+                  const wallFrontNormal = new THREE.Vector3(
+                    Math.sin(rotation),
+                    0,
+                    Math.cos(rotation)
+                  )
+                  
+                  // Vector from wall center to intersection point
+                  const toIntersection = intersectionPoint.clone().sub(wallCenter)
+                  
+                  // Project onto wall normal to see if intersection is on front or back side
+                  const projection = toIntersection.dot(wallFrontNormal)
+                  // If projection is positive, intersection is on the front side (same direction as normal)
+                  // If projection is negative, intersection is on the back side (opposite direction)
+                  isBackFace = projection < 0
+                  
+                  console.log('🖼️ [WallSystem] Wall clicked:', {
+                    wallIndex,
+                    rotation: rotation.toFixed(3),
+                    projection: projection.toFixed(3),
+                    isBackFace,
+                    position: { x: position.x, y: position.y, z: position.z }
+                  })
+                }
+                
+                // If back face was clicked, adjust rotation by 180° so camera views from correct side
+                const adjustedRotation = isBackFace ? rotation + Math.PI : rotation
+                
+                onWallClick?.(wallIndex, wall, position, adjustedRotation)
+              }}
   castShadow
   receiveShadow
   renderOrder={0}
@@ -270,9 +297,6 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
             {boardsOnWall.map((board) => {
               if (!board.position) return null
 
-              // Determine which side this board is on (default to 'front' for backwards compatibility)
-              const boardSide = board.position.side || 'front'
-              
               // Get wall dimensions in feet (from wallConfig)
               const wallDimensions = wallConfig.walls[wallIndex]
               
@@ -326,14 +350,16 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
               console.log(`   Wall size (feet): ${wallDimensions.width}ft x ${wallDimensions.height}ft (${wallDimensions.width * 12}" x ${wallDimensions.height * 12}")`)
               console.log(`   Wall size (3D units): ${transform.width.toFixed(2)} x ${transform.height.toFixed(2)} units (1 unit = 1 inch)`)
               
-              // Calculate board X position (saved positions are in wall's local coordinate system)
-              // Position is stored as normalized coordinates (-0.5 to 0.5), convert to inches
-              const boardX = board.position.x * transform.width
+              // Calculate board X position
+              // Positions come from API in percentage format (0-100), need to convert to normalized (-0.5 to 0.5)
+              const normalizedX = (board.position.x / 100) - 0.5
+              const normalizedY = (board.position.y / 100) - 0.5
+              const boardX = normalizedX * transform.width
               
-              // Y-axis: Still needs inversion because CSS top goes down, Three.js Y goes up
-              // Saved y=-0.5 means top in 2D → should be +height/2 in 3D
-              // Saved y=+0.5 means bottom in 2D → should be -height/2 in 3D
-              const boardY = board.position.y * transform.height
+              // Y-axis: positions are from API format (0-100) where 0 = top, 100 = bottom
+              // After normalization: -0.5 = top, +0.5 = bottom
+              // In 3D: +height/2 = top, -height/2 = bottom (Y axis goes up)
+              const boardY = normalizedY * transform.height
 
               // 🎯 Position board flush with wall surface
               // Wall depth is 4 inches, so wall surface is at WALL_DEPTH/2 = 2 inches from center
@@ -349,8 +375,8 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
               // - Front side: same direction as outward (outwardDirection * WALL_SURFACE_OFFSET)
               // - Back side: opposite direction (-outwardDirection * WALL_SURFACE_OFFSET)
               // Ensure boards are ALWAYS outside the wall geometry (z > 2 or z < -2)
-              const baseZ = (boardSide === 'back' ? -outwardDirection : outwardDirection) * WALL_SURFACE_OFFSET
-              const boardZ = baseZ + (boardSide === 'back' ? -BOARD_OFFSET : BOARD_OFFSET)
+              const baseZ = outwardDirection * WALL_SURFACE_OFFSET
+              const boardZ = baseZ + BOARD_OFFSET
               
               // Safety check: ensure board is never inside the wall (between -2 and +2)
               // Wall geometry extends from -2 to +2 inches (WALL_DEPTH = 4, so ±2 from center)
@@ -358,25 +384,12 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
               const WALL_OUTER_BOUND = WALL_SURFACE_OFFSET + BOARD_OFFSET // 2.2 inches
               
               // Clamp board Z to ensure it's always outside the wall
-              let finalBoardZ = boardZ
-              if (boardSide === 'back') {
-                // Back boards must be at z <= -WALL_OUTER_BOUND (at least -2.2)
-                finalBoardZ = Math.min(boardZ, -WALL_OUTER_BOUND)
-                if (finalBoardZ !== boardZ) {
-                  console.warn(`⚠️ Board ${board.id} on back side clamped from z=${boardZ.toFixed(2)} to ${finalBoardZ.toFixed(2)}`)
-                }
-              } else {
-                // Front boards must be at z >= WALL_OUTER_BOUND (at least 2.2)
-                finalBoardZ = Math.max(boardZ, WALL_OUTER_BOUND)
-                if (finalBoardZ !== boardZ) {
-                  console.warn(`⚠️ Board ${board.id} on front side clamped from z=${boardZ.toFixed(2)} to ${finalBoardZ.toFixed(2)}`)
-                }
-              }
+              let finalBoardZ = Math.max(boardZ, WALL_OUTER_BOUND)
               
-              console.log(`🧱 Board on wall ${wallIndex}: rotation=${transform.rotationY.toFixed(2)}, outwardDirection=${outwardDirection}, side=${boardSide}, finalZ=${finalBoardZ.toFixed(2)}`)
+              console.log(`🧱 Board on wall ${wallIndex}: rotation=${transform.rotationY.toFixed(2)}, outwardDirection=${outwardDirection}, finalZ=${finalBoardZ.toFixed(2)}`)
               
-              console.log(`   💾 LOADED: x=${board.position.x.toFixed(3)}, y=${board.position.y.toFixed(3)}, side=${boardSide}`)
-              console.log(`   🎯 3D Position: x=${boardX.toFixed(2)}, y=${boardY.toFixed(2)}, z=${finalBoardZ.toFixed(2)} (side: ${boardSide})`)
+              console.log(`   �� LOADED: x=${board.position.x.toFixed(3)}, y=${board.position.y.toFixed(3)}`)
+              console.log(`   🎯 3D Position: x=${boardX.toFixed(2)}, y=${boardY.toFixed(2)}, z=${finalBoardZ.toFixed(2)}`)
               console.log(`   📏 3D Size: ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units (${boardWidth.toFixed(2)}" x ${boardHeight.toFixed(2)}")`)
               if (board.physicalWidth && board.physicalHeight) {
                 console.log(`   ✅ Physical dimensions: ${board.physicalWidth}" x ${board.physicalHeight}"`)
