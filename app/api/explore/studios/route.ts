@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoStudios, getDemoTotals } from '@/lib/mockData'
+import { getSampleStudios, getSampleTotals } from '@/lib/sampleData'
 
 // Mark dynamic to allow searchParams access during rendering
 export const dynamic = 'force-dynamic'
@@ -149,13 +150,52 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    const totals = {
+    // Get sample studios and merge with real data
+    const sampleStudios = getSampleStudios()
+    
+    // Apply filters to sample studios if provided
+    let filteredSampleStudios = sampleStudios.map(s => ({
+      ...s,
+      boundingBox: { width: 20, depth: 15 } // Default footprint for sample studios
+    }))
+    if (department) {
+      filteredSampleStudios = filteredSampleStudios.filter(s => {
+        const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
+        return norm(s.department) === norm(department)
+      })
+    }
+    if (year) {
+      filteredSampleStudios = filteredSampleStudios.filter(s => {
+        const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
+        const numOnly = (val: any) => {
+          const m = `${val || ''}`.match(/\d+/)
+          return m ? m[0] : `${val || ''}`
+        }
+        const studioYearStr = norm(typeof s.year === 'string' ? s.year : `${s.year}`)
+        const studioYearNum = numOnly(s.year)
+        const targetYearStr = norm(year)
+        const targetYearNum = numOnly(year)
+        return studioYearStr === targetYearStr || studioYearNum === targetYearNum
+      })
+    }
+    
+    // Merge real studios with sample studios (real studios first, then samples)
+    const allStudios = [...studios, ...filteredSampleStudios]
+    
+    const realTotals = {
       studios: studios.length,
       students: studios.reduce((sum, s) => sum + (s.memberCount || 0), 0),
     }
+    
+    const sampleTotals = getSampleTotals()
+    
+    const totals = {
+      studios: allStudios.length,
+      students: allStudios.reduce((sum, s) => sum + (s.memberCount || 0), 0),
+    }
 
-    console.log(`✅ Fetched ${studios.length} public studios from Supabase`)
-    return NextResponse.json({ studios, totals })
+    console.log(`✅ Fetched ${studios.length} real studios + ${filteredSampleStudios.length} sample studios from Supabase`)
+    return NextResponse.json({ studios: allStudios, totals })
   } catch (error) {
     console.error('Error fetching studios:', error)
     return NextResponse.json({ error: 'Failed to fetch studios', details: (error as Error).message }, { status: 500 })

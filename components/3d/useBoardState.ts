@@ -211,11 +211,14 @@ export function useBoardState(
         api: { x: apiX, y: apiY, width: apiWidth, height: apiHeight }
       })
       
+      // Create board object without position, then add it explicitly
+      const { position: _, ...boardWithoutPosition } = board
+      
       const response = await fetch('/api/boards', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...board,
+          ...boardWithoutPosition,
           workspaceId: board.studioId,
           studioId: board.studioId,
           position: {
@@ -223,7 +226,8 @@ export function useBoardState(
             x: apiX,
             y: apiY,
             width: apiWidth,
-            height: apiHeight
+            height: apiHeight,
+            side: board.position?.side || 'front'
           }
         })
       })
@@ -244,6 +248,7 @@ export function useBoardState(
               y: apiY,
               width: apiWidth,
               height: apiHeight,
+              side: b.position?.side || 'front'
             }
           }
         }

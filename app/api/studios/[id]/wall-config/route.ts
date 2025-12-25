@@ -27,6 +27,22 @@ function writeConfigs(configs: Record<string, any>) {
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const { id } = params
+  
+  // Check if this is a sample studio - return default zigzag config
+  if (id.startsWith('sample-studio-')) {
+    const defaultConfig = {
+      layoutType: 'zigzag',
+      walls: [
+        { height: 10, width: 20 },
+        { height: 10, width: 15 },
+        { height: 10, width: 20 },
+        { height: 10, width: 15 },
+        { height: 10, width: 20 },
+      ]
+    }
+    return NextResponse.json({ exists: true, config: defaultConfig }, { status: 200 })
+  }
+  
   const configs = readConfigs()
   const config = configs[id]
   if (!config) {

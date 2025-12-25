@@ -33,7 +33,7 @@ interface StudioRoomProps {
   studioId: string
   boards: Board[]
   wallConfig: WallConfig
-  onBoardUpdate: () => void
+  onBoardUpdate: () => Promise<void>
   onEditModeChange?: (isEditing: boolean) => void
 }
 
@@ -58,9 +58,11 @@ function SceneContent({
   setSelectedBoardId,
   onDeselect,
   isWorkspaceMember,
-  localBoards
+  localBoards,
+  hoveredBoardId,
+  onBoardHover
 }: StudioRoomProps & {
-  onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number) => void
+  onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   editingWall: number | null
   placedBoards3D: Map<string, { x: number; y: number; width?: number; height?: number }>
   editingWallPosition: THREE.Vector3 | null
@@ -77,6 +79,8 @@ function SceneContent({
   onDeselect?: () => void
   isWorkspaceMember?: boolean
   localBoards: Board[]
+  hoveredBoardId?: string | null
+  onBoardHover?: (boardId: string | null) => void
 }) {
   const orbitControlsRef = useRef<any>(null)
   const { controls } = useThree()
@@ -110,7 +114,6 @@ function SceneContent({
   return (
     <>
       <color attach="background" args={['#f9fafb']} />
-      <fog attach="fog" args={['#f9fafb', 200, 1000]} />
       <ambientLight intensity={0.7} />
       <directionalLight 
         position={[10, 15, 5]} 
@@ -146,6 +149,9 @@ function SceneContent({
         wallConfig={wallConfig}
         onWallClick={onWallClick}
         editingWall={editingWall}
+        onBoardClick={onCommentClick}
+        highlightedBoardId={hoveredBoardId}
+        onBoardHover={onBoardHover}
       />
 
       
@@ -342,6 +348,7 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [editingWallDimensions, setEditingWallDimensions] = useState<WallDimensions | null>(null)
   const [editingWallPosition, setEditingWallPosition] = useState<THREE.Vector3 | null>(null)
   const [editingWallRotation, setEditingWallRotation] = useState<number>(0)
+  const [editingWallSide, setEditingWallSide] = useState<'front' | 'back'>('front')
   const [showEditUI, setShowEditUI] = useState(false)
   const [placedBoards3D, setPlacedBoards3D] = useState<Map<string, { 
     x: number; 
@@ -357,6 +364,7 @@ export default function StudioRoom(props: StudioRoomProps) {
   }, [placedBoards3D])
   const [draggingFromSidebar, setDraggingFromSidebar] = useState<Board | null>(null)
   const [commentPanelBoard, setCommentPanelBoard] = useState<Board | null>(null)
+  const [hoveredBoardId, setHoveredBoardId] = useState<string | null>(null)
   const {
     boards: localBoards,
     boardPositions,
@@ -373,13 +381,14 @@ export default function StudioRoom(props: StudioRoomProps) {
     wallIndex: number,
     wallDimensions: WallDimensions,
     position: THREE.Vector3,
-    rotation: number
+    rotation: number,
+    side: 'front' | 'back'
   ) => {
-    console.log('🖼️ [StudioRoom] Wall clicked:', wallIndex, 'rotation:', rotation)
+    console.log('🖼️ [StudioRoom] Wall clicked:', wallIndex, 'rotation:', rotation, 'side:', side)
     
-    // If we're already editing this wall, don't reinitialize
-    if (editingWall === wallIndex) {
-      console.log('🖼️ [StudioRoom] Already editing this wall, keeping current positions')
+    // If we're already editing this wall and side, don't reinitialize
+    if (editingWall === wallIndex && editingWallSide === side) {
+      console.log('🖼️ [StudioRoom] Already editing this wall side, keeping current positions')
       return
     }
     
@@ -391,14 +400,19 @@ export default function StudioRoom(props: StudioRoomProps) {
     setEditingWallDimensions(wallDimensions)
     setEditingWallPosition(position)
     setEditingWallRotation(rotation)
+    setEditingWallSide(side)
 
     // Load positions from central hook (API → normalized + size)
     const wallPositions = loadWallPositions(wallIndex, wallDimensions)
 
-    // Copy all boards on this wall into placedBoards3D (no side filtering)
+    // Copy all boards on this wall AND this side into placedBoards3D
     const newMap = new Map<string, { x: number; y: number; width: number; height: number }>()
     localBoards
-      .filter(b => b.position?.wallIndex === wallIndex)
+      .filter(b => {
+        if (b.position?.wallIndex !== wallIndex) return false
+        const boardSide = b.position?.side || 'front'
+        return boardSide === side
+      })
       .forEach(board => {
         const pos = wallPositions.get(board.id)
         if (pos) {
@@ -406,7 +420,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         }
       })
 
-    console.log('🖼️ [StudioRoom] Total boards to render:', newMap.size)
+    console.log('🖼️ [StudioRoom] Total boards to render on', side, 'side:', newMap.size)
     setPlacedBoards3D(newMap)
   }
 
@@ -756,17 +770,17 @@ export default function StudioRoom(props: StudioRoomProps) {
     }
   }, [props.onBoardUpdate])
 
-  // Handle keyboard shortcuts (backspace to delete selected board)
+  // Handle keyboard shortcuts (backspace to delete selected board, E to open comments)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't handle keys if user is typing in an input field
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return
+      }
+
       // Only handle backspace if we're in edit mode and a board is selected
-      // Don't prevent default if user is typing in an input field
       if (e.key === 'Backspace' && selectedBoardId && editingWall !== null) {
-        const target = e.target as HTMLElement
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-          return // Let the input handle backspace normally
-        }
-        
         e.preventDefault()
         e.stopPropagation()
         
@@ -779,21 +793,27 @@ export default function StudioRoom(props: StudioRoomProps) {
         }
       }
       
-      // Escape key to deselect
-      if (e.key === 'Escape' && selectedBoardId) {
-        setSelectedBoardId(null)
+      // Escape key to deselect or close comment panel
+      if (e.key === 'Escape') {
+        if (selectedBoardId) {
+          setSelectedBoardId(null)
+        }
+        if (commentPanelBoard) {
+          setCommentPanelBoard(null)
+        }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedBoardId, editingWall, localBoards, user, handleBoardDelete])
+  }, [selectedBoardId, editingWall, localBoards, user, handleBoardDelete, hoveredBoardId, commentPanelBoard])
 
   const { handleUpload } = useBoardUpload({
     studioId: props.studioId,
     user,
     editingWall,
     editingWallDimensions,
+    editingWallSide,
     onBoardUpdate: props.onBoardUpdate,
     addTempBoard,
     replaceTempBoard,
@@ -822,7 +842,7 @@ export default function StudioRoom(props: StudioRoomProps) {
       />
       
       <div className="w-full h-screen">
-        <Canvas shadows gl={{ shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap } }}>
+        <Canvas shadows gl={{ shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap } } as any}>
           <CameraController
             editingWall={editingWall}
             wallPosition={editingWallPosition}

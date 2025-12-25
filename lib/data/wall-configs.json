@@ -229,5 +229,47 @@
       }
     ],
     "layoutType": "zigzag"
+  },
+  "1239af1d-b371-40a4-8334-8c5964c0fef7": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      }
+    ],
+    "layoutType": "zigzag"
+  },
+  "67384257-4272-4afc-81b9-01de554e964b": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 20
+      },
+      {
+        "height": 10,
+        "width": 20
+      },
+      {
+        "height": 10,
+        "width": 20
+      },
+      {
+        "height": 10,
+        "width": 20
+      }
+    ],
+    "layoutType": "zigzag"
   }
 }

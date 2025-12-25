@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
 import { getDemoBoards, transformDemoBoard } from '@/lib/mockData'
+import { getSampleBoards } from '@/lib/sampleData'
 
 // Cache boards for 30 seconds (shorter than public workspaces since boards change more frequently)
 export const revalidate = 30
@@ -23,21 +24,43 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ boards: transformedBoards })
     }
 
-    // Normal mode: use Supabase
-    const supabase = supabaseServer()
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
-    
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+    // Check if this is a sample studio (return sample boards)
+    if (workspaceId.startsWith('sample-studio-')) {
+      const sampleBoards = getSampleBoards(workspaceId)
+      console.log(`✅ [SAMPLE] Returning ${sampleBoards.length} sample boards for studio ${workspaceId}`)
+      return NextResponse.json({ boards: sampleBoards })
     }
+
+    // Normal mode: use Supabase
+    // For public workspaces, we should allow unauthenticated access
+    const supabase = supabaseServer()
     
-    const userId = session?.user?.id
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Check if this workspace is public (allow unauthenticated access for public workspaces)
+    const { data: workspace, error: workspaceError } = await supabase
+      .from('workspaces')
+      .select('is_public')
+      .eq('id', workspaceId)
+      .single()
+    
+    // If workspace doesn't exist, require authentication (might be a private workspace)
+    const isPublicWorkspace = workspace && !workspaceError && workspace.is_public === true
+    
+    // Only require authentication for private workspaces or if workspace doesn't exist
+    if (!isPublicWorkspace) {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+      
+      if (sessionError) {
+        console.error('Session error:', sessionError)
+        return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      }
+      
+      const userId = session?.user?.id
+      if (!userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
     }
 
     console.log('Fetching boards for workspace:', workspaceId)

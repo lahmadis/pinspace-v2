@@ -8,6 +8,7 @@ interface UploadOptions {
   user: any
   editingWall: number | null
   editingWallDimensions: { width: number; height: number } | null
+  editingWallSide?: 'front' | 'back'
   onBoardUpdate: () => Promise<void>
   addTempBoard: (board: Board, blobUrl: string) => void
   replaceTempBoard: (tempId: string, realBoard: Board) => void
@@ -78,7 +79,7 @@ const createBoardFormData = (
     isPDF: boolean
     physicalWidth?: number
     physicalHeight?: number
-    position?: { wallIndex: number; x: number; y: number; width: number; height: number }
+    position?: { wallIndex: number; x: number; y: number; width: number; height: number; side?: 'front' | 'back' }
   }
 ): FormData => {
   const formData = new FormData()
@@ -104,6 +105,9 @@ const createBoardFormData = (
     formData.append('position_y', ((options.position.y + 0.5) * 100).toString())
     formData.append('position_width', (options.position.width * 100).toString())
     formData.append('position_height', (options.position.height * 100).toString())
+    if (options.position.side) {
+      formData.append('position_side', options.position.side)
+    }
   }
   
   if (options.user) {
@@ -131,7 +135,7 @@ const createTempBoard = (
     physicalWidth?: number
     physicalHeight?: number
     tags: string[]
-    position?: { wallIndex: number; x: number; y: number; width: number; height: number }
+    position?: { wallIndex: number; x: number; y: number; width: number; height: number; side?: 'front' | 'back' }
   }
 ): Board => {
   return {
@@ -287,6 +291,7 @@ const uploadFile = async (
         y: 0,
         width: widthPercent,
         height: heightPercent,
+        side: options.editingWallSide || 'front',
       }
     })
     
@@ -317,6 +322,7 @@ const uploadFile = async (
         y: 0,
         width: widthPercent,
         height: heightPercent,
+        side: options.editingWallSide || 'front',
       } : undefined,
     })
     
@@ -416,6 +422,7 @@ const uploadPDF = async (
           y: gridPos.y,
           width: widthPercent,
           height: heightPercent,
+          side: options.editingWallSide || 'front',
         }
       })
       
@@ -446,6 +453,7 @@ const uploadPDF = async (
           y: gridPos.y,
           width: widthPercent,
           height: heightPercent,
+          side: options.editingWallSide || 'front',
         } : undefined,
       })
       

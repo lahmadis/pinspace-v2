@@ -14,6 +14,7 @@ interface BoardThumbnailProps {
   height: number
   onClick?: (board: Board) => void
   isHighlighted?: boolean
+  onHover?: (hovered: boolean) => void // Callback when board hover state changes
 }
 
 // Error boundary for texture loading
@@ -49,7 +50,8 @@ function BoardImage({
   height, 
   hovered, 
   isHighlighted,
-  meshRef 
+  meshRef,
+  onClick
 }: { 
   imageUrl: string
   width: number
@@ -57,6 +59,7 @@ function BoardImage({
   hovered: boolean
   isHighlighted?: boolean
   meshRef: React.RefObject<THREE.Mesh>
+  onClick?: (e: any) => void
 }) {
   const { gl } = useThree()
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
@@ -64,7 +67,13 @@ function BoardImage({
   // Handle PDFs - show red placeholder
   if (imageUrl.toLowerCase().endsWith('.pdf')) {
     return (
-      <mesh ref={meshRef} castShadow receiveShadow renderOrder={1}>
+      <mesh 
+        ref={meshRef} 
+        castShadow 
+        receiveShadow 
+        renderOrder={1}
+        onClick={onClick}
+      >
         <boxGeometry args={[width, height, BOARD_THICKNESS]} />
         <meshStandardMaterial
           color="#ff4444"
@@ -96,7 +105,13 @@ function BoardImage({
   }, [texture, gl])
   
   return (
-    <mesh ref={meshRef} castShadow receiveShadow renderOrder={1}>
+    <mesh 
+      ref={meshRef} 
+      castShadow 
+      receiveShadow 
+      renderOrder={1}
+      onClick={onClick}
+    >
       <boxGeometry args={[width, height, BOARD_THICKNESS]} />
       <meshStandardMaterial
         map={texture}
@@ -118,7 +133,8 @@ function BoardFallback({
   height, 
   hovered, 
   isHighlighted,
-  meshRef 
+  meshRef,
+  onClick
 }: { 
   boardId: string
   width: number
@@ -126,6 +142,7 @@ function BoardFallback({
   hovered: boolean
   isHighlighted?: boolean
   meshRef: React.RefObject<THREE.Mesh>
+  onClick?: (e: any) => void
 }) {
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
   
@@ -137,7 +154,13 @@ function BoardFallback({
   }
 
   return (
-    <mesh ref={meshRef} castShadow receiveShadow renderOrder={1}>
+    <mesh 
+      ref={meshRef} 
+      castShadow 
+      receiveShadow 
+      renderOrder={1}
+      onClick={onClick}
+    >
       <boxGeometry args={[width, height, BOARD_THICKNESS]} />
       <meshStandardMaterial
         color={hovered ? '#e0e7ff' : getColorFromId(boardId)}
@@ -160,7 +183,8 @@ function BoardPDF({
   height, 
   hovered, 
   isHighlighted,
-  meshRef 
+  meshRef,
+  onClick
 }: { 
   pdfUrl: string
   title: string
@@ -169,22 +193,35 @@ function BoardPDF({
   hovered: boolean
   isHighlighted?: boolean
   meshRef: React.RefObject<THREE.Mesh>
+  onClick?: (e: any) => void
 }) {
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
   return (
-    <mesh ref={meshRef} castShadow receiveShadow renderOrder={1}>
+    <mesh 
+      ref={meshRef} 
+      castShadow 
+      receiveShadow 
+      renderOrder={1}
+      onClick={onClick}
+    >
       <boxGeometry args={[width, height, BOARD_THICKNESS]} />
       <PDFTextureMaterial pdfUrl={pdfUrl} hovered={hovered} />
     </mesh>
   )
 }
 
-export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted }: BoardThumbnailProps) {
+export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted, onHover }: BoardThumbnailProps) {
   const [hovered, setHovered] = useState(false)
   const meshRef = useRef<THREE.Mesh>(null)
   
   // Combined hover state: true if pointer hovered OR board is highlighted (in camera view)
   const isHovered = hovered || !!isHighlighted
+
+  // Notify parent of hover state changes
+  useEffect(() => {
+    onHover?.(hovered)
+  }, [hovered, onHover])
+
 
   // Check if we have a valid image URL
   const imageUrl = board.fullImageUrl || board.thumbnailUrl
@@ -205,19 +242,16 @@ export default function BoardThumbnail({ board, position, width, height, onClick
   })
 
   const handleClick = (e: any) => {
-    // Disabled in gallery mode - only E key opens boards
-    // Only call onClick if provided - no default navigation
+    // Open comment panel when board is clicked
     if (onClick) {
       e.stopPropagation() // Prevent event bubbling
       onClick(board)
     }
-    // If onClick is undefined, do nothing (gallery mode - E key only)
   }
 
   return (
     <group 
       position={position}
-      onClick={onClick ? handleClick : undefined} // Only attach click handler if onClick is provided
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
     >
@@ -231,6 +265,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           hovered={isHovered}
           isHighlighted={isHighlighted}
           meshRef={meshRef}
+          onClick={handleClick}
         />
       ) : hasValidImage ? (
         <TextureErrorBoundary
@@ -242,6 +277,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               hovered={isHovered}
               isHighlighted={isHighlighted}
               meshRef={meshRef}
+              onClick={handleClick}
             />
           }
         >
@@ -253,6 +289,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               hovered={isHovered}
               isHighlighted={isHighlighted}
               meshRef={meshRef}
+              onClick={handleClick}
             />
           }>
             <BoardImage 
@@ -262,6 +299,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               hovered={isHovered}
               isHighlighted={isHighlighted}
               meshRef={meshRef}
+              onClick={handleClick}
             />
           </Suspense>
         </TextureErrorBoundary>
@@ -273,6 +311,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           hovered={isHovered}
           isHighlighted={isHighlighted}
           meshRef={meshRef}
+          onClick={handleClick}
         />
       )}
 
@@ -306,6 +345,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           </Html>
         ) : null
       })()}
+
 
       {/* Frame around board when hovered or highlighted */}
       {(isHovered || isHighlighted) && (

@@ -48,11 +48,6 @@ function HomeInner() {
     router.push(`/gallery?${params.toString()}`)
   }
 
-  const handleTryDemo = () => {
-    // Add demo=true to current URL and navigate to refresh
-    router.push('/?demo=true')
-  }
-
   const content = (
     <div className="min-h-screen bg-background relative overflow-hidden">
       <DemoBanner />
@@ -161,15 +156,6 @@ function HomeInner() {
             >
               Enter Gallery
             </button>
-
-            {!isDemo && (
-              <button
-                onClick={handleTryDemo}
-                className="px-8 py-4 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 rounded-lg font-medium transition-all duration-300 hover:scale-105 hover:shadow-lg min-w-[200px] shadow-md border-2 border-yellow-500"
-              >
-                🎭 Try Demo Mode
-              </button>
-            )}
           </motion.div>
 
           {/* Feature Pills */}

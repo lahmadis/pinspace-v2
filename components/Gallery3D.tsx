@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import { Board } from '@/types'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { X } from 'lucide-react'
 import WallSystem from './3d/WallSystem'
 
 type Vec3 = { x: number; y: number; z: number }
@@ -16,19 +17,18 @@ interface Gallery3DProps {
   avatarPosition?: Vec3
   department?: string | null
   year?: string | null
-  isDemo?: boolean
 }
 
 type GalleryStudio = {
   id: string
   name: string
+  instructor?: string
   department?: string
   year?: string | number
   studioId?: string
   boundingBox?: { width: number; depth: number }
   boards?: Board[]
   galleryPosition?: { x: number; z: number }
-  galleryRotation?: number // Rotation in radians around Y axis
   studentCount?: number
   wallConfig?: { walls: Array<{ width: number; height: number }>; layoutType?: string }
   isMock?: boolean
@@ -66,7 +66,7 @@ const ENTRANCE_DISTANCE = 36 // 36 inches = 3 feet
 // Reduced from 30 to 15 for better performance - only render closest studios
 const MAX_RENDER_STUDIOS = 15
 const BOARD_RENDER_DISTANCE = 28
-const DEFAULT_ROOM: { width: number; depth: number; height: number } = { width: 20, depth: 15, height: 10 }
+const DEFAULT_ROOM = { width: 20, depth: 15, height: 10 }
 // Reduce booth spacing: ~1.5 units (~4-5ft) between studios
 const WALKWAY = 1.5
 
@@ -75,120 +75,25 @@ const lerpAngle = (a: number, b: number, t: number) => {
   return a + diff * t
 }
 
-// For gallery studios, use a fixed 60ft x 60ft square border
-// The walls must fit inside this fixed size
-const calculateZigzagBounds = (wallConfig: { walls: Array<{ width: number; height: number }>; layoutType?: string } | undefined, forGallery: boolean = false) => {
-  // Calculate actual bounds of zigzag walls
-  if (!wallConfig || wallConfig.layoutType !== 'zigzag' || !wallConfig.walls || wallConfig.walls.length === 0) {
-    return forGallery ? { width: 60, depth: 30 } : { width: DEFAULT_ROOM.width, depth: DEFAULT_ROOM.depth }
-  }
-  
-  const SCALE = 12 // 1 unit = 1 inch, so convert feet to inches
-  const WALL_DEPTH = 4 // Wall thickness in inches
-  const OVERLAP = WALL_DEPTH / 2
-  
-  // Calculate total extent of zigzag pattern
-  let totalXExtent = 0
-  let totalZExtent = 0
-  let currentX = 0
-  let currentZ = 0
-  
-  for (let i = 0; i < wallConfig.walls.length; i++) {
-    const wallWidth = wallConfig.walls[i].width * SCALE
-    if (i % 2 === 0) {
-      // Horizontal wall - extends along X axis
-      currentX += wallWidth - (i > 0 ? OVERLAP : 0)
-      totalXExtent = Math.max(totalXExtent, currentX)
-    } else {
-      // Vertical wall - extends along Z axis
-      currentZ += wallWidth - OVERLAP
-      totalZExtent = Math.max(totalZExtent, currentZ)
-    }
-  }
-  
-  // Find the maximum wall width to account for wall half-widths at the edges
-  const maxWallWidth = Math.max(...wallConfig.walls.map(w => w.width * SCALE))
-  
-  // The bounds are: total extent plus half a wall width on each end (for the wall thickness)
-  // Add some padding (2 feet) around the walls for visual breathing room
-  const PADDING_INCHES = 2 * SCALE // 2 feet padding
-  const boundsWidth = totalXExtent + maxWallWidth + PADDING_INCHES * 2
-  const boundsDepth = totalZExtent + maxWallWidth + PADDING_INCHES * 2
-  
-  return {
-    width: boundsWidth / SCALE,
-    depth: boundsDepth / SCALE
-  }
-}
-
 const getFootprint = (studio: GalleryStudio) => {
-  // Use boundingBox if available (it contains the calculated actual bounds)
-  const boundingBox = studio.boundingBox
-  if (boundingBox) {
-    return { width: boundingBox.width, depth: boundingBox.depth }
-  }
-  
-  // For gallery studios with zigzag layout, calculate actual bounds
-  if (studio.wallConfig?.layoutType === 'zigzag') {
-    return calculateZigzagBounds(studio.wallConfig, true)
-  }
-  
-  // Fallback to old method for non-zigzag layouts
   const wallWidth = studio.wallConfig?.walls?.[0]?.width
   const wallDepth = studio.wallConfig?.walls?.[1]?.width
-  const width = wallWidth ?? DEFAULT_ROOM.width
-  const depth = wallDepth ?? DEFAULT_ROOM.depth
+  const width = wallWidth ?? studio.boundingBox?.width ?? DEFAULT_ROOM.width
+  const depth = wallDepth ?? studio.boundingBox?.depth ?? DEFAULT_ROOM.depth
   return { width, depth }
 }
 
 const getEntrancePosition = (studio: GalleryStudio) => {
   const pos = studio.galleryPosition || { x: 0, z: 0 }
-  const rotation = studio.galleryRotation ?? 0
   const { depth } = getFootprint(studio)
-  // Entrance is in front of the studio (along +Z when rotation is 0)
-  // Rotate the entrance position based on studio rotation
-  const entranceLocalZ = depth / 2 + 0.2
-  const entranceX = pos.x + Math.sin(rotation) * entranceLocalZ
-  const entranceZ = pos.z + Math.cos(rotation) * entranceLocalZ
-  return new THREE.Vector3(entranceX, 0, entranceZ)
+  return new THREE.Vector3(pos.x, 0, pos.z + depth / 2 + 0.2)
 }
 
-const buildWallConfig = (footprint?: { width: number; depth: number }, forGallery: boolean = false) => {
+const buildWallConfig = (footprint?: { width: number; depth: number }) => {
   const width = footprint?.width ?? DEFAULT_ROOM.width
   const depth = footprint?.depth ?? DEFAULT_ROOM.depth
-  
-  // For gallery studios, create zigzag walls that fit inside a fixed 60ft x 30ft rectangle
-  if (forGallery) {
-    const STUDIO_WIDTH = 60 // 60ft wide
-    const STUDIO_DEPTH = 30 // 30ft deep
-    // Walls need to fit within 60x30ft rectangle
-    // Horizontal walls (even indices) can be up to 60ft
-    // Vertical walls (odd indices) can be up to 30ft
-    const HORIZONTAL_WALL_WIDTH = 20 // Horizontal walls: 20ft wide (fits in 60ft)
-    const VERTICAL_WALL_WIDTH = 15 // Vertical walls: 15ft wide (fits in 30ft)
-    const wallCount = 5 // 4-6 walls, using 5 as middle ground
-    
-    const walls: Array<{ height: number; width: number }> = []
-    
-    // Create alternating horizontal and vertical walls
-    // Horizontal walls (even indices) use HORIZONTAL_WALL_WIDTH
-    // Vertical walls (odd indices) use VERTICAL_WALL_WIDTH
-    for (let i = 0; i < wallCount; i++) {
-      walls.push({ 
-        height: DEFAULT_ROOM.height, 
-        width: i % 2 === 0 ? HORIZONTAL_WALL_WIDTH : VERTICAL_WALL_WIDTH
-      })
-    }
-    
-    return {
-      layoutType: 'zigzag' as const,
-      walls,
-    }
-  }
-  
-  // For regular studios, use standard 4-wall configuration
   return {
-    layoutType: 'zigzag' as const,
+    layoutType: 'square',
     walls: [
       { height: DEFAULT_ROOM.height, width },
       { height: DEFAULT_ROOM.height, width: depth },
@@ -254,7 +159,7 @@ function generateMockStudios(count = 9): GalleryStudio[] {
       }
     })
 
-    const wallConfig = buildWallConfig({ width, depth }, true) // true = for gallery
+    const wallConfig = buildWallConfig({ width, depth })
 
     studios.push({
       id: `mock-studio-${i}`,
@@ -289,14 +194,9 @@ type MoveKeys = {
 }
 
 function Ground({ onHover }: { onHover: (hovered: boolean) => void }) {
-  // Make floor almost infinite - 50,000 inches = ~4167 feet = ~0.8 miles
-  // This ensures walls never look like they're floating
-  const FLOOR_SIZE = 50000 // 50,000 inches = ~4167 feet
-  
   return (
     <mesh
-      position={[0, 0, 0]}
-      rotation={[-Math.PI / 2, 0, 0]}
+      position={[0, -0.25, 0]}
       receiveShadow
       onPointerMove={(e) => {
         e.stopPropagation()
@@ -304,7 +204,7 @@ function Ground({ onHover }: { onHover: (hovered: boolean) => void }) {
       }}
       onPointerOut={() => onHover(false)}
     >
-      <planeGeometry args={[FLOOR_SIZE, FLOOR_SIZE]} />
+      <boxGeometry args={[600, 0.5, 600]} />
       <meshStandardMaterial
         color="#e5e7eb"
         roughness={0.95}
@@ -312,7 +212,6 @@ function Ground({ onHover }: { onHover: (hovered: boolean) => void }) {
         polygonOffset
         polygonOffsetFactor={-1}
         polygonOffsetUnits={-1}
-        flatShading={false}
       />
     </mesh>
   )
@@ -402,25 +301,6 @@ function CameraRig({
   aimingRef: React.MutableRefObject<boolean>
 }) {
   const lookAt = useRef(new THREE.Vector3())
-  const isRestoringRef = useRef(false)
-  const restoreFrameCount = useRef(0)
-
-  // Check if we need to restore camera position immediately (returning from board view)
-  useEffect(() => {
-    const savedState = sessionStorage.getItem('galleryState')
-    if (savedState) {
-      try {
-        const state = JSON.parse(savedState)
-        if (state.cameraYaw !== undefined || state.cameraPitch !== undefined || state.cameraRadius !== undefined) {
-          // Mark that we're restoring - use immediate positioning for first frame
-          isRestoringRef.current = true
-          restoreFrameCount.current = 0
-        }
-      } catch (e) {
-        // Ignore
-      }
-    }
-  }, [])
 
   useFrame((state, delta) => {
     const camera = state.camera as THREE.PerspectiveCamera
@@ -437,14 +317,7 @@ function CameraRig({
       target.z + Math.cos(yaw) * horizontal
     )
 
-    // If restoring, use immediate positioning for first frame, then lerp
-    if (isRestoringRef.current && restoreFrameCount.current === 0) {
-      camera.position.copy(desired)
-      isRestoringRef.current = false
-    } else {
-      camera.position.lerp(desired, ORBIT_LERP)
-    }
-    restoreFrameCount.current++
+    camera.position.lerp(desired, ORBIT_LERP)
     // Look at avatar's head level (58 inches = eye level)
     lookAt.current.set(target.x, target.y + 58, target.z)
     camera.lookAt(lookAt.current.x, lookAt.current.y, lookAt.current.z)
@@ -513,35 +386,23 @@ function StudioPlot({
   highlightedBoardId?: string | null
 }) {
   const { width, depth } = getFootprint(studio)
-  const wallConfig = studio.wallConfig || buildWallConfig({ width, depth }, true) // true = for gallery
+  const wallConfig = studio.wallConfig || buildWallConfig({ width, depth })
   const wallHeight = wallConfig?.walls?.[0]?.height ?? DEFAULT_ROOM.height
 
-  const rotation = studio.galleryRotation ?? 0
-  
-  // Convert feet to inches for rendering (scene uses 1 unit = 1 inch)
-  // Avatar is 66 inches (5.5ft), square is 60ft = 720 inches
-  const INCHES_PER_FOOT = 12
-  const squareWidthInches = width * INCHES_PER_FOOT
-  const squareDepthInches = depth * INCHES_PER_FOOT
-  
-  // Ensure wallConfig has zigzag layout type
-  const finalWallConfig = { ...wallConfig, layoutType: 'zigzag' as const }
-  
   return (
-    <group position={[position.x, 0, position.z]} rotation={[0, rotation, 0]}>
-      {/* Studio border removed - no blue squares visible */}
-      
-      {/* Walls with boards - zigzag layout */}
-      {/* Always render walls, but only render boards when close for performance */}
+    <group position={[position.x, 0, position.z]}>
       <WallSystem
-        boards={renderBoards ? (studio.boards || []) : []}
-        wallConfig={finalWallConfig}
-        onWallClick={() => {}} // No wall editing in gallery view
+        boards={renderBoards ? studio.boards || [] : []}
+        wallConfig={{ ...wallConfig, layoutType: wallConfig.layoutType || 'square' } as any}
+        onWallClick={() => {}}
         editingWall={null}
-        onBoardClick={undefined} // Disable board clicks in gallery - only E key opens boards
         highlightedBoardId={highlightedBoardId}
       />
-      
+      {/* Outline and label */}
+      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[width, depth]} />
+        <meshBasicMaterial color="#cbd5e1" wireframe opacity={0.25} transparent />
+      </mesh>
       <StudioLabel
         name={studio.name}
         width={width}
@@ -563,57 +424,40 @@ function BoardProximityDetector({
   avatarPos: Vec3
   onNearbyBoardChange: (board: { board: Board; studio: GalleryStudio; position: THREE.Vector3 } | null) => void
 }) {
-  const INTERACTION_DISTANCE = 300 // 300 inches = 25 feet - increased for better detection
+  const INTERACTION_DISTANCE = 120 // 120 inches = 10 feet - max distance for interaction
+  const { camera, raycaster } = useThree()
   const frameCount = useRef(0)
-  const lastUpdateRef = useRef<{ board: Board; studio: GalleryStudio; position: THREE.Vector3 } | null>(null)
-  const lastCheckTime = useRef(0)
-  const forceUpdateRef = useRef(false)
   
-  // Force immediate detection when component mounts (e.g., returning from board view)
-  useEffect(() => {
-    forceUpdateRef.current = true
-    const timer = setTimeout(() => {
-      forceUpdateRef.current = false
-    }, 2000) // Force immediate updates for 2 seconds after mount
-    return () => clearTimeout(timer)
-  }, [])
-  
-  // Run every frame for maximum responsiveness (60fps)
-  // Skip throttling if we need to force an immediate update
-  useFrame((state, delta) => {
-    const now = state.clock.elapsedTime * 1000 // Convert to milliseconds
-    // Only throttle if we just updated very recently AND we're not forcing an update
-    if (!forceUpdateRef.current && now - lastCheckTime.current < 16) return
-    
+  // Throttle to every 5th frame (12fps instead of 60fps) for much better performance
+  useFrame(() => {
     frameCount.current++
-    lastCheckTime.current = now
+    if (frameCount.current % 5 !== 0) return // Skip 4 out of 5 frames
     
-    // Use avatar position (not camera) for distance calculation - avatar is where the player actually is
-    const avatarWorldPos = new THREE.Vector3(avatarPos.x, avatarPos.y + 58, avatarPos.z) // Avatar eye level
+    // Cast a ray from camera center forward to detect which board is being looked at
+    // This matches the blue highlight behavior - board turns blue when in camera view
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera) // Center of screen (0, 0)
     
-    // Use distance-based detection to detect ALL nearby boards
-    type ClosestBoardType = { board: Board; studio: GalleryStudio; position: THREE.Vector3 }
-    let closestBoard: ClosestBoardType | null = null
+    let closestBoard: { board: Board; studio: GalleryStudio; position: THREE.Vector3; distance: number } | null = null
     let closestDistance = Infinity
     
-    // Check all boards in rendered studios
+    // Only check boards in rendered studios (already filtered by distance)
     studios.forEach((studio) => {
       const studioPos = studio.galleryPosition || { x: 0, z: 0 }
       
       // Early exit: skip studios that are too far away
       const studioDistance = Math.hypot(
-        studioPos.x - avatarPos.x,
-        studioPos.z - avatarPos.z
+        studioPos.x - camera.position.x,
+        studioPos.z - camera.position.z
       )
       if (studioDistance > INTERACTION_DISTANCE * 1.5) return // Skip studios beyond interaction range
       
-      const wallConfig = studio.wallConfig || buildWallConfig(getFootprint(studio), true) // true = for gallery
+      const wallConfig = studio.wallConfig || buildWallConfig(getFootprint(studio))
       const boards = studio.boards || []
       
-      boards.forEach((board: Board) => {
+      boards.forEach((board) => {
         if (!board.position) return
         
-        // Calculate board world position (same logic as WallSystem)
+        // Calculate board world position (same logic as before)
         const wallIndex = board.position.wallIndex ?? 0
         const wall = wallConfig.walls?.[wallIndex]
         if (!wall) return
@@ -621,33 +465,9 @@ function BoardProximityDetector({
         const wallTransform = getWallTransform(wall, wallIndex, wallConfig)
         const boardX = board.position.x * wallTransform.width
         const boardY = board.position.y * wallTransform.height
+        const boardZ = board.position.side === 'back' ? -2.2 : 2.2
         
-        // Use correct Z positioning (matching WallSystem logic exactly)
-        const WALL_DEPTH = 4
-        const WALL_SURFACE_OFFSET = WALL_DEPTH / 2 // 2 inches from wall center to surface
-        const BOARD_OFFSET = 0.2 // Match WallSystem offset (0.2 inches)
-        
-        // Determine which direction is "outward" for this wall (1 for +Z, -1 for -Z)
-        // This matches the getOutwardZDirection logic from WallSystem
-        const normalizedRotation = ((wallTransform.rotationY % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-        const isVerticalWall = (
-          (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
-          (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
-        )
-        const outwardDirection = isVerticalWall ? -1 : 1
-        
-        // Position board at wall surface (matching WallSystem exactly)
-        const boardSide = board.position.side || 'front'
-        const baseZ = (boardSide === 'back' ? -outwardDirection : outwardDirection) * WALL_SURFACE_OFFSET
-        const boardZ = baseZ + (boardSide === 'back' ? -BOARD_OFFSET : BOARD_OFFSET)
-        
-        // Clamp to ensure board is outside wall (matching WallSystem safety check)
-        const WALL_OUTER_BOUND = WALL_SURFACE_OFFSET + BOARD_OFFSET // 2.2 inches
-        const finalBoardZ = boardSide === 'back' 
-          ? Math.min(boardZ, -WALL_OUTER_BOUND)
-          : Math.max(boardZ, WALL_OUTER_BOUND)
-        
-        const localPos = new THREE.Vector3(boardX, boardY, finalBoardZ)
+        const localPos = new THREE.Vector3(boardX, boardY, boardZ)
         localPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), wallTransform.rotationY)
         
         const worldPos = new THREE.Vector3(
@@ -656,39 +476,57 @@ function BoardProximityDetector({
           studioPos.z + wallTransform.z + localPos.z
         )
         
-        // Calculate distance from avatar (not camera) to board center
-        const distance = avatarWorldPos.distanceTo(worldPos)
+        // Get board dimensions
+        const boardWidth = board.physicalWidth || 8.5
+        const boardHeight = board.physicalHeight || 11
         
-        // Check if board is within interaction distance
+        // Create a plane representing the board surface
+        // Board normal: forward direction in world space (perpendicular to wall)
+        const wallForward = new THREE.Vector3(
+          Math.sin(wallTransform.rotationY),
+          0,
+          Math.cos(wallTransform.rotationY)
+        ).normalize()
+        
+        const boardPlane = new THREE.Plane()
+        boardPlane.setFromNormalAndCoplanarPoint(wallForward, worldPos)
+        
+        // Check if camera ray intersects the board plane
+        const intersection = new THREE.Vector3()
+        if (raycaster.ray.intersectPlane(boardPlane, intersection)) {
+          // Check if intersection point is within board bounds
+          const localIntersection = intersection.clone().sub(worldPos)
+          
+          // Transform intersection to board's local space (accounting for wall rotation)
+          const cosR = Math.cos(-wallTransform.rotationY)
+          const sinR = Math.sin(-wallTransform.rotationY)
+          const localX = localIntersection.x * cosR - localIntersection.z * sinR
+          const localY = localIntersection.y
+          
+        // Early distance check before expensive intersection calculations
+        const distance = camera.position.distanceTo(worldPos)
         if (distance > INTERACTION_DISTANCE || distance >= closestDistance) return
         
-        // No angle restriction - player can interact with boards from any angle
-        // The 3D distance check is sufficient to ensure boards are nearby
+        // Check if within board bounds (with some margin)
+        const halfWidth = boardWidth / 2 + 2 // Add 2 inch margin
+        const halfHeight = boardHeight / 2 + 2
         
-        // This board is the closest so far
-        closestBoard = { board, studio, position: worldPos }
-        closestDistance = distance
+        if (Math.abs(localX) < halfWidth && Math.abs(localY) < halfHeight) {
+          // Ray intersects the board!
+          closestBoard = { board, studio, position: worldPos, distance }
+          closestDistance = distance
+        }
+        }
       })
     })
     
-    // Update nearby board - only call callback if board actually changed
+    // Update nearby board (removed expensive console.log for performance)
     if (closestBoard) {
-      // TypeScript type narrowing fix - explicitly type the destructured values
-      const board = (closestBoard as ClosestBoardType).board
-      const studio = (closestBoard as ClosestBoardType).studio
-      const position = (closestBoard as ClosestBoardType).position
-      // Check if this is actually a different board to avoid unnecessary updates
-      const lastBoard = lastUpdateRef.current
-      if (!lastBoard || lastBoard.board.id !== board.id) {
-        lastUpdateRef.current = { board, studio, position }
-        onNearbyBoardChange({ board, studio, position })
-      }
+      const boardData: { board: Board; studio: GalleryStudio; position: THREE.Vector3; distance: number } = closestBoard
+      const { board, studio, position } = boardData
+      onNearbyBoardChange({ board, studio, position })
     } else {
-      // Only clear if we had a board before
-      if (lastUpdateRef.current) {
-        lastUpdateRef.current = null
-        onNearbyBoardChange(null)
-      }
+      onNearbyBoardChange(null)
     }
   })
   
@@ -861,8 +699,8 @@ function SceneContents({
       />
 
       {studiosSorted.map(({ studio, dist }) => {
-        // Render boards for studios within 1000 inches (~83 feet) so they're always visible
-        const MAX_BOARD_RENDER_DISTANCE = 1000
+        // Only render boards for studios within 200 inches (16.7 feet) for performance
+        const MAX_BOARD_RENDER_DISTANCE = 200
         const shouldRenderBoards = dist < MAX_BOARD_RENDER_DISTANCE
         
         return (
@@ -894,7 +732,7 @@ function SceneContents({
   )
 }
 
-export default function Gallery3D({ avatarColor, avatarPosition, department, year, isDemo = false }: Gallery3DProps) {
+export default function Gallery3D({ avatarColor, avatarPosition, department, year }: Gallery3DProps) {
   const [studios, setStudios] = useState<GalleryStudio[]>([])
   const [loading, setLoading] = useState(false)
   const [avatarPos, setAvatarPos] = useState<Vec3>(avatarPosition ?? { x: 0, y: 0, z: 0 })
@@ -919,28 +757,10 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
   const nearbyBoardRef = useRef<{ board: Board; studio: GalleryStudio; position: THREE.Vector3 } | null>(null)
   const router = useRouter()
   
-  // Keep ref in sync with state - update immediately for responsive E key handling
+  // Keep ref in sync with state
   useEffect(() => {
     nearbyBoardRef.current = nearbyBoard
-    // Log for debugging
-    if (nearbyBoard) {
-      console.log('🎯 [Gallery] Nearby board updated:', nearbyBoard.board.id, nearbyBoard.board.title)
-    } else {
-      console.log('🎯 [Gallery] Nearby board cleared')
-    }
   }, [nearbyBoard])
-  
-  // Reset board detection when returning from view page
-  useEffect(() => {
-    // Check if we just returned from a view page by checking if there's saved state
-    const savedState = sessionStorage.getItem('galleryState')
-    if (savedState) {
-      // Clear nearby board to force fresh detection immediately
-      setNearbyBoard(null)
-      nearbyBoardRef.current = null
-      console.log('🔄 [Gallery] Reset board detection after returning from view page')
-    }
-  }, [])
   // Start avatar near center of expected cluster, or restore from saved position
   useEffect(() => {
     const savedState = sessionStorage.getItem('galleryState')
@@ -948,19 +768,12 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
       try {
         const state = JSON.parse(savedState)
         if (state.avatarPos) {
-          // Immediately restore position (no lerp delay)
           avatarRef.current = state.avatarPos
           setAvatarPos(state.avatarPos)
-          // Immediately restore camera state (no lerp delay)
-          if (state.cameraYaw !== undefined) {
-            orbitRef.current.yaw = state.cameraYaw
-          }
-          if (state.cameraPitch !== undefined) {
-            orbitRef.current.pitch = state.cameraPitch
-          }
-          if (state.cameraRadius !== undefined) {
-            orbitRef.current.radius = state.cameraRadius
-          }
+          // Restore camera state
+          if (state.cameraYaw !== undefined) orbitRef.current.yaw = state.cameraYaw
+          if (state.cameraPitch !== undefined) orbitRef.current.pitch = state.cameraPitch
+          if (state.cameraRadius !== undefined) orbitRef.current.radius = state.cameraRadius
           console.log('📍 [Gallery] Restored position from session:', state)
         }
       } catch (e) {
@@ -974,34 +787,6 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
       setAvatarPos({ x: 25, y: 0, z: 15 })
     }
   }, [])
-  
-  // Also restore camera when component becomes visible again (e.g., returning from board view)
-  useEffect(() => {
-    // Check if we're returning from a board view by checking if there's saved state
-    const savedState = sessionStorage.getItem('galleryState')
-    if (savedState) {
-      try {
-        const state = JSON.parse(savedState)
-        // Restore camera state immediately when component is visible
-        if (state.cameraYaw !== undefined) {
-          orbitRef.current.yaw = state.cameraYaw
-        }
-        if (state.cameraPitch !== undefined) {
-          orbitRef.current.pitch = state.cameraPitch
-        }
-        if (state.cameraRadius !== undefined) {
-          orbitRef.current.radius = state.cameraRadius
-        }
-        // Also ensure avatar position is restored
-        if (state.avatarPos) {
-          avatarRef.current = state.avatarPos
-          setAvatarPos(state.avatarPos)
-        }
-      } catch (e) {
-        // Ignore errors
-      }
-    }
-  }, []) // Run on mount and when component becomes visible
   const teleportToStudio = (studio: GalleryStudio) => {
     const entrance = getEntrancePosition(studio)
     avatarRef.current = { x: entrance.x, y: 0, z: entrance.z }
@@ -1043,15 +828,8 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
       if (isDown && e.key.toLowerCase() === 'e') {
         // Check if near a board first (priority over studio entrance)
         // Use ref to get the most current value at the moment E is pressed
-        // Also check state directly as a fallback for immediate response
-        const currentNearbyBoard = nearbyBoardRef.current || nearbyBoard
+        const currentNearbyBoard = nearbyBoardRef.current
         if (currentNearbyBoard) {
-          console.log('⌨️ [Gallery] E key pressed, nearby board:', {
-            fromRef: !!nearbyBoardRef.current,
-            fromState: !!nearbyBoard,
-            boardId: currentNearbyBoard.board.id,
-            boardTitle: currentNearbyBoard.board.title
-          })
           // Save current gallery position before navigating
           const galleryState = {
             avatarPos: { ...avatarRef.current },
@@ -1068,22 +846,9 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
             boardId: currentNearbyBoard.board.id,
             boardTitle: currentNearbyBoard.board.title,
             studioId: studioId,
-            isDemo: isDemo,
             allBoardIds: currentNearbyBoard.studio.boards?.map(b => ({ id: b.id, title: b.title }))
           })
-          
-          // Use regular studio view page - it handles demo mode automatically
-          // The view page detects demo mode by checking if studioId starts with "demo-studio-"
-          // or by the demo=true param
-          // Preserve gallery filters (department, year) when navigating to board view
-          const params = new URLSearchParams()
-          params.set('boardId', currentNearbyBoard.board.id)
-          params.set('returnTo', 'gallery')
-          if (isDemo) params.set('demo', 'true')
-          if (department) params.set('department', department)
-          if (year) params.set('year', year)
-          const url = `/studio/${studioId}/view?${params.toString()}`
-          router.push(url)
+          router.push(`/studio/${studioId}/view?boardId=${currentNearbyBoard.board.id}&returnTo=gallery`)
         } else if (promptStudio?.studio) {
           enterStudio(promptStudio.studio)
         }
@@ -1097,28 +862,23 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
     }
-  }, [nearbyBoard, promptStudio, router, isDemo])
+  }, [nearbyBoard, promptStudio, router])
 
   useEffect(() => {
     const fetchStudios = async () => {
-      // Create cache key that includes filters to prevent invalid cache usage
-      const cacheKey = `galleryStudiosCache_${department || 'all'}_${year || 'all'}_${isDemo ? 'demo' : 'real'}`
-      
       // Check for cached studios data first for instant loading
-      const cachedData = sessionStorage.getItem(cacheKey)
+      const cachedData = sessionStorage.getItem('galleryStudiosCache')
       if (cachedData) {
         try {
           const cached = JSON.parse(cachedData)
           const cacheTimestamp = cached.timestamp || 0
           const cacheAge = Date.now() - cacheTimestamp
-          // Use cache if it's less than 30 minutes old (much longer for better performance)
-          if (cacheAge < 30 * 60 * 1000) {
+          // Use cache if it's less than 5 minutes old
+          if (cacheAge < 5 * 60 * 1000) {
             console.log('📦 [Gallery] Using cached studios data for instant load')
             setStudios(cached.studios || [])
             setLoading(false)
-            // Don't fetch fresh data in background - use cache until user explicitly refreshes
-            // This prevents blocking board detection
-            return
+            // Still fetch fresh data in background
           } else {
             console.log('📦 [Gallery] Cache expired, fetching fresh data')
             setLoading(true)
@@ -1132,17 +892,25 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
       }
       
       try {
-        // Pass filters to API to filter server-side (much more efficient)
-        const params = new URLSearchParams()
-        if (isDemo) params.set('demo', 'true')
-        if (department) params.set('department', department)
-        if (year) params.set('year', year)
-        const url = `/api/explore/studios?${params.toString()}`
-        const res = await fetch(url)
+        const res = await fetch('/api/explore/studios')
         if (!res.ok) throw new Error('Failed to load studios')
         const data = await res.json()
-        // Studios are already filtered by the API
-        const filtered = data.studios || []
+        const filtered = (data.studios || []).filter((s: any) => {
+          const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
+          const numOnly = (val: any) => {
+            const m = `${val || ''}`.match(/\d+/)
+            return m ? m[0] : `${val || ''}`
+          }
+          const matchesDept = department ? norm(s.department) === norm(department) : true
+          const studioYearStr = norm(typeof s.year === 'string' ? s.year : `${s.year}`)
+          const studioYearNum = numOnly(s.year)
+          const targetYearStr = norm(year)
+          const targetYearNum = numOnly(year)
+          const matchesYear = year
+            ? studioYearStr === targetYearStr || studioYearNum === targetYearNum
+            : true
+          return matchesDept && matchesYear
+        })
 
         const studiosWithDefaults: GalleryStudio[] = filtered.map((s: any) => ({
           id: s.id || s.studioId || crypto.randomUUID(),
@@ -1151,7 +919,7 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
           department: s.department,
           year: s.year,
           boundingBox: s.boundingBox || DEFAULT_ROOM,
-          wallConfig: s.wallConfig || buildWallConfig(s.boundingBox, true), // true = for gallery
+          wallConfig: s.wallConfig || buildWallConfig(s.boundingBox),
         }))
 
         // Fetch boards + wallConfig for each studio
@@ -1159,9 +927,8 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
           studiosWithDefaults.map(async (studio) => {
             if (!studio.studioId) return { id: studio.id, boards: [] as Board[], wallConfig: studio.wallConfig }
 
-            const boardsUrl = isDemo ? `/api/boards?workspaceId=${studio.studioId}&demo=true` : `/api/boards?workspaceId=${studio.studioId}`
             const [boardsRes, configRes] = await Promise.all([
-              fetch(boardsUrl),
+              fetch(`/api/boards?studioId=${studio.studioId}`),
               fetch(`/api/studios/${studio.studioId}/wall-config`)
             ])
 
@@ -1188,124 +955,28 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
           return { ...studio, boards: match?.boards || [], wallConfig: match?.wallConfig || studio.wallConfig }
         })
 
-        // Random scattered layout - studios placed randomly with good spacing
+        // Auto layout in grid
         const n = studiosWithBoards.length
-        // Studios are now 60ft x 30ft rectangles
-        const STUDIO_WIDTH_FEET = 60
-        const STUDIO_DEPTH_FEET = 30
-        const STUDIO_WIDTH_INCHES = STUDIO_WIDTH_FEET * 12 // 720 inches
-        const STUDIO_DEPTH_INCHES = STUDIO_DEPTH_FEET * 12 // 360 inches
-        const GAP_BETWEEN_RECTANGLES = 36 // 3 feet = 36 inches (equal spacing)
-        // Grid spacing: rectangle dimension + 3ft gap (equal spacing in both directions)
-        // X direction: 60ft + 3ft = 63ft = 756 inches
-        // Z direction: 30ft + 3ft = 33ft = 396 inches
-        const GRID_SPACING_X = STUDIO_WIDTH_INCHES + GAP_BETWEEN_RECTANGLES // 756 inches
-        const GRID_SPACING_Z = STUDIO_DEPTH_INCHES + GAP_BETWEEN_RECTANGLES // 396 inches
-        const SPREAD_RADIUS = Math.max(1000, Math.sqrt(n) * 200) // Spread studios in a larger area
-        
-        // Generate random positions with proper bounding box collision detection
-        const placed: GalleryStudio[] = []
-        const usedStudios: Array<{ x: number; z: number; width: number; depth: number }> = []
-        
-        // Helper function to check if two bounding boxes overlap or touch (with minimum spacing)
-        // Returns true if boxes overlap or are too close
-        const boxesOverlap = (
-          x1: number, z1: number, w1: number, d1: number,
-          x2: number, z2: number, w2: number, d2: number
-        ): boolean => {
-          // Convert feet to inches for comparison (positions x1, z1, x2, z2 are in inches)
-          // w1, d1, w2, d2 are in feet from getFootprint
-          const INCHES_PER_FOOT = 12
-          const w1Inches = w1 * INCHES_PER_FOOT
-          const d1Inches = d1 * INCHES_PER_FOOT
-          const w2Inches = w2 * INCHES_PER_FOOT
-          const d2Inches = d2 * INCHES_PER_FOOT
-          
-          // Calculate half-dimensions for each box (in inches)
-          const halfW1 = w1Inches / 2
-          const halfD1 = d1Inches / 2
-          const halfW2 = w2Inches / 2
-          const halfD2 = d2Inches / 2
-          
-          // Calculate the minimum distance needed between centers to avoid overlap
-          // This ensures 3ft gap between edges: (half1 + half2 + 3ft gap)
-          const minDistanceX = halfW1 + halfW2 + GAP_BETWEEN_RECTANGLES
-          const minDistanceZ = halfD1 + halfD2 + GAP_BETWEEN_RECTANGLES
-          
-          // Check actual distance between centers (positions are in inches)
-          const dx = Math.abs(x1 - x2)
-          const dz = Math.abs(z1 - z2)
-          
-          // Boxes overlap if BOTH distances are less than minimum (meaning they're too close in both axes)
-          // This ensures clear separation - if either axis has enough space, they don't overlap
-          return dx < minDistanceX && dz < minDistanceZ
-        }
-        
-        // Grid layout - place studios in a grid with proper spacing
-        // Studios are now 60ft x 30ft rectangles
-        const STUDIO_WIDTH = 60 // 60ft wide
-        const STUDIO_DEPTH = 30 // 30ft deep
-        
-        // Calculate grid dimensions
-        const cols = Math.ceil(Math.sqrt(n))
-        const rows = Math.ceil(n / cols)
-        
-        // Grid spacing: rectangle dimension + 3ft gap (equal spacing in both directions)
-        // X direction: 60ft + 3ft = 63ft = 756 inches
-        // Z direction: 30ft + 3ft = 33ft = 396 inches
-        const gridSpacingX = GRID_SPACING_X // 756 inches (60ft + 3ft gap)
-        const gridSpacingZ = GRID_SPACING_Z // 396 inches (30ft + 3ft gap)
-        
-        // Calculate grid offset to center it around origin
-        const gridWidth = (cols - 1) * gridSpacingX
-        const gridDepth = (rows - 1) * gridSpacingZ
-        const offsetX = -gridWidth / 2
-        const offsetZ = -gridDepth / 2
-        
-        for (let i = 0; i < n; i++) {
-          const studio = studiosWithBoards[i]
-          
-          // Build wall config for 60x30ft rectangle
-          const wallConfig = studio.wallConfig || buildWallConfig({ width: STUDIO_WIDTH, depth: STUDIO_DEPTH }, true) // true = for gallery
-          const finalWallConfig = { ...wallConfig, layoutType: 'zigzag' as const }
-          
-          // For gallery studios, use fixed 60x30ft rectangle bounds
-          // Walls are calculated to fit inside this rectangle
-          const actualWidth = STUDIO_WIDTH
-          const actualDepth = STUDIO_DEPTH
-          
-          // Calculate grid position with equal 3ft spacing
-          const col = i % cols
-          const row = Math.floor(i / cols)
-          const x = offsetX + col * gridSpacingX
-          const z = offsetZ + row * gridSpacingZ
-          
-          // All studios have the same orientation (no rotation)
-          const rotation = 0
-          
-          // Store this studio's position and size for collision detection (using actual bounds)
-          usedStudios.push({ x, z, width: actualWidth, depth: actualDepth })
-          
-          placed.push({ 
-            ...studio, 
-            boundingBox: { width: actualWidth, depth: actualDepth }, 
-            galleryPosition: { x, z }, 
-            galleryRotation: rotation,
-            wallConfig: finalWallConfig
-          })
-        }
+        const cols = Math.max(1, Math.ceil(Math.sqrt(n)))
+        const rows = Math.max(1, Math.ceil(n / cols))
 
-        console.log(`✅ [Gallery] Loaded ${placed.length} studios with positions:`, placed.map(s => ({
-          id: s.id,
-          name: s.name,
-          position: s.galleryPosition,
-          boards: s.boards?.length || 0
-        })))
+        const placed = studiosWithBoards.map((studio, index) => {
+          const { width, depth } = getFootprint(studio)
+          const col = index % cols
+          const row = Math.floor(index / cols)
+          const cellW = width + WALKWAY
+          const cellD = depth + WALKWAY
+          const offsetX = -((cols - 1) * cellW) / 2
+          const offsetZ = -((rows - 1) * cellD) / 2
+          const x = offsetX + col * cellW
+          const z = offsetZ + row * cellD
+          const boundingBox = studio.boundingBox || { width, depth }
+          return { ...studio, boundingBox, galleryPosition: { x, z }, wallConfig: studio.wallConfig || buildWallConfig(boundingBox) }
+        })
+
         setStudios(placed)
         // Cache the studios data for instant loading next time
-        // Include filters in cache key to prevent invalid cache usage
-        const cacheKey = `galleryStudiosCache_${department || 'all'}_${year || 'all'}_${isDemo ? 'demo' : 'real'}`
-        sessionStorage.setItem(cacheKey, JSON.stringify({
+        sessionStorage.setItem('galleryStudiosCache', JSON.stringify({
           studios: placed,
           timestamp: Date.now()
         }))
@@ -1318,7 +989,7 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
     }
 
     fetchStudios()
-  }, [department, year, isDemo])
+  }, [department, year])
 
   useEffect(() => {
     if (!Object.values(moveKeysRef.current).some(Boolean)) {
@@ -1521,7 +1192,9 @@ function MovementController({
     let entranceNear = false
     
     for (const studio of studios) {
-      const entrance = getEntrancePosition(studio)
+      const pos = studio.galleryPosition || { x: 0, z: 0 }
+      const { depth } = getFootprint(studio)
+      const entrance = new THREE.Vector3(pos.x, 0, pos.z + depth / 2 + 0.2)
       const dist = entrance.distanceTo(new THREE.Vector3(updated.x, 0, updated.z))
       if (closest === null || dist < closest.dist) {
         closest = { studio, entrance, dist }
@@ -1543,165 +1216,225 @@ function MovementController({
 }
 
 function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avatarPos: Vec3 }) {
-  const [mounted, setMounted] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   
+  // Ensure component is mounted and container is in DOM before rendering Canvas
   useEffect(() => {
+    if (typeof window === 'undefined') return
     // Use requestAnimationFrame to ensure DOM is ready
-    const timer = requestAnimationFrame(() => {
-      if (containerRef.current) {
-        setMounted(true)
+    const rafId = requestAnimationFrame(() => {
+      if (containerRef.current && document.body.contains(containerRef.current)) {
+        setIsMounted(true)
       }
     })
-    return () => cancelAnimationFrame(timer)
+    return () => cancelAnimationFrame(rafId)
   }, [])
   
-  // Calculate bounds of all studios to determine view size
-  const bounds = useMemo(() => {
-    if (studios.length === 0) {
-      return { minX: -100, maxX: 100, minZ: -100, maxZ: 100, centerX: 0, centerZ: 0, width: 200, depth: 200 }
+  // Close on ESC key
+  useEffect(() => {
+    if (!isExpanded) return
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsExpanded(false)
     }
-    
-    let minX = Infinity, maxX = -Infinity
-    let minZ = Infinity, maxZ = -Infinity
-    
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [isExpanded])
+  
+  // Calculate view size based on studio positions
+  let maxX = 0, maxZ = 0, minX = 0, minZ = 0
+  
+  if (studios.length === 0) {
+    maxX = 1000
+    minX = -1000
+    maxZ = 1000
+    minZ = -1000
+  } else {
     studios.forEach(studio => {
       const pos = studio.galleryPosition || { x: 0, z: 0 }
       const { width, depth } = getFootprint(studio)
-      const halfW = width / 2
-      const halfD = depth / 2
-      
-      minX = Math.min(minX, pos.x - halfW)
-      maxX = Math.max(maxX, pos.x + halfW)
-      minZ = Math.min(minZ, pos.z - halfD)
-      maxZ = Math.max(maxZ, pos.z + halfD)
+      const halfWidth = (width * 12) / 2
+      const halfDepth = (depth * 12) / 2
+      maxX = Math.max(maxX, pos.x + halfWidth)
+      minX = Math.min(minX, pos.x - halfWidth)
+      maxZ = Math.max(maxZ, pos.z + halfDepth)
+      minZ = Math.min(minZ, pos.z - halfDepth)
     })
-    
-    // Include avatar position in bounds
-    minX = Math.min(minX, avatarPos.x - 10)
-    maxX = Math.max(maxX, avatarPos.x + 10)
-    minZ = Math.min(minZ, avatarPos.z - 10)
-    maxZ = Math.max(maxZ, avatarPos.z + 10)
-    
-    // Add padding
-    const padding = 100
-    minX -= padding
-    maxX += padding
-    minZ -= padding
-    maxZ += padding
-    
-    const centerX = (minX + maxX) / 2
-    const centerZ = (minZ + maxZ) / 2
-    const width = maxX - minX
-    const depth = maxZ - minZ
-    const viewSize = Math.max(width, depth, 200) // Minimum 200 units
-    
-    return { minX, maxX, minZ, maxZ, centerX, centerZ, width, depth, viewSize }
-  }, [studios, avatarPos])
-  
-  // Calculate zoom to fit all studios in the minimap
-  // For orthographic cameras: zoom controls visible area
-  // We want to show bounds.viewSize units, so set camera bounds and adjust zoom
-  const padding = 1.2 // 20% padding around bounds
-  const visibleSize = (bounds?.viewSize ?? 200) * padding
-  
-  if (!mounted) {
-    return (
-      <div 
-        ref={containerRef}
-        className="absolute top-4 right-4 w-40 h-40 rounded-lg border border-primary/20 bg-white/80 shadow-lg backdrop-blur-sm" 
-      />
-    )
   }
   
+  const padding = 200
+  const viewWidth = Math.max(maxX - minX + padding * 2, 2000)
+  const viewDepth = Math.max(maxZ - minZ + padding * 2, 2000)
+  const viewSize = Math.max(viewWidth, viewDepth)
+  
+  const centerX = studios.length > 0 ? (maxX + minX) / 2 : 0
+  const centerZ = studios.length > 0 ? (maxZ + minZ) / 2 : 0
+  
+  // Calculate zoom for orthographic camera
+  // In R3F orthographic camera, zoom controls the visible area size
+  // Lower zoom = shows more area (zoomed out), higher zoom = shows less area (zoomed in)
+  // We want to fit all studios with some padding
+  const paddingFactor = 1.3 // 30% padding around studios
+  const targetArea = viewSize * paddingFactor
+  
+  // Calculate zoom: for orthographic, we need to relate viewSize to pixel size
+  // A simple approach: use a base zoom and scale by viewSize
+  // When expanded (larger viewport), we can show more detail (higher zoom)
+  // When collapsed (small viewport), we need to show everything (lower zoom)
+  const baseZoom = isExpanded ? 50 : 5
+  const zoom = Math.max(1, Math.min(100, baseZoom * (2000 / Math.max(viewSize, 100))))
+  
+  // Debug logging
+  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+    console.log('Minimap debug:', {
+      studiosCount: studios.length,
+      viewSize,
+      targetArea,
+      zoom,
+      isExpanded,
+      centerX,
+      centerZ,
+      studios: studios.slice(0, 3).map(s => ({ 
+        id: s.id, 
+        name: s.name, 
+        pos: s.galleryPosition 
+      }))
+    })
+  }
+
   return (
-    <div 
-      ref={containerRef}
-      className="absolute top-4 right-4 w-40 h-40 rounded-lg border border-primary/20 bg-white/80 shadow-lg backdrop-blur-sm overflow-hidden"
-    >
-      {mounted && (
-        <Canvas 
-          orthographic 
-          camera={{ 
-            zoom: 1,
-            position: [bounds.centerX, 40, bounds.centerZ],
-            left: -visibleSize / 2,
-            right: visibleSize / 2,
-            top: visibleSize / 2,
-            bottom: -visibleSize / 2,
-            near: 0.1,
-            far: 100
-          }}
-          gl={{ antialias: false, alpha: false }}
-          dpr={1}
-          onCreated={(state) => {
-            // Ensure the canvas is properly initialized
-            if (!state.gl || !state.gl.domElement) {
-              console.warn('Minimap Canvas failed to initialize')
-            }
-          }}
-        >
-        <MinimapCamera bounds={bounds} visibleSize={visibleSize} />
-        <ambientLight intensity={0.6} />
-        <color attach="background" args={['#f8fafc']} />
-        {/* Floor guide - covers the entire bounds */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[bounds.centerX, 0, bounds.centerZ]} receiveShadow>
-          <planeGeometry args={[bounds.viewSize, bounds.viewSize]} />
-          <meshBasicMaterial color="#eef2ff" />
-        </mesh>
-
-        {/* Studios - each as a distinct square/rectangle with border matching 3D view */}
-        {studios.map((studio) => {
-          const pos = studio.galleryPosition || { x: 0, z: 0 }
-          const { width, depth } = getFootprint(studio)
-          // Convert feet to inches to match 3D view (scene uses 1 unit = 1 inch)
-          const INCHES_PER_FOOT = 12
-          const displayWidth = width * INCHES_PER_FOOT
-          const displayDepth = depth * INCHES_PER_FOOT
-          
-          return (
-            <group key={studio.id}>
-              {/* Studio borders removed from minimap - no blue squares visible */}
-            </group>
-          )
-        })}
-
-        {/* Avatar - make it more visible */}
-        <mesh position={[avatarPos.x, 0.4, avatarPos.z]}>
-          <circleGeometry args={[2, 24]} />
-          <meshBasicMaterial color="#ef4444" />
-        </mesh>
-        {/* Avatar border */}
-        <lineSegments position={[avatarPos.x, 0.45, avatarPos.z]}>
-          <ringGeometry args={[1.8, 2.2, 32]} />
-          <lineBasicMaterial attach="material" color="#dc2626" linewidth={2} />
-        </lineSegments>
-        </Canvas>
+    <>
+      {isExpanded && (
+        <div 
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
+          onClick={() => setIsExpanded(false)}
+        />
       )}
-    </div>
+      <div 
+        ref={containerRef}
+        className={`absolute top-4 right-4 rounded-lg border border-primary/20 bg-white/90 shadow-lg backdrop-blur-sm overflow-hidden transition-all duration-300 ${
+          isExpanded 
+            ? 'w-[80vw] h-[80vh] max-w-5xl max-h-[90vh] z-50' 
+            : 'w-40 h-40 cursor-pointer hover:shadow-xl'
+        }`}
+        onClick={() => !isExpanded && setIsExpanded(true)}
+      >
+        {isExpanded && (
+          <div className="absolute top-3 right-3 z-10">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsExpanded(false)
+              }}
+              className="w-10 h-10 rounded-lg bg-white hover:bg-gray-50 border-2 border-primary/30 flex items-center justify-center shadow-lg transition-all hover:scale-110"
+              aria-label="Close minimap"
+            >
+              <X className="w-5 h-5 text-text-primary" />
+            </button>
+          </div>
+        )}
+        {isExpanded && (
+          <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur-sm rounded-lg px-3 py-1.5 border border-border shadow-md">
+            <p className="text-xs font-semibold text-text-primary">Gallery Map</p>
+          </div>
+        )}
+        {isMounted && typeof window !== 'undefined' && (
+          <Canvas 
+            orthographic 
+            camera={{ zoom, position: [0, 40, 0] }}
+            gl={{ antialias: false, alpha: false }}
+            dpr={[1, 2]}
+            onCreated={({ gl }) => {
+              if (gl?.domElement) {
+                gl.domElement.style.width = '100%'
+                gl.domElement.style.height = '100%'
+              }
+            }}
+            onClick={(e) => {
+              if (isExpanded) {
+                e.stopPropagation()
+              }
+            }}
+          >
+            <MinimapCamera centerX={centerX} centerZ={centerZ} />
+            <ambientLight intensity={0.6} />
+            <color attach="background" args={['#f8fafc']} />
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[centerX, 0, centerZ]} receiveShadow>
+              <planeGeometry args={[viewSize, viewSize]} />
+              <meshBasicMaterial color="#eef2ff" />
+            </mesh>
+
+            {studios.map((studio) => {
+              const pos = studio.galleryPosition || { x: 0, z: 0 }
+              const { width, depth } = getFootprint(studio)
+              const widthInches = width * 12
+              const depthInches = depth * 12
+              return (
+                <group key={studio.id}>
+                  <mesh position={[pos.x, 0.2, pos.z]} rotation={[-Math.PI / 2, 0, 0]}>
+                    <planeGeometry args={[widthInches, depthInches]} />
+                    <meshBasicMaterial color="#6366f1" />
+                  </mesh>
+                  {/* Border for better visibility */}
+                  <lineSegments position={[pos.x, 0.21, pos.z]} rotation={[-Math.PI / 2, 0, 0]}>
+                    <edgesGeometry args={[new THREE.PlaneGeometry(widthInches, depthInches)]} />
+                    <lineBasicMaterial color="#4f46e5" linewidth={2} />
+                  </lineSegments>
+                  <Html
+                    position={[pos.x, isExpanded ? 1.5 : 1.2, pos.z]}
+                    center
+                    style={{ pointerEvents: 'none', zIndex: 10000 }}
+                    distanceFactor={isExpanded ? 200000 : 80000}
+                    zIndexRange={[10000, 0]}
+                    transform
+                  >
+                    <div className={`bg-white/95 backdrop-blur-sm rounded border border-primary/20 shadow text-center ${
+                      isExpanded 
+                        ? 'px-2 py-1' 
+                        : 'px-1 py-0.5'
+                    }`} style={{ 
+                      zIndex: 10000,
+                      position: 'relative',
+                      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                      fontSize: isExpanded ? '12px' : '10px',
+                      lineHeight: '1.2',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      <div className="font-medium text-text-primary" style={{ 
+                        textShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                        fontWeight: 600
+                      }}>
+                        {studio.name}
+                      </div>
+                      {isExpanded && studio.instructor && (
+                        <div className="text-text-muted mt-1" style={{ fontSize: '10px', fontWeight: 400 }}>
+                          {studio.instructor}
+                        </div>
+                      )}
+                    </div>
+                  </Html>
+                </group>
+              )
+            })}
+
+            <mesh position={[avatarPos.x, 0.4, avatarPos.z]}>
+              <circleGeometry args={[0.8, 24]} />
+              <meshBasicMaterial color="#6366f1" />
+            </mesh>
+          </Canvas>
+        )}
+      </div>
+    </>
   )
 }
 
-function MinimapCamera({ bounds, visibleSize }: { bounds: { centerX: number; centerZ: number }, visibleSize: number }) {
+function MinimapCamera({ centerX = 0, centerZ = 0 }: { centerX?: number; centerZ?: number }) {
   useFrame((state) => {
-    if (!state.camera || !state.gl || !state.gl.domElement) return
-    try {
-      const cam = state.camera as THREE.OrthographicCamera
-      if (!cam) return
-      // Center camera on the center of all studios to show everything
-      cam.position.set(bounds.centerX, 40, bounds.centerZ)
-      cam.up.set(0, 0, -1)
-      cam.lookAt(bounds.centerX, 0, bounds.centerZ)
-      // Set orthographic bounds to show the calculated visible area
-      cam.left = -visibleSize / 2
-      cam.right = visibleSize / 2
-      cam.top = visibleSize / 2
-      cam.bottom = -visibleSize / 2
-      cam.updateProjectionMatrix()
-    } catch (error) {
-      // Silently handle any camera update errors
-      console.warn('MinimapCamera update error:', error)
-    }
+    const cam = state.camera
+    cam.position.set(centerX, 40, centerZ)
+    cam.up.set(0, 0, -1)
+    cam.lookAt(centerX, 0, centerZ)
   })
   return null
 }

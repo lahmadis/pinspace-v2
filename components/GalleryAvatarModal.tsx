@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { X } from 'lucide-react'
 
 const COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#14b8a6', '#8b5cf6']
 const APPEARANCES = ['Explorer', 'Builder', 'Critic']
@@ -47,47 +48,46 @@ export default function GalleryAvatarModal({ isOpen, onClose, onEnter }: Gallery
       onClick={onClose}
     >
       <div
-        className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden"
+        className="bg-white w-full max-w-2xl rounded-2xl border border-border shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex flex-col md:flex-row">
           {/* Left: Avatar preview and quick picks */}
-          <div className="md:w-2/5 bg-gradient-to-br from-indigo-50 via-white to-slate-50 p-6 border-b md:border-b-0 md:border-r border-slate-100">
-            <div className="flex items-center justify-between mb-4">
+          <div className="md:w-2/5 bg-gradient-to-br from-primary/5 to-primary/10 p-8 border-b md:border-b-0 md:border-r border-border">
+            <div className="flex items-center justify-between mb-6">
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-indigo-500 font-semibold">Gallery Mode</p>
-                <h3 className="text-2xl font-bold text-slate-900">Create your avatar</h3>
+                <p className="text-xs uppercase tracking-[0.2em] text-primary font-semibold">Gallery Mode</p>
+                <h3 className="text-xl font-semibold text-text-primary mt-1">Create your avatar</h3>
               </div>
               <button
                 onClick={onClose}
-                className="w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center hover:bg-slate-100 transition-colors"
+                className="w-9 h-9 rounded-lg border border-border flex items-center justify-center hover:bg-background-lighter transition-colors"
                 aria-label="Close"
               >
-                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <X className="w-4 h-4 text-text-secondary" />
               </button>
             </div>
 
-            <div className="aspect-square rounded-2xl bg-white shadow-inner border border-slate-200 flex flex-col items-center justify-center gap-4">
+            <div className="aspect-square rounded-xl bg-background-light shadow-inner border border-border flex items-center justify-center mb-6">
               <div 
-                className="w-28 h-28 rounded-full flex items-center justify-center text-white font-bold text-xl transition-all"
+                className="w-32 h-32 rounded-full flex items-center justify-center text-white font-bold text-xl transition-all"
                 style={avatarPreviewStyle}
               >
               </div>
-              <div className="text-center px-6">
-                <p className="text-sm text-slate-600">Pick a color and vibe for your avatar before entering the 3D gallery.</p>
-              </div>
             </div>
 
-            <div className="mt-6">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500 font-semibold mb-3">Quick colors</p>
-              <div className="grid grid-cols-6 gap-2">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-text-muted font-semibold mb-3">Quick Colors</p>
+              <div className="grid grid-cols-6 gap-2.5">
                 {COLORS.map((c) => (
                   <button
                     key={c}
                     onClick={() => setColor(c)}
-                    className={`h-10 rounded-xl border-2 transition-all ${color === c ? 'border-indigo-500 shadow-md scale-105' : 'border-transparent hover:border-slate-200'}`}
+                    className={`h-11 rounded-lg border-2 transition-all ${
+                      color === c 
+                        ? 'border-primary shadow-md scale-105 ring-2 ring-primary/20' 
+                        : 'border-transparent hover:border-border hover:scale-105'
+                    }`}
                     style={{ backgroundColor: c }}
                     aria-label={`Select color ${c}`}
                   />
@@ -97,14 +97,14 @@ export default function GalleryAvatarModal({ isOpen, onClose, onEnter }: Gallery
           </div>
 
           {/* Right: Form */}
-          <div className="md:w-3/5 p-6 space-y-5">
+          <div className="md:w-3/5 p-8 space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-semibold text-slate-800 mb-2">Department</label>
+                <label className="block text-sm font-semibold text-text-primary mb-2">Department</label>
                 <select
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-background-light transition-all hover:border-primary/50"
                 >
                   <option value="">Select department...</option>
                   {DEPARTMENTS.map((dept) => (
@@ -114,11 +114,11 @@ export default function GalleryAvatarModal({ isOpen, onClose, onEnter }: Gallery
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-800 mb-2">Year</label>
+                <label className="block text-sm font-semibold text-text-primary mb-2">Year</label>
                 <select
                   value={year}
                   onChange={(e) => setYear(e.target.value)}
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-background-light transition-all hover:border-primary/50"
                 >
                   <option value="">Select year...</option>
                   {YEARS.map((y) => (
@@ -131,14 +131,14 @@ export default function GalleryAvatarModal({ isOpen, onClose, onEnter }: Gallery
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <button
                 onClick={onClose}
-                className="sm:flex-1 px-4 py-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors font-semibold"
+                className="sm:flex-1 px-5 py-2.5 bg-background-light hover:bg-background-lighter text-text-primary rounded-lg border border-border transition-all font-medium text-sm"
               >
                 Cancel
               </button>
               <button
                 onClick={handleEnter}
                 disabled={!department || !year}
-                className="sm:flex-1 px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold disabled:opacity-60 disabled:cursor-not-allowed shadow-md"
+                className="sm:flex-1 px-5 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-all font-semibold text-sm shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary"
               >
                 Enter Gallery
               </button>

@@ -19,14 +19,15 @@ interface WallConfig {
 interface WallSystemProps {
   boards: Board[]
   wallConfig: WallConfig
-  onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number) => void
+  onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   editingWall: number | null
   onBoardClick?: (board: Board) => void
   highlightedBoardId?: string | null // ID of the board currently in camera view (for blue tint)
+  onBoardHover?: (boardId: string | null) => void // Callback when board is hovered
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallClick, editingWall, onBoardClick, highlightedBoardId }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallClick, editingWall, onBoardClick, highlightedBoardId, onBoardHover }: WallSystemProps) {
   // Scene scale: 1 unit = 1 inch
   // So an 8ft × 10ft wall = 96 × 120 units
   const SCALE = 12 // Convert feet to inches (1 ft = 12 inches)
@@ -278,7 +279,10 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
                 // If back face was clicked, adjust rotation by 180° so camera views from correct side
                 const adjustedRotation = isBackFace ? rotation + Math.PI : rotation
                 
-                onWallClick?.(wallIndex, wall, position, adjustedRotation)
+                // Determine the side that was clicked
+                const side: 'front' | 'back' = isBackFace ? 'back' : 'front'
+                
+                onWallClick?.(wallIndex, wall, position, adjustedRotation, side)
               }}
   castShadow
   receiveShadow
@@ -286,7 +290,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
 >
               <boxGeometry args={[transform.width, transform.height, 4]} />
               <meshStandardMaterial 
-                color="#f8f8f5" 
+                color="#F9F9F9" 
                 roughness={0.9} 
                 metalness={0.0}
                 depthWrite={true}
@@ -371,12 +375,20 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
               // Determine which direction is "outward" for this wall (1 for +Z, -1 for -Z)
               const outwardDirection = getOutwardZDirection(transform.rotationY)
               
-              // Position board at wall surface:
+              // Get board's side (front or back) - this determines which face of the wall it's on
+              const boardSide = board.position?.side || 'front' // Default to front if not specified
+              
+              // Position board at wall surface based on which side it's on:
               // - Front side: same direction as outward (outwardDirection * WALL_SURFACE_OFFSET)
               // - Back side: opposite direction (-outwardDirection * WALL_SURFACE_OFFSET)
               // Ensure boards are ALWAYS outside the wall geometry (z > 2 or z < -2)
               const baseZ = outwardDirection * WALL_SURFACE_OFFSET
-              const boardZ = baseZ + BOARD_OFFSET
+              let boardZ: number
+              if (boardSide === 'back') {
+                boardZ = -baseZ - BOARD_OFFSET // Opposite direction for back face
+              } else {
+                boardZ = baseZ + BOARD_OFFSET // Same direction for front face
+              }
               
               // Safety check: ensure board is never inside the wall (between -2 and +2)
               // Wall geometry extends from -2 to +2 inches (WALL_DEPTH = 4, so ±2 from center)
@@ -384,11 +396,16 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
               const WALL_OUTER_BOUND = WALL_SURFACE_OFFSET + BOARD_OFFSET // 2.2 inches
               
               // Clamp board Z to ensure it's always outside the wall
-              let finalBoardZ = Math.max(boardZ, WALL_OUTER_BOUND)
+              let finalBoardZ: number
+              if (boardSide === 'back') {
+                finalBoardZ = Math.min(boardZ, -WALL_OUTER_BOUND) // Clamp to outer bound on negative side
+              } else {
+                finalBoardZ = Math.max(boardZ, WALL_OUTER_BOUND) // Clamp to outer bound on positive side
+              }
               
-              console.log(`🧱 Board on wall ${wallIndex}: rotation=${transform.rotationY.toFixed(2)}, outwardDirection=${outwardDirection}, finalZ=${finalBoardZ.toFixed(2)}`)
+              console.log(`🧱 Board on wall ${wallIndex}: rotation=${transform.rotationY.toFixed(2)}, outwardDirection=${outwardDirection}, side=${boardSide}, finalZ=${finalBoardZ.toFixed(2)}`)
               
-              console.log(`   �� LOADED: x=${board.position.x.toFixed(3)}, y=${board.position.y.toFixed(3)}`)
+              console.log(`   📍 LOADED: x=${board.position.x.toFixed(3)}, y=${board.position.y.toFixed(3)}, side=${boardSide}`)
               console.log(`   🎯 3D Position: x=${boardX.toFixed(2)}, y=${boardY.toFixed(2)}, z=${finalBoardZ.toFixed(2)}`)
               console.log(`   📏 3D Size: ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units (${boardWidth.toFixed(2)}" x ${boardHeight.toFixed(2)}")`)
               if (board.physicalWidth && board.physicalHeight) {
@@ -407,6 +424,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
                   height={boardHeight}
                   onClick={onBoardClick}
                   isHighlighted={highlightedBoardId === board.id}
+                  onHover={(hovered) => onBoardHover?.(hovered ? board.id : null)}
                 />
               )
             })}
