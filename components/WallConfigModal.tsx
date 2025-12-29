@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Zap, Square, LayoutGrid, CornerDownRight, Settings, ChevronRight, ChevronDown } from 'lucide-react'
+import { Settings, ChevronRight, ChevronDown } from 'lucide-react'
 
 interface WallDimensions {
   height: number
@@ -16,73 +16,11 @@ interface WallConfig {
   layoutType: LayoutType
 }
 
-interface LayoutTemplate {
-  id: LayoutType
-  name: string
-  description: string
-  icon: React.ReactNode
-  config: WallConfig
-}
-
-const LAYOUT_TEMPLATES: LayoutTemplate[] = [
-  {
-    id: 'zigzag',
-    name: 'Zig-Zag',
-    description: 'Alternating angled walls',
-    icon: <Zap className="w-5 h-5" />,
-    config: {
-      layoutType: 'zigzag',
-      walls: [
-        { height: 10, width: 8 },
-        { height: 10, width: 8 },
-        { height: 10, width: 8 },
-        { height: 10, width: 8 }
-      ]
-    }
-  },
-  {
-    id: 'square',
-    name: 'Square',
-    description: 'Enclosed square room',
-    icon: <Square className="w-5 h-5" />,
-    config: {
-      layoutType: 'square',
-      walls: [
-        { height: 10, width: 10 },
-        { height: 10, width: 10 },
-        { height: 10, width: 10 },
-        { height: 10, width: 10 }
-      ]
-    }
-  },
-  {
-    id: 'linear',
-    name: 'Linear',
-    description: 'Parallel walls in a row',
-    icon: <LayoutGrid className="w-5 h-5" />,
-    config: {
-      layoutType: 'linear',
-      walls: [
-        { height: 10, width: 8 },
-        { height: 10, width: 8 },
-        { height: 10, width: 8 }
-      ]
-    }
-  },
-  {
-    id: 'lshape',
-    name: 'L-Shape',
-    description: 'Corner L-shaped layout',
-    icon: <CornerDownRight className="w-5 h-5" />,
-    config: {
-      layoutType: 'lshape',
-      walls: [
-        { height: 10, width: 10 },
-        { height: 10, width: 8 },
-        { height: 10, width: 8 }
-      ]
-    }
-  }
+const DEFAULT_ZIGZAG_WALLS: WallDimensions[] = [
+  { height: 10, width: 8 },
+  { height: 10, width: 8 },
+  { height: 10, width: 8 },
+  { height: 10, width: 8 }
 ]
 
 interface WallConfigModalProps {
@@ -91,19 +29,11 @@ interface WallConfigModalProps {
 }
 
 export default function WallConfigModal({ onConfirm, initialConfig }: WallConfigModalProps) {
-  const [selectedLayout, setSelectedLayout] = useState<LayoutType>(initialConfig?.layoutType || 'zigzag')
   const [useCustom, setUseCustom] = useState(false)
   const [numWalls, setNumWalls] = useState(initialConfig?.walls.length || 4)
   const [walls, setWalls] = useState<WallDimensions[]>(
-    initialConfig?.walls || LAYOUT_TEMPLATES[0].config.walls
+    initialConfig?.walls || DEFAULT_ZIGZAG_WALLS
   )
-
-  const handleLayoutSelect = (template: LayoutTemplate) => {
-    setSelectedLayout(template.id)
-    setWalls(JSON.parse(JSON.stringify(template.config.walls)))
-    setNumWalls(template.config.walls.length)
-    setUseCustom(false)
-  }
 
   const handleCustomToggle = () => {
     setUseCustom(!useCustom)
@@ -145,7 +75,7 @@ export default function WallConfigModal({ onConfirm, initialConfig }: WallConfig
     
     onConfirm({ 
       walls: walls.slice(0, numWalls),
-      layoutType: useCustom ? 'zigzag' : selectedLayout
+      layoutType: 'zigzag'
     })
   }
 
@@ -161,49 +91,16 @@ export default function WallConfigModal({ onConfirm, initialConfig }: WallConfig
         {/* Header */}
         <div className="bg-white border-b border-gray-200 p-6">
           <h2 className="text-2xl font-semibold text-gray-900 mb-1">Configure Studio Walls</h2>
-          <p className="text-sm text-gray-500">Choose a layout template or customize your own</p>
+          <p className="text-sm text-gray-500">Customize your wall dimensions</p>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Layout Templates */}
-          <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Choose a Layout Template</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-              {LAYOUT_TEMPLATES.map((template) => (
-                <motion.button
-                  key={template.id}
-                  onClick={() => handleLayoutSelect(template)}
-                  className={`group bg-white rounded-xl border transition-all text-left p-6 ${
-                    selectedLayout === template.id && !useCustom
-                      ? 'border-indigo-600 bg-indigo-50'
-                      : 'border-gray-200 hover:shadow-md hover:-translate-y-0.5'
-                  }`}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center mb-3 text-indigo-600">
-                    {template.icon}
-                  </div>
-                  <div className="text-lg font-semibold text-gray-900 mb-1">{template.name}</div>
-                  <div className="text-sm text-gray-500 mb-2">{template.description}</div>
-                  <div className="text-xs text-gray-500">
-                    {template.config.walls.length} walls • {template.config.walls.reduce((sum, w) => sum + w.height * w.width, 0)} sq ft
-                  </div>
-                </motion.button>
-              ))}
-            </div>
-          </div>
-
           {/* Custom Configuration Toggle */}
           <div className="mb-6">
             <button
               onClick={handleCustomToggle}
-              className={`w-full p-4 rounded-xl border transition-all bg-white hover:bg-gray-50 ${
-                useCustom
-                  ? 'border-indigo-600 bg-indigo-50'
-                  : 'border-gray-200'
-              }`}
+              className="w-full p-4 rounded-xl border border-gray-200 transition-all bg-white hover:bg-gray-50"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 text-left">
@@ -305,7 +202,7 @@ export default function WallConfigModal({ onConfirm, initialConfig }: WallConfig
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-600">Layout:</span>
-                <span className="text-lg font-semibold text-indigo-600 capitalize">{useCustom ? 'Custom' : selectedLayout}</span>
+                <span className="text-lg font-semibold text-indigo-600 capitalize">Zigzag</span>
               </div>
             </div>
           </div>
