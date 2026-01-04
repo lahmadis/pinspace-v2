@@ -140,11 +140,19 @@ function hashCode(str: string): number {
 }
 
 function getArchitectureImageUrl(index: number, width: number, height: number, title: string): string {
-  // Use Picsum Photos (Lorem Picsum) for reliable, real images
-  // The seed parameter ensures deterministic images based on index
-  // This provides real architectural/building images
-  const seed = Math.abs(index) % 1000
-  return `https://picsum.photos/seed/${seed}/${width}/${height}`
+  const colors = [
+    { bg: '4a5568', text: 'ffffff' },
+    { bg: '2d3748', text: 'ffffff' },
+    { bg: '1a202c', text: 'ffffff' },
+    { bg: '2c5282', text: 'ffffff' },
+    { bg: '2c7a7b', text: 'ffffff' },
+    { bg: '744210', text: 'ffffff' },
+    { bg: '553c9a', text: 'ffffff' },
+    { bg: '702459', text: 'ffffff' },
+  ]
+  const color = colors[Math.abs(index) % colors.length]
+  const shortTitle = title.substring(0, 20).replace(/\s+/g, '+')
+  return `https://placehold.co/${width}x${height}/${color.bg}/${color.text}?text=${encodeURIComponent(shortTitle)}`
 }
 
 function getRandomItem<T>(array: T[]): T {

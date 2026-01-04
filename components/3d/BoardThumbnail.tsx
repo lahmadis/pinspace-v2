@@ -191,7 +191,8 @@ function BoardPDF({
   hovered, 
   isHighlighted,
   meshRef,
-  onClick
+  onClick,
+  onPointerDown
 }: { 
   pdfUrl: string
   title: string
@@ -201,6 +202,7 @@ function BoardPDF({
   isHighlighted?: boolean
   meshRef: React.RefObject<THREE.Mesh>
   onClick?: (e: any) => void
+  onPointerDown?: (e: any) => void
 }) {
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
   return (
