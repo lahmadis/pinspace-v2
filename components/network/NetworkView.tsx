@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import * as d3 from 'd3'
 import { School } from '@/types'
-import { getYearsBySchool, getStudiosByYear } from '@/lib/sampleData'
+import { getYearsBySchool, getStudiosByYear } from '@/lib/mockData'
 
 interface NetworkNode {
   id: string

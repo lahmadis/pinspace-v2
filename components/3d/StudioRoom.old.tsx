@@ -57,7 +57,7 @@ function SceneContent({
   onDeselect,
   isWorkspaceMember
 }: StudioRoomProps & { 
-  onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, isBackFace?: boolean) => void
+  onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   editingWall: number | null
   editingWallSide: 'front' | 'back'
   placedBoards3D: Map<string, { x: number; y: number; width?: number; height?: number }>
@@ -336,9 +336,8 @@ export default function StudioRoom(props: StudioRoomProps) {
     wallDimensions: WallDimensions,
     position: THREE.Vector3,
     rotation: number,
-    isBackFace?: boolean
+    side: 'front' | 'back'
   ) => {
-    const side: 'front' | 'back' = isBackFace ? 'back' : 'front'
     console.log('🖼️ [StudioRoom] Wall clicked:', wallIndex, 'side:', side, 'rotation:', rotation)
     
     // If we're already editing this exact wall and side, don't reinitialize

@@ -18,7 +18,7 @@ function GalleryContent() {
 
   return (
     <main className="w-full h-screen">
-      <Gallery3D avatarColor={avatarColor} department={department} year={year} isDemo={isDemo} />
+      <Gallery3D avatarColor={avatarColor} department={department} year={year} />
     </main>
   )
 }

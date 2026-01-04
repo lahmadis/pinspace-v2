@@ -1275,22 +1275,21 @@ function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avatarPos: 
   // In R3F orthographic camera, zoom controls the visible area size
   // Lower zoom = shows more area (zoomed out), higher zoom = shows less area (zoomed in)
   // We want to fit all studios with some padding
-  const paddingFactor = 1.3 // 30% padding around studios
-  const targetArea = viewSize * paddingFactor
+  const paddingFactor = 1.2 // 20% padding around studios
   
   // Calculate zoom: for orthographic, we need to relate viewSize to pixel size
-  // A simple approach: use a base zoom and scale by viewSize
-  // When expanded (larger viewport), we can show more detail (higher zoom)
-  // When collapsed (small viewport), we need to show everything (lower zoom)
-  const baseZoom = isExpanded ? 50 : 5
-  const zoom = Math.max(1, Math.min(100, baseZoom * (2000 / Math.max(viewSize, 100))))
+  // Lower zoom values show more area (zoomed out)
+  // When expanded, use lower zoom to show all studios
+  // When collapsed, use even lower zoom to fit everything in small viewport
+  // Scale zoom inversely with viewSize - larger viewSize needs lower zoom
+  const baseZoom = isExpanded ? 15 : 3
+  const zoom = Math.max(1, Math.min(100, baseZoom * (1500 / Math.max(viewSize, 500))))
   
   // Debug logging
   if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
     console.log('Minimap debug:', {
       studiosCount: studios.length,
       viewSize,
-      targetArea,
       zoom,
       isExpanded,
       centerX,
