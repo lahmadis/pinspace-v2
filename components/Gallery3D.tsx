@@ -9,6 +9,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { X } from 'lucide-react'
 import WallSystem from './3d/WallSystem'
+import LightboxModal from './LightboxModal'
 
 type Vec3 = { x: number; y: number; z: number }
 
@@ -27,6 +28,7 @@ type GalleryStudio = {
   year?: string | number
   studioId?: string
   boundingBox?: { width: number; depth: number }
+  boundingRectangle?: { width: number; depth: number } // Fixed bounding rectangle for gallery layout (60ft x 30ft)
   boards?: Board[]
   galleryPosition?: { x: number; z: number }
   studentCount?: number
@@ -64,7 +66,7 @@ const MINIMAP_SCALE = 4
 // Entrance detection distance in inches
 const ENTRANCE_DISTANCE = 36 // 36 inches = 3 feet
 // Reduced from 30 to 15 for better performance - only render closest studios
-const MAX_RENDER_STUDIOS = 15
+const MAX_RENDER_STUDIOS = 50 // Increased to show more studios with boards
 const BOARD_RENDER_DISTANCE = 28
 const DEFAULT_ROOM = { width: 20, depth: 15, height: 10 }
 // Reduce booth spacing: ~1.5 units (~4-5ft) between studios
@@ -81,6 +83,58 @@ const getFootprint = (studio: GalleryStudio) => {
   const width = wallWidth ?? studio.boundingBox?.width ?? DEFAULT_ROOM.width
   const depth = wallDepth ?? studio.boundingBox?.depth ?? DEFAULT_ROOM.depth
   return { width, depth }
+}
+
+// Calculate the actual bounding rectangle from wall configuration
+const getBoundingRectangle = (studio: GalleryStudio): { width: number; depth: number } => {
+  const wallConfig = studio.wallConfig || buildWallConfig(getFootprint(studio))
+  const layoutType = wallConfig.layoutType || 'square'
+  const walls = wallConfig.walls || []
+  
+  if (walls.length === 0) {
+    const { width, depth } = getFootprint(studio)
+    return { width, depth }
+  }
+  
+  switch (layoutType) {
+    case 'square': {
+      // Square: walls form a rectangle
+      // Wall 0 and 2 are front/back (horizontal), wall 1 and 3 are left/right (vertical)
+      const frontBackWidth = (walls[0]?.width || 0) + (walls[2]?.width || 0)
+      const leftRightDepth = (walls[1]?.width || 0) + (walls[3]?.width || 0)
+      return { width: frontBackWidth, depth: leftRightDepth }
+    }
+    
+    case 'zigzag': {
+      // Zigzag: calculate total extents
+      const WALL_DEPTH = 4
+      const OVERLAP = WALL_DEPTH / 2
+      let totalXExtent = 0
+      let totalZExtent = 0
+      let tempX = 0
+      let tempZ = 0
+      
+      for (let i = 0; i < walls.length; i++) {
+        const w = (walls[i]?.width || 0) * 12 // Convert to inches
+        if (i % 2 === 0) {
+          tempX += w - (i > 0 ? OVERLAP : 0)
+          totalXExtent = Math.max(totalXExtent, tempX)
+        } else {
+          tempZ += w - OVERLAP
+          totalZExtent = Math.max(totalZExtent, tempZ)
+        }
+      }
+      
+      // Convert back to feet
+      return { width: totalXExtent / 12, depth: totalZExtent / 12 }
+    }
+    
+    default: {
+      // Default: use footprint
+      const { width, depth } = getFootprint(studio)
+      return { width, depth }
+    }
+  }
 }
 
 const getEntrancePosition = (studio: GalleryStudio) => {
@@ -125,16 +179,11 @@ const randomBetween = (min: number, max: number) => Math.random() * (max - min) 
 function generateMockStudios(count = 9): GalleryStudio[] {
   const studios: GalleryStudio[] = []
   const cols = 3
-  const spacingX = DEFAULT_ROOM.width + WALKWAY + 5 // ~30
-  const spacingZ = DEFAULT_ROOM.depth + WALKWAY + 5 // ~25
+  const STUDIO_SPACING = 1 // 1 inch spacing between rectangles
 
   for (let i = 0; i < count; i++) {
     const width = parseFloat(randomBetween(18, 24).toFixed(1))
     const depth = parseFloat(randomBetween(14, 20).toFixed(1))
-    const row = Math.floor(i / cols)
-    const col = i % cols
-    const x = col * spacingX
-    const z = row * spacingZ
     const name = mockNames[i % mockNames.length]
     const dept = mockDepartments[i % mockDepartments.length]
 
@@ -160,6 +209,12 @@ function generateMockStudios(count = 9): GalleryStudio[] {
     })
 
     const wallConfig = buildWallConfig({ width, depth })
+    
+    // Calculate actual bounding rectangle from wall config
+    const boundingRect = getBoundingRectangle({ 
+      wallConfig, 
+      boundingBox: { width, depth } 
+    } as GalleryStudio)
 
     studios.push({
       id: `mock-studio-${i}`,
@@ -169,21 +224,30 @@ function generateMockStudios(count = 9): GalleryStudio[] {
       year: 2024,
       studentCount: Math.floor(randomBetween(8, 24)),
       boundingBox: { width, depth },
-      galleryPosition: { x, z },
+      boundingRectangle: boundingRect,
+      galleryPosition: { x: 0, z: 0 }, // Will be positioned in layout
       boards,
       wallConfig,
       isMock: true,
     })
   }
 
-  // Center grid around origin
-  const maxRow = Math.ceil(count / 3)
-  const offsetX = ((cols - 1) * spacingX) / 2
-  const offsetZ = ((maxRow - 1) * spacingZ) / 2
-  return studios.map((s) => ({
-    ...s,
-    galleryPosition: { x: (s.galleryPosition?.x || 0) - offsetX, z: (s.galleryPosition?.z || 0) - offsetZ },
-  }))
+  // Position studios in grid using their actual bounding rectangles
+  const rows = Math.ceil(count / cols)
+  const boundingRects = studios.map(s => getBoundingRectangle(s))
+  const maxWidth = Math.max(...boundingRects.map(r => r.width * 12)) + STUDIO_SPACING
+  const maxDepth = Math.max(...boundingRects.map(r => r.depth * 12)) + STUDIO_SPACING
+  
+  const offsetX = -((cols - 1) * maxWidth) / 2
+  const offsetZ = -((rows - 1) * maxDepth) / 2
+  
+  return studios.map((studio, index) => {
+    const row = Math.floor(index / cols)
+    const col = index % cols
+    const x = offsetX + col * maxWidth
+    const z = offsetZ + row * maxDepth
+    return { ...studio, galleryPosition: { x, z } }
+  })
 }
 
 type MoveKeys = {
@@ -194,6 +258,10 @@ type MoveKeys = {
 }
 
 function Ground({ onHover }: { onHover: (hovered: boolean) => void }) {
+  // Make floor much larger to extend beyond all studios (2000 inches = ~167 feet)
+  // This ensures walls don't appear floating
+  const FLOOR_SIZE = 2000
+  
   return (
     <mesh
       position={[0, -0.25, 0]}
@@ -204,9 +272,9 @@ function Ground({ onHover }: { onHover: (hovered: boolean) => void }) {
       }}
       onPointerOut={() => onHover(false)}
     >
-      <boxGeometry args={[600, 0.5, 600]} />
+      <boxGeometry args={[FLOOR_SIZE, 0.5, FLOOR_SIZE]} />
       <meshStandardMaterial
-        color="#e5e7eb"
+        color="#d1d5db" // Darker gray for contrast with walls (which are typically white/light)
         roughness={0.95}
         metalness={0}
         polygonOffset
@@ -377,6 +445,7 @@ function StudioPlot({
   nearby,
   renderBoards,
   highlightedBoardId,
+  onBoardClick,
 }: {
   studio: GalleryStudio
   position: Vec3
@@ -384,10 +453,16 @@ function StudioPlot({
   nearby?: boolean
   renderBoards: boolean
   highlightedBoardId?: string | null
+  onBoardClick?: (board: Board) => void
 }) {
   const { width, depth } = getFootprint(studio)
   const wallConfig = studio.wallConfig || buildWallConfig({ width, depth })
   const wallHeight = wallConfig?.walls?.[0]?.height ?? DEFAULT_ROOM.height
+  
+  // Use actual bounding rectangle from wall configuration, convert to inches for 3D space
+  const boundingRect = studio.boundingRectangle || getBoundingRectangle(studio)
+  const boundingWidthInches = boundingRect.width * 12
+  const boundingDepthInches = boundingRect.depth * 12
 
   return (
     <group position={[position.x, 0, position.z]}>
@@ -397,16 +472,17 @@ function StudioPlot({
         onWallClick={() => {}}
         editingWall={null}
         highlightedBoardId={highlightedBoardId}
+        onBoardClick={onBoardClick}
       />
-      {/* Outline and label */}
-      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[width, depth]} />
-        <meshBasicMaterial color="#cbd5e1" wireframe opacity={0.25} transparent />
+      {/* Blue bounding rectangle outline - invisible (used for layout calculations only) */}
+      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+        <planeGeometry args={[boundingWidthInches, boundingDepthInches]} />
+        <meshBasicMaterial color="#3b82f6" wireframe opacity={0} transparent />
       </mesh>
       <StudioLabel
         name={studio.name}
-        width={width}
-        depth={depth}
+        width={boundingRect.width}
+        depth={boundingRect.depth}
         height={wallHeight}
         highlighted={nearby}
         onClick={onTeleport}
@@ -634,6 +710,7 @@ function SceneContents({
   onNearbyBoardChange,
   highlightedBoardId,
   nearbyBoard,
+  onBoardClick,
 }: {
   studios: GalleryStudio[]
   onTeleport: (studio: GalleryStudio) => void
@@ -642,8 +719,11 @@ function SceneContents({
   onNearbyBoardChange: (board: { board: Board; studio: GalleryStudio; position: THREE.Vector3 } | null) => void
   highlightedBoardId?: string | null
   nearbyBoard?: { board: Board; studio: GalleryStudio; position: THREE.Vector3 } | null
+  onBoardClick?: (board: Board, studio: GalleryStudio) => void
 }) {
   const studiosSorted = useMemo(() => {
+    // Render all studios immediately - no distance limit
+    // This ensures all boards are visible right away
     const withDist = studios.map((s) => {
       const pos = s.galleryPosition || { x: 0, z: 0 }
       const dx = pos.x - avatarPos.x
@@ -651,7 +731,8 @@ function SceneContents({
       return { studio: s, dist: Math.hypot(dx, dz) }
     })
     withDist.sort((a, b) => a.dist - b.dist)
-    return withDist.slice(0, MAX_RENDER_STUDIOS)
+    // Return all studios - no limit
+    return withDist
   }, [studios, avatarPos])
 
   return (
@@ -699,9 +780,9 @@ function SceneContents({
       />
 
       {studiosSorted.map(({ studio, dist }) => {
-        // Only render boards for studios within 200 inches (16.7 feet) for performance
-        const MAX_BOARD_RENDER_DISTANCE = 200
-        const shouldRenderBoards = dist < MAX_BOARD_RENDER_DISTANCE
+        // Always render boards immediately - no distance restriction
+        // Boards should be visible as soon as studios are rendered
+        const shouldRenderBoards = true
         
         return (
           <StudioPlot
@@ -712,6 +793,7 @@ function SceneContents({
             nearby={nearbyStudioId === studio.id}
             renderBoards={shouldRenderBoards}
             highlightedBoardId={highlightedBoardId}
+            onBoardClick={onBoardClick ? (board: Board) => onBoardClick(board, studio) : undefined}
           />
         )
       })}
@@ -955,23 +1037,54 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
           return { ...studio, boards: match?.boards || [], wallConfig: match?.wallConfig || studio.wallConfig }
         })
 
-        // Auto layout in grid
+        // Auto layout in grid with fixed 60ft x 30ft bounding rectangles, 1 inch spacing
         const n = studiosWithBoards.length
         const cols = Math.max(1, Math.ceil(Math.sqrt(n)))
         const rows = Math.max(1, Math.ceil(n / cols))
 
+        // Fixed bounding rectangle: 30ft x 60ft (360 inches x 720 inches)
+        const BOUNDING_WIDTH_FT = 30
+        const BOUNDING_DEPTH_FT = 60
+        const BOUNDING_WIDTH_INCHES = BOUNDING_WIDTH_FT * 12  // 360 inches
+        const BOUNDING_DEPTH_INCHES = BOUNDING_DEPTH_FT * 12  // 720 inches
+        const STUDIO_SPACING = 1 // 1 inch spacing between rectangles
+        
+        // Cell size for grid layout (bounding rectangle + spacing)
+        const cellWidth = BOUNDING_WIDTH_INCHES + STUDIO_SPACING
+        const cellDepth = BOUNDING_DEPTH_INCHES + STUDIO_SPACING
+
         const placed = studiosWithBoards.map((studio, index) => {
-          const { width, depth } = getFootprint(studio)
+          // Calculate actual bounding rectangle from wall configuration
+          const boundingRect = getBoundingRectangle(studio)
+          const boundingWidthInches = boundingRect.width * 12
+          const boundingDepthInches = boundingRect.depth * 12
+          
+          // Use the actual bounding rectangle dimensions for cell size
+          const cellWidth = boundingWidthInches + STUDIO_SPACING
+          const cellDepth = boundingDepthInches + STUDIO_SPACING
+          
           const col = index % cols
           const row = Math.floor(index / cols)
-          const cellW = width + WALKWAY
-          const cellD = depth + WALKWAY
-          const offsetX = -((cols - 1) * cellW) / 2
-          const offsetZ = -((rows - 1) * cellD) / 2
-          const x = offsetX + col * cellW
-          const z = offsetZ + row * cellD
+          
+          // Calculate grid position (center of each cell) - use max cell size for consistent grid
+          const maxCellWidth = Math.max(...studiosWithBoards.map(s => getBoundingRectangle(s).width * 12 + STUDIO_SPACING))
+          const maxCellDepth = Math.max(...studiosWithBoards.map(s => getBoundingRectangle(s).depth * 12 + STUDIO_SPACING))
+          const offsetX = -((cols - 1) * maxCellWidth) / 2
+          const offsetZ = -((rows - 1) * maxCellDepth) / 2
+          const x = offsetX + col * maxCellWidth
+          const z = offsetZ + row * maxCellDepth
+          
+          // Use studio's actual footprint for the room
+          const { width, depth } = getFootprint(studio)
           const boundingBox = studio.boundingBox || { width, depth }
-          return { ...studio, boundingBox, galleryPosition: { x, z }, wallConfig: studio.wallConfig || buildWallConfig(boundingBox) }
+          return { 
+            ...studio, 
+            boundingBox, 
+            galleryPosition: { x, z }, 
+            wallConfig: studio.wallConfig || buildWallConfig(boundingBox),
+            // Store actual bounding rectangle dimensions for visual outline
+            boundingRectangle: boundingRect
+          }
         })
 
         setStudios(placed)
@@ -1028,10 +1141,26 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
           orbitRef.current.radius = next
         }}
         onPointerDown={(e) => {
-          const canvasEl = e.target as HTMLElement
-          if (canvasEl?.requestPointerLock) {
-            canvasEl.requestPointerLock()
+          // Check if this click hit a 3D object (like a board)
+          // If it did, don't request pointer lock so the mouse stays visible
+          const hitObject = (e as any).object
+          const isClickingBoard = hitObject && (
+            hitObject.userData?.isBoard === true ||
+            hitObject.parent?.userData?.isBoard === true ||
+            (hitObject.type === 'Mesh' && hitObject.material?.map !== undefined) // Likely a board with texture
+          )
+          
+          // Also check if we're near a board (might be clicking on it)
+          const mightBeClickingBoard = nearbyBoard && e.button === 0
+          
+          // Only request pointer lock if clicking on empty space (not on a board)
+          if (!isClickingBoard && !mightBeClickingBoard) {
+            const canvasEl = e.target as HTMLElement
+            if (canvasEl?.requestPointerLock) {
+              canvasEl.requestPointerLock()
+            }
           }
+          
           if (e.button === 2) {
             aimingRef.current = true
           }
@@ -1061,6 +1190,9 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
           nearbyStudioId={promptStudio?.studio.id}
           onNearbyBoardChange={setNearbyBoard}
           nearbyBoard={nearbyBoard}
+          onBoardClick={(board: Board, studio: GalleryStudio) => {
+            setSelectedBoard({ board, studio })
+          }}
         />
         {/* Ground interaction layer */}
         <Ground
@@ -1094,6 +1226,32 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
         <div className="absolute inset-0 flex items-center justify-center bg-white/70 backdrop-blur-sm text-sm text-text-secondary">
           No studios found for this selection.
         </div>
+      )}
+      
+      {/* Lightbox modal for viewing and commenting on boards */}
+      {selectedBoard && (
+        <LightboxModal
+          board={selectedBoard.board}
+          allBoards={selectedBoard.studio.boards || []}
+          onClose={() => setSelectedBoard(null)}
+          onNavigate={(direction) => {
+            if (!selectedBoard) return
+            const currentIndex = selectedBoard.studio.boards?.findIndex(b => b.id === selectedBoard.board.id) ?? -1
+            if (currentIndex === -1) return
+            
+            let newIndex = currentIndex
+            if (direction === 'prev' && currentIndex > 0) {
+              newIndex = currentIndex - 1
+            } else if (direction === 'next' && currentIndex < (selectedBoard.studio.boards?.length ?? 0) - 1) {
+              newIndex = currentIndex + 1
+            }
+            
+            const newBoard = selectedBoard.studio.boards?.[newIndex]
+            if (newBoard) {
+              setSelectedBoard({ ...selectedBoard, board: newBoard })
+            }
+          }}
+        />
       )}
     </div>
   )
@@ -1366,9 +1524,10 @@ function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avatarPos: 
 
             {studios.map((studio) => {
               const pos = studio.galleryPosition || { x: 0, z: 0 }
-              const { width, depth } = getFootprint(studio)
-              const widthInches = width * 12
-              const depthInches = depth * 12
+              // Use actual bounding rectangle for minimap
+              const boundingRect = studio.boundingRectangle || getBoundingRectangle(studio)
+              const widthInches = boundingRect.width * 12
+              const depthInches = boundingRect.depth * 12
               return (
                 <group key={studio.id}>
                   <mesh position={[pos.x, 0.2, pos.z]} rotation={[-Math.PI / 2, 0, 0]}>

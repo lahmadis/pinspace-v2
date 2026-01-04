@@ -6,7 +6,7 @@
  * when there aren't many real studios yet.
  */
 
-import { Board } from '@/types'
+import { Board, Comment } from '@/types'
 
 // ============================================================================
 // SAMPLE STUDIO GENERATION
@@ -140,19 +140,11 @@ function hashCode(str: string): number {
 }
 
 function getArchitectureImageUrl(index: number, width: number, height: number, title: string): string {
-  const colors = [
-    { bg: '4a5568', text: 'ffffff' },
-    { bg: '2d3748', text: 'ffffff' },
-    { bg: '1a202c', text: 'ffffff' },
-    { bg: '2c5282', text: 'ffffff' },
-    { bg: '2c7a7b', text: 'ffffff' },
-    { bg: '744210', text: 'ffffff' },
-    { bg: '553c9a', text: 'ffffff' },
-    { bg: '702459', text: 'ffffff' },
-  ]
-  const color = colors[Math.abs(index) % colors.length]
-  const shortTitle = title.substring(0, 20).replace(/\s+/g, '+')
-  return `https://placehold.co/${width}x${height}/${color.bg}/${color.text}?text=${encodeURIComponent(shortTitle)}`
+  // Use Picsum Photos (Lorem Picsum) for reliable, real images
+  // The seed parameter ensures deterministic images based on index
+  // This provides real architectural/building images
+  const seed = Math.abs(index) % 1000
+  return `https://picsum.photos/seed/${seed}/${width}/${height}`
 }
 
 function getRandomItem<T>(array: T[]): T {
@@ -177,58 +169,45 @@ function generateBoardPositions(count: number, wallCount: number = 5): Array<{
   }> = []
   
   const boardWidth = 0.15
-  const boardHeight = 0.6
-  const spacingX = 0.2
-  const spacingY = 0.15
+  const boardHeight = 0.4 // Slightly smaller to fit more boards
+  const spacingX = 0.15
+  const spacingY = 0.12
   
-  const guaranteedBoards = wallCount * 2
+  // Calculate how many boards per wall side
+  const totalSides = wallCount * 2 // front and back for each wall
+  const boardsPerSide = Math.floor(count / totalSides)
+  const extraBoards = count % totalSides
+  
   let boardIndex = 0
   
-  // Place at least one board on front and back of each wall
+  // Distribute boards evenly across all walls and both sides
   for (let wallIndex = 0; wallIndex < wallCount; wallIndex++) {
-    positions.push({
-      wallIndex,
-      x: -0.3 + 0 * (boardWidth + spacingX) + boardWidth / 2,
-      y: 0.2 - 0 * (boardHeight + spacingY) - boardHeight / 2,
-      width: boardWidth,
-      height: boardHeight,
-      side: 'front'
-    })
-    boardIndex++
-    
-    positions.push({
-      wallIndex,
-      x: -0.3 + 0 * (boardWidth + spacingX) + boardWidth / 2,
-      y: 0.2 - 0 * (boardHeight + spacingY) - boardHeight / 2,
-      width: boardWidth,
-      height: boardHeight,
-      side: 'back'
-    })
-    boardIndex++
-  }
-  
-  // Distribute remaining boards
-  const remainingBoards = count - guaranteedBoards
-  if (remainingBoards > 0) {
-    const totalSides = wallCount * 2
-    const boardsPerSide = Math.floor(remainingBoards / totalSides)
-    const extraBoards = remainingBoards % totalSides
-    
-    for (let sideIndex = 0; sideIndex < totalSides && boardIndex < count; sideIndex++) {
-      const wallIndex = Math.floor(sideIndex / 2)
-      const side = (sideIndex % 2 === 0 ? 'front' : 'back') as 'front' | 'back'
+    for (const side of ['front', 'back'] as const) {
+      // Calculate how many boards for this specific wall side
+      const sideIndex = wallIndex * 2 + (side === 'front' ? 0 : 1)
       const boardsForThisSide = boardsPerSide + (sideIndex < extraBoards ? 1 : 0)
       
-      const existingOnSide = positions.filter(p => p.wallIndex === wallIndex && p.side === side).length
-      
+      // Place boards in a grid on this wall side
+      const boardsPerRow = 3 // 3 columns
       for (let i = 0; i < boardsForThisSide && boardIndex < count; i++) {
-        const row = Math.floor((existingOnSide + i) / 2)
-        const col = (existingOnSide + i) % 2
+        const row = Math.floor(i / boardsPerRow)
+        const col = i % boardsPerRow
+        
+        // Calculate position: center the grid, then place each board
+        const totalWidth = boardsPerRow * boardWidth + (boardsPerRow - 1) * spacingX
+        const startX = -totalWidth / 2 + boardWidth / 2
+        const x = startX + col * (boardWidth + spacingX)
+        
+        // Distribute vertically (top to bottom)
+        const maxRows = Math.ceil(boardsForThisSide / boardsPerRow)
+        const totalHeight = maxRows * boardHeight + (maxRows - 1) * spacingY
+        const startY = totalHeight / 2 - boardHeight / 2
+        const y = startY - row * (boardHeight + spacingY)
         
         positions.push({
           wallIndex,
-          x: -0.3 + col * (boardWidth + spacingX) + boardWidth / 2,
-          y: 0.2 - row * (boardHeight + spacingY) - boardHeight / 2,
+          x: Math.max(-0.45, Math.min(0.45, x)), // Clamp to safe bounds
+          y: Math.max(-0.4, Math.min(0.4, y)),   // Clamp to safe bounds
           width: boardWidth,
           height: boardHeight,
           side
@@ -241,14 +220,14 @@ function generateBoardPositions(count: number, wallCount: number = 5): Array<{
   return positions.slice(0, count)
 }
 
-// Generate sample boards for a studio (12 boards per studio)
+// Generate sample boards for a studio (24 boards per studio for better distribution)
 export function getSampleBoards(studioId: string): Board[] {
   // Check if this is a sample studio
   if (!studioId.startsWith('sample-studio-')) {
     return []
   }
 
-  const STUDENTS_PER_STUDIO = 12
+  const STUDENTS_PER_STUDIO = 24 // Increased from 12 to ensure multiple boards on all walls
   const wallCount = 5
   const positions = generateBoardPositions(STUDENTS_PER_STUDIO, wallCount)
   
@@ -314,4 +293,90 @@ export function getSampleTotals() {
     studios: studios.length,
     students: studios.reduce((sum, s) => sum + (s.memberCount || 0), 0)
   }
+}
+
+// ============================================================================
+// SAMPLE COMMENT GENERATION
+// ============================================================================
+
+const COMMENT_TEMPLATES = [
+  "This is excellent work! The concept is well thought out and the execution is strong.",
+  "I really appreciate the attention to detail in this design. The material choices work well together.",
+  "The spatial relationships here are interesting. Have you considered exploring this further?",
+  "Great use of light and shadow in the renderings. It adds depth to the composition.",
+  "This project demonstrates a strong understanding of site context. Well done!",
+  "The model work is impressive. The level of craftsmanship really shows through.",
+  "I think there's potential to develop this concept further. The foundation is solid.",
+  "The presentation is clear and professional. Easy to understand the design intent.",
+  "Interesting take on the program requirements. The solution is creative yet functional.",
+  "The drawings communicate the design well. Good technical skill demonstrated here.",
+  "This shows strong design thinking. I can see the research and development process.",
+  "The use of materials and textures is thoughtful. Creates a nice visual hierarchy.",
+  "Well executed project! The presentation quality enhances the work significantly.",
+  "I appreciate the conceptual clarity here. The design intent comes through clearly.",
+  "The scale relationships work well. Good sense of proportion throughout.",
+  "Interesting approach to the brief. The solution addresses the constraints creatively.",
+  "The craftsmanship in the models is excellent. Really elevates the work.",
+  "Strong technical drawings. The details support the overall concept well.",
+  "This project shows good development from initial concept to final presentation.",
+  "The environmental considerations are well integrated. Sustainable design thinking is evident."
+]
+
+const INSTRUCTOR_NAMES = [
+  'Prof. Sarah Chen',
+  'Prof. James Park',
+  'Prof. Maria Lopez',
+  'Prof. David Kim',
+  'Prof. Emily Wong',
+  'Prof. Robert Chen',
+  'Prof. Lisa Anderson',
+  'Prof. Michael Brown',
+  'Prof. Jennifer Davis',
+  'Prof. Christopher Wilson'
+]
+
+// Generate sample comments for a board
+export function getSampleComments(boardId: string): Comment[] {
+  // Check if this is a sample board
+  if (!boardId.startsWith('sample-board-')) {
+    return []
+  }
+
+  // Use deterministic selection based on boardId for consistent data
+  const boardHash = Math.abs(hashCode(boardId))
+  const commentCount = 2 + (boardHash % 4) // 2-5 comments per board
+
+  // Get the studio ID from board ID
+  const studioIdMatch = boardId.match(/sample-board-(.+?)-/)
+  const studioId = studioIdMatch ? studioIdMatch[1] : ''
+
+  return Array.from({ length: commentCount }, (_, i) => {
+    const commentIndex = (boardHash + i) % COMMENT_TEMPLATES.length
+    const instructorIndex = (boardHash + i) % INSTRUCTOR_NAMES.length
+    
+    // Mix of instructors and peers
+    const isInstructor = (boardHash + i) % 3 === 0 // ~33% instructor comments
+    const authorName = isInstructor 
+      ? INSTRUCTOR_NAMES[instructorIndex]
+      : STUDENT_NAMES[(boardHash + i * 2) % STUDENT_NAMES.length]
+    
+    // Create timestamps that vary (days ago)
+    const daysAgo = (boardHash + i) % 7 // 0-6 days ago
+    const createdAt = new Date()
+    createdAt.setDate(createdAt.getDate() - daysAgo)
+    createdAt.setHours(10 + (boardHash + i) % 8) // Random hour during day
+    createdAt.setMinutes((boardHash + i) % 60) // Random minute
+    
+    const commentId = `sample-comment-${boardId}-${i}`
+    
+    return {
+      id: commentId,
+      boardId: boardId,
+      authorName: authorName,
+      authorEmail: `${authorName.toLowerCase().replace(/[^a-z0-9]/g, '.')}@wit.edu`,
+      content: COMMENT_TEMPLATES[commentIndex],
+      type: isInstructor ? 'peer' : 'peer', // Can be 'peer' or 'instructor'
+      createdAt: createdAt.toISOString()
+    }
+  })
 }

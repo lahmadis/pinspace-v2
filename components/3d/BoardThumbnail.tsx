@@ -51,7 +51,8 @@ function BoardImage({
   hovered, 
   isHighlighted,
   meshRef,
-  onClick
+  onClick,
+  onPointerDown
 }: { 
   imageUrl: string
   width: number
@@ -60,6 +61,7 @@ function BoardImage({
   isHighlighted?: boolean
   meshRef: React.RefObject<THREE.Mesh>
   onClick?: (e: any) => void
+  onPointerDown?: (e: any) => void
 }) {
   const { gl } = useThree()
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
@@ -73,6 +75,7 @@ function BoardImage({
         receiveShadow 
         renderOrder={1}
         onClick={onClick}
+        onPointerDown={onPointerDown}
       >
         <boxGeometry args={[width, height, BOARD_THICKNESS]} />
         <meshStandardMaterial
@@ -111,6 +114,7 @@ function BoardImage({
       receiveShadow 
       renderOrder={1}
       onClick={onClick}
+      onPointerDown={onPointerDown}
     >
       <boxGeometry args={[width, height, BOARD_THICKNESS]} />
       <meshStandardMaterial
@@ -134,7 +138,8 @@ function BoardFallback({
   hovered, 
   isHighlighted,
   meshRef,
-  onClick
+  onClick,
+  onPointerDown
 }: { 
   boardId: string
   width: number
@@ -143,6 +148,7 @@ function BoardFallback({
   isHighlighted?: boolean
   meshRef: React.RefObject<THREE.Mesh>
   onClick?: (e: any) => void
+  onPointerDown?: (e: any) => void
 }) {
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
   
@@ -160,6 +166,7 @@ function BoardFallback({
       receiveShadow 
       renderOrder={1}
       onClick={onClick}
+      onPointerDown={onPointerDown}
     >
       <boxGeometry args={[width, height, BOARD_THICKNESS]} />
       <meshStandardMaterial
@@ -203,6 +210,7 @@ function BoardPDF({
       receiveShadow 
       renderOrder={1}
       onClick={onClick}
+      onPointerDown={onPointerDown}
     >
       <boxGeometry args={[width, height, BOARD_THICKNESS]} />
       <PDFTextureMaterial pdfUrl={pdfUrl} hovered={hovered} />
@@ -249,11 +257,18 @@ export default function BoardThumbnail({ board, position, width, height, onClick
     }
   }
 
+  const handlePointerDown = (e: any) => {
+    // Stop propagation to prevent pointer lock from activating
+    // This keeps the mouse visible when clicking on boards
+    e.stopPropagation()
+  }
+
   return (
     <group 
       position={position}
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
+      onPointerDown={handlePointerDown}
     >
       {/* Board surface with texture, PDF display, or fallback color */}
       {isPDF ? (
@@ -266,6 +281,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           isHighlighted={isHighlighted}
           meshRef={meshRef}
           onClick={handleClick}
+          onPointerDown={handlePointerDown}
         />
       ) : hasValidImage ? (
         <TextureErrorBoundary
@@ -278,6 +294,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               isHighlighted={isHighlighted}
               meshRef={meshRef}
               onClick={handleClick}
+              onPointerDown={handlePointerDown}
             />
           }
         >
@@ -290,6 +307,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               isHighlighted={isHighlighted}
               meshRef={meshRef}
               onClick={handleClick}
+              onPointerDown={handlePointerDown}
             />
           }>
             <BoardImage 
@@ -300,6 +318,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               isHighlighted={isHighlighted}
               meshRef={meshRef}
               onClick={handleClick}
+              onPointerDown={handlePointerDown}
             />
           </Suspense>
         </TextureErrorBoundary>
@@ -312,6 +331,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           isHighlighted={isHighlighted}
           meshRef={meshRef}
           onClick={handleClick}
+          onPointerDown={handlePointerDown}
         />
       )}
 

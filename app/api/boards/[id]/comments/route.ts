@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoBoards, transformDemoBoard, DEMO_STUDIOS } from '@/lib/mockData'
+import { getSampleComments } from '@/lib/sampleData'
 
 // GET /api/boards/[id]/comments - Get all comments for a board
 export async function GET(
@@ -11,6 +12,13 @@ export async function GET(
     const boardId = params.id
     const searchParams = request.nextUrl.searchParams
     const isDemo = searchParams.get('demo') === 'true'
+
+    // Check if this is a sample board (return sample comments)
+    if (boardId.startsWith('sample-board-')) {
+      const sampleComments = getSampleComments(boardId)
+      console.log(`✅ [SAMPLE] Returning ${sampleComments.length} sample comments for board ${boardId}`)
+      return NextResponse.json({ comments: sampleComments })
+    }
 
     // Demo mode: return comments from mock data
     if (isDemo) {
