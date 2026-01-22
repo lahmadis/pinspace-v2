@@ -65,9 +65,7 @@ export function CameraController({
     // Save camera position when transitioning (even if wallPosition isn't ready yet)
     if (enteringEditMode || switchingWalls) {
       savedCameraPosition.current = camera.position.clone()
-      if (controlsRef.current) {
-        savedCameraTarget.current = controlsRef.current.target.clone()
-      }
+      savedCameraTarget.current = defaultTarget.current.clone()
       console.log('📷 [Camera] Saved position before entering/switching edit mode, wall:', editingWall)
       // Mark that we need to animate once wallPosition is ready
       pendingAnimation.current = true
@@ -85,9 +83,7 @@ export function CameraController({
       
       // Current position is our start position
       startPosition.current.copy(camera.position)
-      if (controlsRef.current) {
-        startTarget.current.copy(controlsRef.current.target)
-      }
+      startTarget.current.copy(defaultTarget.current)
 
       // Calculate target position (in front of wall)
       // Boards are positioned at z=0.06 in wall's local space (positive Z = front)
@@ -149,9 +145,7 @@ export function CameraController({
       
       // Current position is our start position (capture it fresh)
       startPosition.current.copy(camera.position)
-      if (controlsRef.current) {
-        startTarget.current.copy(controlsRef.current.target)
-      }
+      startTarget.current.copy(defaultTarget.current)
       
       // Return to the saved position (where we were before entering edit mode)
       targetPosition.current.copy(returnPosition)
@@ -174,6 +168,16 @@ export function CameraController({
         MIDDLE: THREE.MOUSE.DOLLY,
         RIGHT: THREE.MOUSE.PAN
       }
+    }
+
+    // Lock user camera interactions while in 2D edit mode so dragging boards
+    // cannot accidentally rotate/pan the orbit controls.
+    if (controlsRef.current) {
+      const allowCameraInput = editingWall === null
+      controlsRef.current.enabled = allowCameraInput
+      controlsRef.current.enableRotate = allowCameraInput
+      controlsRef.current.enablePan = allowCameraInput
+      controlsRef.current.enableZoom = allowCameraInput
     }
 
     if (isAnimating.current) {
@@ -201,17 +205,9 @@ export function CameraController({
         targetTarget.current,
         easeProgress
       )
-      controlsRef.current.target.copy(newTarget)
-      
-      // When in edit mode, ensure camera is looking directly at the wall (head-on view)
-      if (editingWall !== null) {
-        // Force camera to look directly at wall center for perfect head-on view
-        // Do this throughout the animation and after it completes
-        camera.lookAt(newTarget)
-        // Ensure camera's up vector is correct (Y-up) for proper orientation
-        camera.up.set(0, 1, 0)
-        camera.updateProjectionMatrix()
-      }
+      camera.lookAt(newTarget)
+      camera.up.set(0, 1, 0)
+      camera.updateProjectionMatrix()
 
       // Adjust FOV when entering edit mode for wider view
       if (editingWall !== null && easeProgress > 0.5) {
@@ -236,12 +232,6 @@ export function CameraController({
       }
     }
 
-    // Disable controls during animation and in edit mode
-    if (controlsRef.current) {
-      controlsRef.current.enabled = !isAnimating.current && editingWall === null
-      controlsRef.current.update()
-    }
-    
     // When in edit mode (not animating), ensure camera stays head-on to the wall
     if (editingWall !== null && !isAnimating.current && targetTarget.current) {
       // Continuously ensure camera is looking directly at wall center for perfect head-on view

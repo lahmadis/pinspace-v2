@@ -12,9 +12,11 @@ import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
 import { WallDropZone } from '@/components/3d/WallDropZone'
 import RightCommentPanel from '@/components/RightCommentPanel'
+import LightboxModal from '@/components/LightboxModal'
 import { generateOwnerColor } from '@/lib/ownerColors'
 import { useBoardState } from './useBoardState'
 import { useBoardUpload } from '@/hooks/useBoardUpload'
+import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 
 
 interface WallDimensions {
@@ -60,7 +62,8 @@ function SceneContent({
   isWorkspaceMember,
   localBoards,
   hoveredBoardId,
-  onBoardHover
+  onBoardHover,
+  onBoardClick
 }: StudioRoomProps & {
   onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   editingWall: number | null
@@ -81,35 +84,49 @@ function SceneContent({
   localBoards: Board[]
   hoveredBoardId?: string | null
   onBoardHover?: (boardId: string | null) => void
+  onBoardClick?: (board: Board) => void
 }) {
   const orbitControlsRef = useRef<any>(null)
-  const { controls } = useThree()
+  const { camera, gl } = useThree()
+  const maxWallHeightRef = useRef<number>(96)
+  const [targetY, setTargetY] = useState<number>(48) // inches; focus point for zoom
+  const shiftDownRef = useRef(false)
   
-  // Configure mouse buttons for drei's OrbitControls
-  useFrame(() => {
-    // Try to configure via ref first
-    if (orbitControlsRef.current && !orbitControlsRef.current._mouseButtonsConfigured) {
-      // drei's OrbitControls ref might expose controls via .get() or directly
-      const controlsObj = orbitControlsRef.current.get ? orbitControlsRef.current.get() : orbitControlsRef.current
-      if (controlsObj && controlsObj.mouseButtons !== undefined) {
-        controlsObj.mouseButtons = {
-          LEFT: THREE.MOUSE.ROTATE,
-          MIDDLE: THREE.MOUSE.DOLLY,
-          RIGHT: THREE.MOUSE.PAN
-        }
-        orbitControlsRef.current._mouseButtonsConfigured = true
-      }
+  // Configure mouse buttons for Rhino-like feel: Right = orbit, Shift+Right = pan, Middle = pan
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => { if (e.key === 'Shift') shiftDownRef.current = true }
+    const up = (e: KeyboardEvent) => { if (e.key === 'Shift') shiftDownRef.current = false }
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
     }
-    // Also try via useThree controls
-    if (controls && (controls as any).mouseButtons && !(controls as any)._mouseButtonsConfigured) {
-      (controls as any).mouseButtons = {
+  }, [])
+
+  useFrame(() => {
+    const controlsObj = orbitControlsRef.current?.get ? orbitControlsRef.current.get() : orbitControlsRef.current
+    if (controlsObj && controlsObj.mouseButtons) {
+      const shift = shiftDownRef.current
+      controlsObj.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
-        MIDDLE: THREE.MOUSE.DOLLY,
-        RIGHT: THREE.MOUSE.PAN
+        MIDDLE: THREE.MOUSE.PAN,
+        RIGHT: shift ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE,
       }
-      ;(controls as any)._mouseButtonsConfigured = true
+      controlsObj.screenSpacePanning = true
     }
   })
+
+  // Set target height initially
+  useEffect(() => {
+    const controlsObj = orbitControlsRef.current?.get ? orbitControlsRef.current.get() : orbitControlsRef.current
+    if (controlsObj?.target) {
+      controlsObj.target.set(0, targetY, 0)
+      controlsObj.update?.()
+    }
+  }, [targetY])
+
+  // Removed aggressive wheel clamping; let OrbitControls zoom to cursor naturally
   
   return (
     <>
@@ -149,7 +166,7 @@ function SceneContent({
         wallConfig={wallConfig}
         onWallClick={onWallClick}
         editingWall={editingWall}
-        onBoardClick={onCommentClick}
+        onBoardClick={onBoardClick || onCommentClick}
         highlightedBoardId={hoveredBoardId}
         onBoardHover={onBoardHover}
       />
@@ -264,12 +281,17 @@ function SceneContent({
         const minDistance = 50 * distanceScale       // Scale minimum zoom by width
         const maxDistance = 800 * distanceScale      // Scale maximum zoom by width
 
-        // Keep eye level around the vertical center of the tallest wall,
-        // so you always look straight at the wall instead of down on top.
-        const targetHeight = (maxWallHeightInches * 0.5) || 48  // center of wall, fallback ~4ft
-        const cameraHeight = targetHeight * Math.min(heightScale, 1.25) // avoid going too high
-
+        // Aim slightly above mid-wall (where boards typically sit) so zoom goes toward the walls, not the floor.
+        const targetHeight = Math.max(60, Math.min(maxWallHeightInches * 0.65, maxWallHeightInches)) || 60
+        // Keep the camera at (or just slightly above) the target height so wheel zoom moves straight in
+        const cameraHeight = targetHeight * 1.02
         const cameraDistance = 80 * distanceScale    // Base distance scaled by width
+        maxWallHeightRef.current = maxWallHeightInches
+
+        // Keep target in sync for OrbitControls updates
+        if (targetY !== targetHeight) {
+          setTargetY(targetHeight)
+        }
         
         return (
           <>
@@ -280,11 +302,13 @@ function SceneContent({
               minDistance={minDistance}
               maxDistance={maxDistance}
               maxPolarAngle={Math.PI / 2}
-              minPolarAngle={Math.PI / 6}
+              // Keep a slightly steeper minimum angle so zoom aims forward, not downward
+              minPolarAngle={0.45}
               enabled={editingWall === null}
               enablePan={editingWall === null}
               enableRotate={editingWall === null}
               enableZoom={editingWall === null}
+            zoomToCursor
               target={[0, targetHeight, 0]}
             />
             
@@ -308,11 +332,11 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [isWorkspaceMember, setIsWorkspaceMember] = useState<boolean>(false)
   
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       setUser(session?.user || null)
     })
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       setUser(session?.user || null)
     })
     
@@ -356,6 +380,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     width?: number; 
     height?: number 
   }>>(new Map())
+const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
   
   // Keep a ref to the latest placedBoards3D to avoid stale closure issues
   const placedBoards3DRef = useRef(placedBoards3D)
@@ -497,6 +522,20 @@ export default function StudioRoom(props: StudioRoomProps) {
     setEditingWall(null)
     setEditingWallPosition(null)
     console.log('✅ [StudioRoom] Exited edit mode')
+  }
+
+  const handleLightboxOpen = (board: Board) => {
+    setCommentPanelBoard(null)
+    setLightboxBoard(board)
+  }
+
+  const handleLightboxNavigate = (direction: 'prev' | 'next') => {
+    if (!lightboxBoard) return
+    const idx = localBoards.findIndex(b => b.id === lightboxBoard.id)
+    if (idx === -1) return
+    const nextIdx = direction === 'prev' ? idx - 1 : idx + 1
+    if (nextIdx < 0 || nextIdx >= localBoards.length) return
+    setLightboxBoard(localBoards[nextIdx])
   }
 
 
@@ -730,45 +769,22 @@ export default function StudioRoom(props: StudioRoomProps) {
 
   const handleBoardDelete = useCallback(async (boardId: string) => {
     try {
-      // Call DELETE API with ownership check
-      const response = await fetch(`/api/boards?boardId=${boardId}`, {
-        method: 'DELETE',
-      })
+      // Use centralized hook so local state + positions stay in sync
+      const success = await deleteBoard(boardId)
+      if (!success) return
 
-      const data = await response.json()
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          // Permission denied - show error message
-          alert(`You can only delete boards in workspaces you're a member of${data.ownerName ? `. This board belongs to ${data.ownerName}.` : '.'}`)
-        } else if (response.status === 401) {
-          alert('You must be signed in to delete boards')
-        } else {
-          alert(data.error || 'Failed to delete board')
-        }
-        return
-      }
-
-      // Success - remove from local state
-      console.log('✅ Board deleted successfully:', boardId)
-      
-      // Remove from placedBoards3D
+      // Remove from placedBoards3D immediately so it disappears in 2D edit view
       setPlacedBoards3D(prev => {
         const newMap = new Map(prev)
         newMap.delete(boardId)
-        placedBoards3DRef.current = newMap // Also update ref
+        placedBoards3DRef.current = newMap
         return newMap
       })
-
-      // Refresh boards from server
-      if (props.onBoardUpdate) {
-        await props.onBoardUpdate()
-      }
     } catch (error) {
       console.error('Error deleting board:', error)
       alert('Failed to delete board')
     }
-  }, [props.onBoardUpdate])
+  }, [deleteBoard])
 
   // Handle keyboard shortcuts (backspace to delete selected board, E to open comments)
   useEffect(() => {
@@ -864,10 +880,11 @@ export default function StudioRoom(props: StudioRoomProps) {
             draggingFromSidebar={draggingFromSidebar}
             onBoardDrop={handleBoardDrop}
             onDragCancel={handleDragCancel}
-            onCommentClick={(board) => {
-              console.log('💬 [Edit Mode] Opening comments for:', board.id)
-              setCommentPanelBoard(board)
-            }}
+          onCommentClick={(board) => {
+            console.log('💬 [Lightbox] Opening for:', board.id)
+            handleLightboxOpen(board)
+          }}
+          onBoardClick={handleLightboxOpen}
             selectedBoardId={selectedBoardId}
             setSelectedBoardId={setSelectedBoardId}
             onDeselect={() => setSelectedBoardId(null)}
@@ -881,6 +898,13 @@ export default function StudioRoom(props: StudioRoomProps) {
         board={commentPanelBoard}
         onClose={() => setCommentPanelBoard(null)}
       />
+
+    <LightboxModal
+      board={lightboxBoard}
+      allBoards={localBoards}
+      onClose={() => setLightboxBoard(null)}
+      onNavigate={handleLightboxNavigate}
+    />
     </>
   )
 }

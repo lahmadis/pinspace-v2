@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Workspace } from '@/types'
+import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import JoinClassModal from '@/components/JoinClassModal'
 import { 
   GraduationCap, 
@@ -139,7 +140,7 @@ export default function DashboardPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       if (!session) {
         router.push('/sign-in')
         return
@@ -149,7 +150,7 @@ export default function DashboardPage() {
       fetchUserStudios()
     })
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (!session) {
         router.push('/sign-in')
         return

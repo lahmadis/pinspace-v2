@@ -61,13 +61,21 @@ export function WallDropZone({
       const localX = (localOffset.x * cosR - localOffset.z * sinR) / scaledWidth
       const localY = localOffset.y / scaledHeight
 
+      // Match DraggableBoard behavior: invert X on vertical walls so drag direction feels natural
+      const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+      const isVerticalWall = (
+        (normalizedRotation > Math.PI / 4 && normalizedRotation < (3 * Math.PI) / 4) ||
+        (normalizedRotation > (5 * Math.PI) / 4 && normalizedRotation < (7 * Math.PI) / 4)
+      )
+      const adjustedLocalX = isVerticalWall ? -localX : localX
+
       // Clamp to full wall range (-0.5 to 0.5), matching DraggableBoard
-      const clampedX = THREE.MathUtils.clamp(localX, -0.5, 0.5)
+      const clampedX = THREE.MathUtils.clamp(adjustedLocalX, -0.5, 0.5)
       const clampedY = THREE.MathUtils.clamp(localY, -0.5, 0.5)
 
       console.log('[WallDropZone] Cursor position:', { clientX, clientY })
       console.log('[WallDropZone] Intersection point:', intersectionPoint)
-      console.log('[WallDropZone] Local coordinates:', { localX, localY })
+      console.log('[WallDropZone] Local coordinates:', { localX: adjustedLocalX, localY })
       console.log('[WallDropZone] Clamped coordinates:', { clampedX, clampedY })
 
       setHoverPosition({ x: clampedX, y: clampedY })

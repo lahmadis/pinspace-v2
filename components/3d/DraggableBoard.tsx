@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect } from 'react'
 import { useThree, ThreeEvent } from '@react-three/fiber'
 import { supabase } from '@/lib/supabase/client'
+import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import * as THREE from 'three'
 import type { Board } from '@/types'
 import { Suspense } from 'react'
@@ -70,11 +71,11 @@ export function DraggableBoard({
   const [user, setUser] = useState<any>(null)
   
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       setUser(session?.user || null)
     })
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       setUser(session?.user || null)
     })
     

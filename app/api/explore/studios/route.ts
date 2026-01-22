@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoStudios, getDemoTotals } from '@/lib/mockData'
-import { getSampleStudios, getSampleTotals } from '@/lib/sampleData'
+import { getSampleStudios } from '@/lib/sampleData'
 
 // Mark dynamic to allow searchParams access during rendering
 export const dynamic = 'force-dynamic'
@@ -17,7 +17,45 @@ export async function GET(request: NextRequest) {
     const isDemo = searchParams.get('demo') === 'true'
     const department = searchParams.get('department')
     const year = searchParams.get('year')
-    
+
+    // Helper: filter + decorate sample studios with optional department/year filters
+    const getFilteredSampleStudios = () => {
+      const sampleStudios = getSampleStudios()
+      let filtered = sampleStudios.map(s => ({
+        ...s,
+        boundingBox: { width: 20, depth: 15 } // Default footprint for sample studios
+      }))
+
+      if (department) {
+        filtered = filtered.filter(s => {
+          const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
+          return norm(s.department) === norm(department)
+        })
+      }
+
+      if (year) {
+        filtered = filtered.filter(s => {
+          const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
+          const numOnly = (val: any) => {
+            const m = `${val || ''}`.match(/\d+/)
+            return m ? m[0] : `${val || ''}`
+          }
+          const studioYearStr = norm(typeof s.year === 'string' ? s.year : `${s.year}`)
+          const studioYearNum = numOnly(s.year)
+          const targetYearStr = norm(year)
+          const targetYearNum = numOnly(year)
+          return studioYearStr === targetYearStr || studioYearNum === targetYearNum
+        })
+      }
+
+      const totals = {
+        studios: filtered.length,
+        students: filtered.reduce((sum, s) => sum + (s.memberCount || 0), 0),
+      }
+
+      return { filtered, totals }
+    }
+
     if (isDemo) {
       // Return mock data for demo mode with filters applied
       let studios = getDemoStudios()
@@ -51,6 +89,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ studios, totals })
     }
     
+    // If service role key is missing locally, fall back to sample data instead of erroring
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const { filtered, totals } = getFilteredSampleStudios()
+      console.warn('⚠️ SUPABASE_SERVICE_ROLE_KEY missing; returning sample studios only')
+      return NextResponse.json({ studios: filtered, totals })
+    }
+
     // Use service role client to bypass RLS for public endpoint
     // This allows us to fetch public workspaces without authentication
     const supabase = supabaseServiceRole()
@@ -72,7 +117,9 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Error fetching public workspaces:', error)
-      return NextResponse.json({ error: 'Failed to fetch studios', details: error.message }, { status: 500 })
+      const { filtered, totals } = getFilteredSampleStudios()
+      console.warn('⚠️ Supabase error; returning sample studios only')
+      return NextResponse.json({ studios: filtered, totals })
     }
 
     // Fetch member counts for each workspace
@@ -151,43 +198,10 @@ export async function GET(request: NextRequest) {
     })
 
     // Get sample studios and merge with real data
-    const sampleStudios = getSampleStudios()
-    
-    // Apply filters to sample studios if provided
-    let filteredSampleStudios = sampleStudios.map(s => ({
-      ...s,
-      boundingBox: { width: 20, depth: 15 } // Default footprint for sample studios
-    }))
-    if (department) {
-      filteredSampleStudios = filteredSampleStudios.filter(s => {
-        const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
-        return norm(s.department) === norm(department)
-      })
-    }
-    if (year) {
-      filteredSampleStudios = filteredSampleStudios.filter(s => {
-        const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
-        const numOnly = (val: any) => {
-          const m = `${val || ''}`.match(/\d+/)
-          return m ? m[0] : `${val || ''}`
-        }
-        const studioYearStr = norm(typeof s.year === 'string' ? s.year : `${s.year}`)
-        const studioYearNum = numOnly(s.year)
-        const targetYearStr = norm(year)
-        const targetYearNum = numOnly(year)
-        return studioYearStr === targetYearStr || studioYearNum === targetYearNum
-      })
-    }
+    const { filtered: filteredSampleStudios } = getFilteredSampleStudios()
     
     // Merge real studios with sample studios (real studios first, then samples)
     const allStudios = [...studios, ...filteredSampleStudios]
-    
-    const realTotals = {
-      studios: studios.length,
-      students: studios.reduce((sum, s) => sum + (s.memberCount || 0), 0),
-    }
-    
-    const sampleTotals = getSampleTotals()
     
     const totals = {
       studios: allStudios.length,
