@@ -199,6 +199,19 @@ export function useBoardState(
         console.warn('⚠️ [useBoardState] Board not found:', boardId)
         return Promise.resolve() // Return a resolved promise instead of undefined
       }
+
+      // Skip persistence for demo/sample/mock boards that don't exist in Supabase
+      const boardWorkspaceId = board.workspaceId || board.studioId || ''
+      const shouldSkipPersistence =
+        boardId.startsWith('demo-') ||
+        boardId.startsWith('sample-') ||
+        boardWorkspaceId.startsWith('demo-') ||
+        boardWorkspaceId.startsWith('sample-') ||
+        boardWorkspaceId.startsWith('mock-')
+      if (shouldSkipPersistence) {
+        console.warn('⚠️ [useBoardState] Skipping API save for non-persisted board', { boardId, boardWorkspaceId })
+        return Promise.resolve()
+      }
       
       // Convert to API format (0-100)
       const apiX = normalizedToApi(x)
@@ -233,7 +246,8 @@ export function useBoardState(
       })
       
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`)
+        console.error('❌ [useBoardState] API save failed', { status: response.status, statusText: response.statusText })
+        return
       }
       
       // Update the board in the boards array with new position (in API format)

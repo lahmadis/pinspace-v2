@@ -334,5 +334,26 @@
       }
     ],
     "layoutType": "zigzag"
+  },
+  "3970b490-99b9-46b5-b1c2-1cd5240cb6b3": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      }
+    ],
+    "layoutType": "zigzag"
   }
 }

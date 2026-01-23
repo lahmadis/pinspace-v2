@@ -226,27 +226,30 @@ useEffect(() => {
       const localX = localOffset.x * cosR - localOffset.z * sinR
       const localY = localOffset.y
       
-      
-      // 🎯 Fix for vertical walls: detect if wall is vertical and invert X direction
+      // 🎯 Detect vertical walls (rotated 90/270deg) where screen X maps opposite to wall X
       const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
       const isVerticalWall = (
         (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
         (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
       )
       
-      // For vertical walls, invert X direction so dragging right moves board right (not left)
-      const adjustedLocalX = isVerticalWall ? -localX : localX
-      // Apply drag offset so board follows cursor from where it was clicked
-      // The offset is stored in wall space (inches), so we can subtract directly
+      // Use screen-aligned X for vertical walls so drag matches cursor direction
+      const screenLocalX = isVerticalWall ? -localX : localX
       const offsetX = dragOffset.current ? dragOffset.current.x : 0
       const offsetY = dragOffset.current ? dragOffset.current.y : 0
+      const deltaX = screenLocalX - offsetX
+      const deltaY = localY - offsetY
       
-      // Subtract offset so the click point stays under the cursor
-      const adjustedX = adjustedLocalX - offsetX
-      const adjustedY = localY - offsetY
+      // Convert back to wall space
+      const adjustedX = isVerticalWall ? -deltaX : deltaX
+      const adjustedY = deltaY
       
       let normalizedX = THREE.MathUtils.clamp(adjustedX / scaledWallWidth, -0.5, 0.5)
       let normalizedY = THREE.MathUtils.clamp(adjustedY / scaledWallHeight, -0.5, 0.5)
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix',hypothesisId:'A',location:'DraggableBoard.tsx:updatePosition',message:'Drag calculation',data:{boardId:board.id,wallRotation,normalizedRotation,isVerticalWall,localX,screenLocalX,localY,offsetX,offsetY,deltaX,adjustedX,normalizedX,normalizedY,scaledWallWidth,scaledWallHeight},timestamp:Date.now()})}).catch(()=>{})
+      // #endregion
 
       const newPos = {
         x: normalizedX,
@@ -269,7 +272,7 @@ useEffect(() => {
   
   // Track if we actually dragged (to distinguish click from drag)
   const dragStartPosition = useRef<{ x: number; y: number } | null>(null)
-  // Track the offset from click point to board center (in local board space)
+  // Track the offset from click point to board center (screen-aligned X for vertical walls)
   const dragOffset = useRef<{ x: number; y: number } | null>(null)
   
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
@@ -289,7 +292,16 @@ if (e.intersections && e.intersections.length > 0) {
   // Calculate current board position in world space
   const currentBoardX = localPosition.x * scaledWallWidth
   const currentBoardY = localPosition.y * scaledWallHeight
-  const currentBoardZ = 2.2 // Board is clearly in front of wall (wall depth is 4 inches)
+  // Use outwardZ consistent with render placement to avoid Z-mismatch on rotated walls
+  const outwardZForClick = (() => {
+    const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+    const isVerticalWall = (
+      (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
+      (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
+    )
+    return isVerticalWall ? -2.2 : 2.2
+  })()
+  const currentBoardZ = outwardZForClick
   
   // Transform to board's local space (accounting for wall rotation and position)
   const boardWorldPosition = new THREE.Vector3(
@@ -297,10 +309,30 @@ if (e.intersections && e.intersections.length > 0) {
     wallPosition.y + currentBoardY,
     wallPosition.z + currentBoardZ
   )
+
+  // Compute rotated board center in world space to validate against actual mesh position
+  const boardOffset = new THREE.Vector3(currentBoardX, currentBoardY, currentBoardZ)
+  const meshWorldCenter = new THREE.Vector3()
+  if (meshRef.current) {
+    meshRef.current.getWorldPosition(meshWorldCenter)
+  }
+  const rotatedBoardOffset = boardOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), wallRotation)
+  const rotatedBoardWorldPosition = rotatedBoardOffset.clone().add(wallPosition)
+  const boardCenterWorld = meshRef.current
+    ? meshWorldCenter.clone() // use actual mesh center when available
+    : rotatedBoardWorldPosition
+
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix-2',hypothesisId:'E',location:'DraggableBoard.tsx:handlePointerDown',message:'World vs board centers (rotated vs mesh)',data:{boardId:board.id,wallRotation,worldClickPoint:{x:worldClickPoint.x,y:worldClickPoint.y,z:worldClickPoint.z},computedCenterUnrotated:{x:boardWorldPosition.x,y:boardWorldPosition.y,z:boardWorldPosition.z},computedCenterRotated:{x:rotatedBoardWorldPosition.x,y:rotatedBoardWorldPosition.y,z:rotatedBoardWorldPosition.z},boardCenterUsed:{x:boardCenterWorld.x,y:boardCenterWorld.y,z:boardCenterWorld.z},meshCenter:meshRef.current ? {x:meshWorldCenter.x,y:meshWorldCenter.y,z:meshWorldCenter.z} : null,localPosition:{x:localPosition.x,y:localPosition.y},scaledWall:{w:scaledWallWidth,h:scaledWallHeight}},timestamp:Date.now()})}).catch(()=>{})
+  // #endregion
+
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'D',location:'DraggableBoard.tsx:handlePointerDown',message:'World vs board center',data:{boardId:board.id,wallRotation,worldClickPoint:{x:worldClickPoint.x,y:worldClickPoint.y,z:worldClickPoint.z},boardWorldPosition:{x:boardCenterWorld.x,y:boardCenterWorld.y,z:boardCenterWorld.z},localPosition:{x:localPosition.x,y:localPosition.y},scaledWall:{w:scaledWallWidth,h:scaledWallHeight}},timestamp:Date.now()})}).catch(()=>{})
+  // #endregion
   
   // Get the offset from board center to click point in world space
   const offset = new THREE.Vector3()
-  offset.copy(worldClickPoint).sub(boardWorldPosition)
+  offset.copy(worldClickPoint).sub(boardCenterWorld)
   
   // Rotate offset to board's local space (inverse of wall rotation)
   const cosR = Math.cos(-wallRotation)
@@ -308,28 +340,32 @@ if (e.intersections && e.intersections.length > 0) {
   const localOffsetX = offset.x * cosR - offset.z * sinR
   const localOffsetY = offset.y
   
-  // 🎯 Detect vertical walls and invert offset X (same as drag movement)
+  // 🎯 Detect vertical walls (90/270deg)
   const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
   const isVerticalWall = (
     (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
     (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
   )
   
-  // For vertical walls, invert X offset to match inverted X drag direction
-  const adjustedOffsetX = isVerticalWall ? -localOffsetX : localOffsetX
-  
-  // Store offset in wall space (inches), not normalized
+  // Store screen-aligned offset: flip X for vertical walls so drag matches screen direction
   dragOffset.current = {
-    x: adjustedOffsetX,
+    x: isVerticalWall ? -localOffsetX : localOffsetX,
     y: localOffsetY
   }
   
-  console.log('📍 Drag offset calculated:', dragOffset.current, 'vertical wall:', isVerticalWall)
+  console.log('📍 Drag offset calculated (raw):', dragOffset.current, 'vertical wall:', isVerticalWall)
       
       console.log('📍 Drag offset calculated:', dragOffset.current, 'board size:', boardWidth, boardHeight)
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix',hypothesisId:'B',location:'DraggableBoard.tsx:handlePointerDown',message:'Computed drag offset (raw, stored screen-aligned)',data:{boardId:board.id,wallRotation,normalizedRotation,isVerticalWall,localOffset:{x:localOffsetX,y:localOffsetY},storedOffset:dragOffset.current,boardSize:{w:boardWidth,h:boardHeight}},timestamp:Date.now()})}).catch(()=>{})
+      // #endregion
     } else {
       // Fallback: no offset if we can't calculate it
       dragOffset.current = { x: 0, y: 0 }
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'C',location:'DraggableBoard.tsx:handlePointerDown',message:'No intersections; using zero offset',data:{boardId:board.id},timestamp:Date.now()})}).catch(()=>{})
+      // #endregion
     }
     
     // Prevent dragging if board is locked
@@ -380,19 +416,30 @@ if (e.intersections && e.intersections.length > 0) {
       
       // Call onDragEnd with ref value (NOT state)
       const finalPos = positionRef.current
+      const normalizedRotationEnd = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+      const isVerticalWallEnd = (
+        (normalizedRotationEnd > Math.PI/4 && normalizedRotationEnd < 3*Math.PI/4) ||
+        (normalizedRotationEnd > 5*Math.PI/4 && normalizedRotationEnd < 7*Math.PI/4)
+      )
+      const persistedPos = finalPos
       console.log('🎯🎯🎯 DRAG END - Calling onDragEnd with:', {
         boardId: board.id,
-        x: finalPos.x,
-        y: finalPos.y,
-        width: finalPos.width,
-        height: finalPos.height
+        x: persistedPos.x,
+        y: persistedPos.y,
+        width: persistedPos.width,
+        height: persistedPos.height,
+        isVerticalWallEnd
       })
       
       // Update parent state - use REF to get latest callback (avoids stale closure)
       try {
         console.log('🎯🎯🎯 Calling onDragEndRef.current...')
-        onDragEndRef.current(board.id, finalPos.x, finalPos.y, finalPos.width, finalPos.height)
+        onDragEndRef.current(board.id, persistedPos.x, persistedPos.y, persistedPos.width, persistedPos.height)
         console.log('🎯🎯🎯 onDragEnd called successfully!')
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix',hypothesisId:'F',location:'DraggableBoard.tsx:onDragEnd',message:'Persisted position',data:{boardId:board.id,wallRotation,position:finalPos,persistedPos,isVerticalWallEnd},timestamp:Date.now()})}).catch(()=>{})
+        // #endregion
 
          // 🎯 CRITICAL: Update local state immediately to prevent reset
     setLocalPosition(finalPos)
