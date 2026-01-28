@@ -11,6 +11,7 @@ import WallSystem from '@/components/3d/WallSystem'
 import LightboxModal from '@/components/LightboxModal'
 import DemoBanner from '@/components/DemoBanner'
 import { addDemoParam } from '@/lib/demoMode'
+import { ArrowLeft } from 'lucide-react'
 
 interface WallDimensions {
   height: number
@@ -25,6 +26,7 @@ interface WallConfig {
 export default function StudioViewPage() {
   const params = useParams()
   const searchParams = useSearchParams()
+  const router = useRouter()
   const studioId = params.id as string
   
   // Check if it's a demo studio (starts with "demo-studio-") or has demo=true param
@@ -158,10 +160,10 @@ export default function StudioViewPage() {
 
   if (loading) {
     return (
-      <div className="w-full h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-indigo-600/20 border-t-indigo-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 font-medium">Loading studio...</p>
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
+          <p className="text-white/90 font-medium">Loading studio...</p>
         </div>
       </div>
     )
@@ -169,8 +171,8 @@ export default function StudioViewPage() {
 
   if (error) {
     return (
-      <div className="w-full h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
-        <div className="text-center max-w-md p-8 bg-white rounded-xl shadow-lg">
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
+        <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
           <div className="text-6xl mb-4">😕</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Oops!</h2>
           <p className="text-gray-600 mb-6">{error}</p>
@@ -186,48 +188,54 @@ export default function StudioViewPage() {
   }
 
   return (
-    <div className="relative w-full h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#B3B3FF' }}>
       <DemoBanner />
-      
-      {/* Top Navigation Bar */}
-      <div className="absolute top-0 left-0 right-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link 
-              href={(() => {
-                const returnTo = searchParams.get('returnTo') === 'gallery' ? '/gallery' : '/explore'
-                // Preserve demo mode when returning
-                if (isDemo) {
-                  const params = new URLSearchParams()
-                  // Get original gallery params from URL if available
-                  const originalParams = window.location.search
-                  if (originalParams.includes('color=') || originalParams.includes('department=')) {
-                    // Preserve gallery filters
-                    const urlParams = new URLSearchParams(originalParams)
-                    urlParams.set('demo', 'true')
-                    return `${returnTo}?${urlParams.toString()}`
-                  }
-                  return `${returnTo}?demo=true`
-                }
-                return returnTo
-              })()}
-              className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-                <path d="M15 19l-7-7 7-7"></path>
-              </svg>
-              <span className="font-medium">Back to {searchParams.get('returnTo') === 'gallery' ? 'Gallery' : 'Network'}</span>
-            </Link>
-          </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="font-medium">View Mode</span>
-            </div>
-            <div className="w-px h-6 bg-gray-300"></div>
-            <span className="text-sm text-gray-500">{boards.length} boards</span>
-          </div>
+      {/* Animated gradient background effects (match studio room page) */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)' }}></div>
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)', animationDelay: '1s' }}></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(102, 102, 255, 0.1)' }}></div>
+      </div>
+
+      {/* Top Left - Logo and Back (match studio room chrome, but back to network/gallery) */}
+      <div className="fixed top-4 left-4 z-40 flex items-center gap-2.5">
+        <button
+          onClick={() => router.push('/')}
+          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
+        >
+          PinSpace
+        </button>
+
+        <button
+          onClick={() => {
+            const base = searchParams.get('returnTo') === 'gallery' ? '/gallery' : '/explore'
+            if (isDemo) {
+              const originalParams = typeof window !== 'undefined' ? window.location.search : ''
+              if (originalParams.includes('color=') || originalParams.includes('department=')) {
+                const urlParams = new URLSearchParams(originalParams)
+                urlParams.set('demo', 'true')
+                router.push(`${base}?${urlParams.toString()}`)
+                return
+              }
+              router.push(`${base}?demo=true`)
+              return
+            }
+            router.push(base)
+          }}
+          className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          {searchParams.get('returnTo') === 'gallery' ? 'Gallery' : 'Network'}
+        </button>
+      </div>
+
+      {/* Top-right status pill (view mode + board count) */}
+      <div className="fixed top-4 right-4 z-40 flex items-center gap-2.5">
+        <div className="px-4 py-2.5 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2">
+          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+          <span>View Mode</span>
+          <span className="opacity-80">• {boards.length} boards</span>
         </div>
       </div>
 
@@ -242,26 +250,13 @@ export default function StudioViewPage() {
 
       {/* 3D Canvas */}
       <Canvas shadows className="w-full h-full">
-        <color attach="background" args={['#f5f5f5']} />
+        {/* Background matches wall color */}
+        <color attach="background" args={['#D8DEFF']} />
         
         {/* Lighting */}
         <ambientLight intensity={0.6} />
         <directionalLight position={[10, 10, 5]} intensity={0.8} castShadow />
         <directionalLight position={[-10, 10, -5]} intensity={0.4} />
-        
-        {/* Floor/Ground - large enough to prevent walls from looking like they're floating */}
-        <mesh
-          position={[0, 0, 0]}
-          rotation={[-Math.PI / 2, 0, 0]}
-          receiveShadow
-        >
-          <planeGeometry args={[10000, 10000]} />
-          <meshStandardMaterial
-            color="#e5e7eb"
-            roughness={0.95}
-            metalness={0}
-          />
-        </mesh>
         
         {/* Wall System with Boards */}
         {wallConfig && (

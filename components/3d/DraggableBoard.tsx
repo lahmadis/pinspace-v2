@@ -16,8 +16,9 @@ interface DraggableBoardProps {
   wallPosition: THREE.Vector3
   wallRotation: number
   wallDimensions: { width: number; height: number }
+  side?: 'front' | 'back'
   initialLocalPosition?: { x: number; y: number; width?: number; height?: number }
-  onDragEnd: (boardId: string, localX: number, localY: number, width?: number, height?: number) => void
+  onDragEnd: (boardId: string, localX: number, localY: number, width?: number, height?: number, side?: 'front' | 'back') => void
   onDelete: (boardId: string) => void
   onCommentClick?: (board: Board) => void
   onSelect?: () => void
@@ -58,6 +59,7 @@ export function DraggableBoard({
   wallPosition,
   wallRotation,
   wallDimensions,
+  side = 'front',
   initialLocalPosition = { x: 0, y: 0 },
   onDragEnd,
   onDelete,
@@ -226,29 +228,26 @@ useEffect(() => {
       const localX = localOffset.x * cosR - localOffset.z * sinR
       const localY = localOffset.y
       
-      // 🎯 Detect vertical walls (rotated 90/270deg) where screen X maps opposite to wall X
       const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
       const isVerticalWall = (
         (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
         (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
       )
-      
-      // Use screen-aligned X for vertical walls so drag matches cursor direction
-      const screenLocalX = isVerticalWall ? -localX : localX
+
+      // Simply subtract the drag offset in wall-local space (no flipping)
       const offsetX = dragOffset.current ? dragOffset.current.x : 0
       const offsetY = dragOffset.current ? dragOffset.current.y : 0
-      const deltaX = screenLocalX - offsetX
+      const deltaX = localX - offsetX
       const deltaY = localY - offsetY
       
-      // Convert back to wall space
-      const adjustedX = isVerticalWall ? -deltaX : deltaX
+      const adjustedX = deltaX
       const adjustedY = deltaY
       
       let normalizedX = THREE.MathUtils.clamp(adjustedX / scaledWallWidth, -0.5, 0.5)
       let normalizedY = THREE.MathUtils.clamp(adjustedY / scaledWallHeight, -0.5, 0.5)
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix',hypothesisId:'A',location:'DraggableBoard.tsx:updatePosition',message:'Drag calculation',data:{boardId:board.id,wallRotation,normalizedRotation,isVerticalWall,localX,screenLocalX,localY,offsetX,offsetY,deltaX,adjustedX,normalizedX,normalizedY,scaledWallWidth,scaledWallHeight},timestamp:Date.now()})}).catch(()=>{})
+      fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix',hypothesisId:'A',location:'DraggableBoard.tsx:updatePosition',message:'Drag calculation',data:{boardId:board.id,wallRotation,normalizedRotation,isVerticalWall,localX,localY,offsetX,offsetY,deltaX,normalizedX,normalizedY,scaledWallWidth,scaledWallHeight},timestamp:Date.now()})}).catch(()=>{})
       // #endregion
 
       const newPos = {
@@ -272,7 +271,7 @@ useEffect(() => {
   
   // Track if we actually dragged (to distinguish click from drag)
   const dragStartPosition = useRef<{ x: number; y: number } | null>(null)
-  // Track the offset from click point to board center (screen-aligned X for vertical walls)
+  // Track the offset from click point to board center (pure wall-local space)
   const dragOffset = useRef<{ x: number; y: number } | null>(null)
   
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
@@ -299,7 +298,8 @@ if (e.intersections && e.intersections.length > 0) {
       (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
       (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
     )
-    return isVerticalWall ? -2.2 : 2.2
+    // Wall depth is 6 inches, surface is at 3 inches, plus 0.2 offset = 3.2
+    return isVerticalWall ? -3.2 : 3.2
   })()
   const currentBoardZ = outwardZForClick
   
@@ -340,16 +340,16 @@ if (e.intersections && e.intersections.length > 0) {
   const localOffsetX = offset.x * cosR - offset.z * sinR
   const localOffsetY = offset.y
   
-  // 🎯 Detect vertical walls (90/270deg)
+  // Compute vertical-wall flag only for logging (no flips applied)
   const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
   const isVerticalWall = (
     (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
     (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
   )
   
-  // Store screen-aligned offset: flip X for vertical walls so drag matches screen direction
+  // Store offset in wall-local space (no flips)
   dragOffset.current = {
-    x: isVerticalWall ? -localOffsetX : localOffsetX,
+    x: localOffsetX,
     y: localOffsetY
   }
   
@@ -428,13 +428,14 @@ if (e.intersections && e.intersections.length > 0) {
         y: persistedPos.y,
         width: persistedPos.width,
         height: persistedPos.height,
-        isVerticalWallEnd
+        isVerticalWallEnd,
+        side
       })
       
       // Update parent state - use REF to get latest callback (avoids stale closure)
       try {
         console.log('🎯🎯🎯 Calling onDragEndRef.current...')
-        onDragEndRef.current(board.id, persistedPos.x, persistedPos.y, persistedPos.width, persistedPos.height)
+        onDragEndRef.current(board.id, persistedPos.x, persistedPos.y, persistedPos.width, persistedPos.height, side)
         console.log('🎯🎯🎯 onDragEnd called successfully!')
 
         // #region agent log
@@ -481,7 +482,8 @@ if (e.intersections && e.intersections.length > 0) {
       (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
       (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
     )
-    return isVerticalWall ? -2.2 : 2.2
+    // Wall depth is 6 inches, surface is at 3 inches, plus 0.2 offset = 3.2
+    return isVerticalWall ? -3.2 : 3.2
   }
   
   const outwardZ = getOutwardZ(wallRotation)

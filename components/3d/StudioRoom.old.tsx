@@ -13,7 +13,6 @@ import { DraggableBoard } from './DraggableBoard'
 import { WallDropZone } from '@/components/3d/WallDropZone'
 import RightCommentPanel from '@/components/RightCommentPanel'
 import { generateOwnerColor } from '@/lib/ownerColors'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 
 interface WallDimensions {
   height: number
@@ -258,11 +257,11 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [isWorkspaceMember, setIsWorkspaceMember] = useState<boolean>(false)
   
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user || null)
     })
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user || null)
     })
     

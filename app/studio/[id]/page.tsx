@@ -13,11 +13,11 @@ import { ArrowLeft, Share2, Settings } from 'lucide-react'
 const StudioRoom = dynamic(() => import('@/components/3d/StudioRoom'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-screen flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 mx-auto mb-4"></div>
-        <p className="text-gray-600">Loading 3D Studio...</p>
-      </div>
+    <div className="w-full h-screen flex items-center justify-center bg-gradient-to-br from-indigo-950 via-purple-900 to-pink-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
+          <p className="text-white/90 font-medium">Loading 3D Studio...</p>
+        </div>
     </div>
   ),
 })
@@ -149,10 +149,10 @@ export default function StudioPage() {
 
   if (isLoading) {
     return (
-      <div className="w-full h-screen flex items-center justify-center bg-gray-50">
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading Studio...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
+          <p className="text-white/90 font-medium">Loading Studio...</p>
         </div>
       </div>
     )
@@ -176,14 +176,21 @@ export default function StudioPage() {
       )}
 
       {!showWallConfig && wallConfig && (
-        <>
+        <div className="relative w-full h-screen overflow-hidden" style={{ background: '#B3B3FF' }}>
+          {/* Animated gradient background effects */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)' }}></div>
+            <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)', animationDelay: '1s' }}></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(102, 102, 255, 0.1)' }}></div>
+          </div>
+
           {/* Top Left - Logo and Dashboard - Hide when in edit mode */}
           {!isEditMode && (
             <div className="fixed top-4 left-4 z-40 flex items-center gap-2.5">
               {/* PinSpace Logo - links to home */}
               <button
                 onClick={() => router.push('/')}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-colors font-semibold text-base"
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
               >
                 PinSpace
               </button>
@@ -191,7 +198,7 @@ export default function StudioPage() {
               {/* Back to Dashboard */}
               <button
                 onClick={() => router.push('/dashboard')}
-                className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-lg shadow-sm border border-gray-200 transition-colors font-medium text-sm flex items-center gap-2"
+                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
               >
                 <ArrowLeft className="w-4 h-4" />
                 Dashboard
@@ -205,7 +212,7 @@ export default function StudioPage() {
               {/* Share button */}
               <button
                 onClick={() => setShowShareModal(true)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-colors font-medium text-sm flex items-center gap-2"
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300 font-medium text-sm flex items-center gap-2 backdrop-blur-sm border border-white/10"
               >
                 <Share2 className="w-4 h-4" />
                 Share
@@ -214,7 +221,7 @@ export default function StudioPage() {
               {/* Reconfigure button */}
               <button
                 onClick={handleReconfigureWalls}
-                className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-lg shadow-sm border border-gray-200 transition-colors font-medium text-sm flex items-center gap-2"
+                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
               >
                 <Settings className="w-4 h-4" />
                 Reconfigure Walls
@@ -229,7 +236,7 @@ export default function StudioPage() {
             onBoardUpdate={handleBoardUpdate}
             onEditModeChange={setIsEditMode}
           />
-        </>
+        </div>
       )}
     </>
   )

@@ -120,7 +120,7 @@ export default function DemoStudioRoomPage() {
         <Canvas
           shadows
           gl={{ antialias: true, alpha: false }}
-          className="bg-gradient-to-br from-slate-50 to-slate-100"
+          style={{ background: '#B3B3FF' }}
         >
           <PerspectiveCamera makeDefault position={[0, 60, 120]} fov={35} />
           

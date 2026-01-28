@@ -7,7 +7,6 @@ import Link from 'next/link'
 import { Workspace } from '@/types'
 import dynamic from 'next/dynamic'
 import PublishConfirmModal from '@/components/PublishConfirmModal'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import { 
   ArrowLeft, 
   Mail, 
@@ -40,12 +39,12 @@ export default function WorkspaceSettingsPage() {
   const [publishError, setPublishError] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user || null)
       setIsLoaded(true)
     })
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user || null)
       setIsLoaded(true)
     })

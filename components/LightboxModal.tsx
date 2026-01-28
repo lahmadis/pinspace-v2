@@ -4,7 +4,6 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { Comment, Board } from '@/types'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 
 interface LightboxModalProps {
   board: Board | null
@@ -74,11 +73,11 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
   const authorName = user?.user_metadata?.email?.split('@')[0] || 'Anonymous'
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user || null)
     })
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user || null)
     })
     
@@ -268,55 +267,92 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
       onClick={handleBackdropClick}
     >
       {/* Top Header Bar */}
-      <div className="absolute top-0 left-0 right-0 h-16 bg-black/40 backdrop-blur-sm border-b border-white/10 flex items-center justify-between px-6 z-10">
+      <div className="absolute top-0 left-0 right-0 h-16 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between px-5 sm:px-6 z-10">
         {/* Board Title */}
         <div className="flex-1 min-w-0">
-          <h2 className="text-white font-semibold text-lg truncate">
+          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-300/70 mb-0.5">
+            Uploaded Board
+          </p>
+          <h2 className="text-slate-50 font-semibold text-sm sm:text-base truncate">
             {board.title}
           </h2>
-          <p className="text-gray-400 text-sm">
-            {board.studentName}
-          </p>
+          {board.studentName && (
+            <p className="text-[11px] text-slate-300">
+              {board.studentName}
+            </p>
+          )}
         </div>
 
-        {/* Navigation */}
-        <div className="flex items-center gap-4">
+        {/* Navigation + Close */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Previous */}
           <button
             onClick={(e) => {
               e.stopPropagation()
               onNavigate('prev')
             }}
             disabled={!hasPrev}
-            className="flex items-center gap-2 px-4 py-2 text-white disabled:text-gray-600 disabled:cursor-not-allowed hover:bg-white/10 rounded-lg transition-colors"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/15 text-white/80 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
-            <svg className="w-4 h-4" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
               <path d="M15 19l-7-7 7-7"></path>
             </svg>
-            Previous
+            <span>Previous</span>
           </button>
 
+          {/* Next */}
           <button
             onClick={(e) => {
               e.stopPropagation()
               onNavigate('next')
             }}
             disabled={!hasNext}
-            className="flex items-center gap-2 px-4 py-2 text-white disabled:text-gray-600 disabled:cursor-not-allowed hover:bg-white/10 rounded-lg transition-colors"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/15 text-white/80 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
-            Next
-            <svg className="w-4 h-4" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+            <span>Next</span>
+            <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
               <path d="M9 5l7 7-7 7"></path>
             </svg>
           </button>
 
+          {/* Compact arrow-only buttons on small screens */}
+          <div className="flex sm:hidden items-center gap-1.5">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onNavigate('prev')
+              }}
+              disabled={!hasPrev}
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/15 text-white/80 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              aria-label="Previous"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+                <path d="M15 19l-7-7 7-7"></path>
+              </svg>
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onNavigate('next')
+              }}
+              disabled={!hasNext}
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/15 text-white/80 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              aria-label="Next"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+                <path d="M9 5l7 7-7 7"></path>
+              </svg>
+            </button>
+          </div>
+
           {/* Close Button */}
           <button
             onClick={handleClose}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 border border-white/30 transition-colors"
             aria-label="Close"
           >
             <svg 
-              className="w-6 h-6 text-white" 
+              className="w-3.5 h-3.5 text-white" 
               fill="none" 
               strokeLinecap="round" 
               strokeLinejoin="round" 
@@ -391,28 +427,31 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
           )}
         </div>
 
-        {/* Right Side - Comment Panel */}
+        {/* Right Side - Comment Panel (light theme, compact) */}
         <div 
-          className="w-full lg:w-[400px] xl:w-[480px] bg-white flex flex-col shadow-2xl"
+          className="w-full lg:w-[340px] xl:w-[380px] bg-white/95 backdrop-blur-md flex flex-col shadow-[0_18px_60px_rgba(15,23,42,0.35)] border-l border-gray-200"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Panel Header */}
-          <div className="flex-shrink-0 p-6 border-b border-gray-200">
-            <h3 className="text-xl font-bold text-gray-900 mb-1 flex items-center gap-2">
-              💬 Comments
+          <div className="flex-shrink-0 px-5 py-4 border-b border-gray-200/80">
+            <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-500">
+                <span className="text-xs">💬</span>
+              </span>
+              Comments
               {comments.length > 0 && (
-                <span className="inline-flex items-center justify-center px-2 py-0.5 text-xs font-semibold bg-[#4444ff] text-white rounded-full">
+                <span className="inline-flex items-center justify-center px-2 py-0.5 text-[11px] font-medium bg-indigo-50 text-indigo-600 rounded-full border border-indigo-100">
                   {comments.length}
                 </span>
               )}
             </h3>
-            <p className="text-sm text-gray-600">
-              Share your thoughts on this work
+            <p className="text-xs text-gray-500">
+              Share concise feedback to help the work grow.
             </p>
           </div>
 
           {/* Comments List */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
             {loading && (
               <div className="flex items-center justify-center py-12">
                 <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#4444ff]/20 border-t-[#4444ff]"></div>
@@ -436,24 +475,24 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
             {!loading && !error && comments.length > 0 && comments.map((comment, index) => (
               <div 
                 key={comment.id}
-                className="flex gap-3 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                className="flex gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100 hover:border-gray-200 hover:bg-white transition-colors"
               >
                 {/* Avatar */}
-                <div className={`flex-shrink-0 w-10 h-10 rounded-full ${getAvatarColor(comment.authorName)} flex items-center justify-center text-white font-bold text-sm shadow-sm`}>
+                <div className={`flex-shrink-0 w-8 h-8 rounded-full ${getAvatarColor(comment.authorName)} flex items-center justify-center text-white font-bold text-xs shadow-sm`}>
                   {getInitials(comment.authorName)}
                 </div>
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline justify-between gap-2 mb-1.5">
-                    <span className="font-bold text-gray-900 text-sm">
+                  <div className="flex items-baseline justify-between gap-2 mb-1">
+                    <span className="font-semibold text-gray-900 text-xs">
                       {comment.authorName}
                     </span>
-                    <span className="text-xs text-gray-500 whitespace-nowrap">
+                    <span className="text-[11px] text-gray-500 whitespace-nowrap">
                       {formatTimestamp(comment.createdAt)}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                  <p className="text-xs text-gray-800 leading-relaxed whitespace-pre-wrap">
                     {comment.content}
                   </p>
                 </div>
@@ -462,7 +501,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
           </div>
 
           {/* Add Comment Form */}
-          <div className="flex-shrink-0 border-t border-gray-200 p-6 bg-gray-50">
+          <div className="flex-shrink-0 border-t border-gray-200 px-4 py-4 bg-gray-50">
             {user ? (
               <div className="space-y-3">
                 <textarea
@@ -471,12 +510,12 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
                   onChange={(e) => setNewComment(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Share your thoughts..."
-                  className="w-full px-4 py-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4444ff] focus:border-transparent resize-none bg-white shadow-sm"
+                  className="w-full px-3 py-2.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6366f1] focus:border-transparent resize-none bg-white text-gray-800 placeholder:text-gray-400 shadow-sm"
                   rows={3}
                   disabled={posting}
                 />
                 <div className="flex items-center justify-between">
-                  <p className="text-xs text-gray-500">
+                  <p className="text-[11px] text-gray-500">
                     {newComment.length > 0 ? (
                       <span className="text-gray-700 font-medium">{newComment.length} characters</span>
                     ) : (
@@ -486,7 +525,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
                   <button
                     onClick={handlePost}
                     disabled={!newComment.trim() || posting}
-                    className="px-5 py-2.5 bg-[#4444ff] text-white rounded-lg hover:bg-[#3333ee] disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-semibold shadow-sm hover:shadow-md disabled:shadow-none"
+                    className="px-4 py-2 bg-[#4f46e5] text-white rounded-lg hover:bg-[#4338ca] disabled:opacity-40 disabled:cursor-not-allowed transition-all text-xs font-semibold shadow-sm hover:shadow-md disabled:shadow-none"
                   >
                     {posting ? (
                       <span className="flex items-center gap-2">
@@ -500,12 +539,12 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
                 </div>
               </div>
             ) : (
-              <div className="text-center py-6">
-                <div className="mb-4 text-4xl">🔒</div>
-                <p className="text-sm text-gray-600 mb-4">Sign in to leave feedback</p>
+              <div className="text-center py-5">
+                <div className="mb-3 text-3xl">🔒</div>
+                <p className="text-xs text-gray-600 mb-3">Sign in to leave feedback</p>
                 <a
                   href="/sign-in"
-                  className="inline-block px-6 py-3 bg-[#4444ff] text-white rounded-lg hover:bg-[#3333ee] transition-all text-sm font-semibold shadow-md hover:shadow-lg"
+                  className="inline-block px-5 py-2 bg-[#4f46e5] text-white rounded-lg hover:bg-[#4338ca] transition-all text-xs font-semibold shadow-md hover:shadow-lg"
                 >
                   Sign In to Comment
                 </a>

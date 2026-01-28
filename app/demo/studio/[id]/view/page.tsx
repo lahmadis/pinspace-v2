@@ -128,7 +128,7 @@ export default function DemoStudioRoomPage() {
         <Canvas
           shadows
           gl={{ antialias: true, alpha: false }}
-          className="bg-gradient-to-br from-slate-50 to-slate-100"
+          style={{ background: '#D8DEFF' }}
         >
           <PerspectiveCamera makeDefault position={[0, 60, 120]} fov={35} />
           
@@ -146,20 +146,6 @@ export default function DemoStudioRoomPage() {
             shadow-camera-bottom={-100}
           />
           <hemisphereLight args={['#ffffff', '#8888aa', 0.4]} />
-
-          {/* Floor/Ground - large enough to prevent walls from looking like they're floating */}
-          <mesh
-            position={[0, 0, 0]}
-            rotation={[-Math.PI / 2, 0, 0]}
-            receiveShadow
-          >
-            <planeGeometry args={[10000, 10000]} />
-            <meshStandardMaterial
-              color="#e5e7eb"
-              roughness={0.95}
-              metalness={0}
-            />
-          </mesh>
 
           <Suspense fallback={null}>
             <WallSystem

@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import Link from 'next/link'
 
 export default function NewWorkspacePage() {
@@ -17,7 +16,7 @@ export default function NewWorkspacePage() {
   })
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) {
         router.push('/sign-in')
         return
@@ -26,7 +25,7 @@ export default function NewWorkspacePage() {
       setIsLoaded(true)
     })
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         router.push('/sign-in')
         return
@@ -168,8 +167,8 @@ export default function NewWorkspacePage() {
               </select>
             </div>
 
-            {/* Info Box */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            {/* Info Box - Hidden for demo video */}
+            {/* <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <div className="flex gap-3">
                 <div className="text-2xl">💡</div>
                 <div>
@@ -184,7 +183,7 @@ export default function NewWorkspacePage() {
                   </ul>
                 </div>
               </div>
-            </div>
+            </div> */}
 
             {/* Submit Button */}
             <button

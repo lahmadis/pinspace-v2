@@ -63,7 +63,8 @@ function SceneContent({
   localBoards,
   hoveredBoardId,
   onBoardHover,
-  onBoardClick
+  onBoardClick,
+  editingWallSide,
 }: StudioRoomProps & {
   onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   editingWall: number | null
@@ -85,12 +86,14 @@ function SceneContent({
   hoveredBoardId?: string | null
   onBoardHover?: (boardId: string | null) => void
   onBoardClick?: (board: Board) => void
+  editingWallSide: 'front' | 'back'
 }) {
   const orbitControlsRef = useRef<any>(null)
   const { camera, gl } = useThree()
   const maxWallHeightRef = useRef<number>(96)
   const [targetY, setTargetY] = useState<number>(48) // inches; focus point for zoom
   const shiftDownRef = useRef(false)
+  const sceneInitLoggedRef = useRef(false)
   
   // Configure mouse buttons for Rhino-like feel: Right = orbit, Shift+Right = pan, Middle = pan
   useEffect(() => {
@@ -103,6 +106,15 @@ function SceneContent({
       window.removeEventListener('keyup', up)
     }
   }, [])
+
+  // Log initial scene mount to measure perceived open time
+  useEffect(() => {
+    if (sceneInitLoggedRef.current) return
+    sceneInitLoggedRef.current = true
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'perf',hypothesisId:'B',location:'StudioRoom.tsx:SceneContent',message:'scene-mount',data:{wallCount:wallConfig?.walls?.length ?? 0},timestamp:Date.now()})}).catch(()=>{})
+    // #endregion
+  }, [wallConfig])
 
   useFrame(() => {
     const controlsObj = orbitControlsRef.current?.get ? orbitControlsRef.current.get() : orbitControlsRef.current
@@ -130,11 +142,15 @@ function SceneContent({
   
   return (
     <>
-      <color attach="background" args={['#f9fafb']} />
-      <ambientLight intensity={0.7} />
+      {/* Background matches wall color */}
+      <color attach="background" args={['#D8DEFF']} />
+      {/* Ambient light - reduced for better shadow definition */}
+      <ambientLight intensity={0.5} />
+      
+      {/* Main directional light - creates shadows and depth */}
       <directionalLight 
-        position={[10, 15, 5]} 
-        intensity={1.0} 
+        position={[15, 20, 10]} 
+        intensity={1.2} 
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -143,23 +159,23 @@ function SceneContent({
         shadow-camera-right={200}
         shadow-camera-top={200}
         shadow-camera-bottom={-200}
+        shadow-bias={-0.0001}
       />
-      <directionalLight position={[-10, 10, -5]} intensity={0.4} />
-      <directionalLight position={[0, 20, 0]} intensity={0.3} />
-      {/* Rim lighting for wall edges */}
-      <directionalLight position={[-5, 8, -10]} intensity={0.2} color="#ffffff" />
-      <directionalLight position={[5, 8, 10]} intensity={0.2} color="#ffffff" />
-      <hemisphereLight args={['#ffffff', '#e5e7eb', 0.4]} />
       
-      {/* Floor plane */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <planeGeometry args={[2000, 2000]} />
-        <meshStandardMaterial 
-          color="#f3f4f6" 
-          roughness={0.8}
-          metalness={0.0}
-        />
-      </mesh>
+      {/* Fill light from opposite side - softens shadows */}
+      <directionalLight position={[-10, 12, -8]} intensity={0.5} />
+      
+      {/* Top light for overall illumination */}
+      <directionalLight position={[0, 25, 0]} intensity={0.4} />
+      
+      {/* Rim lighting for wall edges - enhances depth */}
+      <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
+      <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
+      
+      {/* Hemisphere light for natural ambient */}
+      <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
+      
+      {/* Floor is now created dynamically in WallSystem based on wall configuration */}
       
       <WallSystem 
         boards={localBoards} 
@@ -243,6 +259,7 @@ function SceneContent({
                   wallPosition={editingWallPosition}
                   wallRotation={editingWallRotation}
                   wallDimensions={editingWallDimensions}
+                  side={editingWallSide}
                   initialLocalPosition={localPos}
                   onDragEnd={onBoardPositionChange}
                   onDelete={onBoardDelete}
@@ -273,19 +290,37 @@ function SceneContent({
         const baseWidthInches = 8 * 12
         const baseHeightInches = 8 * 12
 
-        // Scale distance primarily with room width so wider rooms push the camera back,
-        // but keep camera/target height tied to wall height so the viewing angle stays consistent.
-        const distanceScale = maxWallWidthInches / baseWidthInches || 1
+        // Scale distance based on overall footprint, not just a single wall.
+        // For zigzag / multi-wall layouts, back the camera up further so ALL walls are visible on first load.
+        const wallCount = wallConfig?.walls?.length ?? 1
+        const layoutType = wallConfig?.layoutType ?? 'zigzag'
+        const layoutFactor =
+          layoutType === 'zigzag' || layoutType === 'square' || layoutType === 'lshape'
+            ? Math.max(1, wallCount / 2)
+            : 1
+
+        // Wider rooms (or more connected walls) push the camera back more.
+        const distanceScale = ((maxWallWidthInches * layoutFactor) / baseWidthInches) || 1
         const heightScale = maxWallHeightInches / baseHeightInches || 1
 
-        const minDistance = 50 * distanceScale       // Scale minimum zoom by width
-        const maxDistance = 800 * distanceScale      // Scale maximum zoom by width
+        const minDistance = 80 * distanceScale       // Pull camera back a bit more by default
+        const maxDistance = 1200 * distanceScale     // Allow zooming further out for very long rooms
 
         // Aim slightly above mid-wall (where boards typically sit) so zoom goes toward the walls, not the floor.
         const targetHeight = Math.max(60, Math.min(maxWallHeightInches * 0.65, maxWallHeightInches)) || 60
-        // Keep the camera at (or just slightly above) the target height so wheel zoom moves straight in
-        const cameraHeight = targetHeight * 1.02
-        const cameraDistance = 80 * distanceScale    // Base distance scaled by width
+        // Axonometric view: position camera at diagonal angle with moderate elevation
+        // For axonometric/isometric view: 30-35 degree elevation, positioned diagonally
+        // Base distance scaled so that all walls fit comfortably on first load.
+        const baseDistance = 110 * distanceScale
+        const elevationAngle = 35 * (Math.PI / 180) // 35 degrees elevation
+        const azimuthAngle = 45 * (Math.PI / 180)   // 45 degrees around (diagonal view)
+        
+        // Calculate axonometric camera position
+        const horizontalDistance = baseDistance * Math.cos(elevationAngle)
+        const cameraHeight = targetHeight + (baseDistance * Math.sin(elevationAngle))
+        const cameraX = horizontalDistance * Math.sin(azimuthAngle)
+        const cameraZ = horizontalDistance * Math.cos(azimuthAngle)
+        
         maxWallHeightRef.current = maxWallHeightInches
 
         // Keep target in sync for OrbitControls updates
@@ -314,7 +349,7 @@ function SceneContent({
             
             <PerspectiveCamera 
               makeDefault 
-              position={[0, cameraHeight, cameraDistance]}
+              position={[cameraX, cameraHeight, cameraZ]}
               fov={50}
             />
           </>
@@ -428,7 +463,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     setEditingWallSide(side)
 
     // Load positions from central hook (API → normalized + size)
-    const wallPositions = loadWallPositions(wallIndex, wallDimensions)
+    const wallPositions = loadWallPositions(wallIndex, wallDimensions, side)
 
     // Copy all boards on this wall AND this side into placedBoards3D
     const newMap = new Map<string, { x: number; y: number; width: number; height: number }>()
@@ -477,7 +512,8 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
           position.x,      // normalized -0.5..0.5
           position.y,      // normalized -0.5..0.5
           position.width,  // 0..1
-          position.height  // 0..1
+          position.height,  // 0..1
+          editingWallSide
         ).catch(err => {
           console.error(`❌ [StudioRoom] Failed to save position for board ${boardId}:`, err)
         })
@@ -718,7 +754,8 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
           localX,           // normalized position (-0.5 to 0.5)
           localY,           // normalized position (-0.5 to 0.5)
           0.2,              // fallback width
-          0.2               // fallback height
+          0.2,              // fallback height
+          editingWallSide
         )
       }
     }
@@ -731,8 +768,8 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
   }
 
   const handleBoardPositionChange = useCallback(
-    (boardId: string, localX: number, localY: number, width?: number, height?: number) => {
-      console.log('🔁 [StudioRoom] handleBoardPositionChange CALLED:', { boardId, localX, localY, width, height })
+    (boardId: string, localX: number, localY: number, width?: number, height?: number, side?: 'front' | 'back') => {
+      console.log('🔁 [StudioRoom] handleBoardPositionChange CALLED:', { boardId, localX, localY, width, height, side })
 
       // 1) compute finalPosition from the drag values + any existing values
       const currentMap = placedBoards3DRef.current
@@ -759,11 +796,12 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
           finalPosition.x,      // normalized -0.5..0.5
           finalPosition.y,      // normalized -0.5..0.5
           finalPosition.width,  // 0..1
-          finalPosition.height  // 0..1
+          finalPosition.height,  // 0..1
+          side || editingWallSide
         )
       }
     },
-    [editingWall, updateBoardPosition]
+    [editingWall, editingWallSide, updateBoardPosition]
   )
 
 
@@ -858,7 +896,15 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
       />
       
       <div className="w-full h-screen">
-        <Canvas shadows gl={{ shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap } } as any}>
+        <Canvas 
+          shadows 
+          gl={{ 
+            shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap },
+            alpha: true,
+            premultipliedAlpha: false
+          } as any}
+          style={{ background: '#D8DEFF' }}
+        >
           <CameraController
             editingWall={editingWall}
             wallPosition={editingWallPosition}
@@ -889,6 +935,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
             setSelectedBoardId={setSelectedBoardId}
             onDeselect={() => setSelectedBoardId(null)}
             isWorkspaceMember={isWorkspaceMember}
+            editingWallSide={editingWallSide}
           />
         </Canvas>
       </div>

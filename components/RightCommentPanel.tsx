@@ -3,7 +3,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { Comment, Board } from '@/types'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 
 interface RightCommentPanelProps {
   board: Board | null
@@ -49,11 +48,11 @@ export default function RightCommentPanel({ board, onClose }: RightCommentPanelP
   const authorName = user?.user_metadata?.email?.split('@')[0] || 'Anonymous'
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user || null)
     })
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user || null)
     })
     

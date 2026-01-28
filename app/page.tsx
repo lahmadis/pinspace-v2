@@ -7,7 +7,6 @@ import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import GalleryAvatarModal, { AvatarFormValues } from '@/components/GalleryAvatarModal'
 import DemoBanner from '@/components/DemoBanner'
 import { isDemoMode } from '@/lib/demoMode'
@@ -22,12 +21,20 @@ function HomeInner() {
   const isDemo = isDemoMode(searchParams)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
+    const t0 = performance.now()
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'perf',hypothesisId:'A',location:'app/page.tsx:useEffect',message:'getSession:start',data:{},timestamp:Date.now()})}).catch(()=>{})
+    // #endregion
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user || null)
       setLoading(false)
+      const t1 = performance.now()
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'perf',hypothesisId:'A',location:'app/page.tsx:useEffect',message:'getSession:done',data:{ms:t1 - t0,hasSession:Boolean(session)},timestamp:Date.now()})}).catch(()=>{})
+      // #endregion
     })
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user || null)
     })
     
@@ -151,12 +158,13 @@ function HomeInner() {
               </button>
             </Link>
 
-            <button
+            {/* Gallery button hidden for demo video - functionality preserved below */}
+            {/* <button
               onClick={() => setShowGalleryModal(true)}
               className="px-8 py-4 bg-white/80 border border-primary/40 text-primary-dark hover:bg-primary hover:text-white rounded-lg font-medium transition-all duration-300 hover:scale-105 min-w-[200px] shadow-md"
             >
               Enter Gallery
-            </button>
+            </button> */}
           </motion.div>
 
           {/* Feature Pills */}

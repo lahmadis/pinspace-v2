@@ -355,5 +355,26 @@
       }
     ],
     "layoutType": "zigzag"
+  },
+  "54e47fbe-e289-4807-8e11-3ba82c9ace6b": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      }
+    ],
+    "layoutType": "zigzag"
   }
 }

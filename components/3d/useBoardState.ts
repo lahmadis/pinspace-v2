@@ -103,13 +103,14 @@ export function useBoardState(
   /**
    * Load board positions for a specific wall
    */
-  const loadWallPositions = useCallback((wallIndex: number, wallDimensions: { width: number; height: number }) => {
+  const loadWallPositions = useCallback((wallIndex: number, wallDimensions: { width: number; height: number }, side: 'front' | 'back' = 'front') => {
+    const t0 = performance.now()
     console.log(`📂 [useBoardState] Loading positions for wall ${wallIndex}`)
     
     const newPositions = new Map<string, BoardPosition>()
-    const wallBoards = boardsRef.current.filter(b => b.position?.wallIndex === wallIndex)
+    const wallBoards = boardsRef.current.filter(b => b.position?.wallIndex === wallIndex && (b.position?.side || 'front') === side)
     
-    console.log(`📂 [useBoardState] Found ${wallBoards.length} boards on wall ${wallIndex}`)
+    console.log(`📂 [useBoardState] Found ${wallBoards.length} boards on wall ${wallIndex} side ${side}`)
     
     wallBoards.forEach(board => {
       if (!board.position) return
@@ -156,6 +157,10 @@ export function useBoardState(
     })
     
     setBoardPositions(newPositions)
+    const t1 = performance.now()
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'perf',hypothesisId:'B',location:'useBoardState.ts:loadWallPositions',message:'loadWallPositions:done',data:{wallIndex,side,wallBoards:wallBoards.length,ms:t1 - t0},timestamp:Date.now()})}).catch(()=>{})
+    // #endregion
     return newPositions
   }, [apiToNormalized, apiToDecimal])
   
@@ -168,13 +173,15 @@ export function useBoardState(
     x: number,  // normalized -0.5 to 0.5
     y: number,  // normalized -0.5 to 0.5
     width?: number,  // decimal 0.0 to 1.0
-    height?: number  // decimal 0.0 to 1.0
+    height?: number,  // decimal 0.0 to 1.0
+    side: 'front' | 'back' = 'front'
   ) => {
-    console.log('💾 [useBoardState] updateBoardPosition:', {
+      console.log('💾 [useBoardState] updateBoardPosition:', {
       boardId,
       wallIndex,
       normalized: { x, y },
-      dimensions: { width, height }
+        dimensions: { width, height },
+        side,
     })
     
     // Update local position immediately
@@ -240,7 +247,7 @@ export function useBoardState(
             y: apiY,
             width: apiWidth,
             height: apiHeight,
-            side: board.position?.side || 'front'
+            side: board.position?.side || side || 'front'
           }
         })
       })
@@ -259,10 +266,10 @@ export function useBoardState(
             position: {
               wallIndex,
               x: apiX,
-              y: apiY,
-              width: apiWidth,
-              height: apiHeight,
-              side: b.position?.side || 'front'
+                y: apiY,
+                width: apiWidth,
+                height: apiHeight,
+                side: b.position?.side || side || 'front'
             }
           }
         }

@@ -2,6 +2,7 @@
 
 import * as THREE from 'three'
 import { Board } from '@/types'
+import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
 
 interface WallDimensions {
@@ -66,7 +67,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
     switch (layoutType) {
       case 'zigzag': {
         // Zigzag pattern: walls connected at 90-degree angles with overlapping corners
-        const WALL_DEPTH = 4  // Wall thickness: 4 inches (typical interior wall)
+        const WALL_DEPTH = 6  // Wall thickness: 6 inches (increased for more visible depth)
         const OVERLAP = WALL_DEPTH / 2  // Overlap at corners for flush appearance
         
         let currentX = 0
@@ -196,9 +197,73 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
     return { x, z, rotationY, width, height }
   }
 
+  // Calculate bounding box for all walls to create floor that fits
+  const calculateFloorBounds = () => {
+    let minX = Infinity
+    let maxX = -Infinity
+    let minZ = Infinity
+    let maxZ = -Infinity
+    
+    wallConfig.walls.forEach((wall, index) => {
+      const transform = getWallTransform(index)
+      const halfWidth = transform.width / 2
+      const wallDepth = 6 // Wall thickness in inches (increased for more visible depth)
+      const halfDepth = wallDepth / 2
+      
+      // Account for wall rotation to get actual bounds
+      // Wall extends along its local X axis (width) and has depth along local Z
+      const cos = Math.cos(transform.rotationY)
+      const sin = Math.sin(transform.rotationY)
+      
+      // Four corners of the wall's footprint (in local space)
+      const corners = [
+        { x: -halfWidth, z: -halfDepth },
+        { x: halfWidth, z: -halfDepth },
+        { x: -halfWidth, z: halfDepth },
+        { x: halfWidth, z: halfDepth },
+      ]
+      
+      // Transform corners to world space
+      corners.forEach(corner => {
+        const worldX = transform.x + corner.x * cos - corner.z * sin
+        const worldZ = transform.z + corner.x * sin + corner.z * cos
+        
+        minX = Math.min(minX, worldX)
+        maxX = Math.max(maxX, worldX)
+        minZ = Math.min(minZ, worldZ)
+        maxZ = Math.max(maxZ, worldZ)
+      })
+    })
+    
+    // No padding - floor aligns exactly with wall ends
+    
+    const floorWidth = maxX - minX
+    const floorDepth = maxZ - minZ
+    const floorCenterX = (minX + maxX) / 2
+    const floorCenterZ = (minZ + maxZ) / 2
+    
+    return { floorWidth, floorDepth, floorCenterX, floorCenterZ }
+  }
+  
+  const floorBounds = calculateFloorBounds()
+  const wallDepth = 6 // Wall thickness in inches (same as walls)
+  const floorThickness = wallDepth // Floor thickness matches wall thickness
+
   return (
     <group>
-      {/* Floor removed - using gallery's unified floor instead */}
+      {/* Dynamic floor with thickness matching walls */}
+      <mesh 
+        position={[floorBounds.floorCenterX, -floorThickness / 2, floorBounds.floorCenterZ]} 
+        receiveShadow
+        castShadow
+      >
+        <boxGeometry args={[floorBounds.floorWidth, floorThickness, floorBounds.floorDepth]} />
+        <meshStandardMaterial 
+          color="#D8DEFF" // very light, white-leaning blue for floor
+          roughness={0.9}
+          metalness={0.0}
+        />
+      </mesh>
 
       {wallConfig.walls.map((wall, wallIndex) => {
         const transform = getWallTransform(wallIndex)
@@ -233,68 +298,96 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
             position={[transform.x, transform.height / 2, transform.z]}
             rotation={[0, transform.rotationY, 0]}
           >
-            {/* Both faces clickable - detect which side was clicked */}
-            <mesh
-              onClick={(e) => {
-                e.stopPropagation()
-                
+            {/* Clickable front/back surfaces */}
+            <WallSurface
+              wallDimensions={wall}
+              side="front"
+              onSurfaceClick={({ side }) => {
                 const position = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
                 const rotation = transform.rotationY
-                
-                // 🎯 Detect which side of the wall was clicked using intersection point
-                let isBackFace = false
-                if (e.intersections && e.intersections.length > 0) {
-                  const intersection = e.intersections[0]
-                  const intersectionPoint = intersection.point
-                  
-                  // Calculate wall center in world space
-                  const wallCenter = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
-                  
-                  // Calculate wall front face normal (direction the front face points)
-                  // For a wall rotated by 'rotation', the front face normal in world space is (sin(rotation), 0, cos(rotation))
-                  const wallFrontNormal = new THREE.Vector3(
-                    Math.sin(rotation),
-                    0,
-                    Math.cos(rotation)
-                  )
-                  
-                  // Vector from wall center to intersection point
-                  const toIntersection = intersectionPoint.clone().sub(wallCenter)
-                  
-                  // Project onto wall normal to see if intersection is on front or back side
-                  const projection = toIntersection.dot(wallFrontNormal)
-                  // If projection is positive, intersection is on the front side (same direction as normal)
-                  // If projection is negative, intersection is on the back side (opposite direction)
-                  isBackFace = projection < 0
-                  
-                  console.log('🖼️ [WallSystem] Wall clicked:', {
-                    wallIndex,
-                    rotation: rotation.toFixed(3),
-                    projection: projection.toFixed(3),
-                    isBackFace,
-                    position: { x: position.x, y: position.y, z: position.z }
-                  })
-                }
-                
-                // If back face was clicked, adjust rotation by 180° so camera views from correct side
-                const adjustedRotation = isBackFace ? rotation + Math.PI : rotation
-                
-                // Determine the side that was clicked
-                const side: 'front' | 'back' = isBackFace ? 'back' : 'front'
-                
+                const adjustedRotation = rotation
                 onWallClick?.(wallIndex, wall, position, adjustedRotation, side)
               }}
-  castShadow
-  receiveShadow
-  renderOrder={0}
->
-              <boxGeometry args={[transform.width, transform.height, 4]} />
+            />
+            <WallSurface
+              wallDimensions={wall}
+              side="back"
+              onSurfaceClick={({ side }) => {
+                const position = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
+                const rotation = transform.rotationY
+                const adjustedRotation = rotation + Math.PI
+                onWallClick?.(wallIndex, wall, position, adjustedRotation, side)
+              }}
+            />
+
+            {/* Modern off-white wall with depth and shadows */}
+            {/* Main wall surface - off-white with subtle depth */}
+            {/* Increased thickness for more visible depth */}
+            <mesh castShadow receiveShadow renderOrder={0}>
+              <boxGeometry args={[transform.width, transform.height, 6]} />
               <meshStandardMaterial 
-                color="#F9F9F9" 
-                roughness={0.9} 
+                color="#D8DEFF" // very light, white-leaning blue for walls
+                roughness={0.85} // Slight sheen for subtle depth
                 metalness={0.0}
                 depthWrite={true}
                 depthTest={true}
+              />
+            </mesh>
+
+            {/* Subtle edge shadows for depth - creates modern panel effect */}
+            {/* Left edge shadow */}
+            <mesh 
+              position={[-transform.width / 2 + 0.1, 0, 2.1]} 
+              castShadow 
+              receiveShadow
+            >
+              <boxGeometry args={[0.2, transform.height, 0.2]} />
+              <meshStandardMaterial 
+                color="#B3C4FF" // slightly darker blue for side edge shadows
+                roughness={0.9}
+                metalness={0.0}
+              />
+            </mesh>
+
+            {/* Right edge shadow */}
+            <mesh 
+              position={[transform.width / 2 - 0.1, 0, 2.1]} 
+              castShadow 
+              receiveShadow
+            >
+              <boxGeometry args={[0.2, transform.height, 0.2]} />
+              <meshStandardMaterial 
+                color="#B3C4FF" // slightly darker blue for side edge shadows
+                roughness={0.9}
+                metalness={0.0}
+              />
+            </mesh>
+
+            {/* Top edge shadow */}
+            <mesh 
+              position={[0, transform.height / 2 - 0.1, 2.1]} 
+              castShadow 
+              receiveShadow
+            >
+              <boxGeometry args={[transform.width, 0.2, 0.2]} />
+              <meshStandardMaterial 
+                color="#A1B2FF" // darker blue for top edge shadow
+                roughness={0.9}
+                metalness={0.0}
+              />
+            </mesh>
+
+            {/* Bottom edge shadow */}
+            <mesh 
+              position={[0, -transform.height / 2 + 0.1, 2.1]} 
+              castShadow 
+              receiveShadow
+            >
+              <boxGeometry args={[transform.width, 0.2, 0.2]} />
+              <meshStandardMaterial 
+                color="#E0E0DB" // Darker for bottom shadow
+                roughness={0.9}
+                metalness={0.0}
               />
             </mesh>
 
@@ -366,10 +459,10 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
               const boardY = normalizedY * transform.height
 
               // 🎯 Position board flush with wall surface
-              // Wall depth is 4 inches, so wall surface is at WALL_DEPTH/2 = 2 inches from center
+              // Wall depth is 6 inches, so wall surface is at WALL_DEPTH/2 = 3 inches from center
               // Board should be positioned at the wall surface, not sticking out
-              const WALL_DEPTH = 4 // Wall thickness: 4 inches
-              const WALL_SURFACE_OFFSET = WALL_DEPTH / 2 // 2 inches from wall center to surface
+              const WALL_DEPTH = 6 // Wall thickness: 6 inches (increased for more visible depth)
+              const WALL_SURFACE_OFFSET = WALL_DEPTH / 2 // 3 inches from wall center to surface
               const BOARD_OFFSET = 0.2 // Offset to prevent z-fighting and ensure boards are always visible (0.2 inches = 5mm)
               
               // Determine which direction is "outward" for this wall (1 for +Z, -1 for -Z)
@@ -381,7 +474,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
               // Position board at wall surface based on which side it's on:
               // - Front side: same direction as outward (outwardDirection * WALL_SURFACE_OFFSET)
               // - Back side: opposite direction (-outwardDirection * WALL_SURFACE_OFFSET)
-              // Ensure boards are ALWAYS outside the wall geometry (z > 2 or z < -2)
+              // Ensure boards are ALWAYS outside the wall geometry (z > 3 or z < -3)
               const baseZ = outwardDirection * WALL_SURFACE_OFFSET
               let boardZ: number
               if (boardSide === 'back') {
@@ -390,10 +483,10 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
                 boardZ = baseZ + BOARD_OFFSET // Same direction for front face
               }
               
-              // Safety check: ensure board is never inside the wall (between -2 and +2)
-              // Wall geometry extends from -2 to +2 inches (WALL_DEPTH = 4, so ±2 from center)
-              const WALL_INNER_BOUND = WALL_SURFACE_OFFSET // 2 inches
-              const WALL_OUTER_BOUND = WALL_SURFACE_OFFSET + BOARD_OFFSET // 2.2 inches
+              // Safety check: ensure board is never inside the wall (between -3 and +3)
+              // Wall geometry extends from -3 to +3 inches (WALL_DEPTH = 6, so ±3 from center)
+              const WALL_INNER_BOUND = WALL_SURFACE_OFFSET // 3 inches
+              const WALL_OUTER_BOUND = WALL_SURFACE_OFFSET + BOARD_OFFSET // 3.2 inches
               
               // Clamp board Z to ensure it's always outside the wall
               let finalBoardZ: number
