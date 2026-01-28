@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { Comment, Board } from '@/types'
+import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 
 interface LightboxModalProps {
   board: Board | null
@@ -73,13 +74,17 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
   const authorName = user?.user_metadata?.email?.split('@')[0] || 'Anonymous'
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user || null)
-    })
+    supabase.auth.getSession().then(
+      ({ data: { session } }: { data: { session: Session | null } }) => {
+        setUser(session?.user || null)
+      }
+    )
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null)
-    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event: AuthChangeEvent, session: Session | null) => {
+        setUser(session?.user || null)
+      }
+    )
     
     return () => subscription.unsubscribe()
   }, [])

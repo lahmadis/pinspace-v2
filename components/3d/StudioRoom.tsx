@@ -330,6 +330,13 @@ function SceneContent({
         
         return (
           <>
+            {/* Set up the camera first so OrbitControls always receives a valid camera instance */}
+            <PerspectiveCamera 
+              makeDefault 
+              position={[cameraX, cameraHeight, cameraZ]}
+              fov={50}
+            />
+
             <OrbitControls 
               ref={orbitControlsRef}
               enableDamping
@@ -337,20 +344,15 @@ function SceneContent({
               minDistance={minDistance}
               maxDistance={maxDistance}
               maxPolarAngle={Math.PI / 2}
-              // Keep a slightly steeper minimum angle so zoom aims forward, not downward
+              // Keep a slightly steeper minimum angle so zoom aims toward the walls, not the floor
               minPolarAngle={0.45}
               enabled={editingWall === null}
               enablePan={editingWall === null}
               enableRotate={editingWall === null}
               enableZoom={editingWall === null}
-            zoomToCursor
+              // Keep the orbit target at eye level so scroll‑zoom moves toward the center of the walls,
+              // instead of following the mouse down to the floor.
               target={[0, targetHeight, 0]}
-            />
-            
-            <PerspectiveCamera 
-              makeDefault 
-              position={[cameraX, cameraHeight, cameraZ]}
-              fov={50}
             />
           </>
         )

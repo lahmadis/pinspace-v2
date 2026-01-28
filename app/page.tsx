@@ -7,6 +7,7 @@ import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
+import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import GalleryAvatarModal, { AvatarFormValues } from '@/components/GalleryAvatarModal'
 import DemoBanner from '@/components/DemoBanner'
 import { isDemoMode } from '@/lib/demoMode'
@@ -25,7 +26,7 @@ function HomeInner() {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'perf',hypothesisId:'A',location:'app/page.tsx:useEffect',message:'getSession:start',data:{},timestamp:Date.now()})}).catch(()=>{})
     // #endregion
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       setUser(session?.user || null)
       setLoading(false)
       const t1 = performance.now()
@@ -34,7 +35,7 @@ function HomeInner() {
       // #endregion
     })
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       setUser(session?.user || null)
     })
     

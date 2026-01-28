@@ -277,9 +277,12 @@ export function useBoardState(
       }))
       
       console.log('✅ [useBoardState] Position saved successfully and boards array updated')
-    } catch (error: any) {
+    } catch (error: unknown) {
+      // Network or API failure should NOT crash the 3D editor.
+      // We already updated local state optimistically above.
       console.error('❌ [useBoardState] Failed to save position:', error)
-      throw error // Re-throw so caller knows save failed
+      // Optionally, you could surface a non-blocking toast here instead of throwing.
+      return
     }
   }, [normalizedToApi, decimalToApi])
   

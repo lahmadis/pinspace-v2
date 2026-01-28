@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Auth } from '@supabase/auth-ui-react'
 import { ThemeSupa } from '@supabase/auth-ui-shared'
 import { supabase } from '@/lib/supabase/client'
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 
 export default function SignUpPage() {
   const router = useRouter()
@@ -17,7 +18,7 @@ export default function SignUpPage() {
     // Only listen for NEW sign-in events, ignore initial session detection
     let isInitialMount = true
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
       // Skip the first event (it's just detecting existing session on mount)
       if (isInitialMount) {
         isInitialMount = false

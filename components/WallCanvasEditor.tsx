@@ -80,12 +80,13 @@ export default function WallCanvasEditor({
     
     const canvasRect = canvas.getBoundingClientRect()
     const placedBoard = placedBoards.find(pb => pb.board.id === board.id)
-    
+    let offsetX = 120
+    let offsetY = 90
     if (placedBoard) {
       const boardElement = e.currentTarget as HTMLElement
       const boardRect = boardElement.getBoundingClientRect()
-      const offsetX = e.clientX - boardRect.left
-      const offsetY = e.clientY - boardRect.top
+      offsetX = e.clientX - boardRect.left
+      offsetY = e.clientY - boardRect.top
       setDragOffset({ x: offsetX, y: offsetY })
     } else {
       setDragOffset({ x: 120, y: 90 })

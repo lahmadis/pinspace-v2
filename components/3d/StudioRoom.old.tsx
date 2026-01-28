@@ -3,6 +3,7 @@
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { supabase } from '@/lib/supabase/client'
+import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import { Board } from '@/types'
 import WallSystem from './WallSystem'
 import { useState, useCallback, useRef, useEffect } from 'react'
@@ -257,11 +258,11 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [isWorkspaceMember, setIsWorkspaceMember] = useState<boolean>(false)
   
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       setUser(session?.user || null)
     })
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       setUser(session?.user || null)
     })
     

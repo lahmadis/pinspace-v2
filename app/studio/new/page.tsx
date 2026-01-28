@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import Link from 'next/link'
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 
 export default function NewStudioPage() {
   const router = useRouter()
@@ -16,7 +17,7 @@ export default function NewStudioPage() {
   })
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       if (!session) {
         router.push('/sign-in')
         return
@@ -25,7 +26,7 @@ export default function NewStudioPage() {
       setIsLoaded(true)
     })
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (!session) {
         router.push('/sign-in')
         return
