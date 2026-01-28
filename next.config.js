@@ -2,8 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['three'],
-  // Use a non-default distDir to avoid Windows file locks on `.next/trace`
-  distDir: '.next-build',
+  // distDir defaults to '.next' - Vercel expects this default
   eslint: {
     // Disable ESLint during builds to allow deployment
     // Fix linting errors in development
