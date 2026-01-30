@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { useThree, ThreeEvent } from '@react-three/fiber'
 import { supabase } from '@/lib/supabase/client'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
@@ -91,9 +91,12 @@ export function DraggableBoard({
   const isLocked = !canEdit
   
   const meshRef = useRef<THREE.Mesh>(null)
+  const innerGroupRef = useRef<THREE.Group>(null)
   const [localPosition, setLocalPosition] = useState(initialLocalPosition)
   const [isHovered, setIsHovered] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [isResizing, setIsResizing] = useState(false)
+  const resizeStartRef = useRef<{ initialWidth: number; initialHeight: number; initialDistance: number } | null>(null)
   
   // Debug logging for delete button visibility
   useEffect(() => {
@@ -127,6 +130,7 @@ useEffect(() => {
     }, 2000)
     return () => clearTimeout(timer)
   }
+  if (isResizing) return
   
   if (!isDragging) {
     // Only sync if position actually changed from external source
@@ -144,7 +148,7 @@ useEffect(() => {
       setLocalPosition(propsPos)
     }
   }
-}, [initialLocalPosition.x, initialLocalPosition.y, isDragging])
+}, [initialLocalPosition.x, initialLocalPosition.y, isDragging, isResizing])
   
   console.log('🎨 [DraggableBoard] Rendering board:', board.id, 'at position:', localPosition)
   
@@ -339,6 +343,18 @@ if (e.intersections && e.intersections.length > 0) {
   const sinR = Math.sin(-wallRotation)
   const localOffsetX = offset.x * cosR - offset.z * sinR
   const localOffsetY = offset.y
+
+  // If click is near a corner and board is selected, start resize (proportional) instead of drag
+  if (isSelected && canEdit && !isLocked) {
+    const cornerMargin = 0.15 * Math.min(boardWidth, boardHeight)
+    const inCorner =
+      Math.abs(localOffsetX) > boardWidth / 2 - cornerMargin &&
+      Math.abs(localOffsetY) > boardHeight / 2 - cornerMargin
+    if (inCorner) {
+      handleCornerPointerDown(e)
+      return
+    }
+  }
   
   // Compute vertical-wall flag only for logging (no flips applied)
   const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
@@ -488,6 +504,59 @@ if (e.intersections && e.intersections.length > 0) {
   
   const outwardZ = getOutwardZ(wallRotation)
   const boardZ = boardSide === 'back' ? -outwardZ : outwardZ
+
+  // Get pointer position on the wall plane (world space) for corner resize
+  const getPointerOnWallPlane = useCallback((clientX: number, clientY: number): THREE.Vector3 | null => {
+    const wallNormal = new THREE.Vector3(-Math.sin(wallRotation), 0, -Math.cos(wallRotation)).normalize()
+    const plane = new THREE.Plane(wallNormal, 0)
+    plane.constant = -wallNormal.dot(wallPosition)
+    const rect = gl.domElement.getBoundingClientRect()
+    const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1
+    const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera)
+    const point = new THREE.Vector3()
+    return raycaster.ray.intersectPlane(plane, point) ? point : null
+  }, [camera, gl, raycaster, wallPosition, wallRotation])
+
+  const handleCornerPointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation()
+    if (isLocked) return
+    const ptr = getPointerOnWallPlane(e.clientX, e.clientY)
+    if (!ptr) return
+    const bx = positionRef.current.x * scaledWallWidth
+    const by = positionRef.current.y * scaledWallHeight
+    const centerWorld = wallPosition.clone().add(new THREE.Vector3(bx, by, boardZ).applyAxisAngle(new THREE.Vector3(0, 1, 0), wallRotation))
+    const dist = ptr.distanceTo(centerWorld)
+    if (dist < 0.1) return
+    const w = positionRef.current.width ?? 0.3
+    const h = positionRef.current.height ?? 0.3
+    resizeStartRef.current = { initialWidth: w, initialHeight: h, initialDistance: dist }
+    setIsResizing(true)
+    gl.domElement.style.cursor = 'nwse-resize'
+    const onMove = (ev: PointerEvent) => {
+      const p = getPointerOnWallPlane(ev.clientX, ev.clientY)
+      if (!p || !resizeStartRef.current) return
+      const curDist = p.distanceTo(centerWorld)
+      const scale = curDist / resizeStartRef.current.initialDistance
+      const MIN = 0.05
+      const MAX = 1
+      const newW = THREE.MathUtils.clamp(resizeStartRef.current.initialWidth * scale, MIN, MAX)
+      const newH = THREE.MathUtils.clamp(resizeStartRef.current.initialHeight * scale, MIN, MAX)
+      positionRef.current = { ...positionRef.current, width: newW, height: newH }
+      setLocalPosition(prev => ({ ...prev, width: newW, height: newH }))
+    }
+    const onUp = () => {
+      gl.domElement.style.cursor = 'default'
+      const ref = positionRef.current
+      onDragEnd(board.id, ref.x, ref.y, ref.width, ref.height, side)
+      resizeStartRef.current = null
+      setIsResizing(false)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [board.id, boardZ, getPointerOnWallPlane, gl, isLocked, onDragEnd, scaledWallWidth, scaledWallHeight, side, wallPosition, wallRotation])
   
   console.log(`🧱 DraggableBoard on wall: rotation=${wallRotation.toFixed(2)}, outwardZ=${outwardZ}, side=${boardSide}, finalZ=${boardZ}`)
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
@@ -516,7 +585,7 @@ if (e.intersections && e.intersections.length > 0) {
   // Position the group at the wall position, then position board within group's local space
   return (
     <group position={wallPosition} rotation={[0, wallRotation, 0]}>
-      <group position={[boardX, boardY, boardZ]}>
+      <group ref={innerGroupRef} position={[boardX, boardY, boardZ]}>
         <mesh
           ref={meshRef}
           onPointerDown={handlePointerDown}
@@ -532,17 +601,37 @@ if (e.intersections && e.intersections.length > 0) {
           // Make sure boards render in front of the invisible wall plane
           renderOrder={1}
           onPointerOver={(e) => {
-            console.log('🖱️ HOVER detected on board:', board.id)
             e.stopPropagation()
             setIsHovered(true)
-            if (!isDragging) {
+            if (!isDragging && !isResizing) {
+              gl.domElement.style.cursor = isLocked ? 'not-allowed' : 'grab'
+            }
+          }}
+          onPointerMove={(e) => {
+            e.stopPropagation()
+            if (!e.intersections?.length || isDragging || isResizing) return
+            const worldPoint = e.intersections[0].point
+            const center = new THREE.Vector3()
+            meshRef.current?.getWorldPosition(center)
+            const offset = worldPoint.clone().sub(center)
+            const cosR = Math.cos(-wallRotation)
+            const sinR = Math.sin(-wallRotation)
+            const localX = offset.x * cosR - offset.z * sinR
+            const localY = offset.y
+            const cornerMargin = 0.15 * Math.min(boardWidth, boardHeight)
+            const nearCorner =
+              Math.abs(localX) > boardWidth / 2 - cornerMargin &&
+              Math.abs(localY) > boardHeight / 2 - cornerMargin
+            if (isSelected && canEdit && nearCorner) {
+              gl.domElement.style.cursor = 'nwse-resize'
+            } else if (!isDragging) {
               gl.domElement.style.cursor = isLocked ? 'not-allowed' : 'grab'
             }
           }}
           onPointerOut={(e) => {
             e.stopPropagation()
             setIsHovered(false)
-            if (!isDragging) gl.domElement.style.cursor = 'default'
+            if (!isDragging && !isResizing) gl.domElement.style.cursor = 'default'
           }}
         >
           {/* Use boxGeometry instead of planeGeometry to give boards thickness */}
@@ -586,7 +675,6 @@ if (e.intersections && e.intersections.length > 0) {
             <lineBasicMaterial color="#4444ff" linewidth={3} />
           </lineSegments>
         )}
-
 
         {/* Lock icon - Show for boards not owned by current user */}
         {isHovered && !isDragging && isLocked && (

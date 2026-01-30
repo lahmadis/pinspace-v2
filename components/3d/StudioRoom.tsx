@@ -3,7 +3,7 @@
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { supabase } from '@/lib/supabase/client'
-import { Board } from '@/types'
+import { Board, FloorTable } from '@/types'
 import WallSystem from './WallSystem'
 import { useState, useCallback, useRef, useEffect } from 'react'
 import * as THREE from 'three'
@@ -16,6 +16,9 @@ import LightboxModal from '@/components/LightboxModal'
 import { generateOwnerColor } from '@/lib/ownerColors'
 import { useBoardState } from './useBoardState'
 import { useBoardUpload } from '@/hooks/useBoardUpload'
+import FloorEditorOverlay from './FloorEditorOverlay'
+import TableWithModel from './TableWithModel'
+import ModelViewer from './ModelViewer'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 
 
@@ -37,6 +40,9 @@ interface StudioRoomProps {
   wallConfig: WallConfig
   onBoardUpdate: () => Promise<void>
   onEditModeChange?: (isEditing: boolean) => void
+  /** When provided, floor editor open state is controlled by the parent (e.g. header button). */
+  floorEditorOpen?: boolean
+  onFloorEditorOpenChange?: (open: boolean) => void
 }
 
 function SceneContent({ 
@@ -65,6 +71,9 @@ function SceneContent({
   onBoardHover,
   onBoardClick,
   editingWallSide,
+  tables,
+  onFloorClick,
+  onTableModelClick,
 }: StudioRoomProps & {
   onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   editingWall: number | null
@@ -87,6 +96,9 @@ function SceneContent({
   onBoardHover?: (boardId: string | null) => void
   onBoardClick?: (board: Board) => void
   editingWallSide: 'front' | 'back'
+  tables: FloorTable[]
+  onFloorClick?: () => void
+  onTableModelClick?: (modelUrl: string) => void
 }) {
   const orbitControlsRef = useRef<any>(null)
   const { camera, gl } = useThree()
@@ -185,7 +197,13 @@ function SceneContent({
         onBoardClick={onBoardClick || onCommentClick}
         highlightedBoardId={hoveredBoardId}
         onBoardHover={onBoardHover}
+        onFloorClick={onFloorClick}
       />
+
+      {/* Tables with optional 3D models on floor - click table to open model in viewer */}
+      {tables.map((table) => (
+        <TableWithModel key={table.id} table={table} onTableClick={onTableModelClick} />
+      ))}
 
       
       {/* Drop zone for dragging from sidebar */}
@@ -411,6 +429,24 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [editingWallRotation, setEditingWallRotation] = useState<number>(0)
   const [editingWallSide, setEditingWallSide] = useState<'front' | 'back'>('front')
   const [showEditUI, setShowEditUI] = useState(false)
+  const [floorEditorOpenInternal, setFloorEditorOpenInternal] = useState(false)
+  const floorEditorOpen = props.floorEditorOpen !== undefined ? props.floorEditorOpen : floorEditorOpenInternal
+  const setFloorEditorOpen = useCallback(
+    (open: boolean) => {
+      props.onFloorEditorOpenChange?.(open)
+      if (props.floorEditorOpen === undefined) setFloorEditorOpenInternal(open)
+    },
+    [props.onFloorEditorOpenChange, props.floorEditorOpen]
+  )
+  const [modelViewerUrl, setModelViewerUrl] = useState<string | null>(null)
+  const sanitizeTables = useCallback((raw: FloorTable[] | undefined): FloorTable[] => {
+    const list = Array.isArray(raw) ? raw : []
+    return list.map((t) => ({
+      ...t,
+      modelUrl: t.modelUrl?.startsWith('blob:') ? undefined : t.modelUrl,
+    }))
+  }, [])
+  const [tables, setTables] = useState<FloorTable[]>(() => sanitizeTables((props.wallConfig as { tables?: FloorTable[] }).tables))
   const [placedBoards3D, setPlacedBoards3D] = useState<Map<string, { 
     x: number; 
     y: number; 
@@ -436,8 +472,78 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     addTempBoard,
     replaceTempBoard,
     removeTempBoard,
+    undo,
+    redo,
   } = useBoardState(props.boards, props.studioId, async () => { await Promise.resolve(); props.onBoardUpdate() })
-  
+
+  // Ctrl+Z / Ctrl+Y for undo/redo (only when not typing in an input)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.ctrlKey) return
+      const target = e.target as HTMLElement
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+      if (isInput) return
+      if (e.key === 'z') {
+        e.preventDefault()
+        undo()
+      } else if (e.key === 'y') {
+        e.preventDefault()
+        redo()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [undo, redo])
+
+  // Sync tables when wall config loads or studio changes (strip blob URLs so GLTF never sees them)
+  useEffect(() => {
+    const configTables = (props.wallConfig as { tables?: FloorTable[] }).tables
+    setTables(sanitizeTables(configTables))
+  }, [props.studioId, props.wallConfig, sanitizeTables])
+
+  // Floor click no longer opens editor; use header "Place 3D model" button instead
+
+  // Open model in overlay (same page). Never pass blob URLs to viewer (they fail to fetch).
+  const handleTableModelClick = useCallback((modelUrl: string) => {
+    if (modelUrl.startsWith('blob:')) return
+    setModelViewerUrl(modelUrl)
+  }, [])
+
+  const handleFloorEditorSave = useCallback(async () => {
+    // Only persist server URLs (http/https or paths); strip data: and blob: to avoid huge payloads
+    const tablesToSave = tables.map((t) => {
+      const url = t.modelUrl ?? ''
+      const isPersistableUrl = url.startsWith('http://') || url.startsWith('https://') || (url.startsWith('/') && !url.startsWith('//'))
+      return { ...t, modelUrl: isPersistableUrl ? url : undefined }
+    })
+    try {
+      await fetch(`/api/studios/${props.studioId}/wall-config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...props.wallConfig, tables: tablesToSave }),
+      })
+      const savedConfigKey = `studio-${props.studioId}-wall-config`
+      const saved = localStorage.getItem(savedConfigKey)
+      const parsed = saved ? JSON.parse(saved) : {}
+      localStorage.setItem(savedConfigKey, JSON.stringify({ ...parsed, ...props.wallConfig, tables: tablesToSave }))
+    } catch (e) {
+      console.error('Failed to save tables', e)
+    }
+    setFloorEditorOpen(false)
+  }, [props.studioId, props.wallConfig, tables])
+
+  // Keep placedBoards3D in sync with boardPositions (e.g. after undo/redo)
+  useEffect(() => {
+    if (editingWall === null || editingWallSide == null) return
+    const newMap = new Map<string, { x: number; y: number; width?: number; height?: number }>()
+    localBoards
+      .filter(b => b.position?.wallIndex === editingWall && (b.position?.side || 'front') === editingWallSide)
+      .forEach(board => {
+        const pos = boardPositions.get(board.id)
+        if (pos) newMap.set(board.id, pos)
+      })
+    setPlacedBoards3D(newMap)
+  }, [boardPositions, editingWall, editingWallSide, localBoards])
 
   const handleWallClick = (
     wallIndex: number,
@@ -880,6 +986,37 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
 
   return (
     <>
+      {/* Full-screen 3D model viewer overlay (keeps blob URLs valid) */}
+      {modelViewerUrl && (
+        <div className="fixed inset-0 z-[100] flex flex-col bg-white">
+          <div className="flex-none flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white/95">
+            <span className="text-sm font-medium text-gray-700">3D model</span>
+            <button
+              type="button"
+              onClick={() => setModelViewerUrl(null)}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+              aria-label="Close"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="flex-1 min-h-0">
+            <ModelViewer modelUrl={modelViewerUrl} />
+          </div>
+        </div>
+      )}
+
+      {floorEditorOpen && (
+        <FloorEditorOverlay
+          wallConfig={props.wallConfig}
+          tables={tables}
+          setTables={setTables}
+          onSaveAndExit={handleFloorEditorSave}
+        />
+      )}
+
       <EditModeOverlay
         isVisible={showEditUI}
         wallIndex={editingWall ?? 0}
@@ -938,6 +1075,9 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
             onDeselect={() => setSelectedBoardId(null)}
             isWorkspaceMember={isWorkspaceMember}
             editingWallSide={editingWallSide}
+            tables={tables}
+            onFloorClick={undefined}
+            onTableModelClick={handleTableModelClick}
           />
         </Canvas>
       </div>

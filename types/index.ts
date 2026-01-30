@@ -150,6 +150,19 @@ export interface WallConfig {
   walls: WallDimensions[]
 }
 
+/** Table on the studio floor for displaying a 3D model. Position in inches (same as 3D scene). */
+export interface FloorTable {
+  id: string
+  x: number
+  z: number
+  width: number  // inches (e.g. 24)
+  depth: number // inches (e.g. 18)
+  /** Rotation in radians around Y (0 = aligned with room). */
+  rotation?: number
+  boardId?: string // optional link to a board
+  modelUrl?: string // GLB/GLTF URL for model on top
+}
+
 export const DEFAULT_WALL_CONFIG: WallConfig = {
   walls: [
     { height: 10, width: 8 },

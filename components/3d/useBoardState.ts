@@ -37,6 +37,11 @@ export function useBoardState(
   const boardPositionsRef = useRef(boardPositions)
   const tempBoardsRef = useRef(tempBoards)
   
+  // Undo/redo: snapshot is serializable boardPositions for current wall
+  const undoStackRef = useRef<Array<[string, BoardPosition][]>>([])
+  const redoStackRef = useRef<Array<[string, BoardPosition][]>>([])
+  const MAX_UNDO = 50
+  
   // Keep refs in sync
   useEffect(() => { boardsRef.current = boards }, [boards])
   useEffect(() => { boardPositionsRef.current = boardPositions }, [boardPositions])
@@ -165,6 +170,59 @@ export function useBoardState(
   }, [apiToNormalized, apiToDecimal])
   
   /**
+   * Push current boardPositions to undo stack (call before mutating)
+   */
+  const pushUndo = useCallback(() => {
+    const current = boardPositionsRef.current
+    if (current.size === 0) return
+    const snapshot = Array.from(current.entries())
+    undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), snapshot]
+    redoStackRef.current = []
+  }, [])
+
+  /**
+   * Restore boardPositions and sync boards array from a snapshot
+   */
+  const applySnapshot = useCallback((snapshot: [string, BoardPosition][]) => {
+    const map = new Map(snapshot)
+    setBoardPositions(map)
+    setBoards(prev => prev.map(b => {
+      const pos = map.get(b.id)
+      if (!pos || !b.position) return b
+      return {
+        ...b,
+        position: {
+          ...b.position,
+          x: normalizedToApi(pos.x),
+          y: normalizedToApi(pos.y),
+          width: decimalToApi(pos.width),
+          height: decimalToApi(pos.height)
+        }
+      }
+    }))
+  }, [normalizedToApi, decimalToApi])
+
+  const undo = useCallback(() => {
+    const stack = undoStackRef.current
+    if (stack.length === 0) return
+    const current = Array.from(boardPositionsRef.current.entries())
+    redoStackRef.current = [...redoStackRef.current, current]
+    const snapshot = stack[stack.length - 1]
+    undoStackRef.current = stack.slice(0, -1)
+    applySnapshot(snapshot)
+  }, [applySnapshot])
+
+  const redo = useCallback(() => {
+    const stack = redoStackRef.current
+    if (stack.length === 0) return
+    const current = Array.from(boardPositionsRef.current.entries())
+    undoStackRef.current = [...undoStackRef.current, current]
+    const snapshot = stack[stack.length - 1]
+    redoStackRef.current = stack.slice(0, -1)
+    applySnapshot(snapshot)
+  }, [applySnapshot])
+
+  /**
    * Update board position (handles both local state and API save)
    */
   const updateBoardPosition = useCallback(async (
@@ -183,6 +241,8 @@ export function useBoardState(
         dimensions: { width, height },
         side,
     })
+    
+    pushUndo()
     
     // Update local position immediately
     setBoardPositions(prev => {
@@ -429,6 +489,8 @@ export function useBoardState(
     addTempBoard,
     replaceTempBoard,
     removeTempBoard,
+    undo,
+    redo,
     // Expose conversion functions for upload logic
     normalizedToApi,
     apiToNormalized,

@@ -68,6 +68,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
   const [newComment, setNewComment] = useState('')
   const [posting, setPosting] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
+  const [isPresentMode, setIsPresentMode] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const isOpen = board !== null
@@ -95,11 +96,11 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
   const hasNext = currentIndex < allBoards.length - 1
 
   useEffect(() => {
-    // Trigger fade-in animation
     if (isOpen) {
       setTimeout(() => setIsVisible(true), 10)
     } else {
       setIsVisible(false)
+      setIsPresentMode(false)
     }
   }, [isOpen])
 
@@ -118,7 +119,11 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        handleClose()
+        if (isPresentMode) {
+          setIsPresentMode(false)
+        } else {
+          handleClose()
+        }
       } else if (e.key === 'ArrowLeft' && hasPrev) {
         onNavigate('prev')
       } else if (e.key === 'ArrowRight' && hasNext) {
@@ -128,7 +133,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
     
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, hasPrev, hasNext])
+  }, [isOpen, hasPrev, hasNext, isPresentMode])
 
   const fetchComments = async () => {
     if (!board) return
@@ -271,7 +276,8 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
       }`}
       onClick={handleBackdropClick}
     >
-      {/* Top Header Bar */}
+      {/* Top Header Bar (hidden in present mode) */}
+      {!isPresentMode && (
       <div className="absolute top-0 left-0 right-0 h-16 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between px-5 sm:px-6 z-10">
         {/* Board Title */}
         <div className="flex-1 min-w-0">
@@ -350,6 +356,21 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
             </button>
           </div>
 
+          {/* Present - full screen board only */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsPresentMode(true)
+            }}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/15 text-white/80 hover:bg-white/10 transition-colors"
+            title="Present (board fills screen)"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
+              <path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M20 8V6a2 2 0 00-2-2h-2M20 16v2a2 2 0 002 2h-2M14 6v12" />
+            </svg>
+            <span>Present</span>
+          </button>
+
           {/* Close Button */}
           <button
             onClick={handleClose}
@@ -370,12 +391,49 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
           </button>
         </div>
       </div>
+      )}
+
+      {/* Present mode: no top bar; prev/next on sides + exit in corner */}
+      {isPresentMode && (
+        <>
+          {/* Exit present - small corner control so it doesn't block the board */}
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsPresentMode(false) }}
+            className="absolute bottom-20 right-6 z-20 px-3 py-1.5 rounded-lg text-xs font-medium text-white/80 hover:text-white bg-black/40 hover:bg-black/60 border border-white/20 transition-colors"
+          >
+            Exit present
+          </button>
+          {/* Prev/Next in present mode - left/right edges */}
+          {hasPrev && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onNavigate('prev') }}
+              className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 text-white/90 hover:text-white border border-white/20 transition-colors"
+              aria-label="Previous board"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
+                <path d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          )}
+          {hasNext && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onNavigate('next') }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 text-white/90 hover:text-white border border-white/20 transition-colors"
+              aria-label="Next board"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
+                <path d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
+        </>
+      )}
 
       {/* Main Content */}
-      <div className="h-full flex pt-16">
-        {/* Left Side - Image/PDF Display */}
+      <div className={`h-full flex ${isPresentMode ? 'pt-0' : 'pt-16'}`}>
+        {/* Left Side - Image/PDF Display (full area in present mode) */}
         <div 
-          className="flex-1 flex items-center justify-center p-8 lg:p-12"
+          className={`flex-1 flex items-center justify-center ${isPresentMode ? 'absolute inset-0 p-4' : 'p-8 lg:p-12'}`}
           onClick={handleBackdropClick}
         >
           {imageUrl ? (
@@ -420,7 +478,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
               <img 
                 src={imageUrl}
                 alt={board.title}
-                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                className={`max-w-full max-h-full object-contain ${isPresentMode ? 'rounded-none shadow-none w-full h-full' : 'rounded-lg shadow-2xl'}`}
                 onClick={(e) => e.stopPropagation()}
               />
             )
@@ -432,7 +490,8 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
           )}
         </div>
 
-        {/* Right Side - Comment Panel (light theme, compact) */}
+        {/* Right Side - Comment Panel (hidden in present mode) */}
+        {!isPresentMode ? (
         <div 
           className="w-full lg:w-[340px] xl:w-[380px] bg-white/95 backdrop-blur-md flex flex-col shadow-[0_18px_60px_rgba(15,23,42,0.35)] border-l border-gray-200"
           onClick={(e) => e.stopPropagation()}
@@ -557,17 +616,34 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
             )}
           </div>
         </div>
+        ) : null}
       </div>
 
-      {/* Navigation Hint */}
+      {/* Navigation Hint (simplified in present mode) */}
       <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-black/60 backdrop-blur-sm rounded-full text-white text-sm">
-        Press <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">ESC</kbd> to close
-        {(hasPrev || hasNext) && (
+        {isPresentMode ? (
           <>
-            <span className="mx-2">•</span>
-            <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">←</kbd>
-            <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">→</kbd>
-            to navigate
+            Press <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">ESC</kbd> to exit present
+            {(hasPrev || hasNext) && (
+              <>
+                <span className="mx-2">•</span>
+                <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">←</kbd>
+                <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">→</kbd>
+                to change board
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            Press <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">ESC</kbd> to close
+            {(hasPrev || hasNext) && (
+              <>
+                <span className="mx-2">•</span>
+                <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">←</kbd>
+                <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">→</kbd>
+                to navigate
+              </>
+            )}
           </>
         )}
       </div>

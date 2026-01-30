@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { Board } from '@/types'
 import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
+import { getWallTransform, calculateFloorBounds } from '@/lib/wallLayout'
 
 interface WallDimensions {
   height: number
@@ -23,18 +24,15 @@ interface WallSystemProps {
   onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   editingWall: number | null
   onBoardClick?: (board: Board) => void
-  highlightedBoardId?: string | null // ID of the board currently in camera view (for blue tint)
-  onBoardHover?: (boardId: string | null) => void // Callback when board is hovered
+  highlightedBoardId?: string | null
+  onBoardHover?: (boardId: string | null) => void
+  onFloorClick?: () => void
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallClick, editingWall, onBoardClick, highlightedBoardId, onBoardHover }: WallSystemProps) {
-  // Scene scale: 1 unit = 1 inch
-  // So an 8ft × 10ft wall = 96 × 120 units
-  const SCALE = 12 // Convert feet to inches (1 ft = 12 inches)
-  
-  // 🎯 Helper function to determine which Z direction is "outward" for a wall
-  // Returns 1 for +Z direction, -1 for -Z direction
+export default function WallSystem({ boards, wallConfig, onWallClick, editingWall, onBoardClick, highlightedBoardId, onBoardHover, onFloorClick }: WallSystemProps) {
+  const SCALE = 12
+
   const getOutwardZDirection = (rotation: number): number => {
     // Normalize rotation to 0-2π range
     const normalizedRotation = ((rotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
@@ -53,199 +51,8 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
     return isVerticalWall ? -1 : 1
   }
   
-  const getWallTransform = (index: number) => {
-    const wall = wallConfig.walls[index]
-    const width = wall.width * SCALE
-    const height = wall.height * SCALE
-    
-    let x = 0
-    let z = 0
-    let rotationY = 0
-    
-    const { layoutType } = wallConfig
-    
-    switch (layoutType) {
-      case 'zigzag': {
-        // Zigzag pattern: walls connected at 90-degree angles with overlapping corners
-        const WALL_DEPTH = 6  // Wall thickness: 6 inches (increased for more visible depth)
-        const OVERLAP = WALL_DEPTH / 2  // Overlap at corners for flush appearance
-        
-        let currentX = 0
-        let currentZ = 0
-        
-        // Track the path by following each wall's end point
-        for (let i = 0; i < index; i++) {
-          const prevWidth = wallConfig.walls[i].width * SCALE
-          
-          if (i % 2 === 0) {
-            // Horizontal wall - extends along +X axis
-            currentX += prevWidth - (i > 0 ? OVERLAP : 0)  // Subtract overlap except for first wall
-          } else {
-            // Vertical wall - extends along +Z axis
-            currentZ += prevWidth - OVERLAP  // Always overlap with previous
-          }
-        }
-        
-        // Position this wall's center
-        if (index % 2 === 0) {
-          // This is a horizontal wall
-          x = currentX + width / 2 - (index > 0 ? OVERLAP / 2 : 0)
-          z = currentZ
-          rotationY = 0
-        } else {
-          // This is a vertical wall (90° turn)
-          x = currentX
-          z = currentZ + width / 2 - OVERLAP / 2
-          rotationY = Math.PI / 2
-        }
-        
-        // Center the entire zigzag around the origin
-        let totalXExtent = 0
-        let totalZExtent = 0
-        let tempX = 0
-        let tempZ = 0
-        
-        for (let i = 0; i < wallConfig.walls.length; i++) {
-          const w = wallConfig.walls[i].width * SCALE
-          if (i % 2 === 0) {
-            tempX += w - (i > 0 ? OVERLAP : 0)
-            totalXExtent = Math.max(totalXExtent, tempX)
-          } else {
-            tempZ += w - OVERLAP
-            totalZExtent = Math.max(totalZExtent, tempZ)
-          }
-        }
-        
-        x -= totalXExtent / 2
-        z -= totalZExtent / 2
-        
-        break
-      }
-      
-      case 'linear': {
-        // Linear: parallel walls in a row
-        const spacing = width + 2
-        
-        x = index * spacing - (wallConfig.walls.length * spacing) / 2
-        z = 0
-        rotationY = 0
-        break
-      }
-      
-      case 'square': {
-        // Square: four walls forming a closed room
-        const wallWidths = wallConfig.walls.map(w => w.width * SCALE)
-        
-        if (index === 0) {
-          // Front wall
-          x = 0
-          z = wallWidths[0] / 2
-          rotationY = 0
-        } else if (index === 1) {
-          // Right wall
-          x = wallWidths[0] / 2
-          z = 0
-          rotationY = Math.PI / 2
-        } else if (index === 2) {
-          // Back wall
-          x = 0
-          z = -wallWidths[2] / 2
-          rotationY = Math.PI
-        } else if (index === 3) {
-          // Left wall
-          x = -wallWidths[0] / 2
-          z = 0
-          rotationY = -Math.PI / 2
-        }
-        break
-      }
-      
-      case 'lshape': {
-        // L-shape: two perpendicular walls
-        const wallWidths = wallConfig.walls.map(w => w.width * SCALE)
-        
-        if (index === 0) {
-          // Horizontal part of L
-          x = 0
-          z = 0
-          rotationY = 0
-        } else if (index === 1) {
-          // Vertical part of L (right side)
-          x = wallWidths[0] / 2
-          z = -wallWidths[1] / 2
-          rotationY = Math.PI / 2
-        } else if (index >= 2) {
-          // Additional walls extend the L
-          const prevWall = wallWidths[1]
-          x = wallWidths[0] / 2
-          z = -prevWall - (index - 1) * wallWidths[index]
-          rotationY = Math.PI / 2
-        }
-        break
-      }
-      
-      default: {
-        // Fallback to circular arrangement
-        const angle = (index * Math.PI) / 2
-        const radius = 5 + (index - 4) * 2
-        x = Math.cos(angle) * radius
-        z = Math.sin(angle) * radius
-        rotationY = angle + Math.PI / 2
-      }
-    }
-    
-    return { x, z, rotationY, width, height }
-  }
-
-  // Calculate bounding box for all walls to create floor that fits
-  const calculateFloorBounds = () => {
-    let minX = Infinity
-    let maxX = -Infinity
-    let minZ = Infinity
-    let maxZ = -Infinity
-    
-    wallConfig.walls.forEach((wall, index) => {
-      const transform = getWallTransform(index)
-      const halfWidth = transform.width / 2
-      const wallDepth = 6 // Wall thickness in inches (increased for more visible depth)
-      const halfDepth = wallDepth / 2
-      
-      // Account for wall rotation to get actual bounds
-      // Wall extends along its local X axis (width) and has depth along local Z
-      const cos = Math.cos(transform.rotationY)
-      const sin = Math.sin(transform.rotationY)
-      
-      // Four corners of the wall's footprint (in local space)
-      const corners = [
-        { x: -halfWidth, z: -halfDepth },
-        { x: halfWidth, z: -halfDepth },
-        { x: -halfWidth, z: halfDepth },
-        { x: halfWidth, z: halfDepth },
-      ]
-      
-      // Transform corners to world space
-      corners.forEach(corner => {
-        const worldX = transform.x + corner.x * cos - corner.z * sin
-        const worldZ = transform.z + corner.x * sin + corner.z * cos
-        
-        minX = Math.min(minX, worldX)
-        maxX = Math.max(maxX, worldX)
-        minZ = Math.min(minZ, worldZ)
-        maxZ = Math.max(maxZ, worldZ)
-      })
-    })
-    
-    // No padding - floor aligns exactly with wall ends
-    
-    const floorWidth = maxX - minX
-    const floorDepth = maxZ - minZ
-    const floorCenterX = (minX + maxX) / 2
-    const floorCenterZ = (minZ + maxZ) / 2
-    
-    return { floorWidth, floorDepth, floorCenterX, floorCenterZ }
-  }
-  
-  const floorBounds = calculateFloorBounds()
+  const getTransform = (index: number) => getWallTransform(wallConfig, index)
+  const floorBounds = calculateFloorBounds(wallConfig)
   const wallDepth = 6 // Wall thickness in inches (same as walls)
   const floorThickness = wallDepth // Floor thickness matches wall thickness
 
@@ -266,7 +73,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
       </mesh>
 
       {wallConfig.walls.map((wall, wallIndex) => {
-        const transform = getWallTransform(wallIndex)
+        const transform = getTransform(wallIndex)
         // Only show boards that are NOT being edited (or on different side)
         const boardsOnWall = boards.filter(b => {
           if (!b.position || b.position.wallIndex !== wallIndex) return false

@@ -8,7 +8,7 @@ import { Board } from '@/types'
 import WallConfigModal from '@/components/WallConfigModal'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
-import { ArrowLeft, Share2, Settings } from 'lucide-react'
+import { ArrowLeft, Share2, Settings, Box } from 'lucide-react'
 
 const StudioRoom = dynamic(() => import('@/components/3d/StudioRoom'), {
   ssr: false,
@@ -56,6 +56,7 @@ export default function StudioPage() {
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isEditMode, setIsEditMode] = useState(false)
+  const [floorEditorOpen, setFloorEditorOpen] = useState(false)
 
   const isDemo = searchParams?.get('demo') === 'true'
 
@@ -217,7 +218,16 @@ export default function StudioPage() {
                 <Share2 className="w-4 h-4" />
                 Share
               </button>
-              
+
+              {/* Place 3D model - open floor editor to add tables and upload/position models */}
+              <button
+                onClick={() => setFloorEditorOpen(true)}
+                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
+              >
+                <Box className="w-4 h-4" />
+                Place 3D model
+              </button>
+
               {/* Reconfigure button */}
               <button
                 onClick={handleReconfigureWalls}
@@ -235,6 +245,8 @@ export default function StudioPage() {
             wallConfig={wallConfig}
             onBoardUpdate={handleBoardUpdate}
             onEditModeChange={setIsEditMode}
+            floorEditorOpen={floorEditorOpen}
+            onFloorEditorOpenChange={setFloorEditorOpen}
           />
         </div>
       )}
