@@ -510,11 +510,13 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
   }, [])
 
   const handleFloorEditorSave = useCallback(async () => {
-    // Only persist server URLs (http/https or paths); strip data: and blob: to avoid huge payloads
+    // Persist server URLs (http/https or paths) and data URLs so uploaded models survive refresh.
+    // Strip only blob: URLs (they're invalid after reload).
     const tablesToSave = tables.map((t) => {
       const url = t.modelUrl ?? ''
-      const isPersistableUrl = url.startsWith('http://') || url.startsWith('https://') || (url.startsWith('/') && !url.startsWith('//'))
-      return { ...t, modelUrl: isPersistableUrl ? url : undefined }
+      const isBlob = url.startsWith('blob:')
+      const isPersistable = !isBlob && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/') && !url.startsWith('//') || url.startsWith('data:'))
+      return { ...t, modelUrl: isPersistable ? url : undefined }
     })
     try {
       await fetch(`/api/studios/${props.studioId}/wall-config`, {

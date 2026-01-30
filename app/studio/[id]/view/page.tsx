@@ -6,8 +6,10 @@ import Link from 'next/link'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { supabase } from '@/lib/supabase/client'
-import { Board } from '@/types'
+import { Board, FloorTable } from '@/types'
 import WallSystem from '@/components/3d/WallSystem'
+import TableWithModel from '@/components/3d/TableWithModel'
+import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
 import DemoBanner from '@/components/DemoBanner'
 import { addDemoParam } from '@/lib/demoMode'
@@ -37,6 +39,17 @@ export default function StudioViewPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null)
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
+  const [modelViewerUrl, setModelViewerUrl] = useState<string | null>(null)
+
+  // Tables from wall config (floor tables with 3D models) – strip blob URLs
+  const tables: FloorTable[] = (() => {
+    const raw = (wallConfig as { tables?: FloorTable[] })?.tables
+    const list = Array.isArray(raw) ? raw : []
+    return list.map((t) => ({
+      ...t,
+      modelUrl: t.modelUrl?.startsWith('blob:') ? undefined : t.modelUrl,
+    }))
+  })()
 
   // Load wall config
   useEffect(() => {
@@ -244,9 +257,30 @@ export default function StudioViewPage() {
         <p className="text-sm text-gray-700">
           <span className="font-semibold">💬 Click boards</span> to view comments
           <span className="mx-3 text-gray-400">•</span>
-          <span className="font-semibold">🖱️ Drag</span> to rotate camera
+          <span className="font-semibold">🖱️ Click table/model</span> for full 3D view
+          <span className="mx-3 text-gray-400">•</span>
+          <span className="font-semibold">Drag</span> to rotate camera
         </p>
       </div>
+
+      {/* Full-screen 3D model viewer overlay */}
+      {modelViewerUrl && (
+        <div className="fixed inset-0 z-50 bg-slate-900/90 flex flex-col">
+          <div className="flex items-center justify-between p-3 bg-white/10 border-b border-white/20">
+            <span className="text-white font-medium">3D Model</span>
+            <button
+              type="button"
+              onClick={() => setModelViewerUrl(null)}
+              className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium transition-colors"
+            >
+              Close
+            </button>
+          </div>
+          <div className="flex-1 min-h-0">
+            <ModelViewer modelUrl={modelViewerUrl} />
+          </div>
+        </div>
+      )}
 
       {/* 3D Canvas */}
       <Canvas shadows className="w-full h-full">
@@ -268,6 +302,15 @@ export default function StudioViewPage() {
             onBoardClick={handleBoardClick}
           />
         )}
+
+        {/* Floor tables with 3D models – click to open full 3D viewer */}
+        {tables.map((table) => (
+          <TableWithModel
+            key={table.id}
+            table={table}
+            onTableClick={(url) => setModelViewerUrl(url)}
+          />
+        ))}
         
         {/* Camera Controls - scaled based on wall dimensions */}
         {(() => {
