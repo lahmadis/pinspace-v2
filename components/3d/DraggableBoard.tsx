@@ -1,5 +1,8 @@
 'use client'
 
+const isDev = process.env.NODE_ENV === 'development'
+const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
+
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { useThree, ThreeEvent } from '@react-three/fiber'
 import { supabase } from '@/lib/supabase/client'
@@ -101,7 +104,7 @@ export function DraggableBoard({
   // Debug logging for delete button visibility
   useEffect(() => {
     if (isHovered) {
-      console.log('🔍 [DraggableBoard] Hover state:', {
+      devLog('🔍 [DraggableBoard] Hover state:', {
         boardId: board.id,
         isHovered,
         isDragging,
@@ -126,7 +129,7 @@ useEffect(() => {
     // 🎯 Keep the flag set for 2 seconds to give save time to complete
     const timer = setTimeout(() => {
       justFinishedDragging.current = false
-      console.log('📍 [DraggableBoard] Re-enabled position sync after drag')
+      devLog('📍 [DraggableBoard] Re-enabled position sync after drag')
     }, 2000)
     return () => clearTimeout(timer)
   }
@@ -143,14 +146,14 @@ useEffect(() => {
     const yChanged = Math.abs(propsPos.y - currentPos.y) > epsilon
     
     if (xChanged || yChanged) {
-      console.log('📍 Syncing position from props:', propsPos)
+      devLog('📍 Syncing position from props:', propsPos)
       positionRef.current = propsPos
       setLocalPosition(propsPos)
     }
   }
 }, [initialLocalPosition.x, initialLocalPosition.y, isDragging, isResizing])
   
-  console.log('🎨 [DraggableBoard] Rendering board:', board.id, 'at position:', localPosition)
+  devLog('🎨 [DraggableBoard] Rendering board:', board.id, 'at position:', localPosition)
   
   const { camera, gl, raycaster } = useThree()
   
@@ -176,7 +179,7 @@ useEffect(() => {
     boardWidth = Math.min(boardWidth, wallWidthInches)
     boardHeight = Math.min(boardHeight, wallHeightInches)
     
-    console.log(`📐 [DraggableBoard] Using physical dimensions: ${board.physicalWidth}" x ${board.physicalHeight}" = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
+    devLog(`📐 [DraggableBoard] Using physical dimensions: ${board.physicalWidth}" x ${board.physicalHeight}" = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
   }
   
   // Fallback for existing boards without physical dimensions: default to 8.5×11 inches (standard letter size)
@@ -190,12 +193,12 @@ useEffect(() => {
       const wallHeightInches = wallDimensions.height * 12
       boardWidth = localPosition.width * wallWidthInches
       boardHeight = localPosition.height * wallHeightInches
-      console.log(`📐 [DraggableBoard] Using saved percentage dimensions: ${(localPosition.width * 100).toFixed(1)}% x ${(localPosition.height * 100).toFixed(1)}% = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
+      devLog(`📐 [DraggableBoard] Using saved percentage dimensions: ${(localPosition.width * 100).toFixed(1)}% x ${(localPosition.height * 100).toFixed(1)}% = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
     } else {
       // Final fallback: use default 8.5×11 inches
       boardWidth = DEFAULT_WIDTH_INCHES
       boardHeight = DEFAULT_HEIGHT_INCHES
-      console.log(`📐 [DraggableBoard] No dimensions found - using default: ${DEFAULT_WIDTH_INCHES}" x ${DEFAULT_HEIGHT_INCHES}" = ${boardWidth} x ${boardHeight} units`)
+      devLog(`📐 [DraggableBoard] No dimensions found - using default: ${DEFAULT_WIDTH_INCHES}" x ${DEFAULT_HEIGHT_INCHES}" = ${boardWidth} x ${boardHeight} units`)
     }
   }
   
@@ -238,21 +241,16 @@ useEffect(() => {
         (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
       )
 
-      // Simply subtract the drag offset in wall-local space (no flipping)
+      // On vertical walls (2nd and 4th in zigzag), world→local maps Z→X but the group's local +X is world -Z, so flip horizontal delta.
       const offsetX = dragOffset.current ? dragOffset.current.x : 0
       const offsetY = dragOffset.current ? dragOffset.current.y : 0
       const deltaX = localX - offsetX
       const deltaY = localY - offsetY
-      
-      const adjustedX = deltaX
+      const adjustedX = isVerticalWall ? -deltaX : deltaX
       const adjustedY = deltaY
       
       let normalizedX = THREE.MathUtils.clamp(adjustedX / scaledWallWidth, -0.5, 0.5)
       let normalizedY = THREE.MathUtils.clamp(adjustedY / scaledWallHeight, -0.5, 0.5)
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix',hypothesisId:'A',location:'DraggableBoard.tsx:updatePosition',message:'Drag calculation',data:{boardId:board.id,wallRotation,normalizedRotation,isVerticalWall,localX,localY,offsetX,offsetY,deltaX,normalizedX,normalizedY,scaledWallWidth,scaledWallHeight},timestamp:Date.now()})}).catch(()=>{})
-      // #endregion
 
       const newPos = {
         x: normalizedX,
@@ -279,8 +277,8 @@ useEffect(() => {
   const dragOffset = useRef<{ x: number; y: number } | null>(null)
   
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
-    console.log('🖱️ POINTER DOWN on board:', board.id)
-    console.log('🖱️ onDragEnd function exists:', typeof onDragEnd === 'function')
+    devLog('🖱️ POINTER DOWN on board:', board.id)
+    devLog('🖱️ onDragEnd function exists:', typeof onDragEnd === 'function')
     e.stopPropagation()
     
     // Store initial position to detect if this is a drag or just a click
@@ -326,14 +324,6 @@ if (e.intersections && e.intersections.length > 0) {
     ? meshWorldCenter.clone() // use actual mesh center when available
     : rotatedBoardWorldPosition
 
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix-2',hypothesisId:'E',location:'DraggableBoard.tsx:handlePointerDown',message:'World vs board centers (rotated vs mesh)',data:{boardId:board.id,wallRotation,worldClickPoint:{x:worldClickPoint.x,y:worldClickPoint.y,z:worldClickPoint.z},computedCenterUnrotated:{x:boardWorldPosition.x,y:boardWorldPosition.y,z:boardWorldPosition.z},computedCenterRotated:{x:rotatedBoardWorldPosition.x,y:rotatedBoardWorldPosition.y,z:rotatedBoardWorldPosition.z},boardCenterUsed:{x:boardCenterWorld.x,y:boardCenterWorld.y,z:boardCenterWorld.z},meshCenter:meshRef.current ? {x:meshWorldCenter.x,y:meshWorldCenter.y,z:meshWorldCenter.z} : null,localPosition:{x:localPosition.x,y:localPosition.y},scaledWall:{w:scaledWallWidth,h:scaledWallHeight}},timestamp:Date.now()})}).catch(()=>{})
-  // #endregion
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'D',location:'DraggableBoard.tsx:handlePointerDown',message:'World vs board center',data:{boardId:board.id,wallRotation,worldClickPoint:{x:worldClickPoint.x,y:worldClickPoint.y,z:worldClickPoint.z},boardWorldPosition:{x:boardCenterWorld.x,y:boardCenterWorld.y,z:boardCenterWorld.z},localPosition:{x:localPosition.x,y:localPosition.y},scaledWall:{w:scaledWallWidth,h:scaledWallHeight}},timestamp:Date.now()})}).catch(()=>{})
-  // #endregion
-  
   // Get the offset from board center to click point in world space
   const offset = new THREE.Vector3()
   offset.copy(worldClickPoint).sub(boardCenterWorld)
@@ -369,36 +359,29 @@ if (e.intersections && e.intersections.length > 0) {
     y: localOffsetY
   }
   
-  console.log('📍 Drag offset calculated (raw):', dragOffset.current, 'vertical wall:', isVerticalWall)
+  devLog('📍 Drag offset calculated (raw):', dragOffset.current, 'vertical wall:', isVerticalWall)
       
-      console.log('📍 Drag offset calculated:', dragOffset.current, 'board size:', boardWidth, boardHeight)
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix',hypothesisId:'B',location:'DraggableBoard.tsx:handlePointerDown',message:'Computed drag offset (raw, stored screen-aligned)',data:{boardId:board.id,wallRotation,normalizedRotation,isVerticalWall,localOffset:{x:localOffsetX,y:localOffsetY},storedOffset:dragOffset.current,boardSize:{w:boardWidth,h:boardHeight}},timestamp:Date.now()})}).catch(()=>{})
-      // #endregion
+      devLog('📍 Drag offset calculated:', dragOffset.current, 'board size:', boardWidth, boardHeight)
     } else {
       // Fallback: no offset if we can't calculate it
       dragOffset.current = { x: 0, y: 0 }
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'C',location:'DraggableBoard.tsx:handlePointerDown',message:'No intersections; using zero offset',data:{boardId:board.id},timestamp:Date.now()})}).catch(()=>{})
-      // #endregion
     }
     
     // Prevent dragging if board is locked
     if (isLocked) {
-      console.log('🔒 Board is locked - cannot drag')
+      devLog('🔒 Board is locked - cannot drag')
       return
     }
     
     // Deselect board when starting to drag
     if (onDeselect && isSelected) {
-      console.log('🖱️ [DraggableBoard] Deselecting board because drag started')
+      devLog('🖱️ [DraggableBoard] Deselecting board because drag started')
       onDeselect()
     }
     
     setIsDragging(true)
     gl.domElement.style.cursor = 'grabbing'
-    console.log('🖱️ isDragging set to true, attaching global listeners...')
+    devLog('🖱️ isDragging set to true, attaching global listeners...')
     
     // Start listening to window events
     const handleMove = (e: PointerEvent) => {
@@ -406,8 +389,8 @@ if (e.intersections && e.intersections.length > 0) {
     }
     
     const handleUp = (e: PointerEvent) => {
-      console.log('🖱️🖱️🖱️ POINTER UP FIRED! board:', board.id)
-      console.log('🖱️🖱️🖱️ Current positionRef:', JSON.stringify(positionRef.current))
+      devLog('🖱️🖱️🖱️ POINTER UP FIRED! board:', board.id)
+      devLog('🖱️🖱️🖱️ Current positionRef:', JSON.stringify(positionRef.current))
       gl.domElement.style.cursor = 'grab'
       
       // Check if this was a click (no significant movement) or a drag
@@ -415,7 +398,7 @@ if (e.intersections && e.intersections.length > 0) {
         Math.abs(e.clientX - dragStartPosition.current.x) < 5 && 
         Math.abs(e.clientY - dragStartPosition.current.y) < 5
       
-      console.log('🖱️ [DraggableBoard] Pointer up - wasClick:', wasClick, 'onSelect exists:', !!onSelect, 'movement:', dragStartPosition.current ? {
+      devLog('🖱️ [DraggableBoard] Pointer up - wasClick:', wasClick, 'onSelect exists:', !!onSelect, 'movement:', dragStartPosition.current ? {
         x: Math.abs(e.clientX - dragStartPosition.current.x),
         y: Math.abs(e.clientY - dragStartPosition.current.y)
       } : 'no start pos')
@@ -423,7 +406,7 @@ if (e.intersections && e.intersections.length > 0) {
       // If it was just a click (no significant movement), select the board
       // wasClick being true means there was minimal movement, so it's a click, not a drag
       if (wasClick && onSelect) {
-        console.log('🖱️ Click detected (not drag) - selecting board:', board.id)
+        devLog('🖱️ Click detected (not drag) - selecting board:', board.id)
         onSelect()
       }
       
@@ -438,7 +421,7 @@ if (e.intersections && e.intersections.length > 0) {
         (normalizedRotationEnd > 5*Math.PI/4 && normalizedRotationEnd < 7*Math.PI/4)
       )
       const persistedPos = finalPos
-      console.log('🎯🎯🎯 DRAG END - Calling onDragEnd with:', {
+      devLog('🎯🎯🎯 DRAG END - Calling onDragEnd with:', {
         boardId: board.id,
         x: persistedPos.x,
         y: persistedPos.y,
@@ -450,13 +433,9 @@ if (e.intersections && e.intersections.length > 0) {
       
       // Update parent state - use REF to get latest callback (avoids stale closure)
       try {
-        console.log('🎯🎯🎯 Calling onDragEndRef.current...')
+        devLog('🎯🎯🎯 Calling onDragEndRef.current...')
         onDragEndRef.current(board.id, persistedPos.x, persistedPos.y, persistedPos.width, persistedPos.height, side)
-        console.log('🎯🎯🎯 onDragEnd called successfully!')
-
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix',hypothesisId:'F',location:'DraggableBoard.tsx:onDragEnd',message:'Persisted position',data:{boardId:board.id,wallRotation,position:finalPos,persistedPos,isVerticalWallEnd},timestamp:Date.now()})}).catch(()=>{})
-        // #endregion
+        devLog('🎯🎯🎯 onDragEnd called successfully!')
 
          // 🎯 CRITICAL: Update local state immediately to prevent reset
     setLocalPosition(finalPos)
@@ -558,7 +537,7 @@ if (e.intersections && e.intersections.length > 0) {
     window.addEventListener('pointerup', onUp)
   }, [board.id, boardZ, getPointerOnWallPlane, gl, isLocked, onDragEnd, scaledWallWidth, scaledWallHeight, side, wallPosition, wallRotation])
   
-  console.log(`🧱 DraggableBoard on wall: rotation=${wallRotation.toFixed(2)}, outwardZ=${outwardZ}, side=${boardSide}, finalZ=${boardZ}`)
+  devLog(`🧱 DraggableBoard on wall: rotation=${wallRotation.toFixed(2)}, outwardZ=${outwardZ}, side=${boardSide}, finalZ=${boardZ}`)
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
   const hasImage = board.fullImageUrl || board.thumbnailUrl
   const imageUrl = board.fullImageUrl || board.thumbnailUrl || ''
@@ -572,7 +551,7 @@ if (e.intersections && e.intersections.length > 0) {
         thumbnailUrl: board.thumbnailUrl
       })
     } else {
-      console.log('🖼️ [DraggableBoard] Rendering board with image:', board.id, imageUrl)
+      devLog('🖼️ [DraggableBoard] Rendering board with image:', board.id, imageUrl)
     }
   }, [board.id, hasImage, imageUrl, board.fullImageUrl, board.thumbnailUrl])
 
@@ -760,7 +739,7 @@ if (e.intersections && e.intersections.length > 0) {
             <mesh
               onClick={(e) => {
                 e.stopPropagation()
-                console.log('💬 [Comment Bubble] Clicked for board:', board.id)
+                devLog('💬 [Comment Bubble] Clicked for board:', board.id)
                 onCommentClick(board)
               }}
               onPointerOver={(e) => {

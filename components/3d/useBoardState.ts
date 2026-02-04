@@ -1,6 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Board } from '@/types'
 
+const isDev = process.env.NODE_ENV === 'development'
+const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
+
 /**
  * Centralized board state management hook
  * 
@@ -70,7 +73,7 @@ export function useBoardState(
   // Cleanup blob URLs on unmount
   useEffect(() => {
     return () => {
-      console.log('🧹 [useBoardState] Cleaning up blob URLs')
+      devLog('🧹 [useBoardState] Cleaning up blob URLs')
       tempBoardsRef.current.forEach(({ blobUrl }) => {
         URL.revokeObjectURL(blobUrl)
       })
@@ -109,13 +112,12 @@ export function useBoardState(
    * Load board positions for a specific wall
    */
   const loadWallPositions = useCallback((wallIndex: number, wallDimensions: { width: number; height: number }, side: 'front' | 'back' = 'front') => {
-    const t0 = performance.now()
-    console.log(`📂 [useBoardState] Loading positions for wall ${wallIndex}`)
+    devLog(`📂 [useBoardState] Loading positions for wall ${wallIndex}`)
     
     const newPositions = new Map<string, BoardPosition>()
     const wallBoards = boardsRef.current.filter(b => b.position?.wallIndex === wallIndex && (b.position?.side || 'front') === side)
     
-    console.log(`📂 [useBoardState] Found ${wallBoards.length} boards on wall ${wallIndex} side ${side}`)
+    devLog(`📂 [useBoardState] Found ${wallBoards.length} boards on wall ${wallIndex} side ${side}`)
     
     wallBoards.forEach(board => {
       if (!board.position) return
@@ -154,7 +156,7 @@ export function useBoardState(
       
       newPositions.set(board.id, { x, y, width, height })
       
-      console.log(`📂 [useBoardState] Loaded ${board.id}:`, {
+      devLog(`📂 [useBoardState] Loaded ${board.id}:`, {
         api: { x: board.position.x, y: board.position.y },
         normalized: { x, y },
         dimensions: { width, height }
@@ -162,10 +164,6 @@ export function useBoardState(
     })
     
     setBoardPositions(newPositions)
-    const t1 = performance.now()
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'perf',hypothesisId:'B',location:'useBoardState.ts:loadWallPositions',message:'loadWallPositions:done',data:{wallIndex,side,wallBoards:wallBoards.length,ms:t1 - t0},timestamp:Date.now()})}).catch(()=>{})
-    // #endregion
     return newPositions
   }, [apiToNormalized, apiToDecimal])
   
@@ -234,7 +232,7 @@ export function useBoardState(
     height?: number,  // decimal 0.0 to 1.0
     side: 'front' | 'back' = 'front'
   ) => {
-      console.log('💾 [useBoardState] updateBoardPosition:', {
+      devLog('💾 [useBoardState] updateBoardPosition:', {
       boardId,
       wallIndex,
       normalized: { x, y },
@@ -286,7 +284,7 @@ export function useBoardState(
       const apiWidth = width ? decimalToApi(width) : (board.position?.width ?? 30)
       const apiHeight = height ? decimalToApi(height) : (board.position?.height ?? 30)
       
-      console.log('💾 [useBoardState] Saving to API:', {
+      devLog('💾 [useBoardState] Saving to API:', {
         boardId,
         api: { x: apiX, y: apiY, width: apiWidth, height: apiHeight }
       })
@@ -336,7 +334,7 @@ export function useBoardState(
         return b
       }))
       
-      console.log('✅ [useBoardState] Position saved successfully and boards array updated')
+      devLog('✅ [useBoardState] Position saved successfully and boards array updated')
     } catch (error: unknown) {
       // Network or API failure should NOT crash the 3D editor.
       // We already updated local state optimistically above.
@@ -350,7 +348,7 @@ export function useBoardState(
    * Delete a board
    */
   const deleteBoard = useCallback(async (boardId: string) => {
-    console.log('🗑️ [useBoardState] Deleting board:', boardId)
+    devLog('🗑️ [useBoardState] Deleting board:', boardId)
     
     try {
       const response = await fetch(`/api/boards?boardId=${boardId}`, {
@@ -381,7 +379,7 @@ export function useBoardState(
       // Refresh from server
       await onRefresh()
       
-      console.log('✅ [useBoardState] Board deleted successfully')
+      devLog('✅ [useBoardState] Board deleted successfully')
       return true
     } catch (error) {
       console.error('❌ [useBoardState] Delete failed:', error)
@@ -394,7 +392,7 @@ export function useBoardState(
    * Add a temporary board (for optimistic uploads)
    */
   const addTempBoard = useCallback((board: Board, blobUrl: string) => {
-    console.log('➕ [useBoardState] Adding temp board:', board.id)
+    devLog('➕ [useBoardState] Adding temp board:', board.id)
     
     setTempBoards(prev => new Map(prev).set(board.id, { board, blobUrl }))
     setBoards(prev => [...prev, board])
@@ -414,7 +412,7 @@ export function useBoardState(
    * Replace temporary board with real board from API
    */
   const replaceTempBoard = useCallback((tempId: string, realBoard: Board) => {
-    console.log('🔄 [useBoardState] Replacing temp board:', tempId, '→', realBoard.id)
+    devLog('🔄 [useBoardState] Replacing temp board:', tempId, '→', realBoard.id)
     
     // Revoke blob URL
     const temp = tempBoardsRef.current.get(tempId)
@@ -457,7 +455,7 @@ export function useBoardState(
    * Remove a temporary board (cleanup on error)
    */
   const removeTempBoard = useCallback((tempId: string) => {
-    console.log('🧹 [useBoardState] Removing temp board:', tempId)
+    devLog('🧹 [useBoardState] Removing temp board:', tempId)
     
     // Revoke blob URL
     const temp = tempBoardsRef.current.get(tempId)

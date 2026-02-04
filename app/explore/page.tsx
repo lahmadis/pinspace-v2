@@ -1,12 +1,11 @@
 'use client'
 
-export const dynamic = 'force-dynamic'
-
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
 import DemoBanner from '@/components/DemoBanner'
+import { prefetchStudioView } from '@/lib/studioViewCache'
 
 type StudioResponse = {
   studios: BubbleNode[]
@@ -28,26 +27,61 @@ function ExplorePageInner() {
   const [hierarchyLevel, setHierarchyLevel] = useState<HierarchyLevel>('years')
   const [selectedYear, setSelectedYear] = useState<string | number | null>(null)
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const isDemo = searchParams?.get('demo') === 'true'
+
+  // Filter nodes by search (studio name or professor/instructor)
+  const searchFilteredNodes = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return nodes
+    return nodes.filter(
+      (n) =>
+        (n.name && n.name.toLowerCase().includes(q)) ||
+        (n.instructor && n.instructor.toLowerCase().includes(q))
+    )
+  }, [nodes, searchQuery])
+
+  const institutionSlug = searchParams?.get('institution') ?? null
 
   useEffect(() => {
     const load = async () => {
       try {
-        const url = isDemo ? '/api/explore/studios?demo=true' : '/api/explore/studios'
+        const params = new URLSearchParams()
+        if (isDemo) params.set('demo', 'true')
+        if (institutionSlug) params.set('institution_slug', institutionSlug)
+        const url = `/api/explore/studios${params.toString() ? `?${params.toString()}` : ''}`
         const res = await fetch(url, { cache: 'no-store' })
         if (res.ok) {
           const data: StudioResponse = await res.json()
-          setNodes(data.studios || [])
+          const studios = data.studios || []
+          setNodes(studios)
           setTotalStudios(data.totals?.studios ?? 0)
           setTotalStudents(data.totals?.students ?? 0)
+          // Eager-prefetch first few studios so opening them is instant even without hover
+          const toPrefetch = studios.filter((n) => n.url).slice(0, 5)
+          for (const node of toPrefetch) {
+            prefetchStudioView(node.id, isDemo)
+            const path = node.url!.split('?')[0]
+            router.prefetch(path)
+          }
         }
       } catch (e) {
         console.error(e)
       }
     }
     load()
-  }, [isDemo])
+  }, [isDemo, institutionSlug, router])
+
+  const handleNodeHover = useCallback(
+    (node: BubbleNode) => {
+      if (!node.url) return
+      prefetchStudioView(node.id, isDemo)
+      const path = node.url.split('?')[0]
+      router.prefetch(path)
+    },
+    [isDemo, router]
+  )
 
   const handleClick = (node: BubbleNode) => {
     const demoParam = isDemo ? '?demo=true' : ''
@@ -75,10 +109,11 @@ function ExplorePageInner() {
   }
 
   const displayedNodes = useMemo(() => {
-    if (viewMode === 'flat') return nodes
+    const source = searchFilteredNodes
+    if (viewMode === 'flat') return source
 
     if (hierarchyLevel === 'years') {
-      const years = Array.from(new Set(nodes.map(n => n.year ?? 'Unknown')))
+      const years = Array.from(new Set(source.map(n => n.year ?? 'Unknown')))
       return years.map((y, idx) => ({
         id: `year-${y}-${idx}`,
         label: y === 'Masters' ? 'Masters' : `Year ${y}`,
@@ -92,7 +127,7 @@ function ExplorePageInner() {
     if (hierarchyLevel === 'departments' && selectedYear !== null) {
       const departments = Array.from(
         new Set(
-          nodes
+          source
             .filter(n => (n.year ?? '').toString() === selectedYear!.toString())
             .map(n => n.department ?? 'Unknown')
         )
@@ -109,38 +144,47 @@ function ExplorePageInner() {
     }
 
     if (hierarchyLevel === 'studios') {
-      return nodes.filter(n => {
+      return source.filter(n => {
         const matchYear = selectedYear === null ? true : (n.year ?? '').toString() === selectedYear.toString()
         const matchDept = selectedDepartment === null ? true : (n.department ?? '') === selectedDepartment
         return matchYear && matchDept
       })
     }
 
-    return nodes
-  }, [viewMode, hierarchyLevel, nodes, selectedYear, selectedDepartment])
+    return source
+  }, [viewMode, hierarchyLevel, searchFilteredNodes, selectedYear, selectedDepartment])
 
   return (
     <div className="min-h-screen bg-slate-900">
       <DemoBanner />
       {/* Floating Header */}
       <header className={`fixed ${isDemo ? 'top-12' : 'top-0'} left-0 right-0 z-40 border-b border-slate-700/50 bg-slate-900/90 backdrop-blur-md`}>
-        <div className="max-w-full px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="max-w-full px-6 py-3 flex items-center justify-between gap-4">
+          {/* Left: logo + title */}
+          <div className="flex items-center gap-4 min-w-0 flex-1 justify-start">
             <Link 
               href="/"
-              className="text-xl font-bold text-white hover:text-indigo-400 transition-colors"
+              className="text-xl font-bold text-white hover:text-indigo-400 transition-colors shrink-0"
             >
               PinSpace
             </Link>
-            <div className="h-5 w-px bg-slate-600" />
-            <div>
+            <div className="h-5 w-px bg-slate-600 shrink-0" />
+            <div className="min-w-0">
               <h1 className="text-lg font-semibold text-white">Studio Network</h1>
               <p className="text-xs text-slate-400">{totalStudios} studios • {totalStudents} students</p>
             </div>
           </div>
-          
-          {/* View Mode Toggle */}
-          <div className="flex items-center gap-3">
+
+          {/* Center: search + All Studios + Drill-down */}
+          <div className="flex items-center gap-3 shrink-0">
+            <input
+              type="search"
+              placeholder="Search by studio name or professor…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-80 min-w-[18rem] px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              aria-label="Search studios by name or professor"
+            />
             <button
               onClick={() => {
                 setViewMode('flat')
@@ -148,7 +192,7 @@ function ExplorePageInner() {
                 setSelectedYear(null)
                 setSelectedDepartment(null)
               }}
-              className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
+              className={`px-4 py-2 text-sm rounded-lg border transition-colors shrink-0 ${
                 viewMode === 'flat'
                   ? 'bg-indigo-600 text-white border-indigo-500'
                   : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
@@ -163,7 +207,7 @@ function ExplorePageInner() {
                 setSelectedYear(null)
                 setSelectedDepartment(null)
               }}
-              className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
+              className={`px-4 py-2 text-sm rounded-lg border transition-colors shrink-0 ${
                 viewMode === 'hierarchy'
                   ? 'bg-indigo-600 text-white border-indigo-500'
                   : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
@@ -173,10 +217,11 @@ function ExplorePageInner() {
             </button>
           </div>
           
-          <div className="flex items-center gap-3">
+          {/* Right: My Boards */}
+          <div className="flex items-center justify-end min-w-0 flex-1">
             <Link 
               href="/dashboard" 
-              className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors"
+              className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors shrink-0"
             >
               My Boards
             </Link>
@@ -188,6 +233,7 @@ function ExplorePageInner() {
       <BubbleNetwork 
         nodes={displayedNodes} 
         onNodeClick={handleClick}
+        onNodeHover={handleNodeHover}
         fullScreen={true}
         headerHeight={65}
       />

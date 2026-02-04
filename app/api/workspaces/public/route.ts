@@ -10,9 +10,24 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url)
     const department = url.searchParams.get('department')
     const year = url.searchParams.get('year')
+    const institutionSlug = url.searchParams.get('institution_slug')
+    const institutionId = url.searchParams.get('institution_id')
 
     // Use service role to bypass RLS for public endpoint
     const supabase = supabaseServiceRole()
+
+    // Resolve institution filter (optional): by slug or id
+    let institutionFilterId: string | null = null
+    if (institutionId) {
+      institutionFilterId = institutionId
+    } else if (institutionSlug) {
+      const { data: inst } = await supabase
+        .from('institutions')
+        .select('id')
+        .eq('slug', institutionSlug)
+        .single()
+      if (inst?.id) institutionFilterId = inst.id
+    }
     
     // Build query for public workspaces
     let query = supabase
@@ -21,7 +36,9 @@ export async function GET(request: NextRequest) {
       .eq('is_public', true)
       .not('published_at', 'is', null)
 
-    // Apply filters
+    if (institutionFilterId) {
+      query = query.eq('institution_id', institutionFilterId)
+    }
     if (department) {
       query = query.eq('network_metadata->>department', department)
     }

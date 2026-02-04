@@ -36,6 +36,8 @@ export interface BubbleNode extends StudioData {
 interface BubbleNetworkProps {
   nodes: BubbleNode[]
   onNodeClick?: (node: BubbleNode) => void
+  /** Called when a node is hovered; use to prefetch studio data for instant open on click */
+  onNodeHover?: (node: BubbleNode) => void
   fullScreen?: boolean // When true, takes 100vw × 100vh minus header
   headerHeight?: number // Height of header to subtract (default 64px)
 }
@@ -60,6 +62,33 @@ interface ConnectionLine {
 // ============================================================================
 // CONSTANTS
 // ============================================================================
+
+// Remove " - Year N" or " - Masters" from end of label so bubble shows studio name only
+function stripYearFromLabel(text: string): string {
+  const raw = (text || '').trim()
+  return raw.replace(/\s*-\s*(Year\s+\d+|Masters)\s*$/i, '').trim() || raw
+}
+
+// Wrap label into multiple lines so full name fits in bubble (max chars per line scales with radius)
+function wrapLabel(text: string, radius: number): string[] {
+  const raw = stripYearFromLabel(text).trim()
+  if (!raw) return ['']
+  const words = raw.split(/\s+/)
+  const maxCharsPerLine = Math.max(10, Math.floor(radius / 4))
+  const lines: string[] = []
+  let current = ''
+  for (const w of words) {
+    const next = current ? `${current} ${w}` : w
+    if (next.length <= maxCharsPerLine) {
+      current = next
+    } else {
+      if (current) lines.push(current)
+      current = w
+    }
+  }
+  if (current) lines.push(current)
+  return lines.length ? lines : [raw]
+}
 
 const RELATIONSHIP_STYLES = {
   instructor: {
@@ -163,7 +192,7 @@ function Tooltip({ data, containerRect }: { data: TooltipData | null; containerR
           className="px-4 py-3 border-b border-slate-700/50"
           style={{ backgroundColor: `${node.color}20` }}
         >
-          <h3 className="font-bold text-white text-sm truncate">{node.name || node.label}</h3>
+          <h3 className="font-bold text-white text-sm truncate">{stripYearFromLabel(node.name || node.label)}</h3>
           {node.instructor && (
             <p className="text-slate-300 text-xs mt-0.5 flex items-center gap-1">
               <span className="text-slate-400">👤</span> {node.instructor}
@@ -229,6 +258,7 @@ function Tooltip({ data, containerRect }: { data: TooltipData | null; containerR
 export default function BubbleNetwork({
   nodes,
   onNodeClick,
+  onNodeHover,
   fullScreen = false,
   headerHeight = 64,
 }: BubbleNetworkProps) {
@@ -486,11 +516,12 @@ export default function BubbleNetwork({
 
   const handleMouseEnter = useCallback((node: BubbleNode, event: React.MouseEvent) => {
     if (isDragging) return
+    onNodeHover?.(node)
     const rect = containerRef.current?.getBoundingClientRect()
     const screenX = (node.x || 0) * transform.k + transform.x
     const screenY = (node.y || 0) * transform.k + transform.y
     debouncedHover(node, screenX, screenY)
-  }, [debouncedHover, isDragging, transform])
+  }, [debouncedHover, isDragging, transform, onNodeHover])
 
   const handleMouseLeave = useCallback(() => {
     debouncedHover(null, 0, 0)
@@ -802,22 +833,29 @@ export default function BubbleNetwork({
                     opacity={0.3}
                   />
                   
-                  {/* Label */}
-                  <text
-                    x={0}
-                    y={0}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fill="#fff"
-                    fontSize={r > 65 ? 13 : 11}
-                    fontWeight={600}
-                    className="pointer-events-none select-none"
-                    style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}
-                  >
-                    {(node.label || node.name || '').length > 14 
-                      ? (node.label || node.name || '').slice(0, 12) + '…'
-                      : (node.label || node.name)}
-                  </text>
+                  {/* Label – wrap to multiple lines so full name fits (year stripped) */}
+                  {(() => {
+                    const lines = wrapLabel(stripYearFromLabel(node.label || node.name || ''), r)
+                    return (
+                      <text
+                        x={0}
+                        y={0}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fill="#fff"
+                        fontSize={r > 65 ? 13 : 11}
+                        fontWeight={600}
+                        className="pointer-events-none select-none"
+                        style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}
+                      >
+                        {lines.map((line, i) => (
+                          <tspan key={i} x={0} dy={i === 0 ? `${-0.6 * (lines.length - 1)}em` : '1.2em'}>
+                            {line}
+                          </tspan>
+                        ))}
+                      </text>
+                    )
+                  })()}
                   </g>
                 </g>
               )

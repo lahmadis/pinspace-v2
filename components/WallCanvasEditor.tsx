@@ -97,10 +97,6 @@ export default function WallCanvasEditor({
       x: e.clientX - canvasRect.left,
       y: e.clientY - canvasRect.top
     })
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'B',location:'WallCanvasEditor.tsx:handleDragStart',message:'2D drag start',data:{boardId:board.id,wallIndex,hasPlaced:Boolean(placedBoard),dragOffset:{x:offsetX,y:offsetY}},timestamp:Date.now()})}).catch(()=>{})
-    // #endregion
   }
 
   const handleDrop = (e: React.MouseEvent) => {
@@ -114,10 +110,6 @@ export default function WallCanvasEditor({
 
     const clampedX = Math.max(5, Math.min(95, x))
     const clampedY = Math.max(5, Math.min(95, y))
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'B',location:'WallCanvasEditor.tsx:handleDrop',message:'2D drop computed',data:{boardId:draggingBoard.id,wallIndex,raw:{x,y},clamped:{x:clampedX,y:clampedY},dragOffset,canvasSize:{w:rect.width,h:rect.height}},timestamp:Date.now()})}).catch(()=>{})
-    // #endregion
 
     const existingIndex = placedBoards.findIndex(pb => pb.board.id === draggingBoard.id)
     

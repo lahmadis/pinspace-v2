@@ -10,9 +10,11 @@ import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
 import { ArrowLeft, Share2, Settings, Box } from 'lucide-react'
 
-const StudioRoom = dynamic(() => import('@/components/3d/StudioRoom'), {
-  ssr: false,
-  loading: () => (
+const StudioRoom = dynamic(
+  () => import(/* webpackChunkName: "StudioRoom" */ '@/components/3d/StudioRoom'),
+  {
+    ssr: false,
+    loading: () => (
     <div className="w-full h-screen flex items-center justify-center bg-gradient-to-br from-indigo-950 via-purple-900 to-pink-900">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>

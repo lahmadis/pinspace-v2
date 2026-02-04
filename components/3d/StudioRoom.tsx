@@ -1,5 +1,8 @@
 'use client'
 
+const isDev = process.env.NODE_ENV === 'development'
+const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
+
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { supabase } from '@/lib/supabase/client'
@@ -74,6 +77,7 @@ function SceneContent({
   tables,
   onFloorClick,
   onTableModelClick,
+  orbitControlsRef,
 }: StudioRoomProps & {
   onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   editingWall: number | null
@@ -99,43 +103,30 @@ function SceneContent({
   tables: FloorTable[]
   onFloorClick?: () => void
   onTableModelClick?: (modelUrl: string) => void
+  orbitControlsRef: React.RefObject<any>
 }) {
-  const orbitControlsRef = useRef<any>(null)
   const { camera, gl } = useThree()
   const maxWallHeightRef = useRef<number>(96)
   const [targetY, setTargetY] = useState<number>(48) // inches; focus point for zoom
-  const shiftDownRef = useRef(false)
   const sceneInitLoggedRef = useRef(false)
   
-  // Configure mouse buttons for Rhino-like feel: Right = orbit, Shift+Right = pan, Middle = pan
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => { if (e.key === 'Shift') shiftDownRef.current = true }
-    const up = (e: KeyboardEvent) => { if (e.key === 'Shift') shiftDownRef.current = false }
-    window.addEventListener('keydown', down)
-    window.addEventListener('keyup', up)
-    return () => {
-      window.removeEventListener('keydown', down)
-      window.removeEventListener('keyup', up)
-    }
-  }, [])
 
   // Log initial scene mount to measure perceived open time
   useEffect(() => {
     if (sceneInitLoggedRef.current) return
     sceneInitLoggedRef.current = true
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8807e856-d173-4564-afe8-b5fef34208e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'perf',hypothesisId:'B',location:'StudioRoom.tsx:SceneContent',message:'scene-mount',data:{wallCount:wallConfig?.walls?.length ?? 0},timestamp:Date.now()})}).catch(()=>{})
-    // #endregion
   }, [wallConfig])
 
+  // Single mapping: Left = orbit, Right = pan, Middle = dolly (zoom). Force damping off so rotation stops when mouse is released.
   useFrame(() => {
     const controlsObj = orbitControlsRef.current?.get ? orbitControlsRef.current.get() : orbitControlsRef.current
-    if (controlsObj && controlsObj.mouseButtons) {
-      const shift = shiftDownRef.current
+    if (controlsObj?.mouseButtons) {
+      ;(controlsObj as { enableDamping?: boolean; dampingFactor?: number }).enableDamping = false
+      ;(controlsObj as { enableDamping?: boolean; dampingFactor?: number }).dampingFactor = 0
       controlsObj.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
-        MIDDLE: THREE.MOUSE.PAN,
-        RIGHT: shift ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN,
       }
       controlsObj.screenSpacePanning = true
     }
@@ -231,7 +222,7 @@ function SceneContent({
               e.stopPropagation()
               // Deselect immediately
               if (onDeselect) {
-                console.log('🖱️ [SceneContent] Pointer down on empty wall space - deselecting')
+                devLog('🖱️ [SceneContent] Pointer down on empty wall space - deselecting')
                 onDeselect()
               }
             }}
@@ -239,7 +230,7 @@ function SceneContent({
               // Also handle onClick as backup
               e.stopPropagation()
               if (onDeselect) {
-                console.log('🖱️ [SceneContent] onClick on empty wall space - deselecting')
+                devLog('🖱️ [SceneContent] onClick on empty wall space - deselecting')
                 onDeselect()
               }
             }}
@@ -252,7 +243,7 @@ function SceneContent({
           
           {(() => {
             const entries = Array.from(placedBoards3D.entries())
-            console.log('🎨 [SceneContent] Rendering', entries.length, 'draggable boards for wall', editingWall)
+            devLog('🎨 [SceneContent] Rendering', entries.length, 'draggable boards for wall', editingWall)
             return entries.map(([boardId, localPos]) => {
               const board = localBoards.find(b => b.id === boardId)
               if (!board) {
@@ -267,7 +258,7 @@ function SceneContent({
               // REMOVE:   console.warn(`⚠️ [SceneContent] Board ${boardId} is on ${boardSide} side but we're editing front side`)
               // REMOVE: }
               
-              console.log(`🎨 [SceneContent] Rendering board ${boardId}`)
+              devLog(`🎨 [SceneContent] Rendering board ${boardId}`)
               
               return (
                 <DraggableBoard
@@ -357,8 +348,8 @@ function SceneContent({
 
             <OrbitControls 
               ref={orbitControlsRef}
-              enableDamping
-              dampingFactor={0.05}
+              enableDamping={false}
+              dampingFactor={0}
               minDistance={minDistance}
               maxDistance={maxDistance}
               maxPolarAngle={Math.PI / 2}
@@ -385,6 +376,7 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [user, setUser] = useState<any>(null)
   const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null)
   const [isWorkspaceMember, setIsWorkspaceMember] = useState<boolean>(false)
+  const orbitControlsRef = useRef<any>(null)
   
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
@@ -554,11 +546,11 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     rotation: number,
     side: 'front' | 'back'
   ) => {
-    console.log('🖼️ [StudioRoom] Wall clicked:', wallIndex, 'rotation:', rotation, 'side:', side)
+    devLog('🖼️ [StudioRoom] Wall clicked:', wallIndex, 'rotation:', rotation, 'side:', side)
     
     // If we're already editing this wall and side, don't reinitialize
     if (editingWall === wallIndex && editingWallSide === side) {
-      console.log('🖼️ [StudioRoom] Already editing this wall side, keeping current positions')
+      devLog('🖼️ [StudioRoom] Already editing this wall side, keeping current positions')
       return
     }
     
@@ -590,7 +582,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
         }
       })
 
-    console.log('🖼️ [StudioRoom] Total boards to render on', side, 'side:', newMap.size)
+    devLog('🖼️ [StudioRoom] Total boards to render on', side, 'side:', newMap.size)
     setPlacedBoards3D(newMap)
   }
 
@@ -608,7 +600,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     const currentBoards = placedBoards3DRef.current
     const wallToSave = editingWall
     
-    console.log('💾 [StudioRoom] Save & Exit clicked - saving all board positions...')
+    devLog('💾 [StudioRoom] Save & Exit clicked - saving all board positions...')
 
     // Save all current board positions explicitly before exiting
     // This ensures all position changes are persisted even if some async saves from dragging didn't complete
@@ -636,7 +628,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     // Wait for all position saves to complete
     if (savePromises.length > 0) {
       await Promise.all(savePromises)
-      console.log('✅ [StudioRoom] All positions saved - boards array already updated by updateBoardPosition')
+      devLog('✅ [StudioRoom] All positions saved - boards array already updated by updateBoardPosition')
     }
 
     // Remove boards that were removed from this wall side
@@ -648,7 +640,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     )
 
     if (boardsToRemove.length > 0) {
-      console.log('🗑️ [StudioRoom] Removing', boardsToRemove.length, 'boards from wall')
+      devLog('🗑️ [StudioRoom] Removing', boardsToRemove.length, 'boards from wall')
       for (const board of boardsToRemove) {
         await fetch('/api/boards', {
           method: 'PUT',
@@ -667,7 +659,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     props.onEditModeChange?.(false)
     setEditingWall(null)
     setEditingWallPosition(null)
-    console.log('✅ [StudioRoom] Exited edit mode')
+    devLog('✅ [StudioRoom] Exited edit mode')
   }
 
   const handleLightboxOpen = (board: Board) => {
@@ -750,7 +742,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
 
   const handleBoardDrop = async (localX: number, localY: number) => {
     if (!draggingFromSidebar || editingWall === null || !editingWallDimensions) {
-      console.log('Drop failed: no board dragging or no wall selected')
+      devLog('Drop failed: no board dragging or no wall selected')
       return
     }
     
@@ -768,9 +760,9 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
       let img: HTMLImageElement | null = null
       if (draggingFromSidebar.aspectRatio) {
         imageAspectRatio = draggingFromSidebar.aspectRatio
-        console.log('📐 Using stored aspect ratio:', imageAspectRatio.toFixed(3))
+        devLog('📐 Using stored aspect ratio:', imageAspectRatio.toFixed(3))
       } else {
-        console.log('📐 Loading image to calculate aspect ratio...')
+        devLog('📐 Loading image to calculate aspect ratio...')
         // Load image to get its natural dimensions
         const imageUrl = draggingFromSidebar.fullImageUrl || draggingFromSidebar.thumbnailUrl
         if (!imageUrl) {
@@ -792,7 +784,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
         
         if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
           imageAspectRatio = img.naturalWidth / img.naturalHeight
-          console.log(`📐 Image dimensions: ${img.naturalWidth}x${img.naturalHeight}, aspect: ${imageAspectRatio.toFixed(2)}`)
+          devLog(`📐 Image dimensions: ${img.naturalWidth}x${img.naturalHeight}, aspect: ${imageAspectRatio.toFixed(2)}`)
         }
       }
       
@@ -814,10 +806,10 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
       }
       
       if (img) {
-        console.log(`📐 Image dimensions: ${img.naturalWidth}x${img.naturalHeight}, aspect: ${imageAspectRatio.toFixed(2)}`)
+        devLog(`📐 Image dimensions: ${img.naturalWidth}x${img.naturalHeight}, aspect: ${imageAspectRatio.toFixed(2)}`)
       }
-      console.log(`📏 Board size on wall: ${(boardWidth * 100).toFixed(1)}% x ${(boardHeight * 100).toFixed(1)}%`)
-      console.log(`✅ Dropping board ${draggingFromSidebar.id} at position:`, { x: localX, y: localY })
+      devLog(`📏 Board size on wall: ${(boardWidth * 100).toFixed(1)}% x ${(boardHeight * 100).toFixed(1)}%`)
+      devLog(`✅ Dropping board ${draggingFromSidebar.id} at position:`, { x: localX, y: localY })
       
       setPlacedBoards3D(prev => {
         const newMap = new Map(prev)
@@ -827,7 +819,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
           width: boardWidth,
           height: boardHeight
         })
-        console.log('📍 Total boards on wall:', newMap.size)
+        devLog('📍 Total boards on wall:', newMap.size)
         return newMap
       })
       
@@ -879,7 +871,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
 
   const handleBoardPositionChange = useCallback(
     (boardId: string, localX: number, localY: number, width?: number, height?: number, side?: 'front' | 'back') => {
-      console.log('🔁 [StudioRoom] handleBoardPositionChange CALLED:', { boardId, localX, localY, width, height, side })
+      devLog('🔁 [StudioRoom] handleBoardPositionChange CALLED:', { boardId, localX, localY, width, height, side })
 
       // 1) compute finalPosition from the drag values + any existing values
       const currentMap = placedBoards3DRef.current
@@ -951,7 +943,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
         // Allow delete if user is workspace member (API will enforce permissions)
         const selectedBoard = localBoards.find(b => b.id === selectedBoardId)
         if (selectedBoard) {
-          console.log('⌨️ [Keyboard] Backspace pressed - deleting board:', selectedBoardId)
+          devLog('⌨️ [Keyboard] Backspace pressed - deleting board:', selectedBoardId)
           handleBoardDelete(selectedBoardId)
           setSelectedBoardId(null) // Clear selection after delete
         }
@@ -1047,6 +1039,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
           style={{ background: '#D8DEFF' }}
         >
           <CameraController
+            orbitControlsRef={orbitControlsRef}
             editingWall={editingWall}
             wallPosition={editingWallPosition}
             wallRotation={editingWallRotation}
@@ -1055,6 +1048,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
           />
           <SceneContent
             {...props}
+            orbitControlsRef={orbitControlsRef}
             localBoards={localBoards}
             onWallClick={handleWallClick}
             editingWall={editingWall}
@@ -1068,7 +1062,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
             onBoardDrop={handleBoardDrop}
             onDragCancel={handleDragCancel}
           onCommentClick={(board) => {
-            console.log('💬 [Lightbox] Opening for:', board.id)
+            devLog('💬 [Lightbox] Opening for:', board.id)
             handleLightboxOpen(board)
           }}
           onBoardClick={handleLightboxOpen}

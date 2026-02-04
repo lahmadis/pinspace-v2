@@ -85,20 +85,6 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
           return true
         })
         
-        
-        // Log 3D wall aspect ratio
-        const wall3DAspectRatio = transform.width / transform.height
-        const originalAspectRatio = wall.width / wall.height
-        console.log('═══════════════════════════════════════')
-        console.log(`🧊 3D WALL ${wallIndex + 1} ASPECT RATIO`)
-        console.log('═══════════════════════════════════════')
-        console.log(`Original dimensions: ${wall.width}ft × ${wall.height}ft`)
-        console.log(`3D dimensions: ${transform.width.toFixed(2)} × ${transform.height.toFixed(2)} units (${transform.width.toFixed(2)}" × ${transform.height.toFixed(2)}", 1 unit = 1 inch)`)
-        console.log(`Original aspect ratio: ${originalAspectRatio.toFixed(4)} (${wall.width}/${wall.height})`)
-        console.log(`3D aspect ratio: ${wall3DAspectRatio.toFixed(4)} (${transform.width.toFixed(2)}/${transform.height.toFixed(2)})`)
-        console.log(`✓ Aspect ratios ${Math.abs(wall3DAspectRatio - originalAspectRatio) < 0.01 ? 'MATCH' : 'MISMATCH!'} (should match 2D)`)
-        console.log('═══════════════════════════════════════')
-
         return (
           <group 
             key={wallIndex}
@@ -219,8 +205,6 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
                 const wallHeightInches = wallDimensions.height * 12
                 boardWidth = Math.min(boardWidth, wallWidthInches)
                 boardHeight = Math.min(boardHeight, wallHeightInches)
-                
-                console.log(`📐 [WallSystem] Using physical dimensions: ${board.physicalWidth}" x ${board.physicalHeight}" = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
               }
               
               // Fallback for existing boards without physical dimensions: default to 8.5×11 inches (standard letter size)
@@ -234,31 +218,33 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
                   const wallHeightInches = wallDimensions.height * 12
                   boardWidth = board.position.width * wallWidthInches
                   boardHeight = board.position.height * wallHeightInches
-                  console.log(`📐 [WallSystem] Using saved percentage dimensions: ${(board.position.width * 100).toFixed(1)}% x ${(board.position.height * 100).toFixed(1)}% = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
                 } else {
                   // Final fallback: use default 8.5×11 inches
                   boardWidth = DEFAULT_WIDTH_INCHES
                   boardHeight = DEFAULT_HEIGHT_INCHES
-                  console.log(`📐 [WallSystem] No dimensions found - using default: ${DEFAULT_WIDTH_INCHES}" x ${DEFAULT_HEIGHT_INCHES}" = ${boardWidth} x ${boardHeight} units`)
                 }
               }
               
               // Ensure we have valid dimensions
               if (boardWidth === undefined || boardHeight === undefined || boardWidth <= 0 || boardHeight <= 0) {
-                console.warn(`⚠️ Board ${board.id} has invalid dimensions - skipping. Re-place in 2D editor to fix.`)
+                if (process.env.NODE_ENV === 'development') {
+                  console.warn(`⚠️ Board ${board.id} has invalid dimensions - skipping. Re-place in 2D editor to fix.`)
+                }
                 return null
               }
-              
-              console.log('=== 3D RENDERING ===')
-              console.log(`📍 Board: ${board.title}`)
-              console.log(`   Wall size (feet): ${wallDimensions.width}ft x ${wallDimensions.height}ft (${wallDimensions.width * 12}" x ${wallDimensions.height * 12}")`)
-              console.log(`   Wall size (3D units): ${transform.width.toFixed(2)} x ${transform.height.toFixed(2)} units (1 unit = 1 inch)`)
               
               // Calculate board X position
               // Positions come from API in percentage format (0-100), need to convert to normalized (-0.5 to 0.5)
               const normalizedX = (board.position.x / 100) - 0.5
               const normalizedY = (board.position.y / 100) - 0.5
-              const boardX = normalizedX * transform.width
+              // On vertical walls (2nd and 4th in zigzag), negate X so view mode matches edit mode (same as DraggableBoard)
+              const normalizedRotation = ((transform.rotationY % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+              const isVerticalWall = (
+                (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
+                (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
+              )
+              const adjustedNormalizedX = isVerticalWall ? -normalizedX : normalizedX
+              const boardX = adjustedNormalizedX * transform.width
               
               // Y-axis: positions are from API format (0-100) where 0 = top, 100 = bottom
               // After normalization: -0.5 = top, +0.5 = bottom
@@ -302,18 +288,6 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
               } else {
                 finalBoardZ = Math.max(boardZ, WALL_OUTER_BOUND) // Clamp to outer bound on positive side
               }
-              
-              console.log(`🧱 Board on wall ${wallIndex}: rotation=${transform.rotationY.toFixed(2)}, outwardDirection=${outwardDirection}, side=${boardSide}, finalZ=${finalBoardZ.toFixed(2)}`)
-              
-              console.log(`   📍 LOADED: x=${board.position.x.toFixed(3)}, y=${board.position.y.toFixed(3)}, side=${boardSide}`)
-              console.log(`   🎯 3D Position: x=${boardX.toFixed(2)}, y=${boardY.toFixed(2)}, z=${finalBoardZ.toFixed(2)}`)
-              console.log(`   📏 3D Size: ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units (${boardWidth.toFixed(2)}" x ${boardHeight.toFixed(2)}")`)
-              if (board.physicalWidth && board.physicalHeight) {
-                console.log(`   ✅ Physical dimensions: ${board.physicalWidth}" x ${board.physicalHeight}"`)
-              } else {
-                console.log(`   ⚠️ Using fallback/default dimensions`)
-              }
-              console.log('====================')
 
               return (
                 <BoardThumbnail

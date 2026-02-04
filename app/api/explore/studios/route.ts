@@ -3,9 +3,11 @@ import { supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoStudios, getDemoTotals } from '@/lib/mockData'
 import { getSampleStudios } from '@/lib/sampleData'
 
-// Mark dynamic to allow searchParams access during rendering
+// Allow short-lived caching so repeat visits and multiple clients don't all hit Supabase
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+const CACHE_MAX_AGE = 60 // seconds
+const STALE_WHILE_REVALIDATE = 120
 
 // Single color for all bubbles - connections differentiate relationships
 const BUBBLE_COLOR = '#6366f1' // Indigo
@@ -17,6 +19,8 @@ export async function GET(request: NextRequest) {
     const isDemo = searchParams.get('demo') === 'true'
     const department = searchParams.get('department')
     const year = searchParams.get('year')
+    const institutionSlug = searchParams.get('institution_slug')
+    const institutionId = searchParams.get('institution_id')
 
     // Helper: filter + decorate sample studios with optional department/year filters
     const getFilteredSampleStudios = () => {
@@ -86,19 +90,38 @@ export async function GET(request: NextRequest) {
       
       const totals = getDemoTotals()
       console.log(`✅ [DEMO MODE] Returning ${studios.length} filtered demo studios (dept: ${department || 'all'}, year: ${year || 'all'})`)
-      return NextResponse.json({ studios, totals })
+      return NextResponse.json(
+        { studios, totals },
+        { headers: { 'Cache-Control': `public, s-maxage=${CACHE_MAX_AGE}, stale-while-revalidate=${STALE_WHILE_REVALIDATE}` } }
+      )
     }
     
     // If service role key is missing locally, fall back to sample data instead of erroring
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
       const { filtered, totals } = getFilteredSampleStudios()
       console.warn('⚠️ SUPABASE_SERVICE_ROLE_KEY missing; returning sample studios only')
-      return NextResponse.json({ studios: filtered, totals })
+      return NextResponse.json(
+        { studios: filtered, totals },
+        { headers: { 'Cache-Control': `public, s-maxage=${CACHE_MAX_AGE}, stale-while-revalidate=${STALE_WHILE_REVALIDATE}` } }
+      )
     }
 
     // Use service role client to bypass RLS for public endpoint
     // This allows us to fetch public workspaces without authentication
     const supabase = supabaseServiceRole()
+
+    // Resolve institution filter (optional): by slug or id
+    let institutionFilterId: string | null = null
+    if (institutionId) {
+      institutionFilterId = institutionId
+    } else if (institutionSlug) {
+      const { data: inst } = await supabase
+        .from('institutions')
+        .select('id')
+        .eq('slug', institutionSlug)
+        .single()
+      if (inst?.id) institutionFilterId = inst.id
+    }
     
     // Build query with filters
     let query = supabase
@@ -106,8 +129,10 @@ export async function GET(request: NextRequest) {
       .select('*')
       .eq('is_public', true)
       .not('published_at', 'is', null) // Only include workspaces that have been published
-    
-    // Filter by department if provided (stored in network_metadata JSON)
+
+    if (institutionFilterId) {
+      query = query.eq('institution_id', institutionFilterId)
+    }
     if (department) {
       query = query.eq('network_metadata->>department', department)
     }
@@ -119,7 +144,10 @@ export async function GET(request: NextRequest) {
       console.error('Error fetching public workspaces:', error)
       const { filtered, totals } = getFilteredSampleStudios()
       console.warn('⚠️ Supabase error; returning sample studios only')
-      return NextResponse.json({ studios: filtered, totals })
+      return NextResponse.json(
+        { studios: filtered, totals },
+        { headers: { 'Cache-Control': `public, s-maxage=${CACHE_MAX_AGE}, stale-while-revalidate=${STALE_WHILE_REVALIDATE}` } }
+      )
     }
 
     // Fetch member counts for each workspace
@@ -197,19 +225,23 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Get sample studios and merge with real data
+    // When institution filter is present, return only real Supabase studios (no sample merge).
+    // When no institution param, keep backward-compatible merged behavior.
     const { filtered: filteredSampleStudios } = getFilteredSampleStudios()
-    
-    // Merge real studios with sample studios (real studios first, then samples)
-    const allStudios = [...studios, ...filteredSampleStudios]
+    const allStudios = institutionFilterId
+      ? studios
+      : [...studios, ...filteredSampleStudios]
     
     const totals = {
       studios: allStudios.length,
       students: allStudios.reduce((sum, s) => sum + (s.memberCount || 0), 0),
     }
 
-    console.log(`✅ Fetched ${studios.length} real studios + ${filteredSampleStudios.length} sample studios from Supabase`)
-    return NextResponse.json({ studios: allStudios, totals })
+    console.log(`✅ Fetched ${studios.length} real studios${institutionFilterId ? '' : ` + ${filteredSampleStudios.length} sample studios`} from Supabase`)
+    return NextResponse.json(
+      { studios: allStudios, totals },
+      { headers: { 'Cache-Control': `public, s-maxage=${CACHE_MAX_AGE}, stale-while-revalidate=${STALE_WHILE_REVALIDATE}` } }
+    )
   } catch (error) {
     console.error('Error fetching studios:', error)
     return NextResponse.json({ error: 'Failed to fetch studios', details: (error as Error).message }, { status: 500 })

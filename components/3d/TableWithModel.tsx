@@ -1,6 +1,7 @@
 'use client'
 
-import { Suspense } from 'react'
+import '@/components/3d/setupDraco'
+import { Suspense, useMemo } from 'react'
 import { useGLTF, Center } from '@react-three/drei'
 import * as THREE from 'three'
 import type { FloorTable } from '@/types'
@@ -40,17 +41,18 @@ function applyWallColor(scene: THREE.Object3D) {
 
 function ModelOnTable({ url, tableWidth, tableDepth }: { url: string; tableWidth: number; tableDepth: number }) {
   const { scene } = useGLTF(url)
-  const cloned = scene.clone(true)
-  applyWallColor(cloned)
-  const box = new THREE.Box3().setFromObject(cloned)
-  const size = box.getSize(new THREE.Vector3())
-  // Scale so model almost fills table top (XZ) and stays under max height (Y), proportionate
-  const fitWidth = tableWidth - TABLE_TOP_MARGIN * 2
-  const fitDepth = tableDepth - TABLE_TOP_MARGIN * 2
-  const scaleX = size.x > 0 ? fitWidth / size.x : 1
-  const scaleZ = size.z > 0 ? fitDepth / size.z : 1
-  const scaleY = size.y > 0 ? MAX_MODEL_HEIGHT / size.y : 1
-  const scale = Math.min(scaleX, scaleZ, scaleY)
+  const { cloned, scale } = useMemo(() => {
+    const c = scene.clone(true)
+    applyWallColor(c)
+    const box = new THREE.Box3().setFromObject(c)
+    const size = box.getSize(new THREE.Vector3())
+    const fitWidth = tableWidth - TABLE_TOP_MARGIN * 2
+    const fitDepth = tableDepth - TABLE_TOP_MARGIN * 2
+    const scaleX = size.x > 0 ? fitWidth / size.x : 1
+    const scaleZ = size.z > 0 ? fitDepth / size.z : 1
+    const scaleY = size.y > 0 ? MAX_MODEL_HEIGHT / size.y : 1
+    return { cloned: c, scale: Math.min(scaleX, scaleZ, scaleY) }
+  }, [scene, tableWidth, tableDepth])
   return (
     <group position={[0, TABLE_HEIGHT, 0]} scale={scale}>
       <Center>

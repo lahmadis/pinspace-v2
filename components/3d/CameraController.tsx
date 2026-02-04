@@ -1,9 +1,22 @@
 import { useThree, useFrame } from '@react-three/fiber'
-import { useEffect, useRef } from 'react'
+import React, { useEffect, useRef } from 'react'
 import * as THREE from 'three'
-import { OrbitControls } from 'three-stdlib'
+
+const isDev = process.env.NODE_ENV === 'development'
+const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
+import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
+
+function getControls(ref: React.RefObject<unknown> | null | undefined): OrbitControlsType | null {
+  const r = ref?.current
+  if (!r) return null
+  if (typeof (r as { get?: () => OrbitControlsType }).get === 'function') {
+    return (r as { get: () => OrbitControlsType }).get()
+  }
+  return r as OrbitControlsType
+}
 
 interface CameraControllerProps {
+  orbitControlsRef?: React.RefObject<unknown> | null
   editingWall: number | null
   wallPosition: THREE.Vector3 | null
   wallRotation: number
@@ -12,14 +25,14 @@ interface CameraControllerProps {
 }
 
 export function CameraController({ 
+  orbitControlsRef,
   editingWall, 
   wallPosition, 
   wallRotation,
   wallDimensions,
   onTransitionComplete 
 }: CameraControllerProps) {
-  const { camera, gl } = useThree()
-  const controlsRef = useRef<OrbitControls>()
+  const { camera } = useThree()
   
   // Store the camera position before entering edit mode (so we can return to it)
   const savedCameraPosition = useRef<THREE.Vector3 | null>(null)
@@ -52,8 +65,16 @@ export function CameraController({
   const targetPosition = useRef(new THREE.Vector3())
   const targetTarget = useRef(new THREE.Vector3())
 
+  // When user releases mouse, OrbitControls still applies one frame of leftover delta. Restore position next frame so orbit stops instantly.
+  const restoreOnNextFrame = useRef(false)
+  const positionOnEnd = useRef(new THREE.Vector3())
+  const targetOnEnd = useRef(new THREE.Vector3())
+  const endListenerAdded = useRef(false)
+  const editingWallRef = useRef(editingWall)
+  editingWallRef.current = editingWall
+
   useEffect(() => {
-    console.log('📷 [Camera] Effect run - editingWall:', editingWall, 'wallPosition:', wallPosition ? 'exists' : 'null', 'prev:', prevEditingWall.current, 'wallDimensions:', wallDimensions)
+    devLog('📷 [Camera] Effect run - editingWall:', editingWall, 'wallPosition:', wallPosition ? 'exists' : 'null', 'prev:', prevEditingWall.current, 'wallDimensions:', wallDimensions)
     
     const enteringEditMode = prevEditingWall.current === null && editingWall !== null
     const switchingWalls = prevEditingWall.current !== null && 
@@ -61,7 +82,7 @@ export function CameraController({
                           prevEditingWall.current !== editingWall
     const exitingEditMode = prevEditingWall.current !== null && editingWall === null
     
-    console.log('📷 [Camera] Transition detection:', { 
+    devLog('📷 [Camera] Transition detection:', { 
       enteringEditMode, 
       switchingWalls, 
       exitingEditMode,
@@ -73,10 +94,11 @@ export function CameraController({
     // Save camera position when transitioning (even if wallPosition isn't ready yet)
     if (enteringEditMode || switchingWalls) {
       savedCameraPosition.current = camera.position.clone()
-      if (controlsRef.current) {
-        savedCameraTarget.current = controlsRef.current.target.clone()
+      const controls = getControls(orbitControlsRef)
+      if (controls) {
+        savedCameraTarget.current = controls.target.clone()
       }
-      console.log('📷 [Camera] Saved position before entering/switching edit mode, wall:', editingWall)
+      devLog('📷 [Camera] Saved position before entering/switching edit mode, wall:', editingWall)
       // Mark that we need to animate once wallPosition is ready
       pendingAnimation.current = true
     }
@@ -86,15 +108,16 @@ export function CameraController({
     // This ensures animation triggers even if state updates happen in different render cycles
     if ((pendingAnimation.current || enteringEditMode || switchingWalls) && editingWall !== null && wallPosition) {
       // Entering/editing a wall - animate camera to wall
-      console.log('📷 [Camera] Animating to wall', editingWall, 'prev:', prevEditingWall.current, 'entering:', enteringEditMode, 'switching:', switchingWalls, 'pending:', pendingAnimation.current)
+      devLog('📷 [Camera] Animating to wall', editingWall, 'prev:', prevEditingWall.current, 'entering:', enteringEditMode, 'switching:', switchingWalls, 'pending:', pendingAnimation.current)
       isAnimating.current = true
       animationProgress.current = 0
       pendingAnimation.current = false // Clear the pending flag
       
       // Current position is our start position
       startPosition.current.copy(camera.position)
-      if (controlsRef.current) {
-        startTarget.current.copy(controlsRef.current.target)
+      const controlsStart = getControls(orbitControlsRef)
+      if (controlsStart) {
+        startTarget.current.copy(controlsStart.target)
       }
 
       // Calculate target position (in front of wall)
@@ -116,7 +139,7 @@ export function CameraController({
         // This ensures the camera scales proportionally with wall size but stays as close as possible
         const baseDistance = maxDimension / 0.828
         distance = baseDistance * 1.05 // Only 5% margin for very close view in 2D edit mode
-        console.log(`📷 [Camera] Wall dimensions: ${wallWidthInches}" × ${wallHeightInches}", calculated distance: ${distance.toFixed(0)}" (${(distance/12).toFixed(1)}ft)`)
+        devLog(`📷 [Camera] Wall dimensions: ${wallWidthInches}" × ${wallHeightInches}", calculated distance: ${distance.toFixed(0)}" (${(distance/12).toFixed(1)}ft)`)
       }
       
       // 🎯 Use the wallRotation directly - it's already adjusted by WallSystem to account for which face was clicked
@@ -130,7 +153,7 @@ export function CameraController({
         Math.cos(wallRotation)
       ).normalize()
 
-      console.log(`📷 [Camera] Using wallRotation: ${(wallRotation * 180 / Math.PI).toFixed(0)}° (already adjusted for clicked face)`)
+      devLog(`📷 [Camera] Using wallRotation: ${(wallRotation * 180 / Math.PI).toFixed(0)}° (already adjusted for clicked face)`)
 
       // Position camera directly in front of the wall, perpendicular to it
       const offset = wallForward.multiplyScalar(distance)
@@ -147,7 +170,7 @@ export function CameraController({
 
     } else if (exitingEditMode) {
       // Exiting edit mode - return to saved position (or default if none saved)
-      console.log('📷 [Camera] Exiting edit mode, animating back to 3D view')
+      devLog('📷 [Camera] Exiting edit mode, animating back to 3D view')
       const returnPosition = savedCameraPosition.current || defaultPosition.current
       const returnTarget = savedCameraTarget.current || defaultTarget.current
       
@@ -157,14 +180,15 @@ export function CameraController({
       
       // Current position is our start position (capture it fresh)
       startPosition.current.copy(camera.position)
-      if (controlsRef.current) {
-        startTarget.current.copy(controlsRef.current.target)
+      const controlsExit = getControls(orbitControlsRef)
+      if (controlsExit) {
+        startTarget.current.copy(controlsExit.target)
       }
       
       // Return to the saved position (where we were before entering edit mode)
       targetPosition.current.copy(returnPosition)
       targetTarget.current.copy(returnTarget)
-      console.log('📷 [Camera] Animating from', startPosition.current, 'to', returnPosition)
+      devLog('📷 [Camera] Animating from', startPosition.current, 'to', returnPosition)
     }
     
     // Update previous value AFTER handling transitions
@@ -172,16 +196,19 @@ export function CameraController({
   }, [editingWall, wallPosition, wallRotation, wallDimensions, camera])
 
   useFrame((state, delta) => {
-    if (!controlsRef.current) {
-      controlsRef.current = new OrbitControls(camera, gl.domElement)
-      controlsRef.current.enableDamping = true
-      controlsRef.current.dampingFactor = 0.05
-      // Configure mouse buttons: left = rotate, right = pan
-      controlsRef.current.mouseButtons = {
-        LEFT: THREE.MOUSE.ROTATE,
-        MIDDLE: THREE.MOUSE.DOLLY,
-        RIGHT: THREE.MOUSE.PAN
-      }
+    // Use the single OrbitControls from parent (drei ref)
+    const controls = getControls(orbitControlsRef)
+    if (!controls) return
+
+    // Attach 'end' listener once when controls are available (ref may not be set when useEffect runs)
+    if (!endListenerAdded.current) {
+      endListenerAdded.current = true
+      controls.addEventListener('end', () => {
+        if (editingWallRef.current !== null) return // only restore when in 3D orbit mode
+        positionOnEnd.current.copy(camera.position)
+        targetOnEnd.current.copy(controls.target)
+        restoreOnNextFrame.current = true
+      })
     }
 
     if (isAnimating.current) {
@@ -209,7 +236,7 @@ export function CameraController({
         targetTarget.current,
         easeProgress
       )
-      controlsRef.current.target.copy(newTarget)
+      controls.target.copy(newTarget)
       
       // When in edit mode, ensure camera is looking directly at the wall (head-on view)
       if (editingWall !== null) {
@@ -245,11 +272,19 @@ export function CameraController({
     }
 
     // Disable controls during animation and in edit mode
-    if (controlsRef.current) {
-      controlsRef.current.enabled = !isAnimating.current && editingWall === null
-      controlsRef.current.update()
+    controls.enabled = !isAnimating.current && editingWall === null
+    // Force damping off so rotation stops the instant the user releases the mouse
+    const c = controls as { enableDamping?: boolean }
+    c.enableDamping = false
+    controls.update()
+
+    // Undo the one-frame lingering rotation that update() just applied so orbit stops the instant the user releases the mouse
+    if (restoreOnNextFrame.current) {
+      camera.position.copy(positionOnEnd.current)
+      controls.target.copy(targetOnEnd.current)
+      restoreOnNextFrame.current = false
     }
-    
+
     // When in edit mode (not animating), ensure camera stays head-on to the wall
     if (editingWall !== null && !isAnimating.current && targetTarget.current) {
       // Continuously ensure camera is looking directly at wall center for perfect head-on view

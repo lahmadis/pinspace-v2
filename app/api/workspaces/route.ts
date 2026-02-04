@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase/server'
+import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 
 // GET: list workspaces owned by or shared with the current user
 export async function GET() {
@@ -107,17 +107,57 @@ export async function POST(req: Request) {
     const name = body?.name?.trim()
     const description = body?.description?.trim() ?? null
     const type = body?.type || 'class' // 'class' or 'personal'
+    const institutionIdFromBody = body?.institution_id ?? null
+    const institutionSlugFromBody = body?.institution_slug?.trim() ?? null
 
     if (!name) {
       return NextResponse.json({ error: 'Name required' }, { status: 400 })
     }
 
-    console.log('Creating workspace:', { name, description, type, owner_id: userId })
+    // Resolve institution_id: from body or default to Wentworth (slug "wit")
+    const supabaseAdmin = supabaseServiceRole()
+    let institutionId: string | null = null
+    if (institutionIdFromBody) {
+      const { data: inst } = await supabaseAdmin
+        .from('institutions')
+        .select('id')
+        .eq('id', institutionIdFromBody)
+        .single()
+      if (inst?.id) institutionId = inst.id
+    }
+    if (!institutionId && institutionSlugFromBody) {
+      const { data: inst } = await supabaseAdmin
+        .from('institutions')
+        .select('id')
+        .eq('slug', institutionSlugFromBody)
+        .single()
+      if (inst?.id) institutionId = inst.id
+    }
+    if (!institutionId) {
+      const { data: defaultInst } = await supabaseAdmin
+        .from('institutions')
+        .select('id')
+        .eq('slug', 'wit')
+        .maybeSingle()
+      if (defaultInst?.id) institutionId = defaultInst.id
+      else {
+        const { data: first } = await supabaseAdmin
+          .from('institutions')
+          .select('id')
+          .order('name')
+          .limit(1)
+          .maybeSingle()
+        if (first?.id) institutionId = first.id
+      }
+    }
+
+    console.log('Creating workspace:', { name, description, type, owner_id: userId, institution_id: institutionId ?? undefined })
 
     // Insert workspace
     // Try with type first, if it fails (column doesn't exist), try without type
     let insertData: any = { name, description, owner_id: userId }
-    
+    if (institutionId) insertData.institution_id = institutionId
+
     // Only include type if the column exists (we'll try with it first)
     const { data, error } = await supabase
       .from('workspaces')
@@ -154,8 +194,6 @@ export async function POST(req: Request) {
         details: error.message || error 
       }, { status: 500 })
     }
-
-    console.log('Workspace created successfully:', data?.id)
 
     console.log('Workspace created successfully:', data?.id)
     return NextResponse.json(data, { status: 201 })

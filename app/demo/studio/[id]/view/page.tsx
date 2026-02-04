@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -24,7 +24,8 @@ export default function DemoStudioRoomPage() {
   const [boards, setBoards] = useState<Board[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [editingWall, setEditingWall] = useState<number | null>(null)
-  
+  const orbitControlsRef = useRef<unknown>(null)
+
   // Default wall config for demo (4 walls, 8ft × 10ft each)
   const wallConfig = {
     walls: [
@@ -163,13 +164,14 @@ export default function DemoStudioRoomPage() {
           </Suspense>
 
           <CameraController
+            orbitControlsRef={orbitControlsRef}
             editingWall={editingWall}
             wallPosition={null}
             wallRotation={0}
             wallDimensions={null}
           />
 
-          {editingWall === null && <OrbitControls enableDamping dampingFactor={0.05} />}
+          {editingWall === null && <OrbitControls ref={orbitControlsRef as React.RefObject<import('three-stdlib').OrbitControls>} enableDamping={false} dampingFactor={0} />}
         </Canvas>
       </div>
 

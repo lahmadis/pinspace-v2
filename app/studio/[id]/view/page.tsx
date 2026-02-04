@@ -1,18 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
-import { supabase } from '@/lib/supabase/client'
+import * as THREE from 'three'
+import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 import { Board, FloorTable } from '@/types'
 import WallSystem from '@/components/3d/WallSystem'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
 import DemoBanner from '@/components/DemoBanner'
-import { addDemoParam } from '@/lib/demoMode'
+import { getCachedStudioData } from '@/lib/studioViewCache'
 import { ArrowLeft } from 'lucide-react'
 
 interface WallDimensions {
@@ -25,6 +26,86 @@ interface WallConfig {
   layoutType: 'zigzag' | 'square' | 'linear' | 'lshape'
 }
 
+function getControls(ref: React.RefObject<unknown>): OrbitControlsType | null {
+  const r = ref?.current
+  if (!r) return null
+  if (typeof (r as { get?: () => OrbitControlsType }).get === 'function') {
+    return (r as { get: () => OrbitControlsType }).get()
+  }
+  return r as OrbitControlsType
+}
+
+/** Stops orbit the instant the user releases the mouse (no lingering). */
+function CrispOrbitRestore({ orbitControlsRef }: { orbitControlsRef: React.RefObject<unknown> }) {
+  const { camera } = useThree()
+  const restoreOnNextFrame = useRef(false)
+  const positionOnEnd = useRef(new THREE.Vector3())
+  const targetOnEnd = useRef(new THREE.Vector3())
+  const endListenerAdded = useRef(false)
+
+  useFrame(() => {
+    const controls = getControls(orbitControlsRef)
+    if (!controls) return
+
+    if (!endListenerAdded.current) {
+      endListenerAdded.current = true
+      controls.addEventListener('end', () => {
+        positionOnEnd.current.copy(camera.position)
+        targetOnEnd.current.copy(controls.target)
+        restoreOnNextFrame.current = true
+      })
+    }
+
+    ;(controls as { enableDamping?: boolean }).enableDamping = false
+    controls.update()
+
+    if (restoreOnNextFrame.current) {
+      camera.position.copy(positionOnEnd.current)
+      controls.target.copy(targetOnEnd.current)
+      restoreOnNextFrame.current = false
+    }
+  })
+
+  return null
+}
+
+function StudioViewCameraControls({ wallConfig }: { wallConfig: WallConfig | null }) {
+  const orbitControlsRef = useRef<OrbitControlsType | null>(null)
+  const maxWallWidth = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.width)) : 8
+  const maxWallHeight = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.height)) : 10
+  const maxDimension = Math.max(maxWallWidth, maxWallHeight)
+  const scaleFactor = maxDimension / 8
+  const minDistance = 50 * scaleFactor
+  const maxDistance = 800 * scaleFactor
+  const targetHeight = 50 * scaleFactor
+  const cameraHeight = 50 * scaleFactor
+  const cameraDistance = 80 * scaleFactor
+
+  return (
+    <>
+      <CrispOrbitRestore orbitControlsRef={orbitControlsRef} />
+      <OrbitControls
+        ref={orbitControlsRef}
+        enableDamping={false}
+        dampingFactor={0}
+        minDistance={minDistance}
+        maxDistance={maxDistance}
+        maxPolarAngle={Math.PI / 2}
+        minPolarAngle={Math.PI / 6}
+        enablePan={true}
+        enableRotate={true}
+        enableZoom={true}
+        target={[0, targetHeight, 0]}
+      />
+      <PerspectiveCamera
+        makeDefault
+        position={[0, cameraHeight, cameraDistance]}
+        fov={50}
+      />
+    </>
+  )
+}
+
 export default function StudioViewPage() {
   const params = useParams()
   const searchParams = useSearchParams()
@@ -34,11 +115,14 @@ export default function StudioViewPage() {
   // Check if it's a demo studio (starts with "demo-studio-") or has demo=true param
   const isDemoStudio = studioId.startsWith('demo-studio-')
   const isDemo = searchParams?.get('demo') === 'true' || isDemoStudio
-  const [boards, setBoards] = useState<Board[]>([])
-  const [loading, setLoading] = useState(true)
+  const initialCache = getCachedStudioData(studioId, isDemo)
+  const [boards, setBoards] = useState<Board[]>(initialCache?.boards ?? [])
+  const [wallConfig, setWallConfig] = useState<WallConfig | null>(
+    (initialCache?.wallConfig as WallConfig) ?? null
+  )
+  const [loading, setLoading] = useState(!(initialCache?.boards && initialCache?.wallConfig))
   const [error, setError] = useState<string | null>(null)
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null)
-  const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
   const [modelViewerUrl, setModelViewerUrl] = useState<string | null>(null)
 
   // Tables from wall config (floor tables with 3D models) – strip blob URLs
@@ -51,15 +135,25 @@ export default function StudioViewPage() {
     }))
   })()
 
-  // Load wall config
+  // Load data: use cache first for instant open when coming from bubble network prefetch
   useEffect(() => {
+    const cached = getCachedStudioData(studioId, isDemo)
+    if (cached?.boards && cached?.wallConfig) {
+      setBoards(cached.boards)
+      setWallConfig(cached.wallConfig as WallConfig)
+      setLoading(false)
+      setError(null)
+      return
+    }
+
+    let cancelled = false
     const loadWallConfig = async () => {
       try {
-        // Try API first - include demo param if in demo mode
         const configUrl = isDemo 
           ? `/api/studios/${studioId}/wall-config?demo=true`
           : `/api/studios/${studioId}/wall-config`
         const resConfig = await fetch(configUrl)
+        if (cancelled) return
         if (resConfig.ok) {
           const data = await resConfig.json()
           if (data?.config) {
@@ -68,16 +162,15 @@ export default function StudioViewPage() {
           }
         }
       } catch (e) {
-        console.warn('Wall config API fetch failed, falling back to localStorage', e)
+        if (!cancelled) console.warn('Wall config API fetch failed, falling back to localStorage', e)
       }
 
-      // Fallback: localStorage
+      if (cancelled) return
       const savedConfigKey = `studio-${studioId}-wall-config`
       const savedConfig = localStorage.getItem(savedConfigKey)
       if (savedConfig) {
         setWallConfig(JSON.parse(savedConfig))
       } else {
-        // Default config
         setWallConfig({
           walls: [
             { height: 10, width: 8 },
@@ -90,9 +183,17 @@ export default function StudioViewPage() {
       }
     }
     loadWallConfig()
-  }, [studioId])
+    return () => { cancelled = true }
+  }, [studioId, isDemo])
 
   useEffect(() => {
+    const cached = getCachedStudioData(studioId, isDemo)
+    if (cached?.boards?.length !== undefined) {
+      setBoards(cached.boards)
+      setLoading(false)
+      setError(null)
+      return
+    }
     fetchBoards()
   }, [studioId, isDemo])
   
@@ -124,7 +225,8 @@ export default function StudioViewPage() {
 
   const fetchBoards = async () => {
     try {
-      setLoading(true)
+      // Avoid flashing loading if cache was populated (e.g. prefetch completed after nav)
+      if (!getCachedStudioData(studioId, isDemo)?.boards) setLoading(true)
       setError(null)
       // Always include demo=true for demo studios, even if not in URL params
       const url = isDemo 
@@ -312,46 +414,8 @@ export default function StudioViewPage() {
           />
         ))}
         
-        {/* Camera Controls - scaled based on wall dimensions */}
-        {(() => {
-          // Find the largest wall dimension to scale camera controls
-          const maxWallWidth = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.width)) : 8
-          const maxWallHeight = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.height)) : 10
-          const maxDimension = Math.max(maxWallWidth, maxWallHeight) // in feet
-          
-          // Scale camera controls based on wall size
-          // Base scale: for 8ft walls, we use 50-800 inches
-          // For larger walls, scale proportionally
-          const scaleFactor = maxDimension / 8 // 8ft is our baseline
-          const minDistance = 50 * scaleFactor   // Scale minimum zoom
-          const maxDistance = 800 * scaleFactor   // Scale maximum zoom
-          const targetHeight = 50 * scaleFactor   // Scale target height
-          const cameraHeight = 50 * scaleFactor   // Scale camera height
-          const cameraDistance = 80 * scaleFactor // Scale camera distance
-          
-          return (
-            <>
-              <OrbitControls 
-                enableDamping
-                dampingFactor={0.05}
-                minDistance={minDistance}   // Scaled minimum zoom
-                maxDistance={maxDistance}   // Scaled maximum zoom
-                maxPolarAngle={Math.PI / 2}
-                minPolarAngle={Math.PI / 6}  // Prevent looking from too high above (30 degrees minimum)
-                enablePan={true}
-                enableRotate={true}
-                enableZoom={true}
-                target={[0, targetHeight, 0]}  // Scaled target height
-              />
-              
-              <PerspectiveCamera 
-                makeDefault 
-                position={[0, cameraHeight, cameraDistance]}  // Scaled camera position
-                fov={50}  // Wider FOV to see more of the room
-              />
-            </>
-          )
-        })()}
+        {/* Camera Controls - scaled by wall size; crisp stop on mouse release (no lingering) */}
+        <StudioViewCameraControls wallConfig={wallConfig} />
       </Canvas>
 
       {/* Lightbox Modal */}

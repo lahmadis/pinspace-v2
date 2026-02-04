@@ -87,6 +87,13 @@ export interface WorkspaceMember {
   joinedAt: Date
 }
 
+export interface Institution {
+  id: string
+  name: string
+  slug: string
+  network_label?: string
+}
+
 export interface Workspace {
   id: string
   name: string // "Studio 08 - Fall 2024"
@@ -101,7 +108,9 @@ export interface Workspace {
   publishedAt?: Date // When it was published to network
   instructor?: string // Instructor/professor name
   semester?: string // e.g., "Fall 2024"
-  // WIT-specific categorization (required when isPublic is true)
+  institutionId?: string
+  institution?: Institution
+  // Institution categorization (required when isPublic is true)
   networkMetadata?: {
     department: 'Architecture' | 'Interior Design' | 'Industrial Design'
     year: 'Year 1' | 'Year 2' | 'Year 3' | 'Year 4' | 'Masters'

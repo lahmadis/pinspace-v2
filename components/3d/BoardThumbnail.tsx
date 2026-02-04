@@ -233,8 +233,8 @@ export default function BoardThumbnail({ board, position, width, height, onClick
   }, [hovered, onHover])
 
 
-  // Check if we have a valid image URL
-  const imageUrl = board.fullImageUrl || board.thumbnailUrl
+  // Prefer thumbnail in 3D room for performance (smaller texture); fall back to full image
+  const imageUrl = board.thumbnailUrl || board.fullImageUrl
   const isPDF = imageUrl?.toLowerCase().endsWith('.pdf')
   // Allow both local /uploads/ paths and external URLs (e.g., Supabase storage)
   const hasValidImage = imageUrl && (

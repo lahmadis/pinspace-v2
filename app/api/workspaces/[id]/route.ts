@@ -49,6 +49,17 @@ export async function GET(
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
+    // Fetch institution when workspace has institution_id
+    let institution: { id: string; name: string; slug: string; network_label?: string } | undefined
+    if (workspace.institution_id) {
+      const { data: inst } = await supabase
+        .from('institutions')
+        .select('id, name, slug, network_label')
+        .eq('id', workspace.institution_id)
+        .single()
+      if (inst) institution = inst
+    }
+
     // Check if user owns the workspace or is a member
     const isOwner = workspace.owner_id === userId
     
@@ -102,6 +113,8 @@ export async function GET(
       publishedAt: workspace.published_at || undefined,
       networkMetadata: workspace.network_metadata || undefined,
       instructor: workspace.instructor || undefined,
+      institutionId: workspace.institution_id || undefined,
+      institution: institution || undefined,
     }
 
     console.log('Returning workspace:', transformedWorkspace.id)
