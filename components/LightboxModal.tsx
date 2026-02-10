@@ -137,26 +137,33 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
 
   const fetchComments = async () => {
     if (!board) return
-    
+
     try {
       setLoading(true)
       setError(null)
-      // Check if we're in demo mode
       const isDemo = searchParams.get('demo') === 'true' || window.location.pathname.includes('demo-studio-')
-      const url = isDemo 
+      const url = isDemo
         ? `/api/boards/${board.id}/comments?demo=true`
         : `/api/boards/${board.id}/comments`
-      const response = await fetch(url)
-      
+      const response = await fetch(url, { credentials: 'include' })
+
+      const data = await response.json().catch(() => ({}))
       if (!response.ok) {
-        throw new Error('Failed to fetch comments')
+        const message = data?.error === 'Board not found'
+          ? 'Board not found'
+          : response.status === 403 || response.status === 401
+            ? 'Sign in to view comments'
+            : (data?.details || data?.error || 'Failed to load comments')
+        setError(message)
+        setComments([])
+        return
       }
-      
-      const data = await response.json()
+
       setComments(data.comments || [])
     } catch (err) {
       console.error('Error fetching comments:', err)
       setError('Failed to load comments')
+      setComments([])
     } finally {
       setLoading(false)
     }
@@ -164,35 +171,43 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
 
   const handlePost = async () => {
     if (!board || !newComment.trim() || posting) return
+    if (!user) {
+      setError('Sign in to post a comment')
+      return
+    }
 
     try {
       setPosting(true)
       setError(null)
-      // Check if we're in demo mode
       const isDemo = searchParams.get('demo') === 'true' || window.location.pathname.includes('demo-studio-')
-      const url = isDemo 
+      const url = isDemo
         ? `/api/boards/${board.id}/comments?demo=true`
         : `/api/boards/${board.id}/comments`
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           content: newComment.trim(),
-          authorName: authorName
+          authorName: authorName,
         }),
+        credentials: 'include',
       })
 
+      const data = await response.json().catch(() => ({}))
       if (!response.ok) {
-        throw new Error('Failed to post comment')
+        const message = response.status === 401
+          ? 'Sign in to post a comment'
+          : (data?.details || data?.error || 'Failed to post comment')
+        setError(message)
+        return
       }
 
-      const data = await response.json()
       setComments(prev => [...prev, data.comment])
       setNewComment('')
       textareaRef.current?.focus()
     } catch (err) {
       console.error('Error posting comment:', err)
-      alert('Failed to post comment')
+      setError('Failed to post comment')
     } finally {
       setPosting(false)
     }

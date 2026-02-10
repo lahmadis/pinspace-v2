@@ -3,6 +3,8 @@ import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoBoards, transformDemoBoard, DEMO_STUDIOS } from '@/lib/mockData'
 import { getSampleComments } from '@/lib/sampleData'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/boards/[id]/comments - Get all comments for a board
 export async function GET(
   request: NextRequest,
@@ -42,77 +44,69 @@ export async function GET(
       return NextResponse.json({ comments: [] })
     }
 
-    // Try with regular client first (RLS policies should handle public boards)
+    // Resolve board and workspace first so public studios work without requiring auth
+    const serviceSupabase = supabaseServiceRole()
+    const { data: board, error: boardErr } = await serviceSupabase
+      .from('boards')
+      .select('workspace_id')
+      .eq('id', boardId)
+      .single()
+
+    if (boardErr || !board) {
+      return NextResponse.json({ error: 'Board not found' }, { status: 404 })
+    }
+
+    const { data: workspace } = await serviceSupabase
+      .from('workspaces')
+      .select('is_public, published_at')
+      .eq('id', board.workspace_id)
+      .single()
+
+    const isPublicWorkspace = workspace?.is_public && workspace?.published_at != null
+
+    if (isPublicWorkspace) {
+      // Public workspace: anyone can read comments (no auth required)
+      const { data: publicComments, error: publicError } = await serviceSupabase
+        .from('comments')
+        .select('*')
+        .eq('board_id', boardId)
+        .order('created_at', { ascending: false })
+
+      if (publicError) {
+        console.error('Error fetching comments with service role:', publicError)
+        return NextResponse.json({
+          error: 'Failed to fetch comments',
+          details: publicError.message,
+        }, { status: 500 })
+      }
+
+      const transformedComments = (publicComments || []).map((c: any) => ({
+        id: c.id,
+        boardId: c.board_id,
+        authorName: c.author_name,
+        content: c.text,
+        createdAt: c.created_at,
+      }))
+      console.log(`📖 [Comments API] GET (public) - Board ${boardId} has ${transformedComments.length} comments`)
+      return NextResponse.json({ comments: transformedComments })
+    }
+
+    // Private workspace: use user session so RLS applies (members can read)
     const supabase = supabaseServer()
-    
-    // Fetch comments from Supabase
-    let { data: comments, error } = await supabase
+    const { data: comments, error } = await supabase
       .from('comments')
       .select('*')
       .eq('board_id', boardId)
       .order('created_at', { ascending: false })
 
-    // If that fails, check if board is in a public workspace and use service role
     if (error) {
-      console.log('Initial fetch failed, checking if board is in public workspace:', error.message)
-      
-      const serviceSupabase = supabaseServiceRole()
-      
-      // Check if board exists and is in a public workspace
-      const { data: board } = await serviceSupabase
-        .from('boards')
-        .select('workspace_id')
-        .eq('id', boardId)
-        .single()
-
-      if (!board) {
-        return NextResponse.json({ error: 'Board not found' }, { status: 404 })
-      }
-
-      const { data: workspace } = await serviceSupabase
-        .from('workspaces')
-        .select('is_public, published_at')
-        .eq('id', board.workspace_id)
-        .single()
-
-      const isPublicWorkspace = workspace?.is_public && workspace?.published_at !== null
-
-      // If it's a public workspace, use service role to fetch comments
-      if (isPublicWorkspace) {
-        const { data: publicComments, error: publicError } = await serviceSupabase
-          .from('comments')
-          .select('*')
-          .eq('board_id', boardId)
-          .order('created_at', { ascending: false })
-
-        if (publicError) {
-          console.error('Error fetching comments with service role:', publicError)
-          return NextResponse.json({ 
-            error: 'Failed to fetch comments', 
-            details: publicError.message 
-          }, { status: 500 })
-        }
-
-        const transformedComments = (publicComments || []).map((c: any) => ({
-          id: c.id,
-          boardId: c.board_id,
-          authorName: c.author_name,
-          content: c.text,
-          createdAt: c.created_at,
-        }))
-
-        return NextResponse.json({ comments: transformedComments })
-      }
-      
-      // Not a public workspace and initial fetch failed
-      console.error('Error fetching comments:', error)
-      return NextResponse.json({ 
-        error: 'Failed to fetch comments', 
-        details: error.message 
+      console.error('Error fetching comments (private workspace):', error)
+      return NextResponse.json({
+        error: 'Failed to fetch comments',
+        details: error.message,
       }, { status: 500 })
     }
 
-    // Transform to frontend format
     const transformedComments = (comments || []).map((c: any) => ({
       id: c.id,
       boardId: c.board_id,
@@ -120,15 +114,13 @@ export async function GET(
       content: c.text,
       createdAt: c.created_at,
     }))
-    
     console.log(`📖 [Comments API] GET - Board ${boardId} has ${transformedComments.length} comments`)
-
     return NextResponse.json({ comments: transformedComments })
   } catch (error) {
     console.error('Error fetching comments:', error)
-    return NextResponse.json({ 
-      error: 'Failed to fetch comments', 
-      details: (error as Error).message 
+    return NextResponse.json({
+      error: 'Failed to fetch comments',
+      details: (error as Error).message,
     }, { status: 500 })
   }
 }

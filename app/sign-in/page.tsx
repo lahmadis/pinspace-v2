@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState, useRef } from 'react'
+import { Suspense, useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
@@ -27,10 +27,8 @@ function SignInInner() {
   const [institutions, setInstitutions] = useState<Institution[]>([])
   const [loading, setLoading] = useState(true)
   const [sendingCode, setSendingCode] = useState(false)
-  const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState('')
   const [email, setEmail] = useState('')
-  const [code, setCode] = useState('')
   const [codeSent, setCodeSent] = useState(false)
   const [codeSentTo, setCodeSentTo] = useState('')
   const hasRedirected = useRef(false)
@@ -41,6 +39,40 @@ function SignInInner() {
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  const redirectAfterSignIn = useCallback(async () => {
+    if (hasRedirected.current) return
+    hasRedirected.current = true
+
+    const defaultTarget = redirectTo || '/dashboard'
+    const withInstitution = (base: string) => {
+      if (!institutionSlug) return base
+      const sep = base.includes('?') ? '&' : '?'
+      return `${base}${sep}institution=${encodeURIComponent(institutionSlug)}`
+    }
+
+    try {
+      const res = await fetch('/api/user-profile', { cache: 'no-store' })
+      let hasProfile = false
+      if (res.ok) {
+        const data = await res.json().catch(() => null)
+        hasProfile = !!(data && data.user_id)
+      }
+
+      if (hasProfile) {
+        // Existing user with profile → go directly to target (usually dashboard)
+        router.replace(withInstitution(defaultTarget))
+      } else {
+        // No profile yet → go through onboarding once
+        const base = `/onboarding?redirect=${encodeURIComponent(defaultTarget)}`
+        router.replace(withInstitution(base))
+      }
+    } catch {
+      // Fallback: preserve previous behavior (always send to onboarding)
+      const base = `/onboarding?redirect=${encodeURIComponent(defaultTarget)}`
+      router.replace(withInstitution(base))
+    }
+  }, [redirectTo, institutionSlug, router])
 
   useEffect(() => {
     if (!mounted) return
@@ -64,15 +96,12 @@ function SignInInner() {
         isInitial = false
         return
       }
-      if (event === 'SIGNED_IN' && session?.user && !hasRedirected.current) {
-        hasRedirected.current = true
-        const base = redirectTo ? `/onboarding?redirect=${encodeURIComponent(redirectTo)}` : '/onboarding'
-        const sep = base.includes('?') ? '&' : '?'
-        router.replace(institutionSlug ? `${base}${sep}institution=${encodeURIComponent(institutionSlug)}` : base)
+      if (event === 'SIGNED_IN' && session?.user) {
+        redirectAfterSignIn()
       }
     })
     return () => subscription.unsubscribe()
-  }, [mounted, router, redirectTo, institutionSlug])
+  }, [mounted, redirectAfterSignIn])
 
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -109,7 +138,6 @@ function SignInInner() {
       }
       setCodeSent(true)
       setCodeSentTo(trimmedEmail)
-      setCode('')
       setError('')
     } catch (err) {
       setSendingCode(false)
@@ -117,44 +145,8 @@ function SignInInner() {
     }
   }
 
-  const handleVerifyCode = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    const trimmedCode = code.trim().replace(/\s/g, '')
-    if (!trimmedCode || trimmedCode.length < 6) {
-      setError('Please enter the verification code from your email')
-      return
-    }
-
-    setVerifying(true)
-    try {
-      const { data, error: authError } = await supabase.auth.verifyOtp({
-        email: codeSentTo,
-        token: trimmedCode,
-        type: 'email',
-      })
-      setVerifying(false)
-      // If we have a session (from response or client state), redirect immediately
-      const session = data?.session ?? (await supabase.auth.getSession()).data.session
-      if (session) {
-        hasRedirected.current = true
-        const base = redirectTo ? `/onboarding?redirect=${encodeURIComponent(redirectTo)}` : '/onboarding'
-        const sep = base.includes('?') ? '&' : '?'
-        router.replace(institutionSlug ? `${base}${sep}institution=${encodeURIComponent(institutionSlug)}` : base)
-        return
-      }
-      if (authError) {
-        setError(authError.message || 'Invalid or expired code. Try requesting a new one.')
-      }
-    } catch (err) {
-      setVerifying(false)
-      setError((err as Error).message || 'Something went wrong')
-    }
-  }
-
   const handleBackToEmail = () => {
     setCodeSent(false)
-    setCode('')
     setError('')
   }
 
@@ -195,38 +187,13 @@ function SignInInner() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
         <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">Enter verification code</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">Check your email</h1>
           <p className="text-sm text-gray-500 mb-6">
-            We sent a verification code to <strong>{codeSentTo}</strong>. Enter it below to sign in.
+            We sent a sign-in link to <strong>{codeSentTo}</strong>. Click the link in your email to finish signing in.
           </p>
-          <form onSubmit={handleVerifyCode} className="space-y-4">
-            <div>
-              <label htmlFor="code" className="block text-sm font-medium text-gray-700 mb-1">Verification code</label>
-              <input
-                id="code"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={8}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                placeholder="00000000"
-                className="w-full px-4 py-3 text-center text-xl tracking-[0.5em] font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                autoComplete="one-time-code"
-                autoFocus
-              />
-            </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
-            <button
-              type="submit"
-              disabled={verifying || code.length < 6}
-              className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
-            >
-              {verifying ? 'Verifying…' : 'Verify and sign in'}
-            </button>
-          </form>
-          <p className="mt-4 text-sm text-gray-500 text-center">
-            Didn&apos;t receive the code? Check your spam folder or{' '}
+          {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
+          <p className="mt-2 text-sm text-gray-500 text-center">
+            Didn&apos;t receive the email? Check your spam folder or{' '}
             <button type="button" onClick={handleBackToEmail} className="text-indigo-600 hover:underline">
               use a different email
             </button>

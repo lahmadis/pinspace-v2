@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase/client'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import Link from 'next/link'
 import type { Institution } from '@/types'
-import { Building2, Plus, ExternalLink } from 'lucide-react'
+import { Building2, Plus, ExternalLink, Trash2, Pencil, X, MoreVertical } from 'lucide-react'
 
 export default function AdminInstitutionsPage() {
   const router = useRouter()
@@ -16,6 +16,12 @@ export default function AdminInstitutionsPage() {
   const [institutions, setInstitutions] = useState<Institution[]>([])
   const [loading, setLoading] = useState(false)
   const [formError, setFormError] = useState('')
+  const [deletingSlug, setDeletingSlug] = useState<string | null>(null)
+  const [openMenuSlug, setOpenMenuSlug] = useState<string | null>(null)
+  const [editingInst, setEditingInst] = useState<Institution | null>(null)
+  const [editFormData, setEditFormData] = useState({ name: '', slug: '', type: 'institution' as 'institution' | 'firm', network_label: '', allowed_email_domains: '' })
+  const [editLoading, setEditLoading] = useState(false)
+  const [editError, setEditError] = useState('')
   const [formData, setFormData] = useState({
     name: '',
     slug: '',
@@ -46,6 +52,80 @@ export default function AdminInstitutionsPage() {
       .then((res) => res.json())
       .then((data: Institution[]) => setInstitutions(Array.isArray(data) ? data : []))
       .catch(() => setInstitutions([]))
+  }
+
+  const openEdit = (inst: Institution) => {
+    setEditingInst(inst)
+    setEditFormData({
+      name: inst.name,
+      slug: inst.slug,
+      type: (inst.type === 'firm' ? 'firm' : 'institution') as 'institution' | 'firm',
+      network_label: inst.network_label ?? '',
+      allowed_email_domains: inst.allowed_email_domains ?? ''
+    })
+    setEditError('')
+  }
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingInst) return
+    setEditError('')
+    if (!editFormData.name.trim()) {
+      setEditError('Name is required')
+      return
+    }
+    if (!editFormData.slug.trim()) {
+      setEditError('Slug is required')
+      return
+    }
+    setEditLoading(true)
+    try {
+      const res = await fetch(`/api/admin/institutions/${encodeURIComponent(editingInst.slug)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editFormData.name.trim(),
+          slug: editFormData.slug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+          type: editFormData.type,
+          network_label: editFormData.network_label.trim() || undefined,
+          allowed_email_domains: editFormData.allowed_email_domains.trim() || undefined
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setEditError(data.error || data.details || 'Failed to update')
+        return
+      }
+      setEditingInst(null)
+      fetchInstitutions()
+    } catch {
+      setEditError('Failed to update institution')
+    } finally {
+      setEditLoading(false)
+    }
+  }
+
+  const handleDelete = async (slug: string, name: string) => {
+    if (!confirm(`Delete "${name}"? This will detach it from any studios but not delete the studios themselves.`)) {
+      return
+    }
+    setFormError('')
+    setDeletingSlug(slug)
+    try {
+      const res = await fetch(`/api/admin/institutions/${encodeURIComponent(slug)}`, {
+        method: 'DELETE',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setFormError(data.error || data.details || 'Failed to delete institution')
+        return
+      }
+      fetchInstitutions()
+    } catch {
+      setFormError('Failed to delete institution')
+    } finally {
+      setDeletingSlug(null)
+    }
   }
 
   useEffect(() => {
@@ -95,7 +175,8 @@ export default function AdminInstitutionsPage() {
       })
       const data = await res.json()
       if (!res.ok) {
-        setFormError(data.error || (res.status === 403 ? 'Only admins can add institutions. Set PINSPACE_ADMIN_EMAILS in env.' : 'Failed to create'))
+        const msg = data.error || (res.status === 403 ? 'Only admins can add institutions. Set PINSPACE_ADMIN_EMAILS in env.' : 'Failed to create')
+        setFormError(data.details ? `${msg}: ${data.details}` : msg)
         return
       }
       setFormData({ name: '', slug: '', type: 'institution', network_label: '', allowed_email_domains: '' })
@@ -254,6 +335,43 @@ export default function AdminInstitutionsPage() {
                       >
                         <ExternalLink className="w-4 h-4" />
                       </a>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setOpenMenuSlug(openMenuSlug === inst.slug ? null : inst.slug)}
+                          className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                          title="More actions"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+                        {openMenuSlug === inst.slug && (
+                          <div className="absolute right-0 mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg py-1 z-10">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openEdit(inst)
+                                setOpenMenuSlug(null)
+                              }}
+                              className="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                            >
+                              <Pencil className="w-4 h-4" />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleDelete(inst.slug, inst.name)
+                                setOpenMenuSlug(null)
+                              }}
+                              disabled={deletingSlug === inst.slug}
+                              className="w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 disabled:opacity-50"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              <span>Delete</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </li>
                 ))
@@ -265,6 +383,90 @@ export default function AdminInstitutionsPage() {
         <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
           <strong>Admin:</strong> Only users listed in <code className="bg-amber-100 px-1 rounded">PINSPACE_ADMIN_EMAILS</code> can add institutions or firms. Each gets a link <code className="bg-amber-100 px-1 rounded">/i/[slug]</code> (e.g. /i/wit).
         </div>
+
+        {editingInst && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setEditingInst(null)}>
+            <div className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Edit institution</h3>
+                <button type="button" onClick={() => setEditingInst(null)} className="p-1 text-gray-500 hover:text-gray-700 rounded">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <form onSubmit={handleEditSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                  <select
+                    value={editFormData.type}
+                    onChange={(e) => setEditFormData((p) => ({ ...p, type: e.target.value as 'institution' | 'firm' }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  >
+                    <option value="institution">Institution (school / university)</option>
+                    <option value="firm">Firm (e.g. architecture firm)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <input
+                    type="text"
+                    value={editFormData.name}
+                    onChange={(e) => setEditFormData((p) => ({ ...p, name: e.target.value }))}
+                    placeholder="e.g. Massachusetts Institute of Technology"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Slug (URL)</label>
+                  <input
+                    type="text"
+                    value={editFormData.slug}
+                    onChange={(e) => setEditFormData((p) => ({ ...p, slug: e.target.value }))}
+                    placeholder="e.g. mit"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Handoff link: /i/{editFormData.slug || 'slug'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Network label (optional)</label>
+                  <input
+                    type="text"
+                    value={editFormData.network_label}
+                    onChange={(e) => setEditFormData((p) => ({ ...p, network_label: e.target.value }))}
+                    placeholder="e.g. MIT Design Network"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Allowed email domains</label>
+                  <input
+                    type="text"
+                    value={editFormData.allowed_email_domains}
+                    onChange={(e) => setEditFormData((p) => ({ ...p, allowed_email_domains: e.target.value }))}
+                    placeholder="e.g. wit.edu or wit.edu,wentworth.edu"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+                {editError && <p className="text-sm text-red-600">{editError}</p>}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingInst(null)}
+                    className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editLoading}
+                    className="flex-1 py-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
+                  >
+                    {editLoading ? 'Saving…' : 'Save changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

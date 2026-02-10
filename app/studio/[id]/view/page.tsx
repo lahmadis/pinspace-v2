@@ -56,7 +56,16 @@ function CrispOrbitRestore({ orbitControlsRef }: { orbitControlsRef: React.RefOb
       })
     }
 
-    ;(controls as { enableDamping?: boolean }).enableDamping = false
+    // Match StudioRoom controls: no damping, specific mouse buttons, screen-space panning
+    ;(controls as { enableDamping?: boolean; dampingFactor?: number }).enableDamping = false
+    ;(controls as { enableDamping?: boolean; dampingFactor?: number }).dampingFactor = 0
+    ;(controls as any).mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    }
+    ;(controls as any).screenSpacePanning = true
+
     controls.update()
 
     if (restoreOnNextFrame.current) {
@@ -71,15 +80,44 @@ function CrispOrbitRestore({ orbitControlsRef }: { orbitControlsRef: React.RefOb
 
 function StudioViewCameraControls({ wallConfig }: { wallConfig: WallConfig | null }) {
   const orbitControlsRef = useRef<OrbitControlsType | null>(null)
+  // Match StudioRoom camera layout and scaling logic so view mode feels identical
   const maxWallWidth = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.width)) : 8
-  const maxWallHeight = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.height)) : 10
-  const maxDimension = Math.max(maxWallWidth, maxWallHeight)
-  const scaleFactor = maxDimension / 8
-  const minDistance = 50 * scaleFactor
-  const maxDistance = 800 * scaleFactor
-  const targetHeight = 50 * scaleFactor
-  const cameraHeight = 50 * scaleFactor
-  const cameraDistance = 80 * scaleFactor
+  const maxWallHeight = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.height)) : 8
+
+  // Convert to inches (1 unit = 1 inch)
+  const maxWallWidthInches = maxWallWidth * 12
+  const maxWallHeightInches = maxWallHeight * 12
+
+  // Baseline room: 8ft wide, 8ft tall
+  const baseWidthInches = 8 * 12
+  const baseHeightInches = 8 * 12
+
+  const wallCount = wallConfig?.walls?.length ?? 1
+  const layoutType = wallConfig?.layoutType ?? 'zigzag'
+  const layoutFactor =
+    layoutType === 'zigzag' || layoutType === 'square' || layoutType === 'lshape'
+      ? Math.max(1, wallCount / 2)
+      : 1
+
+  // Wider rooms (or more connected walls) push the camera back more.
+  const distanceScale = ((maxWallWidthInches * layoutFactor) / baseWidthInches) || 1
+
+  const minDistance = 80 * distanceScale       // Pull camera back a bit more by default
+  const maxDistance = 1200 * distanceScale     // Allow zooming further out for very long rooms
+
+  // Aim slightly above mid-wall (where boards typically sit) so zoom goes toward the walls, not the floor.
+  const targetHeight = Math.max(60, Math.min(maxWallHeightInches * 0.65, maxWallHeightInches)) || 60
+
+  // Axonometric view: position camera at diagonal angle with moderate elevation
+  const baseDistance = 110 * distanceScale
+  const elevationAngle = 35 * (Math.PI / 180) // 35 degrees elevation
+  const azimuthAngle = 45 * (Math.PI / 180)   // 45 degrees around (diagonal view)
+
+  // Calculate axonometric camera position
+  const horizontalDistance = baseDistance * Math.cos(elevationAngle)
+  const cameraHeight = targetHeight + (baseDistance * Math.sin(elevationAngle))
+  const cameraX = horizontalDistance * Math.sin(azimuthAngle)
+  const cameraZ = horizontalDistance * Math.cos(azimuthAngle)
 
   return (
     <>
@@ -91,7 +129,8 @@ function StudioViewCameraControls({ wallConfig }: { wallConfig: WallConfig | nul
         minDistance={minDistance}
         maxDistance={maxDistance}
         maxPolarAngle={Math.PI / 2}
-        minPolarAngle={Math.PI / 6}
+        // Match StudioRoom: slightly steeper minimum angle so zoom aims toward the walls, not the floor
+        minPolarAngle={0.45}
         enablePan={true}
         enableRotate={true}
         enableZoom={true}
@@ -99,7 +138,7 @@ function StudioViewCameraControls({ wallConfig }: { wallConfig: WallConfig | nul
       />
       <PerspectiveCamera
         makeDefault
-        position={[0, cameraHeight, cameraDistance]}
+        position={[cameraX, cameraHeight, cameraZ]}
         fov={50}
       />
     </>
@@ -385,14 +424,50 @@ export default function StudioViewPage() {
       )}
 
       {/* 3D Canvas */}
-      <Canvas shadows className="w-full h-full">
+      <Canvas
+        shadows
+        className="w-full h-full"
+        gl={{
+          shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap },
+          alpha: true,
+          premultipliedAlpha: false,
+        } as any}
+        style={{ background: '#D8DEFF' }}
+      >
         {/* Background matches wall color */}
         <color attach="background" args={['#D8DEFF']} />
         
-        {/* Lighting */}
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[10, 10, 5]} intensity={0.8} castShadow />
-        <directionalLight position={[-10, 10, -5]} intensity={0.4} />
+        {/* Lighting – match StudioRoom for consistent brightness and color */}
+        {/* Ambient light - reduced for better shadow definition */}
+        <ambientLight intensity={0.5} />
+        
+        {/* Main directional light - creates shadows and depth */}
+        <directionalLight 
+          position={[15, 20, 10]} 
+          intensity={1.2} 
+          castShadow
+          shadow-mapSize-width={2048}
+          shadow-mapSize-height={2048}
+          shadow-camera-far={500}
+          shadow-camera-left={-200}
+          shadow-camera-right={200}
+          shadow-camera-top={200}
+          shadow-camera-bottom={-200}
+          shadow-bias={-0.0001}
+        />
+        
+        {/* Fill light from opposite side - softens shadows */}
+        <directionalLight position={[-10, 12, -8]} intensity={0.5} />
+        
+        {/* Top light for overall illumination */}
+        <directionalLight position={[0, 25, 0]} intensity={0.4} />
+        
+        {/* Rim lighting for wall edges - enhances depth */}
+        <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
+        <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
+        
+        {/* Hemisphere light for natural ambient */}
+        <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
         
         {/* Wall System with Boards */}
         {wallConfig && (
