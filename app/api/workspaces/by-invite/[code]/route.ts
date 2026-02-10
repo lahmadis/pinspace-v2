@@ -11,10 +11,10 @@ export async function GET(
     const supabase = supabaseServiceRole()
     const inviteCode = params.code.toUpperCase().trim()
 
-    // Fetch workspace by invite code
+    // Fetch workspace by invite code (include institution for sign-in context)
     const { data: workspace, error } = await supabase
       .from('workspaces')
-      .select('id, name, invite_code')
+      .select('id, name, invite_code, institution_id')
       .eq('invite_code', inviteCode)
       .single()
 
@@ -23,8 +23,19 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid invite code' }, { status: 404 })
     }
 
+    // Get institution slug if workspace has institution
+    let institutionSlug: string | null = null
+    if (workspace.institution_id) {
+      const { data: inst } = await supabase
+        .from('institutions')
+        .select('slug')
+        .eq('id', workspace.institution_id)
+        .single()
+      if (inst?.slug) institutionSlug = inst.slug
+    }
+
     // Get member count
-    const { count: memberCount, error: countError } = await supabase
+    const { count: memberCount } = await supabase
       .from('workspace_members')
       .select('*', { count: 'exact', head: true })
       .eq('workspace_id', workspace.id)
@@ -35,7 +46,8 @@ export async function GET(
         id: workspace.id,
         name: workspace.name,
         inviteCode: workspace.invite_code,
-        memberCount: memberCount || 0
+        memberCount: memberCount || 0,
+        institutionSlug: institutionSlug || undefined
       }
     })
   } catch (error) {

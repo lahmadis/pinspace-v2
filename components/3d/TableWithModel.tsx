@@ -12,8 +12,7 @@ function isModelUrlLoadable(url: string): boolean {
   return url.length > 0 && !url.startsWith('blob:')
 }
 
-const TABLE_TOP_MARGIN = 1.5 // inches – gap from table edge so model doesn't touch
-const MAX_MODEL_HEIGHT = 30 // inches above table top – cap so it doesn't tower
+const TABLE_TOP_MARGIN = 0.5 // inches – minimal gap so model fills table
 const MODEL_COLOR = '#ffffff' // white
 
 function applyWallColor(scene: THREE.Object3D) {
@@ -41,23 +40,27 @@ function applyWallColor(scene: THREE.Object3D) {
 
 function ModelOnTable({ url, tableWidth, tableDepth }: { url: string; tableWidth: number; tableDepth: number }) {
   const { scene } = useGLTF(url)
-  const { cloned, scale } = useMemo(() => {
+  const { cloned, scale, size } = useMemo(() => {
     const c = scene.clone(true)
     applyWallColor(c)
     const box = new THREE.Box3().setFromObject(c)
-    const size = box.getSize(new THREE.Vector3())
-    const fitWidth = tableWidth - TABLE_TOP_MARGIN * 2
-    const fitDepth = tableDepth - TABLE_TOP_MARGIN * 2
-    const scaleX = size.x > 0 ? fitWidth / size.x : 1
-    const scaleZ = size.z > 0 ? fitDepth / size.z : 1
-    const scaleY = size.y > 0 ? MAX_MODEL_HEIGHT / size.y : 1
-    return { cloned: c, scale: Math.min(scaleX, scaleZ, scaleY) }
+    const sizeVec = box.getSize(new THREE.Vector3())
+    const fitWidth = Math.max(1, tableWidth - TABLE_TOP_MARGIN * 2)
+    const fitDepth = Math.max(1, tableDepth - TABLE_TOP_MARGIN * 2)
+    // Scale so model fills the entire table surface proportionally without falling off
+    const scaleX = sizeVec.x > 1e-6 ? fitWidth / sizeVec.x : 1
+    const scaleZ = sizeVec.z > 1e-6 ? fitDepth / sizeVec.z : 1
+    const scale = Math.min(scaleX, scaleZ)
+    return { cloned: c, scale, size: sizeVec }
   }, [scene, tableWidth, tableDepth])
+  // Center horizontally (XZ) but place bottom on table: offset up by half height so bottom sits at table top
   return (
     <group position={[0, TABLE_HEIGHT, 0]} scale={scale}>
-      <Center>
-        <primitive object={cloned} />
-      </Center>
+      <group position={[0, size.y / 2, 0]}>
+        <Center>
+          <primitive object={cloned} />
+        </Center>
+      </group>
     </group>
   )
 }

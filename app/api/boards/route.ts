@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase/server'
+import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoBoards, transformDemoBoard } from '@/lib/mockData'
 import { getSampleBoards } from '@/lib/sampleData'
 
@@ -341,8 +341,9 @@ export async function DELETE(request: NextRequest) {
       }, { status: 403 })
     }
 
-    // Delete board from Supabase (workspace members can delete)
-    const { error } = await supabase
+    // Delete board using service role (RLS only allows owner delete; we already verified member/owner above)
+    const admin = supabaseServiceRole()
+    const { error } = await admin
       .from('boards')
       .delete()
       .eq('id', boardId)

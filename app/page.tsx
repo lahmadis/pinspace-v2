@@ -16,8 +16,20 @@ function HomeInner() {
   const [showGalleryModal, setShowGalleryModal] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  
+  const [institutionSlug, setInstitutionSlug] = useState<string | null>(null)
+
   const isDemo = isDemoMode(searchParams)
+  const institutionFromUrl = searchParams?.get('institution') ?? null
+
+  // Persist institution from URL when landing via /i/[slug] (e.g. /?institution=wit)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && institutionFromUrl) {
+      window.sessionStorage.setItem('pinspace_institution', institutionFromUrl)
+      setInstitutionSlug(institutionFromUrl)
+    } else if (typeof window !== 'undefined') {
+      setInstitutionSlug(window.sessionStorage.getItem('pinspace_institution'))
+    }
+  }, [institutionFromUrl])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
@@ -74,14 +86,14 @@ function HomeInner() {
             <button
               onClick={(e) => {
                 e.preventDefault()
-                router.push('/sign-in')
+                router.push(institutionSlug ? `/sign-in?institution=${institutionSlug}` : '/sign-in')
               }}
               className="px-4 py-2 text-text-primary hover:text-primary transition-colors font-medium text-sm"
             >
               Sign In
             </button>
             <button
-              onClick={() => router.push('/sign-up')}
+              onClick={() => router.push(institutionSlug ? `/sign-up?institution=${institutionSlug}` : '/sign-up')}
               className="px-6 py-2 bg-primary hover:bg-primary-light text-white rounded-lg transition-colors font-medium text-sm shadow-md"
             >
               Get Started
@@ -143,7 +155,7 @@ function HomeInner() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.8 }}
           >
-            <Link href={isDemo ? "/explore?demo=true" : "/explore"}>
+            <Link href={isDemo ? '/explore?demo=true' : institutionSlug ? `/explore?institution=${institutionSlug}` : '/explore'}>
               <button className="group relative px-8 py-4 bg-primary hover:bg-primary-light text-white rounded-lg font-medium transition-all duration-300 hover:scale-105 hover:shadow-lg min-w-[200px]">
                 <span className="relative z-10">Enter the Network</span>
               </button>

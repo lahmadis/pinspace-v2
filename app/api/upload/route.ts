@@ -47,13 +47,28 @@ export async function POST(request: NextRequest) {
       console.log(`⚠️ [API Upload] No physical dimensions provided for ${title}`)
     }
     
-    // Optional position data
+    // Optional position data (0-100 percentage; 50,50 = center of wall)
     const wallIndex = formData.get('position_wall_index')
     const posX = formData.get('position_x')
     const posY = formData.get('position_y')
     const positionWidth = formData.get('position_width')
     const positionHeight = formData.get('position_height')
     const positionSide = formData.get('position_side') as string | null
+
+    const hasWall = wallIndex != null && wallIndex !== ''
+    const center = 50
+    const positionX =
+      hasWall && (posX == null || posX === '')
+        ? center
+        : posX != null && posX !== ''
+          ? parseFloat(posX as string)
+          : null
+    const positionY =
+      hasWall && (posY == null || posY === '')
+        ? center
+        : posY != null && posY !== ''
+          ? parseFloat(posY as string)
+          : null
 
     if (!file || !studentName || !title || !workspaceId) {
       return NextResponse.json({ error: 'Missing required fields (image, studentName, title, workspaceId)' }, { status: 400 })
@@ -121,8 +136,8 @@ export async function POST(request: NextRequest) {
       tags: tags ? tags.split(',').map(t => t.trim()) : [],
       uploaded_at: new Date().toISOString(),
       position_wall_index: wallIndex ? parseInt(wallIndex as string) : null,
-      position_x: posX ? parseFloat(posX as string) : null,
-      position_y: posY ? parseFloat(posY as string) : null,
+      position_x: positionX,
+      position_y: positionY,
       position_width: positionWidth ? parseFloat(positionWidth as string) : null,
       position_height: positionHeight ? parseFloat(positionHeight as string) : null,
       position_side: positionSide && (positionSide === 'front' || positionSide === 'back') ? positionSide : null,

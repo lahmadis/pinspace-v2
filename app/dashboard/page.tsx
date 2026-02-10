@@ -3,10 +3,12 @@
 import { supabase } from '@/lib/supabase/client'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import Link from 'next/link'
-import { useEffect, useState, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Workspace } from '@/types'
 import JoinClassModal from '@/components/JoinClassModal'
+
+const INSTITUTION_STORAGE_KEY = 'pinspace_institution'
 import { 
   GraduationCap, 
   Building2, 
@@ -15,7 +17,8 @@ import {
   MoreVertical, 
   Settings, 
   Trash2, 
-  ExternalLink
+  ExternalLink,
+  Pencil
 } from 'lucide-react'
 
 interface Studio {
@@ -29,11 +32,19 @@ interface WorkspaceCardProps {
   workspace: any
   isOwner: boolean
   onDelete: (id: string, name: string) => void
+  onRename: (id: string, currentName: string) => void
   openMenuId: string | null
   setOpenMenuId: (id: string | null) => void
+  institutionSlug: string | null
 }
 
-function WorkspaceCard({ workspace, isOwner, onDelete, openMenuId, setOpenMenuId }: WorkspaceCardProps) {
+function withInstitution(path: string, institutionSlug: string | null): string {
+  if (!institutionSlug) return path
+  const sep = path.includes('?') ? '&' : '?'
+  return `${path}${sep}institution=${encodeURIComponent(institutionSlug)}`
+}
+
+function WorkspaceCard({ workspace, isOwner, onDelete, onRename, openMenuId, setOpenMenuId, institutionSlug }: WorkspaceCardProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const isMenuOpen = openMenuId === workspace.id
 
@@ -79,13 +90,25 @@ function WorkspaceCard({ workspace, isOwner, onDelete, openMenuId, setOpenMenuId
               {isMenuOpen && (
                 <div className="absolute right-0 top-9 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
                   <Link
-                    href={`/workspace/${workspace.id}/settings`}
+                    href={withInstitution(`/workspace/${workspace.id}/settings`, institutionSlug)}
                     onClick={() => setOpenMenuId(null)}
                     className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     <Settings className="w-4 h-4" />
                     Settings
                   </Link>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      onRename(workspace.id, workspace.name || 'Unnamed Workspace')
+                      setOpenMenuId(null)
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <Pencil className="w-4 h-4" />
+                    Rename
+                  </button>
                   <button
                     onClick={(e) => {
                       e.preventDefault()
@@ -118,7 +141,7 @@ function WorkspaceCard({ workspace, isOwner, onDelete, openMenuId, setOpenMenuId
       {/* Content */}
       <div className="p-6">
         <Link
-          href={`/studio/${workspace.id}`}
+          href={withInstitution(`/studio/${workspace.id}`, institutionSlug)}
           className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm shadow-sm"
         >
           <span>Open Studio</span>
@@ -129,7 +152,7 @@ function WorkspaceCard({ workspace, isOwner, onDelete, openMenuId, setOpenMenuId
   )
 }
 
-export default function DashboardPage() {
+function DashboardContent() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [isLoaded, setIsLoaded] = useState(false)
@@ -226,6 +249,67 @@ export default function DashboardPage() {
     }
   }
 
+  const handleRenameWorkspace = async (workspaceId: string, currentName: string) => {
+    const newName = prompt('Rename studio', currentName)
+    if (newName == null || newName.trim() === '') return
+    try {
+      const res = await fetch(`/api/workspaces/${workspaceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim() })
+      })
+      if (res.ok) {
+        fetchUserStudios()
+        setOpenMenuId(null)
+      } else {
+        const error = await res.json()
+        alert(`Failed to rename: ${error.error || 'Unknown error'}`)
+      }
+    } catch (err) {
+      console.error('Error renaming workspace:', err)
+      alert('Failed to rename studio. Please try again.')
+    }
+  }
+
+  const searchParams = useSearchParams()
+  const [institutionHome, setInstitutionHome] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const slug = window.sessionStorage.getItem(INSTITUTION_STORAGE_KEY)
+      setInstitutionHome(slug || null)
+    }
+  }, [])
+  // Keep URL in sync with institution: if we have institution in context, ensure it's in the URL
+  useEffect(() => {
+    if (!institutionHome) return
+    const inUrl = searchParams?.get('institution')
+    if (inUrl === institutionHome) return
+    router.replace(`/dashboard?institution=${encodeURIComponent(institutionHome)}`, { scroll: false })
+  }, [institutionHome, searchParams, router])
+  // When landing with ?institution= in URL, persist to sessionStorage
+  useEffect(() => {
+    const fromUrl = searchParams?.get('institution')
+    if (fromUrl && typeof window !== 'undefined') {
+      window.sessionStorage.setItem(INSTITUTION_STORAGE_KEY, fromUrl)
+      setInstitutionHome((prev) => prev || fromUrl)
+    }
+  }, [searchParams])
+  useEffect(() => {
+    if (!user?.id) return
+    const inst = searchParams?.get('institution')
+    const redirectPath = inst ? `/dashboard?institution=${encodeURIComponent(inst)}` : '/dashboard'
+    Promise.all([
+      fetch('/api/admin/me', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/user-profile', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)),
+    ]).then(([adminData, profile]) => {
+      setIsAdmin(Boolean(adminData?.isAdmin))
+      if (!adminData?.isAdmin && !profile?.user_id) {
+        router.replace(`/onboarding?redirect=${encodeURIComponent(redirectPath)}`)
+      }
+    }).catch(() => setIsAdmin(false))
+  }, [user?.id, searchParams, router])
+
   if (!isLoaded || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -241,11 +325,16 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 py-5">
-          <Link href="/" className="hover:opacity-80 transition-opacity inline-block">
+        <div className="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
+          <Link href={institutionHome ? `/i/${institutionHome}` : '/'} className="hover:opacity-80 transition-opacity inline-block">
             <h1 className="text-2xl font-semibold text-gray-900">PinSpace</h1>
             <p className="text-sm text-gray-500 mt-0.5">3D Studio Network</p>
           </Link>
+          {isAdmin && (
+            <Link href="/admin" className="text-sm text-gray-500 hover:text-indigo-600 transition-colors">
+              Admin
+            </Link>
+          )}
         </div>
       </div>
 
@@ -282,7 +371,7 @@ export default function DashboardPage() {
                 Join a Class
               </button>
               <Link
-                href="/workspace/new"
+                href={withInstitution('/workspace/new', institutionHome)}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center gap-2 shadow-sm"
               >
                 <Plus className="w-4 h-4" />
@@ -317,7 +406,7 @@ export default function DashboardPage() {
                   Join a Class
                 </button>
                 <Link
-                  href="/workspace/new"
+                  href={withInstitution('/workspace/new', institutionHome)}
                   className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center gap-2 shadow-sm"
                 >
                   <Plus className="w-4 h-4" />
@@ -333,8 +422,10 @@ export default function DashboardPage() {
                   workspace={workspace}
                   isOwner={workspace.owner_id === user?.id}
                   onDelete={handleDeleteWorkspace}
+                  onRename={handleRenameWorkspace}
                   openMenuId={openMenuId}
                   setOpenMenuId={setOpenMenuId}
+                  institutionSlug={institutionHome}
                 />
               ))}
             </div>
@@ -354,7 +445,7 @@ export default function DashboardPage() {
               </p>
             </div>
             <Link
-              href="/studio/new"
+              href={withInstitution('/studio/new', institutionHome)}
               className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors font-medium text-sm flex items-center gap-2 shadow-sm"
             >
               <Plus className="w-4 h-4" />
@@ -380,7 +471,7 @@ export default function DashboardPage() {
               <h3 className="text-lg font-semibold text-gray-900 mb-2">No personal rooms yet</h3>
               <p className="text-sm text-gray-500 mb-6 max-w-sm mx-auto">Create a personal studio space to organize your individual work and projects</p>
               <Link
-                href="/studio/new"
+                href={withInstitution('/studio/new', institutionHome)}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors font-medium text-sm shadow-sm"
               >
                 <Plus className="w-4 h-4" />
@@ -392,7 +483,7 @@ export default function DashboardPage() {
               {studios.map((studio) => (
                 <Link
                   key={studio.id}
-                  href={`/studio/${studio.id}`}
+                  href={withInstitution(`/studio/${studio.id}`, institutionHome)}
                   className="group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                 >
                   {/* Thumbnail */}
@@ -428,3 +519,17 @@ export default function DashboardPage() {
   )
 }
 
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 mx-auto mb-4" />
+          <p className="text-gray-600">Loading your dashboard...</p>
+        </div>
+      </div>
+    }>
+      <DashboardContent />
+    </Suspense>
+  )
+}

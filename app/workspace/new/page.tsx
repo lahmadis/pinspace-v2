@@ -5,15 +5,18 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import Link from 'next/link'
+import type { Institution } from '@/types'
 
 export default function NewWorkspacePage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [institutions, setInstitutions] = useState<Institution[]>([])
   const [formData, setFormData] = useState({
     name: '',
-    role: 'instructor'
+    role: 'instructor' as 'instructor' | 'student',
+    institutionSlug: ''
   })
 
   useEffect(() => {
@@ -38,6 +41,20 @@ export default function NewWorkspacePage() {
     return () => subscription.unsubscribe()
   }, [router])
 
+  useEffect(() => {
+    if (!isLoaded) return
+    fetch('/api/institutions', { cache: 'no-store' })
+      .then((res) => res.ok ? res.json() : [])
+      .then((list: Institution[]) => {
+        setInstitutions(list)
+        if (list.length > 0) {
+          const defaultSlug = list.find((i) => i.slug === 'wit')?.slug ?? list[0].slug
+          setFormData((prev) => ({ ...prev, institutionSlug: prev.institutionSlug || defaultSlug }))
+        }
+      })
+      .catch(() => {})
+  }, [isLoaded])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -49,14 +66,17 @@ export default function NewWorkspacePage() {
     try {
       setLoading(true)
 
+      const payload: Record<string, string> = {
+        name: formData.name.trim(),
+        creatorName: user?.user_metadata?.email?.split('@')[0] || 'Instructor',
+        role: formData.role
+      }
+      if (formData.institutionSlug) payload.institution_slug = formData.institutionSlug
+
       const response = await fetch('/api/workspaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: formData.name.trim(),
-          creatorName: user?.user_metadata?.email?.split('@')[0] || 'Instructor',
-          role: formData.role
-        })
+        body: JSON.stringify(payload)
       })
 
       const data = await response.json()
@@ -151,6 +171,30 @@ export default function NewWorkspacePage() {
                 Choose a descriptive name for your studio class
               </p>
             </div>
+
+            {/* Institution */}
+            {institutions.length > 0 && (
+              <div>
+                <label htmlFor="institution" className="block text-sm font-medium text-gray-700 mb-2">
+                  Institution / School
+                </label>
+                <select
+                  id="institution"
+                  value={formData.institutionSlug}
+                  onChange={(e) => setFormData({ ...formData, institutionSlug: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4444ff] focus:border-transparent"
+                >
+                  {institutions.map((inst) => (
+                    <option key={inst.id} value={inst.slug}>
+                      {inst.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-sm text-gray-500">
+                  This workspace will appear under this school in the explore view
+                </p>
+              </div>
+            )}
 
             {/* Role */}
             <div>

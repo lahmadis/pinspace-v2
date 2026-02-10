@@ -92,6 +92,10 @@ export interface Institution {
   name: string
   slug: string
   network_label?: string
+  /** Comma-separated, e.g. "wit.edu" or "wit.edu,wentworth.edu". When set, only these domains can join workspaces for this institution. */
+  allowed_email_domains?: string | null
+  /** 'institution' = school; 'firm' = e.g. architecture/design firm */
+  type?: 'institution' | 'firm'
 }
 
 export interface Workspace {

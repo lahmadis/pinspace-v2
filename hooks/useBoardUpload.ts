@@ -1,5 +1,6 @@
 'use client'
 
+import { flushSync } from 'react-dom'
 import { Board } from '@/types'
 import { generateOwnerColor } from '@/lib/ownerColors'
 
@@ -100,9 +101,11 @@ const createBoardFormData = (
   
   if (options.position) {
     formData.append('position_wall_index', options.position.wallIndex.toString())
-    // Convert normalized (-0.5 to 0.5) to percentage (0 to 100)
-    formData.append('position_x', ((options.position.x + 0.5) * 100).toString())
-    formData.append('position_y', ((options.position.y + 0.5) * 100).toString())
+    // Convert normalized (-0.5 to 0.5) to percentage (0 to 100). Center of wall = 50, 50.
+    const apiX = (options.position.x + 0.5) * 100
+    const apiY = (options.position.y + 0.5) * 100
+    formData.append('position_x', apiX.toString())
+    formData.append('position_y', apiY.toString())
     formData.append('position_width', (options.position.width * 100).toString())
     formData.append('position_height', (options.position.height * 100).toString())
     if (options.position.side) {
@@ -181,37 +184,50 @@ const addTempBoardToState = (
 }
 
 /**
- * Replace temporary board with real uploaded board
+ * Replace temporary board with real uploaded board.
+ * If the API returns a board without position (or wrong wall), patch it to current wall + center
+ * so the sync effect keeps it visible instead of dropping it.
  */
 const replaceTempBoardInState = (
   tempId: string,
   realBoard: Board,
   editingWall: number,
+  editingWallSide: 'front' | 'back',
   options: {
     replaceTempBoard: (tempId: string, realBoard: Board) => void
     setPlacedBoards3D: React.Dispatch<React.SetStateAction<Map<string, { x: number; y: number; width?: number; height?: number }>>>
     placedBoards3DRef: React.MutableRefObject<Map<string, { x: number; y: number; width?: number; height?: number }>>
   }
 ) => {
-  if (realBoard.position?.wallIndex !== editingWall) {
-    console.warn(`⚠️ [Upload] Board ${realBoard.id} not on current wall ${editingWall}`)
-    return false
-  }
-  
-  options.replaceTempBoard(tempId, realBoard)
+  const onCurrentWall = realBoard.position?.wallIndex === editingWall && (realBoard.position?.side || 'front') === editingWallSide
+  const boardToUse: Board = onCurrentWall
+    ? realBoard
+    : {
+        ...realBoard,
+        position: {
+          wallIndex: editingWall,
+          x: CENTER_API,
+          y: CENTER_API,
+          width: 30,
+          height: 30,
+          side: editingWallSide,
+        },
+      }
+
+  options.replaceTempBoard(tempId, boardToUse)
   options.setPlacedBoards3D(prev => {
     const newMap = new Map(prev)
     const position = newMap.get(tempId)
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useBoardUpload.ts:replaceTempBoardInState',message:'replace placedBoards3D',hypothesisId:'H2',data:{tempId,realId:boardToUse.id,hasTempPosition:!!position,prevSize:prev.size},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     if (position) {
       newMap.delete(tempId)
-      newMap.set(realBoard.id, position)
+      newMap.set(boardToUse.id, position)
       options.placedBoards3DRef.current = newMap
-      console.log(`✅ [Upload] Replaced temp board ${tempId} with real board ${realBoard.id}`)
       return newMap
-    } else {
-      console.warn(`⚠️ [Upload] Temp board ${tempId} not found in placedBoards3D`)
-      return prev
     }
+    return prev
   })
   return true
 }
@@ -239,76 +255,93 @@ const cleanupTempBoard = (
   })
 }
 
+const DEFAULT_PLACEHOLDER_ASPECT = 1
+const DEFAULT_PLACEHOLDER_SIZE = 0.3
+/** API position 50,50 = center of wall (0–100). useBoardState's addTempBoard converts with apiToNormalized so 50→0. */
+const CENTER_API = 50 // also used when patching real board position in replaceTempBoardInState
+
 /**
- * Upload a single file and handle optimistic updates
+ * Upload a single file and handle optimistic updates.
+ * Board appears immediately at center of wall, then upload runs in background.
  */
 const uploadFile = async (
   file: File,
   options: UploadOptions
 ): Promise<{ success: boolean; uploadedBoard?: Board }> => {
+  const title = file.name.replace(/\.[^/.]+$/, '')
+  let tempBoardId: string | null = null
+
+  // Show board on wall immediately at center (no await)
+  if (options.editingWall !== null && options.editingWallDimensions) {
+    const blobUrl = URL.createObjectURL(file)
+    tempBoardId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const tempBoard = createTempBoard(tempBoardId, {
+      studioId: options.studioId,
+      title,
+      user: options.user,
+      blobUrl,
+      width: 100,
+      height: 100,
+      aspectRatio: DEFAULT_PLACEHOLDER_ASPECT,
+      tags: [],
+      position: {
+        wallIndex: options.editingWall,
+        x: CENTER_API,
+        y: CENTER_API,
+        width: DEFAULT_PLACEHOLDER_SIZE * 100,
+        height: DEFAULT_PLACEHOLDER_SIZE * 100,
+        side: options.editingWallSide || 'front',
+      },
+    })
+    // Flush so the board appears on the wall before any await (image load, API)
+    flushSync(() => {
+      addTempBoardToState(
+        tempBoard,
+        { x: 0, y: 0, width: DEFAULT_PLACEHOLDER_SIZE, height: DEFAULT_PLACEHOLDER_SIZE },
+        {
+          addTempBoard: options.addTempBoard,
+          setPlacedBoards3D: options.setPlacedBoards3D,
+          placedBoards3DRef: options.placedBoards3DRef,
+          blobUrl,
+        }
+      )
+    })
+  }
+
   const { getImageDimensions } = await import('@/lib/getImageDimensions')
   const { extractImagePhysicalDimensions } = await import('@/lib/extractPhysicalDimensions')
-  
+
   const dims = await getImageDimensions(file)
-  
-  // Extract physical dimensions
+  const { widthPercent, heightPercent } = calculateBoardDimensions(
+    dims.aspectRatio,
+    options.editingWallDimensions
+  )
+
+  // Update temp board to correct size (aspect ratio) when dimensions are ready
+  if (tempBoardId && options.editingWall !== null) {
+    options.setPlacedBoards3D((prev) => {
+      const next = new Map(prev)
+      const current = next.get(tempBoardId!)
+      if (current) next.set(tempBoardId!, { ...current, width: widthPercent, height: heightPercent })
+      options.placedBoards3DRef.current = next
+      return next
+    })
+  }
+
   let physicalWidth: number | undefined
   let physicalHeight: number | undefined
   try {
     const physicalDims = await extractImagePhysicalDimensions(file)
     physicalWidth = physicalDims.physicalWidth
     physicalHeight = physicalDims.physicalHeight
-    console.log(`📐 [Upload] Image physical dimensions extracted: ${physicalWidth.toFixed(2)}" x ${physicalHeight.toFixed(2)}" @ ${physicalDims.dpi} DPI`)
-  } catch (error) {
-    console.warn('⚠️ Could not extract physical dimensions from image:', error)
+  } catch {
+    // optional
   }
-  
-  const { widthPercent, heightPercent } = calculateBoardDimensions(
-    dims.aspectRatio,
-    options.editingWallDimensions
-  )
-  
-  // Create temp board if editing a wall
-  let tempBoardId: string | null = null
-  if (options.editingWall !== null && options.editingWallDimensions) {
-    const blobUrl = URL.createObjectURL(file)
-    tempBoardId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    
-    const tempBoard = createTempBoard(tempBoardId, {
-      studioId: options.studioId,
-      title: file.name.replace(/\.[^/.]+$/, ''),
-      user: options.user,
-      blobUrl,
-      width: dims.width,
-      height: dims.height,
-      aspectRatio: dims.aspectRatio,
-      physicalWidth,
-      physicalHeight,
-      tags: [],
-      position: {
-        wallIndex: options.editingWall,
-        x: 0,
-        y: 0,
-        width: widthPercent,
-        height: heightPercent,
-        side: options.editingWallSide || 'front',
-      }
-    })
-    
-    console.log('📤 [Upload] Adding temp board:', tempBoardId)
-    addTempBoardToState(tempBoard, { x: 0, y: 0, width: widthPercent, height: heightPercent }, {
-      addTempBoard: options.addTempBoard,
-      setPlacedBoards3D: options.setPlacedBoards3D,
-      placedBoards3DRef: options.placedBoards3DRef,
-      blobUrl,
-    })
-  }
-  
-  // Upload to API
+
   try {
     const formData = createBoardFormData(file, {
       studioId: options.studioId,
-      title: file.name.replace(/\.[^/.]+$/, ''),
+      title,
       user: options.user,
       width: dims.width,
       height: dims.height,
@@ -325,37 +358,39 @@ const uploadFile = async (
         side: options.editingWallSide || 'front',
       } : undefined,
     })
-    
-    const response = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData
-    })
-    
+
+    const response = await fetch('/api/upload', { method: 'POST', body: formData })
+
     if (!response.ok) {
       const error = await response.text()
       throw new Error(error || 'Upload failed')
     }
-    
+
     const data = await response.json()
     const uploadedBoard = data.board as Board
-    
-    // Replace temp board with real board
+
     if (tempBoardId && options.editingWall !== null) {
-      if (!replaceTempBoardInState(tempBoardId, uploadedBoard, options.editingWall, {
-        replaceTempBoard: options.replaceTempBoard,
-        setPlacedBoards3D: options.setPlacedBoards3D,
-        placedBoards3DRef: options.placedBoards3DRef,
-      })) {
-        cleanupTempBoard(tempBoardId, {
-          removeTempBoard: options.removeTempBoard,
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useBoardUpload.ts:beforeReplace',message:'before replace',hypothesisId:'H2',data:{tempBoardId,realId:uploadedBoard?.id,hasPosition:!!uploadedBoard?.position,wallIndex:uploadedBoard?.position?.wallIndex},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      replaceTempBoardInState(
+        tempBoardId,
+        uploadedBoard,
+        options.editingWall,
+        options.editingWallSide || 'front',
+        {
+          replaceTempBoard: options.replaceTempBoard,
           setPlacedBoards3D: options.setPlacedBoards3D,
           placedBoards3DRef: options.placedBoards3DRef,
-        })
-      }
+        }
+      )
     }
-    
+
     return { success: true, uploadedBoard }
   } catch (error) {
+    // #region agent log
+    if (tempBoardId) fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useBoardUpload.ts:catch',message:'upload failed cleanup',hypothesisId:'H4',data:{tempBoardId,error:String(error)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     console.error(`❌ [Upload] Failed to upload ${file.name}:`, error)
     if (tempBoardId) {
       cleanupTempBoard(tempBoardId, {
@@ -469,19 +504,19 @@ const uploadPDF = async (
       const data = await response.json()
       const uploadedBoard = data.board as Board
       
-      // Replace temp board
+      // Replace temp board (always replace; position patched to current wall if API omitted it)
       if (tempBoardId && options.editingWall !== null) {
-        if (!replaceTempBoardInState(tempBoardId, uploadedBoard, options.editingWall, {
-          replaceTempBoard: options.replaceTempBoard,
-          setPlacedBoards3D: options.setPlacedBoards3D,
-          placedBoards3DRef: options.placedBoards3DRef,
-        })) {
-          cleanupTempBoard(tempBoardId, {
-            removeTempBoard: options.removeTempBoard,
+        replaceTempBoardInState(
+          tempBoardId,
+          uploadedBoard,
+          options.editingWall,
+          options.editingWallSide || 'front',
+          {
+            replaceTempBoard: options.replaceTempBoard,
             setPlacedBoards3D: options.setPlacedBoards3D,
             placedBoards3DRef: options.placedBoards3DRef,
-          })
-        }
+          }
+        )
       }
       
       successCount++
@@ -557,7 +592,20 @@ export const useBoardUpload = (options: UploadOptions) => {
     
     input.click()
   }
-  
-  return { handleUpload }
+
+  /** Upload a single image file (e.g. from clipboard paste). Only images; PDFs use the file picker. */
+  const uploadFileDirect = async (file: File): Promise<boolean> => {
+    const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png']
+    if (!validImageTypes.includes(file.type)) return false
+    try {
+      const result = await uploadFile(file, options)
+      if (result.success) await options.onBoardUpdate()
+      return result.success
+    } catch {
+      return false
+    }
+  }
+
+  return { handleUpload, uploadFileDirect }
 }
 

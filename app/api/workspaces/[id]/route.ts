@@ -128,6 +128,72 @@ export async function GET(
   }
 }
 
+// PATCH workspace (e.g. rename)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = supabaseServer()
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError) {
+      console.error('Session error:', sessionError)
+      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+    }
+
+    const userId = session?.user?.id
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const workspaceId = params.id
+    const body = await request.json().catch(() => ({}))
+    const { name, description } = body
+
+    const { data: workspace, error: fetchError } = await supabase
+      .from('workspaces')
+      .select('owner_id')
+      .eq('id', workspaceId)
+      .single()
+
+    if (fetchError || !workspace) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+
+    if (workspace.owner_id !== userId) {
+      return NextResponse.json({ error: 'Only workspace owners can update the workspace' }, { status: 403 })
+    }
+
+    const updateData: { name?: string; description?: string } = {}
+    if (typeof name === 'string' && name.trim()) updateData.name = name.trim()
+    if (typeof description === 'string') updateData.description = description
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+    }
+
+    const { error: updateError } = await supabase
+      .from('workspaces')
+      .update(updateData)
+      .eq('id', workspaceId)
+      .eq('owner_id', userId)
+
+    if (updateError) {
+      console.error('Error updating workspace:', updateError)
+      return NextResponse.json({ error: 'Failed to update workspace', details: updateError.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('Unexpected error updating workspace:', error)
+    return NextResponse.json({ error: 'Internal Server Error', details: error?.message }, { status: 500 })
+  }
+}
+
 // DELETE workspace
 export async function DELETE(
   request: NextRequest,

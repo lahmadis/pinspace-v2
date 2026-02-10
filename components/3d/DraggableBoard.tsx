@@ -163,43 +163,33 @@ useEffect(() => {
   const scaledWallWidth = wallDimensions.width * SCALE
   const scaledWallHeight = wallDimensions.height * SCALE
   
-  // Calculate board size using physical dimensions directly in inches
-  // With 1 unit = 1 inch, physical dimensions map directly to 3D units
+  // Calculate board size: prefer saved resize (width/height %) so corner resize is visible; else physical dimensions or defaults
+  const wallWidthInches = wallDimensions.width * 12
+  const wallHeightInches = wallDimensions.height * 12
   let boardWidth: number | undefined
   let boardHeight: number | undefined
-  
-  // First, try to use physical dimensions if available (they represent the actual board size)
-  if (board.physicalWidth && board.physicalHeight) {
-    boardWidth = board.physicalWidth  // Direct: inches → units
-    boardHeight = board.physicalHeight // Direct: inches → units
-    
-    // Clamp to ensure board doesn't exceed wall size
-    const wallWidthInches = wallDimensions.width * 12
-    const wallHeightInches = wallDimensions.height * 12
+
+  // Prefer saved percentage dimensions when present (user has resized or we have placement data)
+  if (localPosition.width != null && localPosition.height != null && localPosition.width > 0 && localPosition.height > 0) {
+    boardWidth = localPosition.width * wallWidthInches
+    boardHeight = localPosition.height * wallHeightInches
+    devLog(`📐 [DraggableBoard] Using saved percentage dimensions: ${(localPosition.width * 100).toFixed(1)}% x ${(localPosition.height * 100).toFixed(1)}% = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
+  }
+  // Else use physical dimensions if available
+  if ((boardWidth === undefined || boardHeight === undefined) && board.physicalWidth && board.physicalHeight) {
+    boardWidth = board.physicalWidth
+    boardHeight = board.physicalHeight
     boardWidth = Math.min(boardWidth, wallWidthInches)
     boardHeight = Math.min(boardHeight, wallHeightInches)
-    
     devLog(`📐 [DraggableBoard] Using physical dimensions: ${board.physicalWidth}" x ${board.physicalHeight}" = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
   }
-  
-  // Fallback for existing boards without physical dimensions: default to 8.5×11 inches (standard letter size)
+  // Fallback for existing boards without physical dimensions: default to 8.5×11 inches
   if (boardWidth === undefined || boardHeight === undefined) {
     const DEFAULT_WIDTH_INCHES = 8.5
     const DEFAULT_HEIGHT_INCHES = 11
-    
-    // Try to use saved percentage dimensions if available
-    if (localPosition.width && localPosition.height) {
-      const wallWidthInches = wallDimensions.width * 12
-      const wallHeightInches = wallDimensions.height * 12
-      boardWidth = localPosition.width * wallWidthInches
-      boardHeight = localPosition.height * wallHeightInches
-      devLog(`📐 [DraggableBoard] Using saved percentage dimensions: ${(localPosition.width * 100).toFixed(1)}% x ${(localPosition.height * 100).toFixed(1)}% = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
-    } else {
-      // Final fallback: use default 8.5×11 inches
-      boardWidth = DEFAULT_WIDTH_INCHES
-      boardHeight = DEFAULT_HEIGHT_INCHES
-      devLog(`📐 [DraggableBoard] No dimensions found - using default: ${DEFAULT_WIDTH_INCHES}" x ${DEFAULT_HEIGHT_INCHES}" = ${boardWidth} x ${boardHeight} units`)
-    }
+    boardWidth = DEFAULT_WIDTH_INCHES
+    boardHeight = DEFAULT_HEIGHT_INCHES
+    devLog(`📐 [DraggableBoard] No dimensions found - using default: ${DEFAULT_WIDTH_INCHES}" x ${DEFAULT_HEIGHT_INCHES}" = ${boardWidth} x ${boardHeight} units`)
   }
   
   // Ensure we have valid dimensions
@@ -527,6 +517,8 @@ if (e.intersections && e.intersections.length > 0) {
     const onUp = () => {
       gl.domElement.style.cursor = 'default'
       const ref = positionRef.current
+      justFinishedDragging.current = true
+      setLocalPosition({ x: ref.x, y: ref.y, width: ref.width, height: ref.height })
       onDragEnd(board.id, ref.x, ref.y, ref.width, ref.height, side)
       resizeStartRef.current = null
       setIsResizing(false)
@@ -560,6 +552,17 @@ if (e.intersections && e.intersections.length > 0) {
   const deleteButtonSize = Math.min(boardWidth, boardHeight) * 0.12 // Slightly smaller relative size
   const deleteButtonX = boardWidth / 2 - deleteButtonSize / 2 - deleteButtonSize * 0.3
   const deleteButtonY = boardHeight / 2 - deleteButtonSize / 2 - deleteButtonSize * 0.3
+
+  // Corner resize handles: size and z so they sit on top of the board (larger hit area for easier grab)
+  const handleSize = Math.min(boardWidth, boardHeight) * 0.14
+  const handleZ = 0.002
+  const showCornerHandles = (isHovered || isSelected) && canEdit && !isLocked && !isDragging && !isResizing
+  const cornerPositions: { x: number; y: number; cursor: string }[] = [
+    { x: boardWidth / 2, y: boardHeight / 2, cursor: 'nwse-resize' },
+    { x: -boardWidth / 2, y: boardHeight / 2, cursor: 'nesw-resize' },
+    { x: -boardWidth / 2, y: -boardHeight / 2, cursor: 'nwse-resize' },
+    { x: boardWidth / 2, y: -boardHeight / 2, cursor: 'nesw-resize' },
+  ]
 
   // Position the group at the wall position, then position board within group's local space
   return (
@@ -631,7 +634,30 @@ if (e.intersections && e.intersections.length > 0) {
             />
           )}
         </mesh>
-        
+
+        {/* Corner resize handles - show on hover, proportional resize */}
+        {showCornerHandles && cornerPositions.map((pos, i) => (
+          <group key={i} position={[pos.x, pos.y, handleZ]} renderOrder={3}>
+            <mesh
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                handleCornerPointerDown(e)
+              }}
+              onPointerOver={(e) => {
+                e.stopPropagation()
+                gl.domElement.style.cursor = pos.cursor
+              }}
+              onPointerOut={(e) => {
+                e.stopPropagation()
+                if (!isResizing) gl.domElement.style.cursor = isHovered ? 'grab' : 'default'
+              }}
+            >
+              <circleGeometry args={[handleSize / 2, 16]} />
+              <meshBasicMaterial color="#4444ff" transparent opacity={0.9} />
+            </mesh>
+          </group>
+        ))}
+
         {/* Border edges for the box geometry */}
         <lineSegments position={[0, 0, 0]}>
           <edgesGeometry args={[new THREE.BoxGeometry(boardWidth, boardHeight, BOARD_THICKNESS)]} />

@@ -130,16 +130,15 @@ export function useBoardState(
       let width: number
       let height: number
       
-      // Priority: physical dimensions > saved dimensions > aspect ratio > defaults
-      if (board.physicalWidth && board.physicalHeight) {
+      // Prefer saved resize (position width/height) so corner resize persists after Save & Exit
+      if (board.position.width != null && board.position.height != null && board.position.width > 0 && board.position.height > 0) {
+        width = apiToDecimal(board.position.width)
+        height = apiToDecimal(board.position.height)
+      } else if (board.physicalWidth && board.physicalHeight) {
         const wallWidthInches = wallDimensions.width * 12
         const wallHeightInches = wallDimensions.height * 12
         width = Math.min(board.physicalWidth / wallWidthInches, 1.0)
         height = Math.min(board.physicalHeight / wallHeightInches, 1.0)
-      } else if (board.position.width !== undefined && board.position.height !== undefined) {
-        // Convert saved percentages to decimal
-        width = apiToDecimal(board.position.width)
-        height = apiToDecimal(board.position.height)
       } else if (board.aspectRatio) {
         // Calculate from aspect ratio
         const baseHeight = 0.35
@@ -393,17 +392,23 @@ export function useBoardState(
    */
   const addTempBoard = useCallback((board: Board, blobUrl: string) => {
     devLog('➕ [useBoardState] Adding temp board:', board.id)
-    
+    // #region agent log
+    const apiX = board.position?.x ?? -1
+    const apiY = board.position?.y ?? -1
+    const normX = board.position ? apiToNormalized(board.position.x) : -1
+    const normY = board.position ? apiToNormalized(board.position.y) : -1
+    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useBoardState.ts:addTempBoard',message:'addTempBoard',data:{boardId:board.id,apiX,apiY,normX,normY},timestamp:Date.now(),hypothesisId:'H_pos'})}).catch(()=>{});
+    // #endregion
     setTempBoards(prev => new Map(prev).set(board.id, { board, blobUrl }))
     setBoards(prev => [...prev, board])
     
-    // Add position if board has one
+    // Add position: temp boards always at center (0,0) so sync effect never overwrites with corner
     if (board.position) {
-      const x = apiToNormalized(board.position.x)
-      const y = apiToNormalized(board.position.y)
+      const isTemp = board.id.startsWith('temp-')
+      const x = isTemp ? 0 : apiToNormalized(board.position.x)
+      const y = isTemp ? 0 : apiToNormalized(board.position.y)
       const width = board.position.width ? apiToDecimal(board.position.width) : 0.3
       const height = board.position.height ? apiToDecimal(board.position.height) : 0.3
-      
       setBoardPositions(prev => new Map(prev).set(board.id, { x, y, width, height }))
     }
   }, [apiToNormalized, apiToDecimal])
@@ -413,10 +418,12 @@ export function useBoardState(
    */
   const replaceTempBoard = useCallback((tempId: string, realBoard: Board) => {
     devLog('🔄 [useBoardState] Replacing temp board:', tempId, '→', realBoard.id)
-    
-    // Revoke blob URL
+    // #region agent log
+    const tempPos = boardPositionsRef.current.get(tempId)
+    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useBoardState.ts:replaceTempBoard',message:'replace',hypothesisId:'H3',data:{tempId,realId:realBoard.id,hasTempPos:!!tempPos,hasRealPosition:!!realBoard.position},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     const temp = tempBoardsRef.current.get(tempId)
-    if (temp) {
+    if (temp && typeof temp.blobUrl === 'string' && temp.blobUrl.startsWith('blob:')) {
       URL.revokeObjectURL(temp.blobUrl)
     }
     
@@ -433,11 +440,11 @@ export function useBoardState(
     // Update positions map
     setBoardPositions(prev => {
       const newMap = new Map(prev)
-      const tempPos = newMap.get(tempId)
+      const tempPosInner = newMap.get(tempId)
       
-      if (tempPos) {
+      if (tempPosInner) {
         newMap.delete(tempId)
-        newMap.set(realBoard.id, tempPos)
+        newMap.set(realBoard.id, tempPosInner)
       } else if (realBoard.position) {
         // Add position from real board
         const x = apiToNormalized(realBoard.position.x)
@@ -457,9 +464,8 @@ export function useBoardState(
   const removeTempBoard = useCallback((tempId: string) => {
     devLog('🧹 [useBoardState] Removing temp board:', tempId)
     
-    // Revoke blob URL
     const temp = tempBoardsRef.current.get(tempId)
-    if (temp) {
+    if (temp && typeof temp.blobUrl === 'string' && temp.blobUrl.startsWith('blob:')) {
       URL.revokeObjectURL(temp.blobUrl)
     }
     

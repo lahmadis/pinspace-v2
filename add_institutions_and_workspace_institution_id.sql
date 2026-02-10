@@ -21,12 +21,14 @@ BEGIN
   END IF;
 END $$;
 
--- 3. Seed Wentworth if not present
+-- 3. Seed Wentworth and Northeastern if not present
 INSERT INTO institutions (name, slug, network_label)
-VALUES ('Wentworth Institute of Technology', 'wit', 'WIT Design Network')
+VALUES
+  ('Wentworth Institute of Technology', 'wit', 'WIT Design Network'),
+  ('Northeastern University', 'northeastern', 'Northeastern')
 ON CONFLICT (slug) DO NOTHING;
 
--- 4. Backfill existing workspaces to Wentworth
+-- 4. Backfill existing workspaces to Wentworth (so e.g. "test studio" shows under WIT)
 UPDATE workspaces
 SET institution_id = (SELECT id FROM institutions WHERE slug = 'wit' LIMIT 1)
 WHERE institution_id IS NULL;

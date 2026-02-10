@@ -44,6 +44,13 @@ function ExplorePageInner() {
 
   const institutionSlug = searchParams?.get('institution') ?? null
 
+  // Persist institution so other pages (Dashboard, etc.) can link "home" to this institution
+  useEffect(() => {
+    if (typeof window !== 'undefined' && institutionSlug) {
+      window.sessionStorage.setItem('pinspace_institution', institutionSlug)
+    }
+  }, [institutionSlug])
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -163,7 +170,7 @@ function ExplorePageInner() {
           {/* Left: logo + title */}
           <div className="flex items-center gap-4 min-w-0 flex-1 justify-start">
             <Link 
-              href="/"
+              href={institutionSlug ? `/i/${institutionSlug}` : '/'}
               className="text-xl font-bold text-white hover:text-indigo-400 transition-colors shrink-0"
             >
               PinSpace

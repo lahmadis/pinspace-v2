@@ -190,39 +190,24 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
               // Get wall dimensions in feet (from wallConfig)
               const wallDimensions = wallConfig.walls[wallIndex]
               
-              // Calculate board dimensions using physical dimensions directly in inches
-              // With 1 unit = 1 inch, physical dimensions map directly to 3D units
+              // Calculate board dimensions: prefer saved resize (position % in 0-100) so size doesn't change on Save & Exit
+              const wallWidthInches = wallDimensions.width * 12
+              const wallHeightInches = wallDimensions.height * 12
               let boardWidth: number | undefined
               let boardHeight: number | undefined
-              
-              // First, try to use physical dimensions if available (they represent the actual board size)
-              if (board.physicalWidth && board.physicalHeight) {
-                boardWidth = board.physicalWidth  // Direct: inches → units
-                boardHeight = board.physicalHeight // Direct: inches → units
-                
-                // Clamp to ensure board doesn't exceed wall size
-                const wallWidthInches = wallDimensions.width * 12
-                const wallHeightInches = wallDimensions.height * 12
-                boardWidth = Math.min(boardWidth, wallWidthInches)
-                boardHeight = Math.min(boardHeight, wallHeightInches)
-              }
-              
-              // Fallback for existing boards without physical dimensions: default to 8.5×11 inches (standard letter size)
-              if (boardWidth === undefined || boardHeight === undefined) {
+
+              // Prefer saved position width/height (API format 0-100) so resized boards stay correct in room view
+              if (board.position.width != null && board.position.height != null && board.position.width > 0 && board.position.height > 0) {
+                boardWidth = (board.position.width / 100) * wallWidthInches
+                boardHeight = (board.position.height / 100) * wallHeightInches
+              } else if (board.physicalWidth && board.physicalHeight) {
+                boardWidth = Math.min(board.physicalWidth, wallWidthInches)
+                boardHeight = Math.min(board.physicalHeight, wallHeightInches)
+              } else {
                 const DEFAULT_WIDTH_INCHES = 8.5
                 const DEFAULT_HEIGHT_INCHES = 11
-                
-                // Try to use saved percentage dimensions if available
-                if (board.position.width && board.position.height) {
-                  const wallWidthInches = wallDimensions.width * 12
-                  const wallHeightInches = wallDimensions.height * 12
-                  boardWidth = board.position.width * wallWidthInches
-                  boardHeight = board.position.height * wallHeightInches
-                } else {
-                  // Final fallback: use default 8.5×11 inches
-                  boardWidth = DEFAULT_WIDTH_INCHES
-                  boardHeight = DEFAULT_HEIGHT_INCHES
-                }
+                boardWidth = DEFAULT_WIDTH_INCHES
+                boardHeight = DEFAULT_HEIGHT_INCHES
               }
               
               // Ensure we have valid dimensions

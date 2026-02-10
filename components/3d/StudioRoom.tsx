@@ -455,6 +455,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
   const [draggingFromSidebar, setDraggingFromSidebar] = useState<Board | null>(null)
   const [commentPanelBoard, setCommentPanelBoard] = useState<Board | null>(null)
   const [hoveredBoardId, setHoveredBoardId] = useState<string | null>(null)
+  const copiedBoardRef = useRef<Board | null>(null)
   const {
     boards: localBoards,
     boardPositions,
@@ -467,25 +468,6 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     undo,
     redo,
   } = useBoardState(props.boards, props.studioId, async () => { await Promise.resolve(); props.onBoardUpdate() })
-
-  // Ctrl+Z / Ctrl+Y for undo/redo (only when not typing in an input)
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (!e.ctrlKey) return
-      const target = e.target as HTMLElement
-      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
-      if (isInput) return
-      if (e.key === 'z') {
-        e.preventDefault()
-        undo()
-      } else if (e.key === 'y') {
-        e.preventDefault()
-        redo()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [undo, redo])
 
   // Sync tables when wall config loads or studio changes (strip blob URLs so GLTF never sees them)
   useEffect(() => {
@@ -529,13 +511,39 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
   // Keep placedBoards3D in sync with boardPositions (e.g. after undo/redo)
   useEffect(() => {
     if (editingWall === null || editingWallSide == null) return
+    const currentPlaced = placedBoards3DRef.current
     const newMap = new Map<string, { x: number; y: number; width?: number; height?: number }>()
-    localBoards
-      .filter(b => b.position?.wallIndex === editingWall && (b.position?.side || 'front') === editingWallSide)
-      .forEach(board => {
+    const wallBoards = localBoards.filter(b => b.position?.wallIndex === editingWall && (b.position?.side || 'front') === editingWallSide)
+    wallBoards.forEach(board => {
+        const isTemp = board.id.startsWith('temp-')
         const pos = boardPositions.get(board.id)
-        if (pos) newMap.set(board.id, pos)
+        const existing = currentPlaced.get(board.id)
+        // Temp boards: never overwrite center with boardPositions (avoids jump to corner from async timing)
+        const alreadyAtCenter = existing && Math.abs(existing.x) < 0.01 && Math.abs(existing.y) < 0.01
+        let added = false
+        if (isTemp && existing && alreadyAtCenter) {
+          newMap.set(board.id, existing)
+          added = true
+        } else         if (pos) {
+          const usePos = isTemp ? { ...pos, x: 0, y: 0 } : pos
+          newMap.set(board.id, usePos)
+          added = true
+        } else if (isTemp) {
+          // Temp not in boardPositions yet (async batching); keep at center so upload always shows immediately
+          newMap.set(board.id, existing ?? { x: 0, y: 0, width: 0.3, height: 0.3 })
+          added = true
+        } else if (existing) {
+          // Real board not in boardPositions yet (e.g. after refetch/race); keep current placement so it doesn't disappear
+          newMap.set(board.id, existing)
+          added = true
+        }
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StudioRoom.tsx:syncEffect',message:'sync board',hypothesisId:'H1_H3',data:{boardId:board.id,isTemp,hasPos:!!pos,hasExisting:!!existing,added,currentPlacedSize:currentPlaced.size},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
       })
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StudioRoom.tsx:syncEffect',message:'sync effect done',hypothesisId:'H1',data:{editingWall,wallBoardCount:wallBoards.length,newMapSize:newMap.size,currentPlacedSize:currentPlaced.size},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     setPlacedBoards3D(newMap)
   }, [boardPositions, editingWall, editingWallSide, localBoards])
 
@@ -926,45 +934,180 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     }
   }, [deleteBoard])
 
-  // Handle keyboard shortcuts (backspace to delete selected board, E to open comments)
+  const handleClearWall = useCallback(async () => {
+    if (editingWall === null || editingWallSide == null) return
+    const side = editingWallSide
+    const wallBoards = localBoards.filter(
+      b => b.position?.wallIndex === editingWall && (b.position?.side || 'front') === side
+    )
+    if (wallBoards.length === 0) return
+    const ok = window.confirm(
+      `Remove all ${wallBoards.length} board${wallBoards.length === 1 ? '' : 's'} from this wall? This cannot be undone.`
+    )
+    if (!ok) return
+    for (const board of wallBoards) {
+      const success = await deleteBoard(board.id)
+      if (!success) {
+        alert('Some boards could not be deleted. You may not have permission.')
+        break
+      }
+      setPlacedBoards3D(prev => {
+        const newMap = new Map(prev)
+        newMap.delete(board.id)
+        placedBoards3DRef.current = newMap
+        return newMap
+      })
+    }
+  }, [editingWall, editingWallSide, localBoards, deleteBoard])
+
+  const handlePaste = useCallback(async () => {
+    const copied = copiedBoardRef.current
+    if (!copied || editingWall === null || editingWallSide == null || !editingWallDimensions) return
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+    const side = editingWallSide
+    const apiWidth = copied.position?.width ?? 30
+    const apiHeight = copied.position?.height ?? 30
+    const tempBoard: Board = {
+      id: tempId,
+      studioId: props.studioId,
+      workspaceId: props.studioId,
+      studentName: copied.studentName,
+      title: (copied.title || 'Board').trimEnd() + ' (copy)',
+      thumbnailUrl: copied.fullImageUrl ?? copied.thumbnailUrl,
+      fullImageUrl: copied.fullImageUrl ?? copied.thumbnailUrl,
+      uploadedAt: new Date(),
+      tags: copied.tags ?? [],
+      position: {
+        wallIndex: editingWall,
+        x: 50,
+        y: 50,
+        width: apiWidth,
+        height: apiHeight,
+        side,
+      },
+      ownerId: user?.id,
+      ownerName: user?.user_metadata?.full_name ?? user?.email?.split('@')[0] ?? 'User',
+      aspectRatio: copied.aspectRatio,
+      originalWidth: copied.originalWidth,
+      originalHeight: copied.originalHeight,
+      physicalWidth: copied.physicalWidth,
+      physicalHeight: copied.physicalHeight,
+    }
+    addTempBoard(tempBoard, copied.fullImageUrl ?? copied.thumbnailUrl)
+    const normW = (apiWidth / 100) || 0.3
+    const normH = (apiHeight / 100) || 0.3
+    setPlacedBoards3D(prev => {
+      const m = new Map(prev)
+      m.set(tempId, { x: 0, y: 0, width: normW, height: normH })
+      placedBoards3DRef.current = m
+      return m
+    })
+    try {
+      const res = await fetch('/api/boards/duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          boardId: copied.id,
+          workspaceId: props.studioId,
+          wallIndex: editingWall,
+          position_x: 50,
+          position_y: 50,
+          position_side: side,
+          position_width: apiWidth,
+          position_height: apiHeight,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || 'Duplicate failed')
+      }
+      const data = await res.json()
+      const newBoard = data.board as Board
+      const onCurrentWall = newBoard.position?.wallIndex === editingWall && (newBoard.position?.side || 'front') === side
+      const boardToUse: Board = onCurrentWall ? newBoard : {
+        ...newBoard,
+        position: { wallIndex: editingWall, x: 50, y: 50, width: apiWidth, height: apiHeight, side },
+      }
+      replaceTempBoard(tempId, boardToUse)
+      setPlacedBoards3D(prev => {
+        const m = new Map(prev)
+        const pos = m.get(tempId)
+        if (pos) {
+          m.delete(tempId)
+          m.set(boardToUse.id, pos)
+        }
+        placedBoards3DRef.current = m
+        return m
+      })
+    } catch (err) {
+      console.error('Paste failed:', err)
+      removeTempBoard(tempId)
+      setPlacedBoards3D(prev => {
+        const m = new Map(prev)
+        m.delete(tempId)
+        placedBoards3DRef.current = m
+        return m
+      })
+      alert('Could not paste board. You may need to be a member of the workspace.')
+    }
+  }, [editingWall, editingWallSide, editingWallDimensions, props.studioId, user, addTempBoard, replaceTempBoard, removeTempBoard, setPlacedBoards3D])
+
+  const handleCopy = useCallback(() => {
+    if (!selectedBoardId) return
+    const board = localBoards.find(b => b.id === selectedBoardId)
+    if (board) copiedBoardRef.current = board
+  }, [selectedBoardId, localBoards])
+
+  // Keyboard shortcuts: Backspace/Delete = delete selected board, Ctrl+Z = undo, Ctrl+Y = redo, Ctrl+C/V = copy/paste, Escape = deselect
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't handle keys if user is typing in an input field
       const target = e.target as HTMLElement
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
         return
       }
 
-      // Only handle backspace if we're in edit mode and a board is selected
-      if (e.key === 'Backspace' && selectedBoardId && editingWall !== null) {
+      // Ctrl+Z = undo, Ctrl+Y = redo, Ctrl+C = copy, Ctrl+V = paste
+      if (e.ctrlKey) {
+        if (e.key === 'z') {
+          e.preventDefault()
+          undo()
+        } else if (e.key === 'y') {
+          e.preventDefault()
+          redo()
+        } else if (e.key === 'c') {
+          e.preventDefault()
+          if (selectedBoardId && editingWall !== null) {
+            const board = localBoards.find(b => b.id === selectedBoardId)
+            if (board) copiedBoardRef.current = board
+          }
+        }
+        return
+      }
+
+      // Backspace or Delete = delete selected board (when in edit mode)
+      if ((e.key === 'Backspace' || e.key === 'Delete') && selectedBoardId && editingWall !== null) {
         e.preventDefault()
         e.stopPropagation()
-        
-        // Allow delete if user is workspace member (API will enforce permissions)
         const selectedBoard = localBoards.find(b => b.id === selectedBoardId)
         if (selectedBoard) {
-          devLog('⌨️ [Keyboard] Backspace pressed - deleting board:', selectedBoardId)
+          devLog('⌨️ [Keyboard] Delete key - deleting board:', selectedBoardId)
           handleBoardDelete(selectedBoardId)
-          setSelectedBoardId(null) // Clear selection after delete
-        }
-      }
-      
-      // Escape key to deselect or close comment panel
-      if (e.key === 'Escape') {
-        if (selectedBoardId) {
           setSelectedBoardId(null)
         }
-        if (commentPanelBoard) {
-          setCommentPanelBoard(null)
-        }
+      }
+
+      // Escape = deselect or close comment panel
+      if (e.key === 'Escape') {
+        if (selectedBoardId) setSelectedBoardId(null)
+        if (commentPanelBoard) setCommentPanelBoard(null)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedBoardId, editingWall, localBoards, user, handleBoardDelete, hoveredBoardId, commentPanelBoard])
+  }, [selectedBoardId, editingWall, localBoards, handleBoardDelete, commentPanelBoard, undo, redo])
 
-  const { handleUpload } = useBoardUpload({
+  const { handleUpload, uploadFileDirect } = useBoardUpload({
     studioId: props.studioId,
     user,
     editingWall,
@@ -977,6 +1120,36 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     setPlacedBoards3D,
     placedBoards3DRef,
   })
+
+  // Paste: image from clipboard → upload as new board; else copied board → paste duplicate
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (editingWall === null) return
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile()
+          if (file) {
+            e.preventDefault()
+            e.stopPropagation()
+            uploadFileDirect(file).then(ok => {
+              if (!ok) alert('Could not add pasted image as a board.')
+            })
+          }
+          return
+        }
+      }
+      if (copiedBoardRef.current) {
+        e.preventDefault()
+        e.stopPropagation()
+        handlePaste()
+      }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [editingWall, uploadFileDirect, handlePaste])
 
   return (
     <>
@@ -1024,6 +1197,10 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
         })}
         onClose={handleEditComplete}
         onUpload={handleUpload}
+        onClearWall={handleClearWall}
+        onCopy={handleCopy}
+        onPaste={handlePaste}
+        hasSelection={!!selectedBoardId}
         onBoardSelect={handleBoardSelect}
         onBoardDragStart={handleBoardDragStart}
       />

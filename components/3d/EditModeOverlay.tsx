@@ -7,6 +7,10 @@ interface EditModeOverlayProps {
   wallIndex: number
   onClose: () => void
   onUpload: () => void
+  onClearWall?: () => void
+  onCopy?: () => void
+  onPaste?: () => void
+  hasSelection?: boolean
   availableBoards?: any[] // Optional - kept for API compatibility but not used
   wallDimensions?: { width: number; height: number } | null // Optional - kept for API compatibility but not used
   onBoardSelect?: (board: any) => void // Optional - kept for API compatibility but not used
@@ -17,7 +21,11 @@ export function EditModeOverlay({
   isVisible,
   wallIndex,
   onClose,
-  onUpload
+  onUpload,
+  onClearWall,
+  onCopy,
+  onPaste,
+  hasSelection
 }: EditModeOverlayProps) {
   return (
     <AnimatePresence>
@@ -35,12 +43,23 @@ export function EditModeOverlay({
               <h2 className="text-xl font-semibold text-white">Edit Wall {wallIndex + 1}</h2>
               <p className="text-sm text-white/90">Drag and drop boards to arrange them on the wall</p>
             </div>
-            <button
-              onClick={onClose}
-              className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-lg"
-            >
-              Save & Exit
-            </button>
+            <div className="flex items-center gap-3">
+              {onClearWall && (
+                <button
+                  onClick={onClearWall}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-lg"
+                  title="Remove all boards from this wall"
+                >
+                  Clear wall
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-lg"
+              >
+                Save & Exit
+              </button>
+            </div>
           </motion.div>
 
           {/* Simple Upload Button - No sidebar panel */}
@@ -49,7 +68,7 @@ export function EditModeOverlay({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, delay: 0.5 }}
-            className="fixed left-6 top-32 z-50"
+            className="fixed left-6 top-32 z-50 flex flex-col gap-2"
           >
             <button
               onClick={onUpload}
@@ -60,6 +79,25 @@ export function EditModeOverlay({
               </svg>
               Add Your Board
             </button>
+            {onCopy && (
+              <button
+                onClick={onCopy}
+                disabled={!hasSelection}
+                className="px-6 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+                title="Copy selected board (Ctrl+C)"
+              >
+                Copy
+              </button>
+            )}
+            {onPaste && (
+              <button
+                onClick={onPaste}
+                className="px-6 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors shadow-lg"
+                title="Paste board on this wall (Ctrl+V)"
+              >
+                Paste
+              </button>
+            )}
           </motion.div>
         </>
       )}

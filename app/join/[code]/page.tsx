@@ -74,7 +74,8 @@ export default function JoinWorkspacePage() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to join workspace')
+        const msg = data.message || data.error || 'Failed to join workspace'
+        throw new Error(msg)
       }
 
       console.log('✅ Joined workspace:', workspace.id)
@@ -190,7 +191,7 @@ export default function JoinWorkspacePage() {
               </p>
             </div>
 
-            <Link href={`/sign-in?redirect=/join/${inviteCode}`}>
+            <Link href={workspace?.institutionSlug ? `/sign-in?institution=${workspace.institutionSlug}&redirect=/join/${inviteCode}` : `/sign-in?redirect=/join/${inviteCode}`}>
               <button className="w-full px-6 py-4 bg-[#4444ff] text-white rounded-lg hover:bg-[#3333ee] transition-all font-semibold text-lg shadow-md hover:shadow-lg">
                 Sign In to Join
               </button>
@@ -198,7 +199,7 @@ export default function JoinWorkspacePage() {
 
             <p className="text-center text-sm text-gray-600">
               Don't have an account?{' '}
-              <Link href={`/sign-up?redirect=/join/${inviteCode}`} className="text-[#4444ff] hover:underline font-semibold">
+              <Link href={workspace?.institutionSlug ? `/sign-up?institution=${workspace.institutionSlug}&redirect=/join/${inviteCode}` : `/sign-up?redirect=/join/${inviteCode}`} className="text-[#4444ff] hover:underline font-semibold">
                 Sign up
               </Link>
             </p>
