@@ -21,12 +21,15 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData()
     
-    const file = formData.get('image') as File
-    const studentName = formData.get('studentName') as string
+    const file = formData.get('image') as File | null
+    const rawWorkspaceId = (formData.get('workspaceId') ?? formData.get('studioId')) as string | null
+    const workspaceId = (rawWorkspaceId && String(rawWorkspaceId).trim() && String(rawWorkspaceId) !== 'undefined') ? String(rawWorkspaceId).trim() : null
+    const rawStudentName = formData.get('studentName') as string | null
+    const studentName = (rawStudentName && String(rawStudentName).trim()) ? String(rawStudentName).trim() : (session?.user?.user_metadata?.email?.split('@')[0] || 'Uploaded Board')
     const studentEmail = formData.get('studentEmail') as string
-    const title = formData.get('title') as string
+    const rawTitle = formData.get('title') as string | null
+    const title = (rawTitle && String(rawTitle).trim()) ? String(rawTitle).trim() : 'Untitled Board'
     const description = formData.get('description') as string
-    const workspaceId = formData.get('workspaceId') as string || formData.get('studioId') as string // Support both
     const tags = formData.get('tags') as string
     
     // Owner information (from authenticated user)
@@ -70,14 +73,21 @@ export async function POST(request: NextRequest) {
           ? parseFloat(posY as string)
           : null
 
-    if (!file || !studentName || !title || !workspaceId) {
-      return NextResponse.json({ error: 'Missing required fields (image, studentName, title, workspaceId)' }, { status: 400 })
+    const missing: string[] = []
+    if (!file || (file && typeof file.size === 'number' && file.size === 0)) missing.push('image')
+    if (!workspaceId) missing.push('workspaceId')
+    if (missing.length > 0) {
+      console.error('❌ [API Upload] Missing required fields:', missing)
+      return NextResponse.json(
+        { error: 'Missing required fields', missing },
+        { status: 400 }
+      )
     }
 
-    // Validate file size (10MB limit)
-    const maxSize = 10 * 1024 * 1024 // 10MB
+    // Validate file size (25MB limit so typical phone photos can upload)
+    const maxSize = 25 * 1024 * 1024 // 25MB
     if (file.size > maxSize) {
-      return NextResponse.json({ error: 'File size exceeds 10MB limit' }, { status: 400 })
+      return NextResponse.json({ error: 'File size exceeds 25MB limit' }, { status: 400 })
     }
 
     // Validate file type
@@ -140,7 +150,7 @@ export async function POST(request: NextRequest) {
       position_y: positionY,
       position_width: positionWidth ? parseFloat(positionWidth as string) : null,
       position_height: positionHeight ? parseFloat(positionHeight as string) : null,
-      position_side: positionSide && (positionSide === 'front' || positionSide === 'back') ? positionSide : null,
+      position_side: positionSide && (String(positionSide).toLowerCase() === 'back' || String(positionSide).toLowerCase() === 'front') ? String(positionSide).toLowerCase() : null,
       original_width: originalWidth ? parseInt(originalWidth) : null,
       original_height: originalHeight ? parseInt(originalHeight) : null,
       aspect_ratio: aspectRatio ? parseFloat(aspectRatio) : null,

@@ -23,9 +23,6 @@ export function EditModeOverlay({
   onClose,
   onUpload,
   onClearWall,
-  onCopy,
-  onPaste,
-  hasSelection
 }: EditModeOverlayProps) {
   return (
     <AnimatePresence>
@@ -47,7 +44,7 @@ export function EditModeOverlay({
               {onClearWall && (
                 <button
                   onClick={onClearWall}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-lg"
+                  className="px-4 py-2 bg-slate-500 text-white rounded-lg hover:bg-slate-600 transition-colors shadow-lg"
                   title="Remove all boards from this wall"
                 >
                   Clear wall
@@ -79,25 +76,6 @@ export function EditModeOverlay({
               </svg>
               Add Your Board
             </button>
-            {onCopy && (
-              <button
-                onClick={onCopy}
-                disabled={!hasSelection}
-                className="px-6 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
-                title="Copy selected board (Ctrl+C)"
-              >
-                Copy
-              </button>
-            )}
-            {onPaste && (
-              <button
-                onClick={onPaste}
-                className="px-6 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors shadow-lg"
-                title="Paste board on this wall (Ctrl+V)"
-              >
-                Paste
-              </button>
-            )}
           </motion.div>
         </>
       )}

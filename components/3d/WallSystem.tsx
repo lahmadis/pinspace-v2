@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { Board } from '@/types'
 import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
-import { getWallTransform, calculateFloorBounds } from '@/lib/wallLayout'
+import { getWallTransformResolved, calculateFloorBounds } from '@/lib/wallLayout'
 
 interface WallDimensions {
   height: number
@@ -33,25 +33,7 @@ interface WallSystemProps {
 export default function WallSystem({ boards, wallConfig, onWallClick, editingWall, onBoardClick, highlightedBoardId, onBoardHover, onFloorClick }: WallSystemProps) {
   const SCALE = 12
 
-  const getOutwardZDirection = (rotation: number): number => {
-    // Normalize rotation to 0-2π range
-    const normalizedRotation = ((rotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-    
-    // For zigzag walls:
-    // - Horizontal walls (rotation ≈ 0 or π): front is +Z
-    // - Vertical walls (rotation ≈ π/2 or 3π/2): front is -Z (because of rotation)
-    
-    // Check if rotation is closer to π/2 (90°) or 3π/2 (270°)
-    const isVerticalWall = (
-      (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
-      (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
-    )
-    
-    // Return direction: -1 for vertical walls (front faces -Z), +1 for horizontal walls (front faces +Z)
-    return isVerticalWall ? -1 : 1
-  }
-  
-  const getTransform = (index: number) => getWallTransform(wallConfig, index)
+  const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
   const floorBounds = calculateFloorBounds(wallConfig)
   const wallDepth = 6 // Wall thickness in inches (same as walls)
   const floorThickness = wallDepth // Floor thickness matches wall thickness
@@ -91,15 +73,14 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
             position={[transform.x, transform.height / 2, transform.z]}
             rotation={[0, transform.rotationY, 0]}
           >
-            {/* Clickable front/back surfaces */}
+            {/* Clickable front and back – same wall-local coords so no inversion */}
             <WallSurface
               wallDimensions={wall}
               side="front"
               onSurfaceClick={({ side }) => {
                 const position = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
                 const rotation = transform.rotationY
-                const adjustedRotation = rotation
-                onWallClick?.(wallIndex, wall, position, adjustedRotation, side)
+                onWallClick?.(wallIndex, wall, position, rotation, side)
               }}
             />
             <WallSurface
@@ -108,8 +89,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
               onSurfaceClick={({ side }) => {
                 const position = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
                 const rotation = transform.rotationY
-                const adjustedRotation = rotation + Math.PI
-                onWallClick?.(wallIndex, wall, position, adjustedRotation, side)
+                onWallClick?.(wallIndex, wall, position, rotation + Math.PI, side)
               }}
             />
 
@@ -222,57 +202,19 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
               // Positions come from API in percentage format (0-100), need to convert to normalized (-0.5 to 0.5)
               const normalizedX = (board.position.x / 100) - 0.5
               const normalizedY = (board.position.y / 100) - 0.5
-              // On vertical walls (2nd and 4th in zigzag), negate X so view mode matches edit mode (same as DraggableBoard)
-              const normalizedRotation = ((transform.rotationY % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-              const isVerticalWall = (
-                (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
-                (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
-              )
-              const adjustedNormalizedX = isVerticalWall ? -normalizedX : normalizedX
-              const boardX = adjustedNormalizedX * transform.width
+              // Use one wall-local convention for every wall orientation.
+              const boardX = normalizedX * transform.width
               
               // Y-axis: positions are from API format (0-100) where 0 = top, 100 = bottom
               // After normalization: -0.5 = top, +0.5 = bottom
               // In 3D: +height/2 = top, -height/2 = bottom (Y axis goes up)
               const boardY = normalizedY * transform.height
 
-              // 🎯 Position board flush with wall surface
-              // Wall depth is 6 inches, so wall surface is at WALL_DEPTH/2 = 3 inches from center
-              // Board should be positioned at the wall surface, not sticking out
-              const WALL_DEPTH = 6 // Wall thickness: 6 inches (increased for more visible depth)
-              const WALL_SURFACE_OFFSET = WALL_DEPTH / 2 // 3 inches from wall center to surface
-              const BOARD_OFFSET = 0.2 // Offset to prevent z-fighting and ensure boards are always visible (0.2 inches = 5mm)
-              
-              // Determine which direction is "outward" for this wall (1 for +Z, -1 for -Z)
-              const outwardDirection = getOutwardZDirection(transform.rotationY)
-              
-              // Get board's side (front or back) - this determines which face of the wall it's on
-              const boardSide = board.position?.side || 'front' // Default to front if not specified
-              
-              // Position board at wall surface based on which side it's on:
-              // - Front side: same direction as outward (outwardDirection * WALL_SURFACE_OFFSET)
-              // - Back side: opposite direction (-outwardDirection * WALL_SURFACE_OFFSET)
-              // Ensure boards are ALWAYS outside the wall geometry (z > 3 or z < -3)
-              const baseZ = outwardDirection * WALL_SURFACE_OFFSET
-              let boardZ: number
-              if (boardSide === 'back') {
-                boardZ = -baseZ - BOARD_OFFSET // Opposite direction for back face
-              } else {
-                boardZ = baseZ + BOARD_OFFSET // Same direction for front face
-              }
-              
-              // Safety check: ensure board is never inside the wall (between -3 and +3)
-              // Wall geometry extends from -3 to +3 inches (WALL_DEPTH = 6, so ±3 from center)
-              const WALL_INNER_BOUND = WALL_SURFACE_OFFSET // 3 inches
-              const WALL_OUTER_BOUND = WALL_SURFACE_OFFSET + BOARD_OFFSET // 3.2 inches
-              
-              // Clamp board Z to ensure it's always outside the wall
-              let finalBoardZ: number
-              if (boardSide === 'back') {
-                finalBoardZ = Math.min(boardZ, -WALL_OUTER_BOUND) // Clamp to outer bound on negative side
-              } else {
-                finalBoardZ = Math.max(boardZ, WALL_OUTER_BOUND) // Clamp to outer bound on positive side
-              }
+              // Match WallSurface: in wall group local space, front = +3.01, back = -3.01. Place boards at ±3.2.
+              const WALL_SURFACE_OFFSET = 3 // 6" wall depth / 2
+              const BOARD_OFFSET = 0.2
+              const boardSide = board.position?.side || 'front'
+              const finalBoardZ = boardSide === 'back' ? -(WALL_SURFACE_OFFSET + BOARD_OFFSET) : WALL_SURFACE_OFFSET + BOARD_OFFSET
 
               return (
                 <BoardThumbnail

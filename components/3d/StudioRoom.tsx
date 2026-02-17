@@ -32,9 +32,16 @@ interface WallDimensions {
 
 type LayoutType = 'zigzag' | 'square' | 'linear' | 'lshape'
 
+interface WallTransformOverride {
+  x: number
+  z: number
+  rotationY: number
+}
+
 interface WallConfig {
   walls: WallDimensions[]
   layoutType: LayoutType
+  customTransforms?: WallTransformOverride[]
 }
 
 interface StudioRoomProps {
@@ -46,6 +53,10 @@ interface StudioRoomProps {
   /** When provided, floor editor open state is controlled by the parent (e.g. header button). */
   floorEditorOpen?: boolean
   onFloorEditorOpenChange?: (open: boolean) => void
+  /** 'tables' = place tables/models, 'walls' = move/rotate walls. */
+  floorEditorMode?: 'tables' | 'walls'
+  /** Called when user updates wall positions/rotations in floor editor (walls mode). */
+  onWallConfigChange?: (config: WallConfig) => void
 }
 
 function SceneContent({ 
@@ -58,6 +69,7 @@ function SceneContent({
   placedBoards3D,
   editingWallPosition,
   editingWallRotation,
+  editingWallBaseRotation,
   editingWallDimensions,
   onBoardPositionChange,
   onBoardDelete,
@@ -84,6 +96,7 @@ function SceneContent({
   placedBoards3D: Map<string, { x: number; y: number; width?: number; height?: number }>
   editingWallPosition: THREE.Vector3 | null
   editingWallRotation: number
+  editingWallBaseRotation: number
   editingWallDimensions: WallDimensions | null
   onBoardPositionChange: (boardId: string, localX: number, localY: number, width?: number, height?: number) => void
   onBoardDelete: (boardId: string) => void
@@ -202,6 +215,7 @@ function SceneContent({
         <WallDropZone
           wallPosition={editingWallPosition}
           wallRotation={editingWallRotation}
+          wallBaseRotationForCoords={editingWallBaseRotation}
           wallDimensions={editingWallDimensions}
           onDrop={onBoardDrop}
           onDragCancel={onDragCancel}
@@ -267,6 +281,7 @@ function SceneContent({
                   wallIndex={editingWall}
                   wallPosition={editingWallPosition}
                   wallRotation={editingWallRotation}
+                  wallBaseRotationForCoords={editingWallBaseRotation}
                   wallDimensions={editingWallDimensions}
                   side={editingWallSide}
                   initialLocalPosition={localPos}
@@ -419,7 +434,9 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [editingWallDimensions, setEditingWallDimensions] = useState<WallDimensions | null>(null)
   const [editingWallPosition, setEditingWallPosition] = useState<THREE.Vector3 | null>(null)
   const [editingWallRotation, setEditingWallRotation] = useState<number>(0)
+  const [editingWallBaseRotation, setEditingWallBaseRotation] = useState<number>(0)
   const [editingWallSide, setEditingWallSide] = useState<'front' | 'back'>('front')
+  const [cameraTransitionKey, setCameraTransitionKey] = useState(0)
   const [showEditUI, setShowEditUI] = useState(false)
   const [floorEditorOpenInternal, setFloorEditorOpenInternal] = useState(false)
   const floorEditorOpen = props.floorEditorOpen !== undefined ? props.floorEditorOpen : floorEditorOpenInternal
@@ -445,7 +462,9 @@ export default function StudioRoom(props: StudioRoomProps) {
     width?: number; 
     height?: number 
   }>>(new Map())
-const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
+  const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
+  const [compareBoardIds, setCompareBoardIds] = useState<string[]>([])
+  const shiftPressedRef = useRef(false)
   
   // Keep a ref to the latest placedBoards3D to avoid stale closure issues
   const placedBoards3DRef = useRef(placedBoards3D)
@@ -483,29 +502,25 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     setModelViewerUrl(modelUrl)
   }, [])
 
-  const handleFloorEditorSave = useCallback(async () => {
-    // Persist server URLs (http/https or paths) and data URLs so uploaded models survive refresh.
-    // Strip only blob: URLs (they're invalid after reload).
+  const handleFloorEditorSave = useCallback(() => {
+    setFloorEditorOpen(false)
+    // Save in background so user isn't stuck if the request hangs
     const tablesToSave = tables.map((t) => {
       const url = t.modelUrl ?? ''
       const isBlob = url.startsWith('blob:')
       const isPersistable = !isBlob && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/') && !url.startsWith('//') || url.startsWith('data:'))
       return { ...t, modelUrl: isPersistable ? url : undefined }
     })
-    try {
-      await fetch(`/api/studios/${props.studioId}/wall-config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...props.wallConfig, tables: tablesToSave }),
-      })
-      const savedConfigKey = `studio-${props.studioId}-wall-config`
-      const saved = localStorage.getItem(savedConfigKey)
-      const parsed = saved ? JSON.parse(saved) : {}
-      localStorage.setItem(savedConfigKey, JSON.stringify({ ...parsed, ...props.wallConfig, tables: tablesToSave }))
-    } catch (e) {
-      console.error('Failed to save tables', e)
-    }
-    setFloorEditorOpen(false)
+    const payload = { ...props.wallConfig, tables: tablesToSave }
+    const savedConfigKey = `studio-${props.studioId}-wall-config`
+    const saved = localStorage.getItem(savedConfigKey)
+    const parsed = saved ? JSON.parse(saved) : {}
+    localStorage.setItem(savedConfigKey, JSON.stringify({ ...parsed, ...props.wallConfig, tables: tablesToSave }))
+    fetch(`/api/studios/${props.studioId}/wall-config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch((e) => console.error('Failed to save floor/wall config', e))
   }, [props.studioId, props.wallConfig, tables])
 
   // Keep placedBoards3D in sync with boardPositions (e.g. after undo/redo)
@@ -537,13 +552,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
           newMap.set(board.id, existing)
           added = true
         }
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StudioRoom.tsx:syncEffect',message:'sync board',hypothesisId:'H1_H3',data:{boardId:board.id,isTemp,hasPos:!!pos,hasExisting:!!existing,added,currentPlacedSize:currentPlaced.size},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
       })
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StudioRoom.tsx:syncEffect',message:'sync effect done',hypothesisId:'H1',data:{editingWall,wallBoardCount:wallBoards.length,newMapSize:newMap.size,currentPlacedSize:currentPlaced.size},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     setPlacedBoards3D(newMap)
   }, [boardPositions, editingWall, editingWallSide, localBoards])
 
@@ -565,30 +574,46 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     // Hide edit UI first, let camera animation play, then show UI
     setShowEditUI(false)
     props.onEditModeChange?.(false)
+    setCameraTransitionKey(prev => prev + 1)
     
     setEditingWall(wallIndex)
     setEditingWallDimensions(wallDimensions)
     setEditingWallPosition(position)
     setEditingWallRotation(rotation)
     setEditingWallSide(side)
+    // Base rotation (same as wall transform) so (x,y) coords are consistent for front and back – avoids inversion
+    setEditingWallBaseRotation(side === 'back' ? rotation - Math.PI : rotation)
 
     // Load positions from central hook (API → normalized + size)
     const wallPositions = loadWallPositions(wallIndex, wallDimensions, side)
 
-    // Copy all boards on this wall AND this side into placedBoards3D
+    // Copy all boards on this wall AND this side into placedBoards3D (include fallback so boards don't disappear when pos is missing)
     const newMap = new Map<string, { x: number; y: number; width: number; height: number }>()
-    localBoards
-      .filter(b => {
-        if (b.position?.wallIndex !== wallIndex) return false
-        const boardSide = b.position?.side || 'front'
-        return boardSide === side
-      })
-      .forEach(board => {
-        const pos = wallPositions.get(board.id)
-        if (pos) {
-          newMap.set(board.id, pos)
+    const wallBoardsForEdit = localBoards.filter(b => {
+      if (b.position?.wallIndex !== wallIndex) return false
+      const boardSide = b.position?.side || 'front'
+      return boardSide === side
+    })
+    // No x inversion: API/wall-local convention is consistent; left = negative, right = positive in both 2D and 3D
+    wallBoardsForEdit.forEach(board => {
+      const pos = wallPositions.get(board.id)
+      const validPos = pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)
+      if (validPos) {
+        const displayX = pos.x
+        newMap.set(board.id, { x: displayX, y: pos.y, width: pos.width ?? 0.3, height: pos.height ?? 0.3 })
+      } else {
+        // Fallback: board is on this wall/side but no valid pos (missing from loadWallPositions or invalid). Show at center so it doesn't disappear in 2D.
+        const x = board.position?.x != null && Number.isFinite(board.position.x) ? board.position.x / 100 - 0.5 : 0
+        const y = board.position?.y != null && Number.isFinite(board.position.y) ? board.position.y / 100 - 0.5 : 0
+        let w = 0.3
+        let h = 0.3
+        if (board.position?.width != null && board.position?.height != null && board.position.width > 0 && board.position.height > 0) {
+          w = board.position.width / 100
+          h = board.position.height / 100
         }
-      })
+        newMap.set(board.id, { x, y, width: w, height: h })
+      }
+    })
 
     devLog('🖼️ [StudioRoom] Total boards to render on', side, 'side:', newMap.size)
     setPlacedBoards3D(newMap)
@@ -602,76 +627,93 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     }
   }
 
-  const handleEditComplete = async () => {
+  const handleEditComplete = () => {
     if (editingWall === null || !editingWallDimensions || !editingWallPosition) return
 
     const currentBoards = placedBoards3DRef.current
     const wallToSave = editingWall
-    
-    devLog('💾 [StudioRoom] Save & Exit clicked - saving all board positions...')
+    const sideToSave = editingWallSide
 
-    // Save all current board positions explicitly before exiting
-    // This ensures all position changes are persisted even if some async saves from dragging didn't complete
+    // Exit to 3D immediately so the transition feels instant
+    setShowEditUI(false)
+    props.onEditModeChange?.(false)
+    setCameraTransitionKey(prev => prev + 1)
+    setEditingWall(null)
+    setEditingWallPosition(null)
+    setEditingWallDimensions(null)
+    setEditingWallSide(null)
+    setEditingWallBaseRotation(null)
+    devLog('✅ [StudioRoom] Exited edit mode')
+
+    // Persist positions in the background (no await)
     const savePromises: Promise<void>[] = []
+    // No x inversion: API 0–100 matches wall-local; DraggableBoard + WallSystem use same convention for front and back
     currentBoards.forEach((position, boardId) => {
       const board = localBoards.find(b => b.id === boardId)
-      if (board && editingWall !== null) {
-        const savePromise = updateBoardPosition(
+      if (board && wallToSave !== null) {
+        const normX = position.x ?? 0
+        const saveX = normX
+        const p = updateBoardPosition(
           boardId,
-          editingWall,
-          position.x,      // normalized -0.5..0.5
-          position.y,      // normalized -0.5..0.5
-          position.width,  // 0..1
-          position.height,  // 0..1
-          editingWallSide
+          wallToSave,
+          saveX,
+          position.y ?? 0,
+          position.width,
+          position.height,
+          sideToSave ?? 'front'
         ).catch(err => {
           console.error(`❌ [StudioRoom] Failed to save position for board ${boardId}:`, err)
         })
-        if (savePromise) {
-          savePromises.push(savePromise)
-        }
+        if (p) savePromises.push(p)
       }
     })
 
-    // Wait for all position saves to complete
-    if (savePromises.length > 0) {
-      await Promise.all(savePromises)
-      devLog('✅ [StudioRoom] All positions saved - boards array already updated by updateBoardPosition')
-    }
-
-    // Remove boards that were removed from this wall side
-    const boardIdsOnWall = Array.from(currentBoards.keys())
+    const boardIdsOnWall = new Set(currentBoards.keys())
     const boardsToRemove = localBoards.filter(
       b =>
         b.position?.wallIndex === wallToSave &&
-        !boardIdsOnWall.includes(b.id)
+        (b.position?.side || 'front') === (sideToSave ?? 'front') &&
+        !boardIdsOnWall.has(b.id)
     )
 
+    // Run position saves in background (always)
+    const allSaves = savePromises.length > 0
+      ? Promise.all(savePromises)
+      : Promise.resolve()
     if (boardsToRemove.length > 0) {
-      devLog('🗑️ [StudioRoom] Removing', boardsToRemove.length, 'boards from wall')
-      for (const board of boardsToRemove) {
-        await fetch('/api/boards', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...board, position: undefined }),
+      allSaves
+        .then(() => {
+          devLog('🗑️ [StudioRoom] Clearing position for', boardsToRemove.length, 'boards')
+          return Promise.all(
+            boardsToRemove.map(board =>
+              fetch('/api/boards', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...board, position: undefined }),
+              })
+            )
+          )
         })
-      }
-      // Refresh after removing boards to update the list
-      await props.onBoardUpdate()
+        .then(() => props.onBoardUpdate())
+        .catch(err => console.error('❌ [StudioRoom] Background save failed:', err))
+    } else {
+      allSaves.catch(err => console.error('❌ [StudioRoom] Background position save failed:', err))
     }
-
-    // NO REFRESH NEEDED - updateBoardPosition already updated the boards array!
-    // The 3D view will show the updated positions from localBoards immediately
-    
-    setShowEditUI(false)
-    props.onEditModeChange?.(false)
-    setEditingWall(null)
-    setEditingWallPosition(null)
-    devLog('✅ [StudioRoom] Exited edit mode')
   }
 
   const handleLightboxOpen = (board: Board) => {
     setCommentPanelBoard(null)
+    if (shiftPressedRef.current) {
+      setCompareBoardIds((prev) =>
+        prev.includes(board.id)
+          ? prev.filter((id) => id !== board.id)
+          : [...prev, board.id]
+      )
+      return
+    }
+    setCompareBoardIds((prev) => (
+      prev.length > 1 && prev.includes(board.id) ? prev : []
+    ))
     setLightboxBoard(board)
   }
 
@@ -683,6 +725,27 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     if (nextIdx < 0 || nextIdx >= localBoards.length) return
     setLightboxBoard(localBoards[nextIdx])
   }
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      shiftPressedRef.current = event.shiftKey
+    }
+    const onKeyUp = (event: KeyboardEvent) => {
+      shiftPressedRef.current = event.shiftKey
+    }
+    const resetShift = () => {
+      shiftPressedRef.current = false
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', resetShift)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', resetShift)
+    }
+  }, [])
 
 
   
@@ -898,16 +961,18 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
       placedBoards3DRef.current = newMap
       setPlacedBoards3D(newMap)
 
-      // 3) save to the DB using the central hook function
+      // 3) save to the DB (no x inversion: API 0–100 matches wall-local; DraggableBoard + WallSystem use same convention)
       if (editingWall !== null) {
+        const sideForSave = side ?? editingWallSide ?? 'front'
+        const saveX = finalPosition.x
         updateBoardPosition(
           boardId,
-          editingWall,          // wallIndex
-          finalPosition.x,      // normalized -0.5..0.5
-          finalPosition.y,      // normalized -0.5..0.5
-          finalPosition.width,  // 0..1
-          finalPosition.height,  // 0..1
-          side || editingWallSide
+          editingWall,
+          saveX,
+          finalPosition.y,
+          finalPosition.width,
+          finalPosition.height,
+          sideForSave
         )
       }
     },
@@ -1181,6 +1246,8 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
           tables={tables}
           setTables={setTables}
           onSaveAndExit={handleFloorEditorSave}
+          mode={props.floorEditorMode ?? 'tables'}
+          onWallConfigChange={props.onWallConfigChange}
         />
       )}
 
@@ -1221,6 +1288,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
             wallPosition={editingWallPosition}
             wallRotation={editingWallRotation}
             wallDimensions={editingWallDimensions}
+            transitionKey={cameraTransitionKey}
             onTransitionComplete={handleCameraTransitionComplete}
           />
           <SceneContent
@@ -1232,6 +1300,7 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
             placedBoards3D={placedBoards3D}
             editingWallPosition={editingWallPosition}
             editingWallRotation={editingWallRotation}
+            editingWallBaseRotation={editingWallBaseRotation}
             editingWallDimensions={editingWallDimensions}
             onBoardPositionChange={handleBoardPositionChange}
             onBoardDelete={handleBoardDelete}
@@ -1264,7 +1333,13 @@ const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
     <LightboxModal
       board={lightboxBoard}
       allBoards={localBoards}
-      onClose={() => setLightboxBoard(null)}
+      compareBoards={compareBoardIds
+        .map((id) => localBoards.find((board) => board.id === id))
+        .filter((board): board is Board => Boolean(board))}
+      onClose={() => {
+        setLightboxBoard(null)
+        setCompareBoardIds([])
+      }}
       onNavigate={handleLightboxNavigate}
     />
     </>

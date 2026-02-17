@@ -83,6 +83,7 @@ export async function GET(
       const transformedComments = (publicComments || []).map((c: any) => ({
         id: c.id,
         boardId: c.board_id,
+        authorId: c.author_id,
         authorName: c.author_name,
         content: c.text,
         createdAt: c.created_at,
@@ -110,6 +111,7 @@ export async function GET(
     const transformedComments = (comments || []).map((c: any) => ({
       id: c.id,
       boardId: c.board_id,
+      authorId: c.author_id,
       authorName: c.author_name,
       content: c.text,
       createdAt: c.created_at,
@@ -161,6 +163,7 @@ export async function POST(
       const mockComment = {
         id: `demo-comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         boardId: boardId,
+        authorId: null,
         authorName: authorName || 'Demo User',
         content: content.trim(),
         createdAt: new Date().toISOString(),
@@ -224,6 +227,7 @@ export async function POST(
     const comment = {
       id: newComment.id,
       boardId: newComment.board_id,
+      authorId: newComment.author_id,
       authorName: newComment.author_name,
       content: newComment.text,
       createdAt: newComment.created_at,
@@ -237,6 +241,133 @@ export async function POST(
     return NextResponse.json({ 
       error: 'Failed to add comment', 
       details: (error as Error).message 
+    }, { status: 500 })
+  }
+}
+
+// PATCH /api/boards/[id]/comments - Edit an existing comment
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const boardId = params.id
+    const searchParams = request.nextUrl.searchParams
+    const isDemo = searchParams.get('demo') === 'true'
+    const { commentId, content } = await request.json()
+
+    if (!commentId || typeof commentId !== 'string') {
+      return NextResponse.json({ error: 'commentId is required' }, { status: 400 })
+    }
+    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+      return NextResponse.json({ error: 'Comment content is required' }, { status: 400 })
+    }
+    if (isDemo) {
+      return NextResponse.json({ error: 'Editing comments is not available in demo mode' }, { status: 400 })
+    }
+
+    const supabase = supabaseServer()
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError) {
+      return NextResponse.json({ error: 'Failed to get session', details: sessionError.message }, { status: 500 })
+    }
+
+    const userId = session?.user?.id
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: updatedComment, error: updateError } = await supabase
+      .from('comments')
+      .update({ text: content.trim() })
+      .eq('id', commentId)
+      .eq('board_id', boardId)
+      .eq('author_id', userId)
+      .select()
+      .single()
+
+    if (updateError || !updatedComment) {
+      return NextResponse.json({ error: 'Comment not found or not editable by this user' }, { status: 404 })
+    }
+
+    const comment = {
+      id: updatedComment.id,
+      boardId: updatedComment.board_id,
+      authorId: updatedComment.author_id,
+      authorName: updatedComment.author_name,
+      content: updatedComment.text,
+      createdAt: updatedComment.created_at,
+    }
+
+    return NextResponse.json({ comment, success: true })
+  } catch (error) {
+    console.error('Error editing comment:', error)
+    return NextResponse.json({
+      error: 'Failed to edit comment',
+      details: (error as Error).message,
+    }, { status: 500 })
+  }
+}
+
+// DELETE /api/boards/[id]/comments - Delete an existing comment
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const boardId = params.id
+    const searchParams = request.nextUrl.searchParams
+    const isDemo = searchParams.get('demo') === 'true'
+    const body = await request.json().catch(() => ({}))
+    const commentId = body?.commentId
+
+    if (!commentId || typeof commentId !== 'string') {
+      return NextResponse.json({ error: 'commentId is required' }, { status: 400 })
+    }
+    if (isDemo) {
+      return NextResponse.json({ error: 'Deleting comments is not available in demo mode' }, { status: 400 })
+    }
+
+    const supabase = supabaseServer()
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError) {
+      return NextResponse.json({ error: 'Failed to get session', details: sessionError.message }, { status: 500 })
+    }
+
+    const userId = session?.user?.id
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: deletedComments, error: deleteError } = await supabase
+      .from('comments')
+      .delete()
+      .eq('id', commentId)
+      .eq('board_id', boardId)
+      .eq('author_id', userId)
+      .select('id')
+
+    if (deleteError) {
+      return NextResponse.json({ error: 'Failed to delete comment', details: deleteError.message }, { status: 500 })
+    }
+    if (!deletedComments || deletedComments.length === 0) {
+      return NextResponse.json({ error: 'Comment not found or not deletable by this user' }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true, commentId })
+  } catch (error) {
+    console.error('Error deleting comment:', error)
+    return NextResponse.json({
+      error: 'Failed to delete comment',
+      details: (error as Error).message,
     }, { status: 500 })
   }
 }

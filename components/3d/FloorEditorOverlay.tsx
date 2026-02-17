@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
-import { calculateFloorBounds, getWallTransform } from '@/lib/wallLayout'
-import type { WallConfig } from '@/lib/wallLayout'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { calculateFloorBounds, getWallTransformResolved, getWallTransform } from '@/lib/wallLayout'
+import type { WallConfig, WallTransformOverride } from '@/lib/wallLayout'
 import type { FloorTable } from '@/types'
-import { X, Plus, Upload, Save, Trash2 } from 'lucide-react'
+import { X, Plus, Upload, Trash2, MoveHorizontal } from 'lucide-react'
 
 const TABLE_HEIGHT_INCHES = 18 // 1.5 feet
 const DEFAULT_TABLE_WIDTH = 24
@@ -15,6 +15,10 @@ interface FloorEditorOverlayProps {
   tables: FloorTable[]
   setTables: (tables: FloorTable[] | ((prev: FloorTable[]) => FloorTable[])) => void
   onSaveAndExit: () => void
+  /** 'tables' = place/move tables and models; 'walls' = move and rotate walls */
+  mode?: 'tables' | 'walls'
+  /** Called when wall positions/rotations change (walls mode). */
+  onWallConfigChange?: (config: WallConfig) => void
 }
 
 const VIEW_WIDTH = 700
@@ -36,19 +40,127 @@ function worldToScreen(
   return [px, py]
 }
 
+function screenToWorld(
+  px: number,
+  py: number,
+  bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
+): [number, number] {
+  const { minX, maxX, minZ, maxZ } = bounds
+  const floorWidth = maxX - minX
+  const floorDepth = maxZ - minZ
+  const padding = 40
+  const w = VIEW_WIDTH - padding * 2
+  const h = VIEW_HEIGHT - padding * 2
+  const x = minX + ((px - padding) / w) * floorWidth
+  const z = maxZ - ((py - padding) / h) * floorDepth
+  return [x, z]
+}
+
 export default function FloorEditorOverlay({
   wallConfig,
   tables,
   setTables,
   onSaveAndExit,
+  mode = 'tables',
+  onWallConfigChange,
 }: FloorEditorOverlayProps) {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null)
   const [dragStart, setDragStart] = useState<{ x: number; z: number; startPx: number; startPy: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Walls mode: drag/rotate state
+  const [draggingWallIndex, setDraggingWallIndex] = useState<number | null>(null)
+  const [wallDragStart, setWallDragStart] = useState<{ x: number; z: number; startPx: number; startPy: number } | null>(null)
+  const [rotatingWallIndex, setRotatingWallIndex] = useState<number | null>(null)
+  const [rotateStart, setRotateStart] = useState<{ centerPx: number; centerPy: number; initialAngle: number; initialRotationY: number } | null>(null)
+  const [stretchingWallIndex, setStretchingWallIndex] = useState<number | null>(null)
+  const [stretchStart, setStretchStart] = useState<{
+    end: 'start' | 'end'
+    startPx: number
+    startPy: number
+    initialWidthInches: number
+    initialCenterX: number
+    initialCenterZ: number
+    axisX: number
+    axisZ: number
+  } | null>(null)
+  const floorPlanRef = useRef<HTMLDivElement>(null)
+
+  // Undo/redo for walls mode (Ctrl+Z / Ctrl+Y) – refs so keydown always sees latest
+  const [undoHistory, setUndoHistory] = useState<WallConfig[]>([])
+  const [undoIndex, setUndoIndex] = useState(-1)
+  const lastAppliedWallConfigRef = useRef<WallConfig | null>(null)
+  const undoHistoryRef = useRef<WallConfig[]>([])
+  const undoIndexRef = useRef(0)
+  undoHistoryRef.current = undoHistory
+  undoIndexRef.current = undoIndex
+
   const bounds = calculateFloorBounds(wallConfig)
   const { minX, maxX, minZ, maxZ, floorWidth, floorDepth } = bounds
+
+  // When entering walls mode with no custom transforms, freeze current layout so we can edit it
+  useEffect(() => {
+    if (mode !== 'walls' || !onWallConfigChange) return
+    const hasCustom = (wallConfig.customTransforms?.length ?? 0) >= wallConfig.walls.length
+    if (hasCustom) return
+    const customTransforms: WallTransformOverride[] = wallConfig.walls.map((_, i) => {
+      const t = getWallTransform(wallConfig, i)
+      return { x: t.x, z: t.z, rotationY: t.rotationY }
+    })
+    const next = { ...wallConfig, customTransforms }
+    onWallConfigChange(next)
+  }, [mode])
+
+  // Initialize undo history when entering walls mode; keep single entry in sync until first user edit
+  useEffect(() => {
+    if (mode !== 'walls') return
+    setUndoHistory((prev) => (prev.length === 0 ? [wallConfig] : prev))
+    setUndoIndex(0)
+    lastAppliedWallConfigRef.current = null
+  }, [mode])
+  useEffect(() => {
+    if (mode !== 'walls' || undoHistory.length !== 1 || undoIndex !== 0) return
+    setUndoHistory([wallConfig])
+  }, [mode, wallConfig])
+
+  // Undo/redo keyboard shortcuts (walls mode only) – read from refs to avoid stale closure
+  useEffect(() => {
+    if (mode !== 'walls' || !onWallConfigChange) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const history = undoHistoryRef.current
+      const idx = undoIndexRef.current
+      if (history.length === 0) return
+      if (e.key === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) {
+          if (idx < history.length - 1) {
+            const nextIndex = idx + 1
+            setUndoIndex(nextIndex)
+            onWallConfigChange(history[nextIndex])
+          }
+        } else {
+          if (idx > 0) {
+            const nextIndex = idx - 1
+            setUndoIndex(nextIndex)
+            onWallConfigChange(history[nextIndex])
+          }
+        }
+        return
+      }
+      if (e.key === 'y') {
+        e.preventDefault()
+        if (idx < history.length - 1) {
+          const nextIndex = idx + 1
+          setUndoIndex(nextIndex)
+          onWallConfigChange(history[nextIndex])
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [mode, onWallConfigChange])
 
   const handleAddTable = useCallback(() => {
     const id = `table-${Date.now()}`
@@ -123,10 +235,88 @@ export default function FloorEditorOverlay({
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      // Wall drag (walls mode)
+      if (draggingWallIndex !== null && wallDragStart && onWallConfigChange) {
+        const deltaPx = e.clientX - wallDragStart.startPx
+        const deltaPy = e.clientY - wallDragStart.startPy
+        const scaleX = floorWidth / (VIEW_WIDTH - 80)
+        const scaleZ = floorDepth / (VIEW_HEIGHT - 80)
+        const newX = wallDragStart.x + deltaPx * scaleX
+        const newZ = wallDragStart.z - deltaPy * scaleZ
+        const custom = [...(wallConfig.customTransforms ?? [])]
+        while (custom.length <= draggingWallIndex) {
+          const t = getWallTransform(wallConfig, custom.length)
+          custom.push({ x: t.x, z: t.z, rotationY: t.rotationY })
+        }
+        custom[draggingWallIndex] = { ...custom[draggingWallIndex], x: newX, z: newZ }
+        const nextConfig = { ...wallConfig, customTransforms: custom }
+        lastAppliedWallConfigRef.current = nextConfig
+        onWallConfigChange(nextConfig)
+        setWallDragStart((s) => (s ? { ...s, x: newX, z: newZ, startPx: e.clientX, startPy: e.clientY } : null))
+        return
+      }
+      // Wall rotate (walls mode) – hold Shift to snap to 90°
+      if (rotatingWallIndex !== null && rotateStart && onWallConfigChange) {
+        const dx = e.clientX - rotateStart.centerPx
+        const dy = e.clientY - rotateStart.centerPy
+        const currentAngle = Math.atan2(dy, dx)
+        let delta = currentAngle - rotateStart.initialAngle
+        while (delta > Math.PI) delta -= 2 * Math.PI
+        while (delta < -Math.PI) delta += 2 * Math.PI
+        let newRotationY = rotateStart.initialRotationY + delta
+        if (e.shiftKey) {
+          const SNAP_RAD = Math.PI / 2
+          newRotationY = Math.round(newRotationY / SNAP_RAD) * SNAP_RAD
+          newRotationY = ((newRotationY % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)
+        }
+        const custom = [...(wallConfig.customTransforms ?? [])]
+        while (custom.length <= rotatingWallIndex) {
+          const t = getWallTransform(wallConfig, custom.length)
+          custom.push({ x: t.x, z: t.z, rotationY: t.rotationY })
+        }
+        custom[rotatingWallIndex] = { ...custom[rotatingWallIndex], rotationY: newRotationY }
+        const nextConfig = { ...wallConfig, customTransforms: custom }
+        lastAppliedWallConfigRef.current = nextConfig
+        onWallConfigChange(nextConfig)
+        setRotateStart((s) => s ? { ...s, initialAngle: currentAngle, initialRotationY: newRotationY } : null)
+        return
+      }
+      // Wall stretch (walls mode)
+      if (stretchingWallIndex !== null && stretchStart && onWallConfigChange) {
+        const deltaPx = e.clientX - stretchStart.startPx
+        const deltaPy = e.clientY - stretchStart.startPy
+        const scaleX = floorWidth / (VIEW_WIDTH - 80)
+        const scaleZ = floorDepth / (VIEW_HEIGHT - 80)
+        const deltaX = deltaPx * scaleX
+        const deltaZ = -deltaPy * scaleZ
+        const deltaAlong = deltaX * stretchStart.axisX + deltaZ * stretchStart.axisZ
+        const signedDelta = stretchStart.end === 'end' ? deltaAlong : -deltaAlong
+        const MIN_WALL_INCHES = 24
+        const nextWidthInches = Math.max(MIN_WALL_INCHES, stretchStart.initialWidthInches + signedDelta)
+        const widthDelta = nextWidthInches - stretchStart.initialWidthInches
+        const centerShift = widthDelta / 2
+        const centerSign = stretchStart.end === 'end' ? 1 : -1
+        const nextCenterX = stretchStart.initialCenterX + stretchStart.axisX * centerShift * centerSign
+        const nextCenterZ = stretchStart.initialCenterZ + stretchStart.axisZ * centerShift * centerSign
+
+        const nextWalls = wallConfig.walls.map((wall, idx) =>
+          idx === stretchingWallIndex ? { ...wall, width: nextWidthInches / 12 } : wall
+        )
+        const custom = [...(wallConfig.customTransforms ?? [])]
+        while (custom.length <= stretchingWallIndex) {
+          const t = getWallTransform(wallConfig, custom.length)
+          custom.push({ x: t.x, z: t.z, rotationY: t.rotationY })
+        }
+        custom[stretchingWallIndex] = { ...custom[stretchingWallIndex], x: nextCenterX, z: nextCenterZ }
+        const nextConfig = { ...wallConfig, walls: nextWalls, customTransforms: custom }
+        lastAppliedWallConfigRef.current = nextConfig
+        onWallConfigChange(nextConfig)
+        return
+      }
+      // Table drag (tables mode)
       if (!draggingTableId || !dragStart) return
       const deltaPx = e.clientX - dragStart.startPx
       const deltaPy = e.clientY - dragStart.startPy
-      // Approximate delta in world space (1px ~= small amount in inches)
       const scaleX = floorWidth / (VIEW_WIDTH - 80)
       const scaleZ = floorDepth / (VIEW_HEIGHT - 80)
       const newX = dragStart.x + deltaPx * scaleX
@@ -138,17 +328,119 @@ export default function FloorEditorOverlay({
       )
       setDragStart((s) => (s ? { ...s, x: newX, z: newZ, startPx: e.clientX, startPy: e.clientY } : null))
     },
-    [draggingTableId, dragStart, floorWidth, floorDepth, setTables]
+    [draggingWallIndex, wallDragStart, rotatingWallIndex, rotateStart, stretchingWallIndex, stretchStart, draggingTableId, dragStart, floorWidth, floorDepth, setTables, wallConfig, onWallConfigChange]
   )
 
   const handlePointerUp = useCallback(() => {
+    // When ending a wall drag/rotate/stretch, push current state to undo history (walls mode)
+    if (mode === 'walls' && onWallConfigChange && (draggingWallIndex !== null || rotatingWallIndex !== null || stretchingWallIndex !== null)) {
+      const configToPush = lastAppliedWallConfigRef.current ?? wallConfig
+      setUndoHistory((prev) => {
+        const truncated = prev.slice(0, undoIndex + 1)
+        truncated.push(configToPush)
+        return truncated
+      })
+      setUndoIndex((prev) => prev + 1)
+      lastAppliedWallConfigRef.current = null
+    }
     setDraggingTableId(null)
     setDragStart(null)
-  }, [])
+    setDraggingWallIndex(null)
+    setWallDragStart(null)
+    setRotatingWallIndex(null)
+    setRotateStart(null)
+    setStretchingWallIndex(null)
+    setStretchStart(null)
+  }, [mode, onWallConfigChange, draggingWallIndex, rotatingWallIndex, stretchingWallIndex, wallConfig, undoIndex])
 
-  // Wall outlines (top-down) for context
+  const handleWallPointerDown = useCallback(
+    (index: number, e: React.PointerEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (!onWallConfigChange) return
+      const transform = getWallTransformResolved(wallConfig, index)
+      setDraggingWallIndex(index)
+      setWallDragStart({ x: transform.x, z: transform.z, startPx: e.clientX, startPy: e.clientY })
+    },
+    [wallConfig, onWallConfigChange]
+  )
+
+  const handleAddWall = useCallback(() => {
+    if (!onWallConfigChange) return
+    const newWall = { height: 10, width: 8 }
+    const newWalls = [...wallConfig.walls, newWall]
+    const newConfigBase = { ...wallConfig, walls: newWalls }
+    const t = getWallTransform(newConfigBase, newWalls.length - 1)
+    const newCustom = [...(wallConfig.customTransforms ?? [])]
+    while (newCustom.length < newWalls.length - 1) {
+      const prev = getWallTransform(wallConfig, newCustom.length)
+      newCustom.push({ x: prev.x, z: prev.z, rotationY: prev.rotationY })
+    }
+    newCustom.push({ x: t.x, z: t.z, rotationY: t.rotationY })
+    onWallConfigChange({ ...wallConfig, walls: newWalls, customTransforms: newCustom })
+    setUndoHistory((prev) => [...prev.slice(0, undoIndex + 1), { ...wallConfig, walls: newWalls, customTransforms: newCustom }])
+    setUndoIndex((prev) => prev + 1)
+  }, [wallConfig, onWallConfigChange, undoIndex])
+
+  const handleRemoveWall = useCallback(() => {
+    if (!onWallConfigChange || wallConfig.walls.length <= 1) return
+    const newWalls = wallConfig.walls.slice(0, -1)
+    const newCustom = wallConfig.customTransforms?.slice(0, -1) ?? []
+    onWallConfigChange({ ...wallConfig, walls: newWalls, customTransforms: newCustom })
+    setUndoHistory((prev) => [...prev.slice(0, undoIndex + 1), { ...wallConfig, walls: newWalls, customTransforms: newCustom }])
+    setUndoIndex((prev) => prev + 1)
+  }, [wallConfig, onWallConfigChange, undoIndex])
+
+  const handleWallRotatePointerDown = useCallback(
+    (index: number, e: React.PointerEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (!onWallConfigChange) return
+      const transform = getWallTransformResolved(wallConfig, index)
+      const [centerPx, centerPy] = worldToScreen(transform.x, transform.z, bounds)
+      const rect = floorPlanRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const centerClientX = rect.left + centerPx
+      const centerClientY = rect.top + centerPy
+      const dx = e.clientX - centerClientX
+      const dy = e.clientY - centerClientY
+      setRotatingWallIndex(index)
+      setRotateStart({
+        centerPx: centerClientX,
+        centerPy: centerClientY,
+        initialAngle: Math.atan2(dy, dx),
+        initialRotationY: transform.rotationY,
+      })
+    },
+    [wallConfig, bounds, onWallConfigChange]
+  )
+
+  const handleWallStretchPointerDown = useCallback(
+    (index: number, end: 'start' | 'end', e: React.PointerEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (!onWallConfigChange) return
+      const transform = getWallTransformResolved(wallConfig, index)
+      const axisX = Math.cos(transform.rotationY)
+      const axisZ = Math.sin(transform.rotationY)
+      setStretchingWallIndex(index)
+      setStretchStart({
+        end,
+        startPx: e.clientX,
+        startPy: e.clientY,
+        initialWidthInches: transform.width,
+        initialCenterX: transform.x,
+        initialCenterZ: transform.z,
+        axisX,
+        axisZ,
+      })
+    },
+    [wallConfig, onWallConfigChange]
+  )
+
+  // Wall outlines (top-down) for context; in walls mode include rotate handle and front-edge (side you can add boards to)
   const wallOutlines = wallConfig.walls.map((_, index) => {
-    const transform = getWallTransform(wallConfig, index)
+    const transform = getWallTransformResolved(wallConfig, index)
     const halfW = transform.width / 2
     const halfD = 3
     const cos = Math.cos(transform.rotationY)
@@ -160,7 +452,18 @@ export default function FloorEditorOverlay({
       [transform.x - halfW * cos - halfD * sin, transform.z - halfW * sin + halfD * cos],
     ]
     const points = corners.map(([x, z]) => worldToScreen(x, z, bounds)).flat()
-    return { points, key: index }
+    const endX = transform.x + halfW * cos
+    const endZ = transform.z + halfW * sin
+    const startX = transform.x - halfW * cos
+    const startZ = transform.z - halfW * sin
+    const [endPx, endPy] = worldToScreen(endX, endZ, bounds)
+    const [startPx, startPy] = worldToScreen(startX, startZ, bounds)
+    const rotateX = transform.x - sin * 12
+    const rotateZ = transform.z + cos * 12
+    const [rotatePx, rotatePy] = worldToScreen(rotateX, rotateZ, bounds)
+    // Front edge = corners 2–3 (the side where you can add boards in the 3D room)
+    const frontEdge = [points[4], points[5], points[6], points[7]] as [number, number, number, number]
+    return { points, key: index, rotatePx, rotatePy, startPx, startPy, endPx, endPy, frontEdge }
   })
 
   return (
@@ -174,42 +477,71 @@ export default function FloorEditorOverlay({
         className="bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col"
         style={{ width: VIEW_WIDTH + 48, maxHeight: '90vh' }}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Floor plan – place tables</h2>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleAddTable}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Add table
-            </button>
-            <button
-              type="button"
-              onClick={onSaveAndExit}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              <Save className="w-4 h-4" />
-              Save & exit
-            </button>
-            <button
-              type="button"
-              onClick={onSaveAndExit}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              aria-label="Close"
-            >
-              <X className="w-5 h-5 text-gray-600" />
-            </button>
+        <div className="shrink-0 border-b border-gray-200">
+          <div className="flex items-center justify-between px-6 py-4">
+            <h2 className="text-lg font-semibold text-gray-900">
+              {mode === 'walls' ? 'Floor plan – reconfigure walls' : 'Floor plan – place tables'}
+            </h2>
+            <div className="flex items-center gap-2">
+              {mode === 'tables' && (
+                <button
+                  type="button"
+                  onClick={handleAddTable}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add table
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onSaveAndExit()}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+              >
+                Save & exit
+              </button>
+              <button
+                type="button"
+                onClick={() => onSaveAndExit()}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
           </div>
+          {mode === 'walls' && (
+            <div className="flex items-center gap-2 px-6 pb-4">
+              <button
+                type="button"
+                onClick={handleAddWall}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Add wall
+              </button>
+              <button
+                type="button"
+                onClick={handleRemoveWall}
+                disabled={wallConfig.walls.length <= 1}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 rounded-xl text-sm font-medium transition-colors shadow-sm"
+              >
+                <Trash2 className="w-4 h-4" />
+                Remove wall
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="p-6 overflow-auto">
           <p className="text-sm text-gray-500 mb-4">
-            Top-down view. Drag tables to move. Click a table then &quot;Add model&quot; to place a 3D model on it.
+            {mode === 'walls'
+              ? 'Top-down view. Drag walls to move. Hover near wall ends to reveal stretch handle, then drag to resize length. Use curved handle to rotate (hold Shift to snap to 90°). Ctrl+Z undo, Ctrl+Y redo. Green edge = front (side you can add boards to); opposite side is back.'
+              : 'Top-down view. Drag tables to move. Click a table then "Add model" to place a 3D model on it.'}
           </p>
 
           <div
+            ref={floorPlanRef}
             className="relative rounded-lg border-2 border-gray-300 bg-gray-50"
             style={{ width: VIEW_WIDTH, height: VIEW_HEIGHT }}
           >
@@ -224,9 +556,10 @@ export default function FloorEditorOverlay({
               }}
             />
 
-            {/* Wall outlines (top-down) */}
+            {/* Wall outlines (top-down); in walls mode polygons are draggable */}
             <svg
-              className="absolute inset-0 w-full h-full pointer-events-none"
+              className="absolute inset-0 w-full h-full"
+              style={{ pointerEvents: mode === 'walls' ? 'auto' : 'none' }}
               viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
               preserveAspectRatio="none"
             >
@@ -235,14 +568,88 @@ export default function FloorEditorOverlay({
                   key={key}
                   points={points.join(',')}
                   fill="rgba(183, 196, 255, 0.5)"
-                  stroke="#B3B3FF"
-                  strokeWidth={2}
+                  stroke={mode === 'walls' ? '#6366f1' : '#B3B3FF'}
+                  strokeWidth={mode === 'walls' ? 2.5 : 2}
+                  className={mode === 'walls' ? 'cursor-move' : ''}
+                  onPointerDown={mode === 'walls' ? (e) => handleWallPointerDown(key, e) : undefined}
                 />
               ))}
+              {/* Green = front edge (side you can add boards to); no pointer events so dragging still works */}
+              {mode === 'walls' &&
+                wallOutlines.map(({ frontEdge, key }) => (
+                  <line
+                    key={`front-${key}`}
+                    x1={frontEdge[0]}
+                    y1={frontEdge[1]}
+                    x2={frontEdge[2]}
+                    y2={frontEdge[3]}
+                    stroke="#16a34a"
+                    strokeWidth={5}
+                    strokeLinecap="round"
+                    pointerEvents="none"
+                  />
+                ))}
             </svg>
 
-            {/* Tables */}
-            {tables.map((table) => {
+            {/* Rotate handles (walls mode only) – Illustrator-style: curved arrow on hover */}
+            {mode === 'walls' &&
+              wallOutlines.map(({ key, rotatePx, rotatePy }) => (
+                <div
+                  key={`rotate-${key}`}
+                  className="group absolute cursor-grab active:cursor-grabbing flex items-center justify-center transition-opacity"
+                  style={{
+                    left: rotatePx - 10,
+                    top: rotatePy - 10,
+                    width: 20,
+                    height: 20,
+                  }}
+                  title="Drag to rotate wall"
+                  onPointerDown={(e) => handleWallRotatePointerDown(key, e)}
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    {/* Curved rotate arrow (Illustrator-style) */}
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                  </svg>
+                </div>
+              ))}
+
+            {/* Stretch handles (walls mode only) */}
+            {mode === 'walls' &&
+              wallOutlines
+                .flatMap(({ key, startPx, startPy, endPx, endPy }) => ([
+                  { id: `${key}-start`, wallIndex: key, end: 'start' as const, px: startPx, py: startPy },
+                  { id: `${key}-end`, wallIndex: key, end: 'end' as const, px: endPx, py: endPy },
+                ]))
+                .map(({ id, wallIndex, end, px, py }) => (
+                  <div
+                    key={`stretch-${id}`}
+                    className="group absolute cursor-ew-resize active:cursor-ew-resize flex items-center justify-center"
+                    style={{
+                      left: px - 12,
+                      top: py - 12,
+                      width: 24,
+                      height: 24,
+                    }}
+                    title="Drag to stretch wall length"
+                    onPointerDown={(e) => handleWallStretchPointerDown(wallIndex, end, e)}
+                  >
+                    <MoveHorizontal className="w-4 h-4 text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                ))}
+
+            {/* Tables (tables mode only) */}
+            {mode === 'tables' && tables.map((table) => {
               const [px, py] = worldToScreen(table.x, table.z, bounds)
               const scaleX = (VIEW_WIDTH - 80) / floorWidth
               const scaleZ = (VIEW_HEIGHT - 80) / floorDepth
@@ -291,7 +698,7 @@ export default function FloorEditorOverlay({
             })}
           </div>
 
-          {selectedTableId && (
+          {mode === 'tables' && selectedTableId && (
             <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-3 flex-wrap">
               <span className="text-sm font-medium text-gray-700">Selected table</span>
               <input

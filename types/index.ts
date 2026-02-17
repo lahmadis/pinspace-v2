@@ -73,6 +73,7 @@ export interface Board {
 export interface Comment {
   id: string
   boardId?: string
+  authorId?: string
   authorName: string
   authorEmail?: string
   content: string

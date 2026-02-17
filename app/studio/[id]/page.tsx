@@ -15,7 +15,7 @@ const StudioRoom = dynamic(
   {
     ssr: false,
     loading: () => (
-    <div className="w-full h-screen flex items-center justify-center bg-gradient-to-br from-indigo-950 via-purple-900 to-pink-900">
+    <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
           <p className="text-white/90 font-medium">Loading 3D Studio...</p>
@@ -31,9 +31,16 @@ interface WallDimensions {
 
 type LayoutType = 'zigzag' | 'square' | 'linear' | 'lshape'
 
+interface WallTransformOverride {
+  x: number
+  z: number
+  rotationY: number
+}
+
 interface WallConfig {
   walls: WallDimensions[]
   layoutType: LayoutType
+  customTransforms?: WallTransformOverride[]
 }
 
 const DEFAULT_CONFIG: WallConfig = {
@@ -59,8 +66,23 @@ export default function StudioPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isEditMode, setIsEditMode] = useState(false)
   const [floorEditorOpen, setFloorEditorOpen] = useState(false)
+  const [floorEditorMode, setFloorEditorMode] = useState<'tables' | 'walls'>('tables')
 
   const isDemo = searchParams?.get('demo') === 'true'
+
+  const persistWallConfig = async (config: WallConfig) => {
+    try {
+      await fetch(`/api/studios/${studioId}/wall-config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      })
+      const savedConfigKey = `studio-${studioId}-wall-config`
+      localStorage.setItem(savedConfigKey, JSON.stringify(config))
+    } catch (e) {
+      console.error('Failed to save wall config', e)
+    }
+  }
 
   // Load boards and wall config (API + localStorage fallback)
   useEffect(() => {
@@ -133,7 +155,8 @@ export default function StudioPage() {
   }
 
   const handleReconfigureWalls = () => {
-    setShowWallConfig(true)
+    setFloorEditorMode('walls')
+    setFloorEditorOpen(true)
   }
 
   const handleBoardUpdate = async () => {
@@ -223,7 +246,7 @@ export default function StudioPage() {
 
               {/* Place 3D model - open floor editor to add tables and upload/position models */}
               <button
-                onClick={() => setFloorEditorOpen(true)}
+                onClick={() => { setFloorEditorMode('tables'); setFloorEditorOpen(true) }}
                 className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
               >
                 <Box className="w-4 h-4" />
@@ -249,6 +272,11 @@ export default function StudioPage() {
             onEditModeChange={setIsEditMode}
             floorEditorOpen={floorEditorOpen}
             onFloorEditorOpenChange={setFloorEditorOpen}
+            floorEditorMode={floorEditorMode}
+            onWallConfigChange={(config) => {
+              setWallConfig(config)
+              persistWallConfig(config)
+            }}
           />
         </div>
       )}

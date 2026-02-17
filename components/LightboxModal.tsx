@@ -9,6 +9,8 @@ import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 interface LightboxModalProps {
   board: Board | null
   allBoards: Board[] // For navigation
+  compareBoards?: Board[]
+  autoEnterPresentCompare?: boolean
   onClose: () => void
   onNavigate: (direction: 'prev' | 'next') => void
 }
@@ -58,7 +60,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, onClose, onNavigate }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<any>(null)
@@ -67,12 +69,18 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
   const [error, setError] = useState<string | null>(null)
   const [newComment, setNewComment] = useState('')
   const [posting, setPosting] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [editingContent, setEditingContent] = useState('')
+  const [savingCommentId, setSavingCommentId] = useState<string | null>(null)
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null)
   const [isVisible, setIsVisible] = useState(false)
   const [isPresentMode, setIsPresentMode] = useState(false)
+  const [commentsOpen, setCommentsOpen] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const isOpen = board !== null
   const authorName = user?.user_metadata?.email?.split('@')[0] || 'Anonymous'
+  const isDemoMode = searchParams.get('demo') === 'true' || (typeof window !== 'undefined' && window.location.pathname.includes('demo-studio-'))
 
   useEffect(() => {
     supabase.auth.getSession().then(
@@ -94,6 +102,13 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
   const currentIndex = board ? allBoards.findIndex(b => b.id === board.id) : -1
   const hasPrev = currentIndex > 0
   const hasNext = currentIndex < allBoards.length - 1
+  const compareCount = compareBoards.length
+  const isComparePresentMode = isPresentMode && compareBoards.length > 1
+  const compareGapPx = compareCount <= 2 ? 24 : compareCount <= 4 ? 16 : 12
+  const compareCardMinPx = compareCount <= 2 ? 320 : compareCount <= 4 ? 260 : 220
+  const compareCardMaxPx = compareCount <= 2 ? 760 : compareCount <= 4 ? 560 : 420
+  const compareCardWidth = `clamp(${compareCardMinPx}px, calc((100vw - 64px - ${(Math.max(compareCount, 1) - 1) * compareGapPx}px) / ${Math.max(compareCount, 1)}), ${compareCardMaxPx}px)`
+  const compareJustifyClass = compareCount <= 3 ? 'justify-center' : 'justify-start'
 
   useEffect(() => {
     if (isOpen) {
@@ -101,13 +116,24 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
     } else {
       setIsVisible(false)
       setIsPresentMode(false)
+      setCommentsOpen(false)
     }
   }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    if (autoEnterPresentCompare && compareBoards.length > 1) {
+      setIsPresentMode(true)
+    }
+  }, [isOpen, autoEnterPresentCompare, compareBoards.length])
 
   useEffect(() => {
     if (!board) {
       setComments([])
       setNewComment('')
+      setCommentsOpen(false)
+      setEditingCommentId(null)
+      setEditingContent('')
       return
     }
 
@@ -120,20 +146,24 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (isPresentMode) {
-          setIsPresentMode(false)
+          if (isComparePresentMode) {
+            handleClose()
+          } else {
+            setIsPresentMode(false)
+          }
         } else {
           handleClose()
         }
-      } else if (e.key === 'ArrowLeft' && hasPrev) {
+      } else if (!isComparePresentMode && e.key === 'ArrowLeft' && hasPrev) {
         onNavigate('prev')
-      } else if (e.key === 'ArrowRight' && hasNext) {
+      } else if (!isComparePresentMode && e.key === 'ArrowRight' && hasNext) {
         onNavigate('next')
       }
     }
     
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, hasPrev, hasNext, isPresentMode])
+  }, [isOpen, hasPrev, hasNext, isPresentMode, isComparePresentMode, onNavigate])
 
   const fetchComments = async () => {
     if (!board) return
@@ -141,8 +171,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
     try {
       setLoading(true)
       setError(null)
-      const isDemo = searchParams.get('demo') === 'true' || window.location.pathname.includes('demo-studio-')
-      const url = isDemo
+      const url = isDemoMode
         ? `/api/boards/${board.id}/comments?demo=true`
         : `/api/boards/${board.id}/comments`
       const response = await fetch(url, { credentials: 'include' })
@@ -179,8 +208,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
     try {
       setPosting(true)
       setError(null)
-      const isDemo = searchParams.get('demo') === 'true' || window.location.pathname.includes('demo-studio-')
-      const url = isDemo
+      const url = isDemoMode
         ? `/api/boards/${board.id}/comments?demo=true`
         : `/api/boards/${board.id}/comments`
       const response = await fetch(url, {
@@ -217,6 +245,81 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
       handlePost()
+    }
+  }
+
+  const canManageComment = (comment: Comment) => {
+    if (!user) return false
+    if (comment.authorId && comment.authorId === user.id) return true
+    return comment.authorName === authorName
+  }
+
+  const handleStartEdit = (comment: Comment) => {
+    setEditingCommentId(comment.id)
+    setEditingContent(comment.content)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingCommentId(null)
+    setEditingContent('')
+  }
+
+  const handleSaveEdit = async (commentId: string) => {
+    if (!board || !editingContent.trim() || savingCommentId) return
+    try {
+      setSavingCommentId(commentId)
+      setError(null)
+      const url = isDemoMode
+        ? `/api/boards/${board.id}/comments?demo=true`
+        : `/api/boards/${board.id}/comments`
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commentId, content: editingContent.trim() }),
+        credentials: 'include',
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setError(data?.details || data?.error || 'Failed to edit comment')
+        return
+      }
+      setComments((prev) => prev.map((c) => (c.id === commentId ? { ...c, content: data.comment.content } : c)))
+      handleCancelEdit()
+    } catch (err) {
+      console.error('Error editing comment:', err)
+      setError('Failed to edit comment')
+    } finally {
+      setSavingCommentId(null)
+    }
+  }
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!board || deletingCommentId) return
+    if (!confirm('Delete this comment?')) return
+    try {
+      setDeletingCommentId(commentId)
+      setError(null)
+      const url = isDemoMode
+        ? `/api/boards/${board.id}/comments?demo=true`
+        : `/api/boards/${board.id}/comments`
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commentId }),
+        credentials: 'include',
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setError(data?.details || data?.error || 'Failed to delete comment')
+        return
+      }
+      setComments((prev) => prev.filter((c) => c.id !== commentId))
+      if (editingCommentId === commentId) handleCancelEdit()
+    } catch (err) {
+      console.error('Error deleting comment:', err)
+      setError('Failed to delete comment')
+    } finally {
+      setDeletingCommentId(null)
     }
   }
 
@@ -286,24 +389,24 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
 
   return (
     <div 
-      className={`fixed inset-0 bg-black/85 z-50 transition-opacity duration-300 ${
+      className={`fixed inset-0 bg-slate-950/85 z-50 transition-opacity duration-300 ${
         isVisible ? 'opacity-100' : 'opacity-0'
       }`}
       onClick={handleBackdropClick}
     >
       {/* Top Header Bar (hidden in present mode) */}
       {!isPresentMode && (
-      <div className="absolute top-0 left-0 right-0 h-16 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between px-5 sm:px-6 z-10">
+      <div className="absolute top-3 left-3 right-3 h-16 rounded-2xl bg-slate-900/75 backdrop-blur-xl border border-slate-700/70 shadow-[0_10px_30px_rgba(2,6,23,0.45)] flex items-center justify-between px-4 sm:px-5 z-20">
         {/* Board Title */}
         <div className="flex-1 min-w-0">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-300/70 mb-0.5">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-slate-300/70 mb-0.5">
             Uploaded Board
           </p>
-          <h2 className="text-slate-50 font-semibold text-sm sm:text-base truncate">
-            {board.title}
+          <h2 className="text-slate-50 font-semibold text-sm sm:text-[15px] truncate">
+            {compareBoards.length > 1 ? `Compare selection (${compareBoards.length})` : board.title}
           </h2>
           {board.studentName && (
-            <p className="text-[11px] text-slate-300">
+            <p className="text-[11px] text-slate-300/90 truncate">
               {board.studentName}
             </p>
           )}
@@ -318,7 +421,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
               onNavigate('prev')
             }}
             disabled={!hasPrev}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/15 text-white/80 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
               <path d="M15 19l-7-7 7-7"></path>
@@ -333,7 +436,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
               onNavigate('next')
             }}
             disabled={!hasNext}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/15 text-white/80 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             <span>Next</span>
             <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
@@ -349,7 +452,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
                 onNavigate('prev')
               }}
               disabled={!hasPrev}
-              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/15 text-white/80 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               aria-label="Previous"
             >
               <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
@@ -362,7 +465,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
                 onNavigate('next')
               }}
               disabled={!hasNext}
-              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/15 text-white/80 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               aria-label="Next"
             >
               <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
@@ -372,24 +475,43 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
           </div>
 
           {/* Present - full screen board only */}
+          {compareBoards.length <= 1 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsPresentMode(true)
+              }}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors"
+              title="Present (board fills screen)"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
+                <path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M20 8V6a2 2 0 00-2-2h-2M20 16v2a2 2 0 002 2h-2M14 6v12" />
+              </svg>
+              <span>Present</span>
+            </button>
+          )}
+
+          {/* Comments Toggle */}
           <button
             onClick={(e) => {
               e.stopPropagation()
-              setIsPresentMode(true)
+              setCommentsOpen(prev => !prev)
             }}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/15 text-white/80 hover:bg-white/10 transition-colors"
-            title="Present (board fills screen)"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors"
+            title="Toggle comments panel"
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
-              <path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M20 8V6a2 2 0 00-2-2h-2M20 16v2a2 2 0 002 2h-2M14 6v12" />
-            </svg>
-            <span>Present</span>
+            <span>Comments</span>
+            {comments.length > 0 && (
+              <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-semibold bg-white/20 rounded-full">
+                {comments.length}
+              </span>
+            )}
           </button>
 
           {/* Close Button */}
           <button
             onClick={handleClose}
-            className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 border border-white/30 transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 border border-white/30 transition-colors"
             aria-label="Close"
           >
             <svg 
@@ -413,13 +535,20 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
         <>
           {/* Exit present - small corner control so it doesn't block the board */}
           <button
-            onClick={(e) => { e.stopPropagation(); setIsPresentMode(false) }}
-            className="absolute bottom-20 right-6 z-20 px-3 py-1.5 rounded-lg text-xs font-medium text-white/80 hover:text-white bg-black/40 hover:bg-black/60 border border-white/20 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation()
+              if (isComparePresentMode) {
+                handleClose()
+              } else {
+                setIsPresentMode(false)
+              }
+            }}
+            className="absolute top-6 right-6 z-20 px-3 py-1.5 rounded-lg text-xs font-medium text-white/80 hover:text-white bg-black/40 hover:bg-black/60 border border-white/20 transition-colors"
           >
             Exit present
           </button>
           {/* Prev/Next in present mode - left/right edges */}
-          {hasPrev && (
+          {!isComparePresentMode && hasPrev && (
             <button
               onClick={(e) => { e.stopPropagation(); onNavigate('prev') }}
               className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 text-white/90 hover:text-white border border-white/20 transition-colors"
@@ -430,7 +559,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
               </svg>
             </button>
           )}
-          {hasNext && (
+          {!isComparePresentMode && hasNext && (
             <button
               onClick={(e) => { e.stopPropagation(); onNavigate('next') }}
               className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 text-white/90 hover:text-white border border-white/20 transition-colors"
@@ -445,13 +574,53 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
       )}
 
       {/* Main Content */}
-      <div className={`h-full flex ${isPresentMode ? 'pt-0' : 'pt-16'}`}>
+      <div className={`h-full flex ${isPresentMode ? 'pt-0' : 'pt-20'}`}>
         {/* Left Side - Image/PDF Display (full area in present mode) */}
         <div 
           className={`flex-1 flex items-center justify-center ${isPresentMode ? 'absolute inset-0 p-4' : 'p-8 lg:p-12'}`}
           onClick={handleBackdropClick}
         >
-          {imageUrl ? (
+          {isComparePresentMode ? (
+            <div className="w-full h-full overflow-x-auto overflow-y-hidden" onClick={(e) => e.stopPropagation()}>
+              <div
+                className={`flex w-max min-w-full h-full items-stretch ${compareJustifyClass}`}
+                style={{ gap: `${compareGapPx}px` }}
+              >
+                {compareBoards.map((compareBoard) => {
+                  const compareImageUrl = compareBoard.fullImageUrl || compareBoard.thumbnailUrl
+                  const compareIsPdf = compareImageUrl?.toLowerCase().endsWith('.pdf')
+                  return (
+                    <div
+                      key={compareBoard.id}
+                      className="flex-none h-full min-h-0 flex items-center justify-center"
+                      style={{ width: compareCardWidth }}
+                    >
+                      {compareImageUrl ? (
+                        compareIsPdf ? (
+                          <a
+                            href={compareImageUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                          >
+                            Open PDF
+                          </a>
+                        ) : (
+                          <img
+                            src={compareImageUrl}
+                            alt={compareBoard.title}
+                            className="w-full h-full object-contain"
+                          />
+                        )
+                      ) : (
+                        <p className="text-white/70 text-sm">No image available</p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : imageUrl ? (
             isPDF ? (
               <div 
                 className="w-full h-full max-w-4xl bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col"
@@ -506,7 +675,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
         </div>
 
         {/* Right Side - Comment Panel (hidden in present mode) */}
-        {!isPresentMode ? (
+        {!isPresentMode && commentsOpen ? (
         <div 
           className="w-full lg:w-[340px] xl:w-[380px] bg-white/95 backdrop-blur-md flex flex-col shadow-[0_18px_60px_rgba(15,23,42,0.35)] border-l border-gray-200"
           onClick={(e) => e.stopPropagation()}
@@ -551,7 +720,7 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
               </div>
             )}
 
-            {!loading && !error && comments.length > 0 && comments.map((comment, index) => (
+            {!loading && !error && comments.length > 0 && comments.map((comment) => (
               <div 
                 key={comment.id}
                 className="flex gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100 hover:border-gray-200 hover:bg-white transition-colors"
@@ -567,13 +736,73 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
                     <span className="font-semibold text-gray-900 text-xs">
                       {comment.authorName}
                     </span>
-                    <span className="text-[11px] text-gray-500 whitespace-nowrap">
-                      {formatTimestamp(comment.createdAt)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-gray-500 whitespace-nowrap">
+                        {formatTimestamp(comment.createdAt)}
+                      </span>
+                      {canManageComment(comment) && (
+                        <>
+                          <button
+                            onClick={() => handleStartEdit(comment)}
+                            disabled={deletingCommentId === comment.id || savingCommentId === comment.id}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-50"
+                            aria-label="Edit comment"
+                            title="Edit"
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteComment(comment.id)}
+                            disabled={deletingCommentId === comment.id || savingCommentId === comment.id}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                            aria-label={deletingCommentId === comment.id ? 'Deleting comment' : 'Delete comment'}
+                            title="Delete"
+                          >
+                            {deletingCommentId === comment.id ? (
+                              <div className="h-3.5 w-3.5 rounded-full border-2 border-red-300 border-t-red-600 animate-spin" />
+                            ) : (
+                              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7v12m6-12v12M10 4h4a1 1 0 011 1v2H9V5a1 1 0 011-1zM5 7h14l-1 13a2 2 0 01-2 2H8a2 2 0 01-2-2L5 7z" />
+                              </svg>
+                            )}
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-800 leading-relaxed whitespace-pre-wrap">
-                    {comment.content}
-                  </p>
+                  {editingCommentId === comment.id ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={editingContent}
+                        onChange={(e) => setEditingContent(e.target.value)}
+                        className="w-full px-2.5 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6366f1] focus:border-transparent resize-none bg-white text-gray-800"
+                        rows={3}
+                        disabled={savingCommentId === comment.id}
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleSaveEdit(comment.id)}
+                          disabled={!editingContent.trim() || savingCommentId === comment.id}
+                          className="px-2.5 py-1.5 bg-[#4f46e5] text-white rounded-md hover:bg-[#4338ca] disabled:opacity-40 text-[11px] font-semibold"
+                        >
+                          {savingCommentId === comment.id ? 'Saving...' : 'Save'}
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          disabled={savingCommentId === comment.id}
+                          className="px-2.5 py-1.5 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-[11px] font-semibold"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-800 leading-relaxed whitespace-pre-wrap">
+                      {comment.content}
+                    </p>
+                  )}
                 </div>
               </div>
             ))}
@@ -635,11 +864,11 @@ export default function LightboxModal({ board, allBoards, onClose, onNavigate }:
       </div>
 
       {/* Navigation Hint (simplified in present mode) */}
-      <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-black/60 backdrop-blur-sm rounded-full text-white text-sm">
+      <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-slate-900/65 border border-white/10 backdrop-blur-md rounded-full text-white text-xs sm:text-sm">
         {isPresentMode ? (
           <>
             Press <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">ESC</kbd> to exit present
-            {(hasPrev || hasNext) && (
+            {!isComparePresentMode && (hasPrev || hasNext) && (
               <>
                 <span className="mx-2">•</span>
                 <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">←</kbd>

@@ -50,23 +50,67 @@ export function useBoardState(
   useEffect(() => { boardPositionsRef.current = boardPositions }, [boardPositions])
   useEffect(() => { tempBoardsRef.current = tempBoards }, [tempBoards])
   
-  // Sync with parent boards (only update if actually changed)
+  // Normalize position so wallIndex/x/y are numbers (API or cache can return strings and break wall filter)
+  const normalizePosition = (p: NonNullable<Board['position']>) => ({
+    ...p,
+    wallIndex: Number(p.wallIndex),
+    x: Number(p.x),
+    y: Number(p.y),
+    width: p.width != null ? Number(p.width) : undefined,
+    height: p.height != null ? Number(p.height) : undefined,
+  })
+
+  // Sync with parent boards; preserve local position when parent has none (so refetches don't make boards disappear)
   useEffect(() => {
     const boardMap = new Map(boards.map(b => [b.id, b]))
-    
-    // Add/update boards from parent
-    initialBoards.forEach(board => boardMap.set(board.id, board))
-    
+
+    const hasValidPosition = (b: Board) =>
+      b.position != null &&
+      b.position.wallIndex != null &&
+      b.position.x != null &&
+      b.position.y != null
+
+    initialBoards.forEach((parentBoard) => {
+      const existing = boardMap.get(parentBoard.id)
+      const parentHasPosition = hasValidPosition(parentBoard)
+      const existingHasPosition = existing != null && hasValidPosition(existing)
+      const parentSide = parentBoard.position?.side || 'front'
+      const existingSide = existing?.position?.side || 'front'
+
+      // Preserve local 'back' when API returns 'front' (e.g. position_side not in DB), but only if parent position has required fields
+      if (
+        parentHasPosition &&
+        existingHasPosition &&
+        existingSide === 'back' &&
+        parentSide !== 'back' &&
+        parentBoard.position &&
+        parentBoard.position.wallIndex != null &&
+        parentBoard.position.x != null &&
+        parentBoard.position.y != null
+      ) {
+        boardMap.set(parentBoard.id, {
+          ...parentBoard,
+          position: normalizePosition({ ...parentBoard.position, side: 'back' }),
+        })
+      } else if (parentHasPosition && parentBoard.position) {
+        boardMap.set(parentBoard.id, { ...parentBoard, position: normalizePosition(parentBoard.position) })
+      } else if (existingHasPosition && existing!.position) {
+        boardMap.set(parentBoard.id, { ...parentBoard, position: normalizePosition(existing!.position) })
+      } else {
+        boardMap.set(parentBoard.id, parentBoard)
+      }
+    })
+
     // Remove deleted boards (except temp ones)
     if (initialBoards.length > 0) {
-      const parentIds = new Set(initialBoards.map(b => b.id))
-      Array.from(boardMap.keys()).forEach(id => {
+      const parentIds = new Set(initialBoards.map((b) => b.id))
+      Array.from(boardMap.keys()).forEach((id) => {
         if (!parentIds.has(id) && !id.startsWith('temp-')) {
           boardMap.delete(id)
         }
       })
     }
-    
+
     setBoards(Array.from(boardMap.values()))
   }, [initialBoards])
   
@@ -122,9 +166,11 @@ export function useBoardState(
     wallBoards.forEach(board => {
       if (!board.position) return
       
-      // Convert from API format (0-100) to internal normalized (-0.5 to 0.5)
-      const x = apiToNormalized(board.position.x)
-      const y = apiToNormalized(board.position.y)
+      // Convert from API format (0-100) to internal normalized (-0.5 to 0.5); use center when x/y missing
+      const rawX = board.position.x
+      const rawY = board.position.y
+      const x = typeof rawX === 'number' && Number.isFinite(rawX) ? apiToNormalized(rawX) : 0
+      const y = typeof rawY === 'number' && Number.isFinite(rawY) ? apiToNormalized(rawY) : 0
       
       // Calculate dimensions
       let width: number
@@ -241,7 +287,7 @@ export function useBoardState(
     
     pushUndo()
     
-    // Update local position immediately
+    // Update local position immediately (normalized)
     setBoardPositions(prev => {
       const newMap = new Map(prev)
       const existing = newMap.get(boardId)
@@ -255,33 +301,50 @@ export function useBoardState(
       
       return newMap
     })
-    
-    // Save to API in background
-    try {
-      const board = boardsRef.current.find(b => b.id === boardId)
-      if (!board) {
-        console.warn('⚠️ [useBoardState] Board not found:', boardId)
-        return Promise.resolve() // Return a resolved promise instead of undefined
-      }
 
-      // Skip persistence for demo/sample/mock boards that don't exist in Supabase
+    const board = boardsRef.current.find(b => b.id === boardId)
+    if (!board) {
+      console.warn('⚠️ [useBoardState] Board not found:', boardId)
+      return Promise.resolve()
+    }
+
+    // API format (0-100) for optimistic update and PUT
+    const apiX = normalizedToApi(x)
+    const apiY = normalizedToApi(y)
+    const apiWidth = width != null ? decimalToApi(width) : (board.position?.width ?? 30)
+    const apiHeight = height != null ? decimalToApi(height) : (board.position?.height ?? 30)
+    const positionSide = side || 'front'
+
+    // Optimistically update board.position so sync/loadWallPositions include this board (boards stay visible even if PUT fails)
+    setBoards(prev => prev.map(b => {
+      if (b.id !== boardId) return b
+      return {
+        ...b,
+        position: {
+          wallIndex,
+          x: apiX,
+          y: apiY,
+          width: apiWidth,
+          height: apiHeight,
+          side: positionSide,
+        },
+      }
+    }))
+    
+    // Save to API in background (skip for temp/demo/sample so we don't 404)
+    try {
       const boardWorkspaceId = board.workspaceId || board.studioId || ''
       const shouldSkipPersistence =
+        boardId.startsWith('temp-') ||
         boardId.startsWith('demo-') ||
         boardId.startsWith('sample-') ||
         boardWorkspaceId.startsWith('demo-') ||
         boardWorkspaceId.startsWith('sample-') ||
         boardWorkspaceId.startsWith('mock-')
       if (shouldSkipPersistence) {
-        console.warn('⚠️ [useBoardState] Skipping API save for non-persisted board', { boardId, boardWorkspaceId })
+        devLog('⚠️ [useBoardState] Skipping API save for non-persisted board', { boardId, boardWorkspaceId })
         return Promise.resolve()
       }
-      
-      // Convert to API format (0-100)
-      const apiX = normalizedToApi(x)
-      const apiY = normalizedToApi(y)
-      const apiWidth = width ? decimalToApi(width) : (board.position?.width ?? 30)
-      const apiHeight = height ? decimalToApi(height) : (board.position?.height ?? 30)
       
       devLog('💾 [useBoardState] Saving to API:', {
         boardId,
@@ -304,7 +367,7 @@ export function useBoardState(
             y: apiY,
             width: apiWidth,
             height: apiHeight,
-            side: board.position?.side || side || 'front'
+            side: positionSide
           }
         })
       })
@@ -392,13 +455,6 @@ export function useBoardState(
    */
   const addTempBoard = useCallback((board: Board, blobUrl: string) => {
     devLog('➕ [useBoardState] Adding temp board:', board.id)
-    // #region agent log
-    const apiX = board.position?.x ?? -1
-    const apiY = board.position?.y ?? -1
-    const normX = board.position ? apiToNormalized(board.position.x) : -1
-    const normY = board.position ? apiToNormalized(board.position.y) : -1
-    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useBoardState.ts:addTempBoard',message:'addTempBoard',data:{boardId:board.id,apiX,apiY,normX,normY},timestamp:Date.now(),hypothesisId:'H_pos'})}).catch(()=>{});
-    // #endregion
     setTempBoards(prev => new Map(prev).set(board.id, { board, blobUrl }))
     setBoards(prev => [...prev, board])
     
@@ -418,10 +474,6 @@ export function useBoardState(
    */
   const replaceTempBoard = useCallback((tempId: string, realBoard: Board) => {
     devLog('🔄 [useBoardState] Replacing temp board:', tempId, '→', realBoard.id)
-    // #region agent log
-    const tempPos = boardPositionsRef.current.get(tempId)
-    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useBoardState.ts:replaceTempBoard',message:'replace',hypothesisId:'H3',data:{tempId,realId:realBoard.id,hasTempPos:!!tempPos,hasRealPosition:!!realBoard.position},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     const temp = tempBoardsRef.current.get(tempId)
     if (temp && typeof temp.blobUrl === 'string' && temp.blobUrl.startsWith('blob:')) {
       URL.revokeObjectURL(temp.blobUrl)

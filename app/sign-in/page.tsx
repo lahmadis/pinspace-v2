@@ -26,11 +26,10 @@ function SignInInner() {
   const [institution, setInstitution] = useState<Institution | null>(null)
   const [institutions, setInstitutions] = useState<Institution[]>([])
   const [loading, setLoading] = useState(true)
-  const [sendingCode, setSendingCode] = useState(false)
+  const [signingIn, setSigningIn] = useState(false)
   const [error, setError] = useState('')
   const [email, setEmail] = useState('')
-  const [codeSent, setCodeSent] = useState(false)
-  const [codeSentTo, setCodeSentTo] = useState('')
+  const [password, setPassword] = useState('')
   const hasRedirected = useRef(false)
 
   const institutionSlug = searchParams?.get('institution') ?? (typeof window !== 'undefined' ? sessionStorage.getItem('pinspace_institution') : null)
@@ -103,7 +102,7 @@ function SignInInner() {
     return () => subscription.unsubscribe()
   }, [mounted, redirectAfterSignIn])
 
-  const handleSendCode = async (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     const trimmedEmail = email.trim()
@@ -113,6 +112,10 @@ function SignInInner() {
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       setError('Please enter a valid email address')
+      return
+    }
+    if (!password) {
+      setError('Please enter your password')
       return
     }
 
@@ -125,29 +128,22 @@ function SignInInner() {
       }
     }
 
-    setSendingCode(true)
+    setSigningIn(true)
     try {
-      const { error: authError } = await supabase.auth.signInWithOtp({
+      const { error: authError } = await supabase.auth.signInWithPassword({
         email: trimmedEmail,
-        options: { shouldCreateUser: true },
+        password,
       })
-      setSendingCode(false)
+      setSigningIn(false)
       if (authError) {
-        setError(authError.message || 'Failed to send code')
+        setError(authError.message || 'Invalid email or password')
         return
       }
-      setCodeSent(true)
-      setCodeSentTo(trimmedEmail)
-      setError('')
+      // onAuthStateChange will call redirectAfterSignIn
     } catch (err) {
-      setSendingCode(false)
+      setSigningIn(false)
       setError((err as Error).message || 'Something went wrong')
     }
-  }
-
-  const handleBackToEmail = () => {
-    setCodeSent(false)
-    setError('')
   }
 
   if (!mounted) {
@@ -182,43 +178,19 @@ function SignInInner() {
   }
 
   const signUpUrl = institutionSlug ? `/sign-up?institution=${institutionSlug}${redirectTo ? `&redirect=${encodeURIComponent(redirectTo)}` : ''}` : '/sign-up'
-
-  if (codeSent) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">Check your email</h1>
-          <p className="text-sm text-gray-500 mb-6">
-            We sent a sign-in link to <strong>{codeSentTo}</strong>. Click the link in your email to finish signing in.
-          </p>
-          {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
-          <p className="mt-2 text-sm text-gray-500 text-center">
-            Didn&apos;t receive the email? Check your spam folder or{' '}
-            <button type="button" onClick={handleBackToEmail} className="text-indigo-600 hover:underline">
-              use a different email
-            </button>
-          </p>
-          <div className="mt-6 pt-4 border-t border-gray-200">
-            <Link href={signUpUrl} className="block text-center text-sm text-indigo-600 hover:underline">
-              Don&apos;t have an account? Sign up
-            </Link>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const forgotPasswordUrl = institutionSlug ? `/forgot-password?institution=${institutionSlug}` : '/forgot-password'
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Sign in</h1>
         {institution && (
-          <p className="text-sm text-gray-500 mb-6">Use your {institution.name} email. We&apos;ll send a verification code.</p>
+          <p className="text-sm text-gray-500 mb-6">Use your {institution.name} email and password.</p>
         )}
         {!institution && (
-          <p className="text-sm text-gray-500 mb-6">Enter your email and we&apos;ll send a verification code to sign in.</p>
+          <p className="text-sm text-gray-500 mb-6">Enter your email and password to sign in.</p>
         )}
-        <form onSubmit={handleSendCode} className="space-y-4">
+        <form onSubmit={handleSignIn} className="space-y-4">
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
@@ -231,13 +203,30 @@ function SignInInner() {
               autoComplete="email"
             />
           </div>
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              autoComplete="current-password"
+            />
+          </div>
+          <div className="flex justify-end">
+            <Link href={forgotPasswordUrl} className="text-sm text-indigo-600 hover:underline">
+              Forgot password?
+            </Link>
+          </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"
-            disabled={sendingCode}
+            disabled={signingIn}
             className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
           >
-            {sendingCode ? 'Sending code…' : 'Send verification code'}
+            {signingIn ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
         <div className="mt-6 pt-4 border-t border-gray-200 flex justify-between text-sm">

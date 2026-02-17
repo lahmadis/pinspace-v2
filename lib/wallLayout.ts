@@ -10,12 +10,34 @@ export interface WallDimensions {
 
 export type LayoutType = 'zigzag' | 'square' | 'linear' | 'lshape'
 
+/** Optional per-wall override for position and rotation (inches, radians). When set, used instead of layout-derived position. */
+export interface WallTransformOverride {
+  x: number
+  z: number
+  rotationY: number
+}
+
 export interface WallConfig {
   walls: WallDimensions[]
   layoutType: LayoutType
+  /** When set, wall positions/rotations use these overrides instead of layout math. */
+  customTransforms?: WallTransformOverride[]
 }
 
 const SCALE = 12 // feet to inches
+
+/** Returns transform for a wall, using customTransforms override when present. */
+export function getWallTransformResolved(
+  wallConfig: WallConfig,
+  index: number
+): { x: number; z: number; rotationY: number; width: number; height: number } {
+  const base = getWallTransform(wallConfig, index)
+  const custom = wallConfig.customTransforms?.[index]
+  if (custom) {
+    return { ...base, x: custom.x, z: custom.z, rotationY: custom.rotationY }
+  }
+  return base
+}
 
 export function getWallTransform(
   wallConfig: WallConfig,
@@ -156,7 +178,7 @@ export function calculateFloorBounds(wallConfig: WallConfig): {
   const wallDepth = 6
 
   wallConfig.walls.forEach((_, index) => {
-    const transform = getWallTransform(wallConfig, index)
+    const transform = getWallTransformResolved(wallConfig, index)
     const halfWidth = transform.width / 2
     const halfDepth = wallDepth / 2
 

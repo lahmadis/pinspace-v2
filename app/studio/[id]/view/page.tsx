@@ -162,6 +162,11 @@ export default function StudioViewPage() {
   const [loading, setLoading] = useState(!(initialCache?.boards && initialCache?.wallConfig))
   const [error, setError] = useState<string | null>(null)
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null)
+  const [compareBoardIds, setCompareBoardIds] = useState<string[]>([])
+  const shiftPressedRef = useRef(false)
+  const compareBoardIdsRef = useRef<string[]>([])
+  const boardsRef = useRef<Board[]>([])
+  const [autoEnterPresentCompare, setAutoEnterPresentCompare] = useState(false)
   const [modelViewerUrl, setModelViewerUrl] = useState<string | null>(null)
 
   // Tables from wall config (floor tables with 3D models) – strip blob URLs
@@ -224,6 +229,43 @@ export default function StudioViewPage() {
     loadWallConfig()
     return () => { cancelled = true }
   }, [studioId, isDemo])
+
+  useEffect(() => {
+    compareBoardIdsRef.current = compareBoardIds
+  }, [compareBoardIds])
+
+  useEffect(() => {
+    boardsRef.current = boards
+  }, [boards])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      shiftPressedRef.current = event.shiftKey
+    }
+    const onKeyUp = (event: KeyboardEvent) => {
+      shiftPressedRef.current = event.shiftKey
+      if (event.key !== 'Shift') return
+      const selectedIds = compareBoardIdsRef.current
+      if (selectedIds.length <= 1) return
+      const selectedBoards = selectedIds
+        .map((id) => boardsRef.current.find((b) => b.id === id))
+        .filter((b): b is Board => Boolean(b))
+      if (selectedBoards.length <= 1) return
+      setAutoEnterPresentCompare(true)
+      setSelectedBoard(selectedBoards[0])
+    }
+    const onBlur = () => {
+      shiftPressedRef.current = false
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [])
 
   useEffect(() => {
     const cached = getCachedStudioData(studioId, isDemo)
@@ -290,6 +332,20 @@ export default function StudioViewPage() {
   }
 
   const handleBoardClick = (board: Board) => {
+    const clickShift = !!((window as any).event?.shiftKey)
+    const shiftActive = shiftPressedRef.current || clickShift
+    if (shiftActive) {
+      setCompareBoardIds((prev) =>
+        prev.includes(board.id)
+          ? prev.filter((id) => id !== board.id)
+          : [...prev, board.id]
+      )
+      return
+    }
+    setAutoEnterPresentCompare(false)
+    setCompareBoardIds((prev) => (
+      prev.length > 1 && prev.includes(board.id) ? prev : []
+    ))
     console.log('🖱️ [View Mode] Board clicked:', board.id)
     setSelectedBoard(board)
   }
@@ -497,7 +553,15 @@ export default function StudioViewPage() {
       <LightboxModal 
         board={selectedBoard}
         allBoards={boards}
-        onClose={() => setSelectedBoard(null)}
+        autoEnterPresentCompare={autoEnterPresentCompare}
+        compareBoards={compareBoardIds
+          .map((id) => boards.find((board) => board.id === id))
+          .filter((board): board is Board => Boolean(board))}
+        onClose={() => {
+          setSelectedBoard(null)
+          setAutoEnterPresentCompare(false)
+          setCompareBoardIds([])
+        }}
         onNavigate={handleNavigate}
       />
     </div>

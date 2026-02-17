@@ -18,6 +18,8 @@ interface DraggableBoardProps {
   wallIndex: number
   wallPosition: THREE.Vector3
   wallRotation: number
+  /** Same wall-local rotation for pointer→(x,y) so front and back use same coords (avoids inversion). */
+  wallBaseRotationForCoords?: number
   wallDimensions: { width: number; height: number }
   side?: 'front' | 'back'
   initialLocalPosition?: { x: number; y: number; width?: number; height?: number }
@@ -61,6 +63,7 @@ export function DraggableBoard({
   wallIndex,
   wallPosition,
   wallRotation,
+  wallBaseRotationForCoords,
   wallDimensions,
   side = 'front',
   initialLocalPosition = { x: 0, y: 0 },
@@ -99,7 +102,14 @@ export function DraggableBoard({
   const [isHovered, setIsHovered] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
-  const resizeStartRef = useRef<{ initialWidth: number; initialHeight: number; initialDistance: number } | null>(null)
+  const resizeStartRef = useRef<{
+    anchorX: number
+    anchorY: number
+    initialCornerX: number
+    initialCornerY: number
+    initialWidth: number
+    initialHeight: number
+  } | null>(null)
   
   // Debug logging for delete button visibility
   useEffect(() => {
@@ -119,6 +129,7 @@ export function DraggableBoard({
   
   // Store position in ref for immediate access during drag
   const positionRef = useRef(initialLocalPosition)
+  const lastPointerRef = useRef<{ clientX: number; normalizedX: number }>({ clientX: 0, normalizedX: initialLocalPosition.x })
   
   // Track if we just finished dragging to avoid resetting position
   const justFinishedDragging = useRef(false)
@@ -162,6 +173,8 @@ useEffect(() => {
   const SCALE = 12 // Convert feet to inches (1 ft = 12 inches)
   const scaledWallWidth = wallDimensions.width * SCALE
   const scaledWallHeight = wallDimensions.height * SCALE
+  const isBackSide = side === 'back'
+  const renderXSign = isBackSide ? -1 : 1
   
   // Calculate board size: prefer saved resize (width/height %) so corner resize is visible; else physical dimensions or defaults
   const wallWidthInches = wallDimensions.width * 12
@@ -201,46 +214,38 @@ useEffect(() => {
   }
 
   const updatePosition = (clientX: number, clientY: number) => {
-    const wallNormal = new THREE.Vector3(
-      -Math.sin(wallRotation),
-      0,
-      -Math.cos(wallRotation)
-    ).normalize()
-    
+    const rotationForCoords = wallBaseRotationForCoords ?? wallRotation
+    const wallNormal = new THREE.Vector3(-Math.sin(rotationForCoords), 0, -Math.cos(rotationForCoords)).normalize()
+    const renderRightWorld = new THREE.Vector3(renderXSign, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), wallRotation).normalize()
+    const renderUpWorld = new THREE.Vector3(0, 1, 0)
     const plane = new THREE.Plane(wallNormal, 0)
     plane.constant = -wallNormal.dot(wallPosition)
 
     const rect = gl.domElement.getBoundingClientRect()
-    const x = ((clientX - rect.left) / rect.width) * 2 - 1
-    const y = -((clientY - rect.top) / rect.height) * 2 + 1
-
-    raycaster.setFromCamera(new THREE.Vector2(x, y), camera)
+    const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1
+    const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera)
     const intersectionPoint = new THREE.Vector3()
-    
-    if (raycaster.ray.intersectPlane(plane, intersectionPoint)) {
-      const localOffset = intersectionPoint.clone().sub(wallPosition)
-      
-      const cosR = Math.cos(-wallRotation)
-      const sinR = Math.sin(-wallRotation)
-      const localX = localOffset.x * cosR - localOffset.z * sinR
-      const localY = localOffset.y
-      
-      const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-      const isVerticalWall = (
-        (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
-        (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
-      )
 
-      // On vertical walls (2nd and 4th in zigzag), world→local maps Z→X but the group's local +X is world -Z, so flip horizontal delta.
+    if (raycaster.ray.intersectPlane(plane, intersectionPoint)) {
+      const pointOnWall = intersectionPoint.clone().sub(wallPosition)
+      const pointerRenderX = pointOnWall.dot(renderRightWorld)
+      const pointerRenderY = pointOnWall.dot(renderUpWorld)
+
       const offsetX = dragOffset.current ? dragOffset.current.x : 0
       const offsetY = dragOffset.current ? dragOffset.current.y : 0
-      const deltaX = localX - offsetX
-      const deltaY = localY - offsetY
-      const adjustedX = isVerticalWall ? -deltaX : deltaX
-      const adjustedY = deltaY
-      
-      let normalizedX = THREE.MathUtils.clamp(adjustedX / scaledWallWidth, -0.5, 0.5)
-      let normalizedY = THREE.MathUtils.clamp(adjustedY / scaledWallHeight, -0.5, 0.5)
+      const nextRenderX = pointerRenderX - offsetX
+      const nextRenderY = pointerRenderY - offsetY
+
+      const stateX = nextRenderX
+      const stateY = nextRenderY
+
+      const normalizedX = THREE.MathUtils.clamp(stateX / scaledWallWidth, -0.5, 0.5)
+      const normalizedY = THREE.MathUtils.clamp(stateY / scaledWallHeight, -0.5, 0.5)
+
+      const dxPixels = clientX - lastPointerRef.current.clientX
+      const dNorm = normalizedX - lastPointerRef.current.normalizedX
+      lastPointerRef.current = { clientX, normalizedX }
 
       const newPos = {
         x: normalizedX,
@@ -248,8 +253,7 @@ useEffect(() => {
         width: positionRef.current.width,
         height: positionRef.current.height,
       }
-      
-      // Update BOTH ref and state
+
       positionRef.current = newPos
       setLocalPosition(newPos)
     }
@@ -267,12 +271,14 @@ useEffect(() => {
   const dragOffset = useRef<{ x: number; y: number } | null>(null)
   
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
+    const rotationForCoords = wallBaseRotationForCoords ?? wallRotation
     devLog('🖱️ POINTER DOWN on board:', board.id)
     devLog('🖱️ onDragEnd function exists:', typeof onDragEnd === 'function')
     e.stopPropagation()
     
     // Store initial position to detect if this is a drag or just a click
     dragStartPosition.current = { x: e.clientX, y: e.clientY }
+    lastPointerRef.current = { clientX: e.clientX, normalizedX: positionRef.current.x }
     
       justFinishedDragging.current = false
     // Calculate offset from click point to board center (in local board space)
@@ -283,17 +289,8 @@ if (e.intersections && e.intersections.length > 0) {
   // Calculate current board position in world space
   const currentBoardX = localPosition.x * scaledWallWidth
   const currentBoardY = localPosition.y * scaledWallHeight
-  // Use outwardZ consistent with render placement to avoid Z-mismatch on rotated walls
-  const outwardZForClick = (() => {
-    const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-    const isVerticalWall = (
-      (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
-      (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
-    )
-    // Wall depth is 6 inches, surface is at 3 inches, plus 0.2 offset = 3.2
-    return isVerticalWall ? -3.2 : 3.2
-  })()
-  const currentBoardZ = outwardZForClick
+  // Same Z as render: always 3.2 in edit view (group +Z is toward camera)
+  const currentBoardZ = 3.2
   
   // Transform to board's local space (accounting for wall rotation and position)
   const boardWorldPosition = new THREE.Vector3(
@@ -308,7 +305,7 @@ if (e.intersections && e.intersections.length > 0) {
   if (meshRef.current) {
     meshRef.current.getWorldPosition(meshWorldCenter)
   }
-  const rotatedBoardOffset = boardOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), wallRotation)
+  const rotatedBoardOffset = boardOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationForCoords)
   const rotatedBoardWorldPosition = rotatedBoardOffset.clone().add(wallPosition)
   const boardCenterWorld = meshRef.current
     ? meshWorldCenter.clone() // use actual mesh center when available
@@ -319,37 +316,40 @@ if (e.intersections && e.intersections.length > 0) {
   offset.copy(worldClickPoint).sub(boardCenterWorld)
   
   // Rotate offset to board's local space (inverse of wall rotation)
-  const cosR = Math.cos(-wallRotation)
-  const sinR = Math.sin(-wallRotation)
+  const cosR = Math.cos(-rotationForCoords)
+  const sinR = Math.sin(-rotationForCoords)
   const localOffsetX = offset.x * cosR - offset.z * sinR
   const localOffsetY = offset.y
+  const renderLocalOffsetX = isBackSide ? -localOffsetX : localOffsetX
+  const renderRightWorld = new THREE.Vector3(renderXSign, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), wallRotation).normalize()
+  const renderUpWorld = new THREE.Vector3(0, 1, 0)
 
   // If click is near a corner and board is selected, start resize (proportional) instead of drag
   if (isSelected && canEdit && !isLocked) {
     const cornerMargin = 0.15 * Math.min(boardWidth, boardHeight)
     const inCorner =
-      Math.abs(localOffsetX) > boardWidth / 2 - cornerMargin &&
+      Math.abs(renderLocalOffsetX) > boardWidth / 2 - cornerMargin &&
       Math.abs(localOffsetY) > boardHeight / 2 - cornerMargin
     if (inCorner) {
-      handleCornerPointerDown(e)
+      const cornerIndex = localOffsetY > 0 ? (renderLocalOffsetX > 0 ? 0 : 1) : (renderLocalOffsetX > 0 ? 3 : 2)
+      handleCornerPointerDown(e, cornerIndex)
       return
     }
   }
   
-  // Compute vertical-wall flag only for logging (no flips applied)
-  const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-  const isVerticalWall = (
-    (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
-    (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
-  )
-  
-  // Store offset in wall-local space (no flips)
+  // Store offset in render-space so click anchor and drag use identical coordinates.
+  const clickOnWall = worldClickPoint.clone().sub(wallPosition)
+  const pointerRenderX = clickOnWall.dot(renderRightWorld)
+  const pointerRenderY = clickOnWall.dot(renderUpWorld)
+  const boardCenterOnWall = boardCenterWorld.clone().sub(wallPosition)
+  const boardRenderX = boardCenterOnWall.dot(renderRightWorld)
+  const boardRenderY = boardCenterOnWall.dot(renderUpWorld)
   dragOffset.current = {
-    x: localOffsetX,
-    y: localOffsetY
+    x: pointerRenderX - boardRenderX,
+    y: pointerRenderY - boardRenderY
   }
   
-  devLog('📍 Drag offset calculated (raw):', dragOffset.current, 'vertical wall:', isVerticalWall)
+  devLog('📍 Drag offset calculated (render-space):', dragOffset.current)
       
       devLog('📍 Drag offset calculated:', dragOffset.current, 'board size:', boardWidth, boardHeight)
     } else {
@@ -405,11 +405,6 @@ if (e.intersections && e.intersections.length > 0) {
       
       // Call onDragEnd with ref value (NOT state)
       const finalPos = positionRef.current
-      const normalizedRotationEnd = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-      const isVerticalWallEnd = (
-        (normalizedRotationEnd > Math.PI/4 && normalizedRotationEnd < 3*Math.PI/4) ||
-        (normalizedRotationEnd > 5*Math.PI/4 && normalizedRotationEnd < 7*Math.PI/4)
-      )
       const persistedPos = finalPos
       devLog('🎯🎯🎯 DRAG END - Calling onDragEnd with:', {
         boardId: board.id,
@@ -417,7 +412,6 @@ if (e.intersections && e.intersections.length > 0) {
         y: persistedPos.y,
         width: persistedPos.width,
         height: persistedPos.height,
-        isVerticalWallEnd,
         side
       })
       
@@ -460,23 +454,17 @@ if (e.intersections && e.intersections.length > 0) {
   // If no side specified, default to front (for backwards compatibility)
   const boardSide = board.position?.side || 'front'
   
-  // 🎯 Calculate correct Z based on wall rotation (fixes zigzag issue)
-  const getOutwardZ = (rotation: number) => {
-    const normalizedRotation = ((rotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-    const isVerticalWall = (
-      (normalizedRotation > Math.PI/4 && normalizedRotation < 3*Math.PI/4) ||
-      (normalizedRotation > 5*Math.PI/4 && normalizedRotation < 7*Math.PI/4)
-    )
-    // Wall depth is 6 inches, surface is at 3 inches, plus 0.2 offset = 3.2
-    return isVerticalWall ? -3.2 : 3.2
-  }
-  
-  const outwardZ = getOutwardZ(wallRotation)
-  const boardZ = boardSide === 'back' ? -outwardZ : outwardZ
+  // In edit mode the group is always oriented so +Z points toward the camera (front uses wallRotation, back uses wallRotation+π).
+  // Place boards at +3.2 so they sit in front of the wall center and are visible.
+  const boardZ = 3.2
+  // Back side edit view is camera-mirrored relative to wall-local X; flip only render X in edit mode.
+  const boardXRender = boardSide === 'back' ? -boardX : boardX
 
-  // Get pointer position on the wall plane (world space) for corner resize
+  const coordRotation = wallBaseRotationForCoords ?? wallRotation
+
+  // Get pointer position on the wall plane (world space) for corner resize – use coordRotation so (x,y) is consistent for front/back
   const getPointerOnWallPlane = useCallback((clientX: number, clientY: number): THREE.Vector3 | null => {
-    const wallNormal = new THREE.Vector3(-Math.sin(wallRotation), 0, -Math.cos(wallRotation)).normalize()
+    const wallNormal = new THREE.Vector3(-Math.sin(coordRotation), 0, -Math.cos(coordRotation)).normalize()
     const plane = new THREE.Plane(wallNormal, 0)
     plane.constant = -wallNormal.dot(wallPosition)
     const rect = gl.domElement.getBoundingClientRect()
@@ -485,34 +473,68 @@ if (e.intersections && e.intersections.length > 0) {
     raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera)
     const point = new THREE.Vector3()
     return raycaster.ray.intersectPlane(plane, point) ? point : null
-  }, [camera, gl, raycaster, wallPosition, wallRotation])
+  }, [camera, gl, raycaster, wallPosition, coordRotation])
 
-  const handleCornerPointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
+  // Convert world point on wall plane to wall-local 2D (inches from wall origin) – use coordRotation so front/back share same coords
+  const worldToWallLocal = useCallback((worldPoint: THREE.Vector3): { x: number; y: number } => {
+    const offset = worldPoint.clone().sub(wallPosition)
+    const wallRight = new THREE.Vector3(Math.cos(coordRotation), 0, -Math.sin(coordRotation))
+    const wallUp = new THREE.Vector3(0, 1, 0)
+    return { x: offset.dot(wallRight), y: offset.dot(wallUp) }
+  }, [wallPosition, coordRotation])
+
+  const handleCornerPointerDown = useCallback((e: ThreeEvent<PointerEvent>, cornerIndex: number) => {
     e.stopPropagation()
     if (isLocked) return
     const ptr = getPointerOnWallPlane(e.clientX, e.clientY)
     if (!ptr) return
-    const bx = positionRef.current.x * scaledWallWidth
-    const by = positionRef.current.y * scaledWallHeight
-    const centerWorld = wallPosition.clone().add(new THREE.Vector3(bx, by, boardZ).applyAxisAngle(new THREE.Vector3(0, 1, 0), wallRotation))
-    const dist = ptr.distanceTo(centerWorld)
-    if (dist < 0.1) return
+    const cx = positionRef.current.x * scaledWallWidth
+    const cy = positionRef.current.y * scaledWallHeight
     const w = positionRef.current.width ?? 0.3
     const h = positionRef.current.height ?? 0.3
-    resizeStartRef.current = { initialWidth: w, initialHeight: h, initialDistance: dist }
+    const halfW = (w * wallWidthInches) / 2
+    const halfH = (h * wallHeightInches) / 2
+    // Corner positions in wall-local: 0=TR, 1=TL, 2=BL, 3=BR
+    const corners: { x: number; y: number }[] = [
+      { x: cx + halfW, y: cy + halfH },
+      { x: cx - halfW, y: cy + halfH },
+      { x: cx - halfW, y: cy - halfH },
+      { x: cx + halfW, y: cy - halfH },
+    ]
+    const anchorIndex = (cornerIndex + 2) % 4
+    const anchor = corners[anchorIndex]
+    const initialCorner = corners[cornerIndex]
+    const initialDiagonal = Math.hypot(initialCorner.x - anchor.x, initialCorner.y - anchor.y)
+    if (initialDiagonal < 1) return
+    const MIN_SIZE = 0.05
+    const MAX_SIZE = 1
+    resizeStartRef.current = { anchorX: anchor.x, anchorY: anchor.y, initialCornerX: initialCorner.x, initialCornerY: initialCorner.y, initialWidth: w, initialHeight: h }
     setIsResizing(true)
-    gl.domElement.style.cursor = 'nwse-resize'
+    gl.domElement.style.cursor = cornerIndex % 2 === 0 ? 'nwse-resize' : 'nesw-resize'
     const onMove = (ev: PointerEvent) => {
       const p = getPointerOnWallPlane(ev.clientX, ev.clientY)
       if (!p || !resizeStartRef.current) return
-      const curDist = p.distanceTo(centerWorld)
-      const scale = curDist / resizeStartRef.current.initialDistance
-      const MIN = 0.05
-      const MAX = 1
-      const newW = THREE.MathUtils.clamp(resizeStartRef.current.initialWidth * scale, MIN, MAX)
-      const newH = THREE.MathUtils.clamp(resizeStartRef.current.initialHeight * scale, MIN, MAX)
-      positionRef.current = { ...positionRef.current, width: newW, height: newH }
-      setLocalPosition(prev => ({ ...prev, width: newW, height: newH }))
+      const newCorner = worldToWallLocal(p)
+      const ax = resizeStartRef.current.anchorX
+      const ay = resizeStartRef.current.anchorY
+      const dx = newCorner.x - ax
+      const dy = newCorner.y - ay
+      const dirX = (initialCorner.x - ax) / initialDiagonal
+      const dirY = (initialCorner.y - ay) / initialDiagonal
+      const projectedLength = dx * dirX + dy * dirY
+      const scale = Math.max(0.01, projectedLength / initialDiagonal)
+      let newW = resizeStartRef.current.initialWidth * scale
+      let newH = resizeStartRef.current.initialHeight * scale
+      newW = THREE.MathUtils.clamp(newW, MIN_SIZE, MAX_SIZE)
+      newH = THREE.MathUtils.clamp(newH, MIN_SIZE, MAX_SIZE)
+      const newCornerX = ax + dirX * initialDiagonal * scale
+      const newCornerY = ay + dirY * initialDiagonal * scale
+      const newCenterX = (ax + newCornerX) / 2
+      const newCenterY = (ay + newCornerY) / 2
+      const newX = newCenterX / wallWidthInches
+      const newY = newCenterY / wallHeightInches
+      positionRef.current = { ...positionRef.current, x: newX, y: newY, width: newW, height: newH }
+      setLocalPosition(prev => ({ ...prev, x: newX, y: newY, width: newW, height: newH }))
     }
     const onUp = () => {
       gl.domElement.style.cursor = 'default'
@@ -527,9 +549,9 @@ if (e.intersections && e.intersections.length > 0) {
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
-  }, [board.id, boardZ, getPointerOnWallPlane, gl, isLocked, onDragEnd, scaledWallWidth, scaledWallHeight, side, wallPosition, wallRotation])
+  }, [board.id, getPointerOnWallPlane, gl, isLocked, onDragEnd, scaledWallHeight, scaledWallWidth, side, wallHeightInches, wallWidthInches, worldToWallLocal])
   
-  devLog(`🧱 DraggableBoard on wall: rotation=${wallRotation.toFixed(2)}, outwardZ=${outwardZ}, side=${boardSide}, finalZ=${boardZ}`)
+  devLog(`🧱 DraggableBoard on wall: rotation=${wallRotation.toFixed(2)}, side=${boardSide}, boardZ=${boardZ}`)
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
   const hasImage = board.fullImageUrl || board.thumbnailUrl
   const imageUrl = board.fullImageUrl || board.thumbnailUrl || ''
@@ -553,21 +575,10 @@ if (e.intersections && e.intersections.length > 0) {
   const deleteButtonX = boardWidth / 2 - deleteButtonSize / 2 - deleteButtonSize * 0.3
   const deleteButtonY = boardHeight / 2 - deleteButtonSize / 2 - deleteButtonSize * 0.3
 
-  // Corner resize handles: size and z so they sit on top of the board (larger hit area for easier grab)
-  const handleSize = Math.min(boardWidth, boardHeight) * 0.14
-  const handleZ = 0.002
-  const showCornerHandles = (isHovered || isSelected) && canEdit && !isLocked && !isDragging && !isResizing
-  const cornerPositions: { x: number; y: number; cursor: string }[] = [
-    { x: boardWidth / 2, y: boardHeight / 2, cursor: 'nwse-resize' },
-    { x: -boardWidth / 2, y: boardHeight / 2, cursor: 'nesw-resize' },
-    { x: -boardWidth / 2, y: -boardHeight / 2, cursor: 'nwse-resize' },
-    { x: boardWidth / 2, y: -boardHeight / 2, cursor: 'nesw-resize' },
-  ]
-
   // Position the group at the wall position, then position board within group's local space
   return (
     <group position={wallPosition} rotation={[0, wallRotation, 0]}>
-      <group ref={innerGroupRef} position={[boardX, boardY, boardZ]}>
+      <group ref={innerGroupRef} position={[boardXRender, boardY, boardZ]}>
         <mesh
           ref={meshRef}
           onPointerDown={handlePointerDown}
@@ -592,20 +603,25 @@ if (e.intersections && e.intersections.length > 0) {
           onPointerMove={(e) => {
             e.stopPropagation()
             if (!e.intersections?.length || isDragging || isResizing) return
+            const rotationForCoords = wallBaseRotationForCoords ?? wallRotation
             const worldPoint = e.intersections[0].point
             const center = new THREE.Vector3()
             meshRef.current?.getWorldPosition(center)
             const offset = worldPoint.clone().sub(center)
-            const cosR = Math.cos(-wallRotation)
-            const sinR = Math.sin(-wallRotation)
+            const cosR = Math.cos(-rotationForCoords)
+            const sinR = Math.sin(-rotationForCoords)
             const localX = offset.x * cosR - offset.z * sinR
             const localY = offset.y
+            const renderLocalX = isBackSide ? -localX : localX
             const cornerMargin = 0.15 * Math.min(boardWidth, boardHeight)
             const nearCorner =
-              Math.abs(localX) > boardWidth / 2 - cornerMargin &&
+              Math.abs(renderLocalX) > boardWidth / 2 - cornerMargin &&
               Math.abs(localY) > boardHeight / 2 - cornerMargin
             if (isSelected && canEdit && nearCorner) {
-              gl.domElement.style.cursor = 'nwse-resize'
+              // Use different diagonal cursors so left/right corners feel correct
+              // Right-side corners → ↘↖ (nwse-resize), left-side corners → ↙↗ (nesw-resize)
+              const isRightSide = renderLocalX > 0
+              gl.domElement.style.cursor = isRightSide ? 'nwse-resize' : 'nesw-resize'
             } else if (!isDragging) {
               gl.domElement.style.cursor = isLocked ? 'not-allowed' : 'grab'
             }
@@ -623,7 +639,7 @@ if (e.intersections && e.intersections.length > 0) {
               <PDFTextureMaterial pdfUrl={imageUrl} hovered={isHovered} />
             </Suspense>
           ) : hasImage ? (
-            <Suspense fallback={<meshStandardMaterial color="#cccccc" />}>
+            <Suspense fallback={<meshStandardMaterial color="#94a3b8" opacity={0.9} transparent />}>
               <BoardTexture imageUrl={imageUrl} />
             </Suspense>
           ) : (
@@ -635,31 +651,8 @@ if (e.intersections && e.intersections.length > 0) {
           )}
         </mesh>
 
-        {/* Corner resize handles - show on hover, proportional resize */}
-        {showCornerHandles && cornerPositions.map((pos, i) => (
-          <group key={i} position={[pos.x, pos.y, handleZ]} renderOrder={3}>
-            <mesh
-              onPointerDown={(e) => {
-                e.stopPropagation()
-                handleCornerPointerDown(e)
-              }}
-              onPointerOver={(e) => {
-                e.stopPropagation()
-                gl.domElement.style.cursor = pos.cursor
-              }}
-              onPointerOut={(e) => {
-                e.stopPropagation()
-                if (!isResizing) gl.domElement.style.cursor = isHovered ? 'grab' : 'default'
-              }}
-            >
-              <circleGeometry args={[handleSize / 2, 16]} />
-              <meshBasicMaterial color="#4444ff" transparent opacity={0.9} />
-            </mesh>
-          </group>
-        ))}
-
-        {/* Border edges for the box geometry */}
-        <lineSegments position={[0, 0, 0]}>
+        {/* Border edges for the box geometry - no raycast so mesh gets pointer events at edges/corners */}
+        <lineSegments position={[0, 0, 0]} raycast={() => null}>
           <edgesGeometry args={[new THREE.BoxGeometry(boardWidth, boardHeight, BOARD_THICKNESS)]} />
           <lineBasicMaterial 
             color={
@@ -673,9 +666,9 @@ if (e.intersections && e.intersections.length > 0) {
           />
         </lineSegments>
         
-        {/* Additional thicker border for selected state */}
+        {/* Additional thicker border for selected state - no raycast so mesh gets pointer events */}
         {isSelected && (
-          <lineSegments position={[0, 0, 0]}>
+          <lineSegments position={[0, 0, 0]} raycast={() => null}>
             <edgesGeometry args={[new THREE.BoxGeometry(boardWidth + 0.3, boardHeight + 0.3, BOARD_THICKNESS + 0.02)]} />
             <lineBasicMaterial color="#4444ff" linewidth={3} />
           </lineSegments>

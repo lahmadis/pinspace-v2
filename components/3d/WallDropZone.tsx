@@ -8,6 +8,7 @@ import { throttle } from '@/lib/throttleDebounce'
 interface WallDropZoneProps {
   wallPosition: THREE.Vector3
   wallRotation: number
+  wallBaseRotationForCoords?: number
   wallDimensions: { width: number; height: number }
   onDrop: (localX: number, localY: number) => void
   onDragCancel: () => void
@@ -16,10 +17,12 @@ interface WallDropZoneProps {
 export function WallDropZone({
   wallPosition,
   wallRotation,
+  wallBaseRotationForCoords,
   wallDimensions,
   onDrop,
   onDragCancel
 }: WallDropZoneProps) {
+  const coordRotation = wallBaseRotationForCoords ?? wallRotation
   const meshRef = useRef<THREE.Mesh>(null)
   const { camera, raycaster, gl } = useThree()
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null)
@@ -37,11 +40,11 @@ export function WallDropZone({
     const x = ((clientX - rect.left) / rect.width) * 2 - 1
     const y = -((clientY - rect.top) / rect.height) * 2 + 1
     
-    // Create wall plane
+    // Create wall plane (use coordRotation so drop (x,y) matches front/back coords)
     const wallNormal = new THREE.Vector3(
-      -Math.sin(wallRotation),
+      -Math.sin(coordRotation),
       0,
-      -Math.cos(wallRotation)
+      -Math.cos(coordRotation)
     ).normalize()
     
     const plane = new THREE.Plane(wallNormal, 0)
@@ -52,30 +55,21 @@ export function WallDropZone({
     const intersectionPoint = new THREE.Vector3()
     
     if (raycaster.ray.intersectPlane(plane, intersectionPoint)) {
-      // Convert world position to local wall coordinates
+      // Convert world position to local wall coordinates (coordRotation for consistent front/back)
       const localOffset = intersectionPoint.clone().sub(wallPosition)
       
-      // Rotate to wall's local coordinate system
-      const cosR = Math.cos(-wallRotation)
-      const sinR = Math.sin(-wallRotation)
+      const cosR = Math.cos(-coordRotation)
+      const sinR = Math.sin(-coordRotation)
       const localX = (localOffset.x * cosR - localOffset.z * sinR) / scaledWidth
       const localY = localOffset.y / scaledHeight
 
-      // Match DraggableBoard behavior: invert X on vertical walls so drag direction feels natural
-      const normalizedRotation = ((wallRotation % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
-      const isVerticalWall = (
-        (normalizedRotation > Math.PI / 4 && normalizedRotation < (3 * Math.PI) / 4) ||
-        (normalizedRotation > (5 * Math.PI) / 4 && normalizedRotation < (7 * Math.PI) / 4)
-      )
-      const adjustedLocalX = isVerticalWall ? -localX : localX
-
       // Clamp to full wall range (-0.5 to 0.5), matching DraggableBoard
-      const clampedX = THREE.MathUtils.clamp(adjustedLocalX, -0.5, 0.5)
+      const clampedX = THREE.MathUtils.clamp(localX, -0.5, 0.5)
       const clampedY = THREE.MathUtils.clamp(localY, -0.5, 0.5)
 
       console.log('[WallDropZone] Cursor position:', { clientX, clientY })
       console.log('[WallDropZone] Intersection point:', intersectionPoint)
-      console.log('[WallDropZone] Local coordinates:', { localX: adjustedLocalX, localY })
+      console.log('[WallDropZone] Local coordinates:', { localX, localY })
       console.log('[WallDropZone] Clamped coordinates:', { clampedX, clampedY })
 
       setHoverPosition({ x: clampedX, y: clampedY })
@@ -91,7 +85,7 @@ export function WallDropZone({
     () => throttle((clientX: number, clientY: number) => {
       updateHoverPosition(clientX, clientY)
     }, 50),
-    [gl, camera, raycaster, wallPosition, wallRotation, scaledWidth, scaledHeight]
+    [gl, camera, raycaster, wallPosition, coordRotation, scaledWidth, scaledHeight]
   )
 
   // Listen for HTML drag events

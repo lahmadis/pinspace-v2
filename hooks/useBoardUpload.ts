@@ -86,7 +86,8 @@ const createBoardFormData = (
   const formData = new FormData()
   formData.append('image', file)
   formData.append('studioId', options.studioId)
-  formData.append('title', options.title)
+  formData.append('workspaceId', options.studioId)
+  formData.append('title', options.title || 'Untitled Board')
   formData.append('studentName', options.user?.fullName || options.user?.firstName || 'Uploaded Board')
   formData.append('description', options.isPDF ? 'PDF Document' : '')
   formData.append('tags', options.isPDF ? 'pdf' : '')
@@ -218,9 +219,6 @@ const replaceTempBoardInState = (
   options.setPlacedBoards3D(prev => {
     const newMap = new Map(prev)
     const position = newMap.get(tempId)
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useBoardUpload.ts:replaceTempBoardInState',message:'replace placedBoards3D',hypothesisId:'H2',data:{tempId,realId:boardToUse.id,hasTempPosition:!!position,prevSize:prev.size},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (position) {
       newMap.delete(tempId)
       newMap.set(boardToUse.id, position)
@@ -362,22 +360,36 @@ const uploadFile = async (
     const response = await fetch('/api/upload', { method: 'POST', body: formData })
 
     if (!response.ok) {
-      const error = await response.text()
-      throw new Error(error || 'Upload failed')
+      const errorText = await response.text()
+      let errMsg = errorText || `Upload failed (${response.status})`
+      try {
+        const parsed = JSON.parse(errorText)
+        if (parsed.error) errMsg = parsed.error
+        if (parsed.missing?.length) errMsg += ` - missing: ${parsed.missing.join(', ')}`
+      } catch {
+        // use errMsg as-is
+      }
+      console.error(`❌ [Upload] API error ${response.status}:`, errMsg)
+      throw new Error(errMsg)
     }
 
     const data = await response.json()
-    const uploadedBoard = data.board as Board
+    let uploadedBoard = data.board as Board
+    // Ensure position.side matches where we actually uploaded (API/DB may omit or default position_side to front)
+    const editingSide = options.editingWallSide || 'front'
+    if (uploadedBoard?.position && options.editingWall !== null) {
+      uploadedBoard = {
+        ...uploadedBoard,
+        position: { ...uploadedBoard.position, side: editingSide },
+      }
+    }
 
     if (tempBoardId && options.editingWall !== null) {
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useBoardUpload.ts:beforeReplace',message:'before replace',hypothesisId:'H2',data:{tempBoardId,realId:uploadedBoard?.id,hasPosition:!!uploadedBoard?.position,wallIndex:uploadedBoard?.position?.wallIndex},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       replaceTempBoardInState(
         tempBoardId,
         uploadedBoard,
         options.editingWall,
-        options.editingWallSide || 'front',
+        editingSide,
         {
           replaceTempBoard: options.replaceTempBoard,
           setPlacedBoards3D: options.setPlacedBoards3D,
@@ -388,9 +400,6 @@ const uploadFile = async (
 
     return { success: true, uploadedBoard }
   } catch (error) {
-    // #region agent log
-    if (tempBoardId) fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useBoardUpload.ts:catch',message:'upload failed cleanup',hypothesisId:'H4',data:{tempBoardId,error:String(error)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     console.error(`❌ [Upload] Failed to upload ${file.name}:`, error)
     if (tempBoardId) {
       cleanupTempBoard(tempBoardId, {
@@ -502,7 +511,11 @@ const uploadPDF = async (
       }
       
       const data = await response.json()
-      const uploadedBoard = data.board as Board
+      let uploadedBoard = data.board as Board
+      const editingSide = options.editingWallSide || 'front'
+      if (uploadedBoard?.position && options.editingWall !== null) {
+        uploadedBoard = { ...uploadedBoard, position: { ...uploadedBoard.position, side: editingSide } }
+      }
       
       // Replace temp board (always replace; position patched to current wall if API omitted it)
       if (tempBoardId && options.editingWall !== null) {
@@ -510,7 +523,7 @@ const uploadPDF = async (
           tempBoardId,
           uploadedBoard,
           options.editingWall,
-          options.editingWallSide || 'front',
+          editingSide,
           {
             replaceTempBoard: options.replaceTempBoard,
             setPlacedBoards3D: options.setPlacedBoards3D,
@@ -545,6 +558,7 @@ export const useBoardUpload = (options: UploadOptions) => {
     input.accept = '.jpg,.jpeg,.png,.pdf'
     input.multiple = true
     
+    const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25MB (must match API)
     input.onchange = async (e) => {
       const files = Array.from((e.target as HTMLInputElement).files || [])
       if (files.length === 0) return
@@ -554,10 +568,17 @@ export const useBoardUpload = (options: UploadOptions) => {
       const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
       let successCount = 0
       let failCount = 0
+      const oversized: string[] = []
       
       for (const file of files) {
         if (!validTypes.includes(file.type)) {
           console.warn(`⚠️ Skipping invalid file type: ${file.name}`)
+          failCount++
+          continue
+        }
+        if (file.size > MAX_FILE_SIZE) {
+          const mb = (file.size / (1024 * 1024)).toFixed(1)
+          oversized.push(`${file.name} (${mb} MB)`)
           failCount++
           continue
         }
@@ -587,6 +608,9 @@ export const useBoardUpload = (options: UploadOptions) => {
       // Refresh boards list after all uploads
       await options.onBoardUpdate()
       
+      if (oversized.length > 0) {
+        alert(`These files are too large (max 25 MB):\n${oversized.join('\n')}`)
+      }
       console.log(`✅ Upload complete: ${successCount} successful, ${failCount} failed`)
     }
     
@@ -597,6 +621,12 @@ export const useBoardUpload = (options: UploadOptions) => {
   const uploadFileDirect = async (file: File): Promise<boolean> => {
     const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png']
     if (!validImageTypes.includes(file.type)) return false
+    const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25MB
+    if (file.size > MAX_FILE_SIZE) {
+      const mb = (file.size / (1024 * 1024)).toFixed(1)
+      alert(`${file.name} is too large (${mb} MB). Maximum size is 25 MB.`)
+      return false
+    }
     try {
       const result = await uploadFile(file, options)
       if (result.success) await options.onBoardUpdate()
