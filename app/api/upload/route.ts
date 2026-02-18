@@ -83,34 +83,35 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+    const uploadFile = file as File
 
     // Validate file size (25MB limit so typical phone photos can upload)
     const maxSize = 25 * 1024 * 1024 // 25MB
-    if (file.size > maxSize) {
+    if (uploadFile.size > maxSize) {
       return NextResponse.json({ error: 'File size exceeds 25MB limit' }, { status: 400 })
     }
 
     // Validate file type
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']
-    if (!allowedTypes.includes(file.type)) {
+    if (!allowedTypes.includes(uploadFile.type)) {
       return NextResponse.json({ error: 'Invalid file type. Only JPEG, PNG, WebP, and PDF are allowed' }, { status: 400 })
     }
 
     // Upload file to Supabase Storage
-    const ext = file.name.split('.').pop() || 'jpg'
+    const ext = uploadFile.name.split('.').pop() || 'jpg'
     const timestamp = Date.now()
     const filename = `${userId}/${timestamp}-${Math.random().toString(36).substring(7)}.${ext}`
     // File path should NOT include bucket name - just the path within the bucket
     const filePath = filename
 
     // Convert File to ArrayBuffer then to Uint8Array for Supabase
-    const arrayBuffer = await file.arrayBuffer()
+    const arrayBuffer = await uploadFile.arrayBuffer()
     const uint8Array = new Uint8Array(arrayBuffer)
 
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('board-images')
       .upload(filePath, uint8Array, {
-        contentType: file.type,
+        contentType: uploadFile.type,
         upsert: false, // Don't overwrite existing files
       })
 

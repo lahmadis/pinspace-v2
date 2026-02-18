@@ -641,8 +641,8 @@ export default function StudioRoom(props: StudioRoomProps) {
     setEditingWall(null)
     setEditingWallPosition(null)
     setEditingWallDimensions(null)
-    setEditingWallSide(null)
-    setEditingWallBaseRotation(null)
+    setEditingWallSide('front')
+    setEditingWallBaseRotation(0)
     devLog('✅ [StudioRoom] Exited edit mode')
 
     // Persist positions in the background (no await)
