@@ -564,6 +564,10 @@ export default function StudioRoom(props: StudioRoomProps) {
     side: 'front' | 'back'
   ) => {
     devLog('🖼️ [StudioRoom] Wall clicked:', wallIndex, 'rotation:', rotation, 'side:', side)
+    const wallClickStart = Date.now()
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-2',hypothesisId:'H6_H7',location:'StudioRoom.tsx:handleWallClick',message:'wall click start',data:{wallIndex,side,totalBoards:localBoards.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     
     // If we're already editing this wall and side, don't reinitialize
     if (editingWall === wallIndex && editingWallSide === side) {
@@ -586,6 +590,9 @@ export default function StudioRoom(props: StudioRoomProps) {
 
     // Load positions from central hook (API → normalized + size)
     const wallPositions = loadWallPositions(wallIndex, wallDimensions, side)
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-2',hypothesisId:'H7',location:'StudioRoom.tsx:handleWallClick',message:'wall positions loaded',data:{wallIndex,side,wallPositionsSize:wallPositions.size,elapsedMs:Date.now()-wallClickStart},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
 
     // Copy all boards on this wall AND this side into placedBoards3D (include fallback so boards don't disappear when pos is missing)
     const newMap = new Map<string, { x: number; y: number; width: number; height: number }>()
@@ -617,6 +624,9 @@ export default function StudioRoom(props: StudioRoomProps) {
 
     devLog('🖼️ [StudioRoom] Total boards to render on', side, 'side:', newMap.size)
     setPlacedBoards3D(newMap)
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-2',hypothesisId:'H6_H7',location:'StudioRoom.tsx:handleWallClick',message:'wall click setup complete',data:{wallIndex,side,wallBoardsForEditCount:wallBoardsForEdit.length,newMapSize:newMap.size,totalElapsedMs:Date.now()-wallClickStart},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
   }
 
 

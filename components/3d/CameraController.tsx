@@ -70,6 +70,9 @@ export function CameraController({
   const startTarget = useRef(new THREE.Vector3())
   const targetPosition = useRef(new THREE.Vector3())
   const targetTarget = useRef(new THREE.Vector3())
+  const animationStartedAtMs = useRef<number>(0)
+  const animationFirstFrameLogged = useRef(false)
+  const lastLoggedAnimationCompleteToken = useRef<string | null>(null)
   // Snapshot the live camera pose while in edit mode so exit animation
   // can always start from the true wall-view position.
   const lastEditCameraPosition = useRef(new THREE.Vector3())
@@ -94,6 +97,9 @@ export function CameraController({
                           editingWall !== null && 
                           prevEditingWall.current !== editingWall
     const exitingEditMode = prevEditingWall.current !== null && editingWall === null
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-1',hypothesisId:'H1_H2_H3',location:'CameraController.tsx:useEffect',message:'transition state snapshot',data:{editingWall,prevEditingWall:prevEditingWall.current,transitionKey,lastHandledTransitionKey:lastHandledTransitionKey.current,enteringEditMode,switchingWalls,exitingEditMode,hasWallPosition:!!wallPosition,pendingAnimation:pendingAnimation.current},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     
     devLog('📷 [Camera] Transition detection:', { 
       enteringEditMode, 
@@ -130,6 +136,11 @@ export function CameraController({
       isAnimating.current = true
       animationProgress.current = 0
       animationDuration.current = SWOOSH_DURATION_SECONDS
+      animationStartedAtMs.current = Date.now()
+      animationFirstFrameLogged.current = false
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-1',hypothesisId:'H1_H3_H5',location:'CameraController.tsx:enterAnimation',message:'start swoosh to wall',data:{editingWall,transitionKey,duration:SWOOSH_DURATION_SECONDS,startCamera:{x:camera.position.x,y:camera.position.y,z:camera.position.z},wallPosition:{x:wallPosition.x,y:wallPosition.y,z:wallPosition.z},wallRotation},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       
       // Current position is our start position
       startPosition.current.copy(camera.position)
@@ -176,9 +187,17 @@ export function CameraController({
       // The camera will be positioned along the wall's front normal, looking at the wall center
       // This gives us a true head-on 2D view
       }
+      if (!shouldAnimateToWall) {
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-1',hypothesisId:'H3',location:'CameraController.tsx:enterAnimation',message:'swoosh skipped for wall',data:{editingWall,transitionKey,transitionRequested,pendingAnimation:pendingAnimation.current,enteringEditMode,switchingWalls},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+      }
     } else if (editingWall !== null && !wallPosition) {
       // Wall was selected but transform hasn't arrived yet; animate once it does.
       pendingAnimation.current = true
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-1',hypothesisId:'H1',location:'CameraController.tsx:useEffect',message:'waiting for wallPosition before swoosh',data:{editingWall,transitionKey},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
     } else if (exitingEditMode || (transitionRequested && editingWall === null)) {
       // Exiting edit mode - return to saved position (or default if none saved)
       devLog('📷 [Camera] Exiting edit mode, animating back to 3D view')
@@ -190,6 +209,11 @@ export function CameraController({
       isAnimating.current = true
       animationProgress.current = 0
       animationDuration.current = SWOOSH_DURATION_SECONDS
+      animationStartedAtMs.current = Date.now()
+      animationFirstFrameLogged.current = false
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-1',hypothesisId:'H4',location:'CameraController.tsx:exitAnimation',message:'start swoosh to 3D',data:{transitionKey,duration:SWOOSH_DURATION_SECONDS},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       
       // Start from the last known edit-view pose to avoid any snap-to-default
       // that can happen in the same render cycle as exiting.
@@ -235,6 +259,12 @@ export function CameraController({
     }
 
     if (isAnimating.current) {
+      if (!animationFirstFrameLogged.current) {
+        animationFirstFrameLogged.current = true
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-2',hypothesisId:'H6',location:'CameraController.tsx:useFrame',message:'first animation frame after start',data:{editingWall,transitionKey,firstFrameDelayMs:Date.now()-animationStartedAtMs.current},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+      }
       animationProgress.current = Math.min(
         animationProgress.current + delta / animationDuration.current,
         1
@@ -289,6 +319,13 @@ export function CameraController({
 
       if (animationProgress.current >= 1) {
         isAnimating.current = false
+        const completeToken = `${editingWall ?? 'none'}:${transitionKey}`
+        if (lastLoggedAnimationCompleteToken.current !== completeToken) {
+          lastLoggedAnimationCompleteToken.current = completeToken
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-1',hypothesisId:'H4_H5',location:'CameraController.tsx:useFrame',message:'swoosh completed',data:{editingWall,transitionKey,elapsedMs:Date.now()-animationStartedAtMs.current},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+        }
         onTransitionComplete?.()
       }
     }
