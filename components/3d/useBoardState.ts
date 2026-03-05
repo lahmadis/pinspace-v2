@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Board } from '@/types'
+import { toast } from '@/lib/toast'
 
 const isDev = process.env.NODE_ENV === 'development'
 const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
@@ -421,11 +422,11 @@ export function useBoardState(
       
       if (!response.ok) {
         if (response.status === 403) {
-          alert(`You can only delete boards in workspaces you're a member of${data.ownerName ? `. This board belongs to ${data.ownerName}.` : '.'}`)
+          toast.error(`You can only delete boards in workspaces you're a member of${data.ownerName ? `. This board belongs to ${data.ownerName}.` : '.'}`)
         } else if (response.status === 401) {
-          alert('You must be signed in to delete boards')
+          toast.error('You must be signed in to delete boards')
         } else {
-          alert(data.error || 'Failed to delete board')
+          toast.error(data.error || 'Failed to delete board')
         }
         return false
       }
@@ -445,7 +446,7 @@ export function useBoardState(
       return true
     } catch (error) {
       console.error('❌ [useBoardState] Delete failed:', error)
-      alert('Failed to delete board')
+      toast.error('Failed to delete board')
       return false
     }
   }, [onRefresh])

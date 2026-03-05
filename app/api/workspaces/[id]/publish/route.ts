@@ -24,7 +24,6 @@ export async function PATCH(
     }
 
     const workspaceId = params.id
-    console.log('Publishing/unpublishing workspace:', workspaceId)
 
     // Fetch workspace to check ownership
     const { data: workspace, error: fetchError } = await supabase
@@ -99,8 +98,6 @@ export async function PATCH(
         details: updateError.message || updateError 
       }, { status: 500 })
     }
-
-    console.log(`${desiredIsPublic ? '🌐 Published' : '🔒 Unpublished'} workspace:`, workspaceId)
 
     // Transform to frontend format
     const transformedWorkspace = {

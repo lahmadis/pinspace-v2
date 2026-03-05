@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import Link from 'next/link'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
+import { toast } from '@/lib/toast'
 
 export default function JoinWorkspacePage() {
   const params = useParams()
@@ -67,7 +68,7 @@ export default function JoinWorkspacePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userName: user.fullName || user.firstName || 'Student'
+          userName: user.user_metadata?.full_name || user.user_metadata?.email?.split('@')[0] || 'Student'
         })
       })
 
@@ -84,7 +85,7 @@ export default function JoinWorkspacePage() {
       router.push(`/studio/${workspace.id}`)
     } catch (error) {
       console.error('Error:', error)
-      alert(error instanceof Error ? error.message : 'Failed to join workspace')
+      toast.error(error instanceof Error ? error.message : 'Failed to join workspace')
     } finally {
       setJoining(false)
     }

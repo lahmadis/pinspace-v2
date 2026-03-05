@@ -3,6 +3,7 @@
 import { supabase } from '@/lib/supabase/client'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import Link from 'next/link'
+import { toast } from '@/lib/toast'
 import { useEffect, useState, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Workspace } from '@/types'
@@ -161,6 +162,11 @@ function DashboardContent() {
   const [loading, setLoading] = useState(true)
   const [showJoinModal, setShowJoinModal] = useState(false)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renamingValue, setRenamingValue] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [confirmDeleteName, setConfirmDeleteName] = useState('')
+  const [fetchError, setFetchError] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
@@ -196,8 +202,7 @@ function DashboardContent() {
         const data = await workspacesRes.json()
         // API returns array directly, not {workspaces: []}
         const workspacesArray = Array.isArray(data) ? data : (data.workspaces || [])
-        console.log('Fetched workspaces:', workspacesArray)
-        
+
         // Separate classes from personal rooms
         // Personal rooms: type === 'personal' OR (no type field and owned by user with no members)
         const classes = workspacesArray.filter((w: any) => w.type !== 'personal')
@@ -209,7 +214,7 @@ function DashboardContent() {
         const personalStudios = personalRooms.map((w: any) => ({
           id: w.id,
           name: w.name,
-          boardCount: 0, // TODO: fetch actual board count
+          boardCount: w.board_count ?? 0,
           createdAt: w.created_at || new Date().toISOString()
         }))
         
@@ -218,56 +223,68 @@ function DashboardContent() {
         // Not authenticated, redirect to sign-in
         router.push('/sign-in')
       } else {
-        // Log error for debugging
-        const errorData = await workspacesRes.json().catch(() => ({}))
-        console.error('Error fetching workspaces:', workspacesRes.status, errorData)
+        setFetchError(true)
       }
-    } catch (err) {
-      console.error('Error fetching studios:', err)
+    } catch {
+      setFetchError(true)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDeleteWorkspace = async (workspaceId: string, workspaceName: string) => {
-    if (confirm(`Are you sure you want to delete "${workspaceName}"? This action cannot be undone and will delete all boards in this studio.`)) {
-      try {
-        const res = await fetch(`/api/workspaces/${workspaceId}`, {
-          method: 'DELETE'
-        })
-        if (res.ok) {
-          fetchUserStudios()
-          setOpenMenuId(null)
-        } else {
-          const error = await res.json()
-          alert(`Failed to delete studio: ${error.error || 'Unknown error'}`)
-        }
-      } catch (err) {
-        console.error('Error deleting workspace:', err)
-        alert('Failed to delete studio. Please try again.')
+  const handleDeleteWorkspace = (workspaceId: string, workspaceName: string) => {
+    setConfirmDeleteId(workspaceId)
+    setConfirmDeleteName(workspaceName)
+    setOpenMenuId(null)
+  }
+
+  const executeDeleteWorkspace = async () => {
+    if (!confirmDeleteId) return
+    try {
+      const res = await fetch(`/api/workspaces/${confirmDeleteId}`, { method: 'DELETE' })
+      if (res.ok) {
+        fetchUserStudios()
+        toast.success('Studio deleted')
+      } else {
+        const error = await res.json()
+        toast.error(`Failed to delete studio: ${error.error || 'Unknown error'}`)
       }
+    } catch (err) {
+      console.error('Error deleting workspace:', err)
+      toast.error('Failed to delete studio. Please try again.')
+    } finally {
+      setConfirmDeleteId(null)
+      setConfirmDeleteName('')
     }
   }
 
-  const handleRenameWorkspace = async (workspaceId: string, currentName: string) => {
-    const newName = prompt('Rename studio', currentName)
-    if (newName == null || newName.trim() === '') return
+  const handleRenameWorkspace = (workspaceId: string, currentName: string) => {
+    setRenamingId(workspaceId)
+    setRenamingValue(currentName)
+    setOpenMenuId(null)
+  }
+
+  const submitRename = async () => {
+    if (!renamingId || !renamingValue.trim()) return
     try {
-      const res = await fetch(`/api/workspaces/${workspaceId}`, {
+      const res = await fetch(`/api/workspaces/${renamingId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName.trim() })
+        body: JSON.stringify({ name: renamingValue.trim() })
       })
       if (res.ok) {
         fetchUserStudios()
-        setOpenMenuId(null)
+        toast.success('Studio renamed')
       } else {
         const error = await res.json()
-        alert(`Failed to rename: ${error.error || 'Unknown error'}`)
+        toast.error(`Failed to rename: ${error.error || 'Unknown error'}`)
       }
     } catch (err) {
       console.error('Error renaming workspace:', err)
-      alert('Failed to rename studio. Please try again.')
+      toast.error('Failed to rename studio. Please try again.')
+    } finally {
+      setRenamingId(null)
+      setRenamingValue('')
     }
   }
 
@@ -316,6 +333,23 @@ function DashboardContent() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading your dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (fetchError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center max-w-sm px-6">
+          <p className="text-gray-900 font-semibold mb-2">Failed to load your workspaces</p>
+          <p className="text-gray-500 text-sm mb-4">Check your connection and try again.</p>
+          <button
+            onClick={() => { setFetchError(false); fetchUserStudios() }}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
+          >
+            Retry
+          </button>
         </div>
       </div>
     )
@@ -515,6 +549,64 @@ function DashboardContent() {
 
       {/* Join Class Modal */}
       {showJoinModal && <JoinClassModal onClose={() => setShowJoinModal(false)} />}
+
+      {/* Rename Modal */}
+      {renamingId && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Rename Studio</h3>
+            <input
+              type="text"
+              value={renamingValue}
+              onChange={(e) => setRenamingValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitRename(); if (e.key === 'Escape') { setRenamingId(null); setRenamingValue('') } }}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
+              autoFocus
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setRenamingId(null); setRenamingValue('') }}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitRename}
+                disabled={!renamingValue.trim()}
+                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium"
+              >
+                Rename
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Studio?</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              <strong>"{confirmDeleteName}"</strong> and all its boards will be permanently deleted. This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setConfirmDeleteId(null); setConfirmDeleteName('') }}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeDeleteWorkspace}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

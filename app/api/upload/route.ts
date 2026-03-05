@@ -44,12 +44,6 @@ export async function POST(request: NextRequest) {
     const physicalWidth = formData.get('physicalWidth') as string | null
     const physicalHeight = formData.get('physicalHeight') as string | null
     
-    if (physicalWidth && physicalHeight) {
-      console.log(`📐 [API Upload] Received physical dimensions: ${physicalWidth}" x ${physicalHeight}"`)
-    } else {
-      console.log(`⚠️ [API Upload] No physical dimensions provided for ${title}`)
-    }
-    
     // Optional position data (0-100 percentage; 50,50 = center of wall)
     const wallIndex = formData.get('position_wall_index')
     const posX = formData.get('position_x')
@@ -159,10 +153,6 @@ export async function POST(request: NextRequest) {
       physical_height: physicalHeight ? parseFloat(physicalHeight) : null,
     }
     
-    if (boardData.physical_width && boardData.physical_height) {
-      console.log(`💾 [API Upload] Saving physical dimensions to DB: ${boardData.physical_width}" x ${boardData.physical_height}"`)
-    }
-
     const { data: savedBoard, error: dbError } = await supabase
       .from('boards')
       .insert(boardData)
@@ -208,7 +198,6 @@ export async function POST(request: NextRequest) {
       physicalHeight: savedBoard.physical_height ? parseFloat(savedBoard.physical_height) : undefined,
     }
 
-    console.log('✅ Board uploaded and saved to database:', boardId)
     return NextResponse.json({ success: true, board })
   } catch (error) {
     console.error('Upload error:', error)

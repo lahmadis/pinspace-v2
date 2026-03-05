@@ -6,11 +6,14 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { generateOwnerColor } from '@/lib/ownerColors'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
+import { toast } from '@/lib/toast'
 
 export default function UploadPage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(false)
+  const [uploadedBoardId, setUploadedBoardId] = useState<string | null>(null)
+  const [uploadedWorkspaceId, setUploadedWorkspaceId] = useState<string | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [workspaces, setWorkspaces] = useState<any[]>([])
@@ -84,13 +87,13 @@ export default function UploadPage() {
     setLoading(true)
 
     if (!selectedFile) {
-      alert('Please select an image')
+      toast.error('Please select an image')
       setLoading(false)
       return
     }
 
     if (!formData.workspaceId) {
-      alert('Please select a workspace or room')
+      toast.error('Please select a workspace or room')
       setLoading(false)
       return
     }
@@ -119,23 +122,52 @@ export default function UploadPage() {
 
       if (response.ok) {
         const data = await response.json()
-        const boardId = data.board.id
-        const workspaceId = formData.workspaceId
-        
-        if (confirm('Board uploaded! Do you want to view it in the room now?')) {
-          router.push(`/studio/${workspaceId}?pinBoard=${boardId}`)
-        } else {
-          router.push('/dashboard')
-        }
+        setUploadedBoardId(data.board.id)
+        setUploadedWorkspaceId(formData.workspaceId)
+        toast.success('Board uploaded successfully!')
       } else {
-        const error = await response.text()
-        alert('Upload failed: ' + error)
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }))
+        toast.error('Upload failed: ' + (error.error || 'Unknown error'))
       }
     } catch (error) {
-      alert('Upload failed: ' + error)
+      toast.error('Upload failed. Please try again.')
     } finally {
       setLoading(false)
     }
+  }
+
+  if (uploadedBoardId && uploadedWorkspaceId) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-white rounded-xl shadow-lg border border-border p-10 max-w-md w-full text-center"
+        >
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-text-primary mb-2">Board Uploaded!</h2>
+          <p className="text-text-muted mb-8">Your board has been added to the studio.</p>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => router.push(`/studio/${uploadedWorkspaceId}?pinBoard=${uploadedBoardId}`)}
+              className="w-full px-6 py-3 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors font-semibold"
+            >
+              View in Studio
+            </button>
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="w-full px-6 py-3 bg-background-lighter hover:bg-background-light text-text-primary rounded-lg transition-colors border border-border"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    )
   }
 
   return (

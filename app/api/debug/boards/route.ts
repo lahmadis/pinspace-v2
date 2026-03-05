@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
 
-// Debug endpoint to inspect and fix board positions
+const ADMIN_EMAILS = (process.env.PINSPACE_ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)
+
+function isAdmin(email: string | undefined): boolean {
+  if (!email) return false
+  return ADMIN_EMAILS.includes(email.toLowerCase())
+}
+
+// Debug endpoint to inspect and fix board positions (admin-only)
 export async function GET(request: NextRequest) {
   try {
     const supabase = supabaseServer()
@@ -9,9 +16,13 @@ export async function GET(request: NextRequest) {
       data: { session },
       error: sessionError,
     } = await supabase.auth.getSession()
-    
+
     if (sessionError || !session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!isAdmin(session.user.email)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const searchParams = request.nextUrl.searchParams
@@ -76,7 +87,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST endpoint to update a board's wallIndex
+// POST endpoint to update a board's wallIndex (admin-only)
 export async function POST(request: NextRequest) {
   try {
     const supabase = supabaseServer()
@@ -84,9 +95,13 @@ export async function POST(request: NextRequest) {
       data: { session },
       error: sessionError,
     } = await supabase.auth.getSession()
-    
+
     if (sessionError || !session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!isAdmin(session.user.email)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const body = await request.json()

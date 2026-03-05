@@ -7,6 +7,7 @@ import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import Link from 'next/link'
 import type { Institution } from '@/types'
 import { Building2, Plus, ExternalLink, Trash2, Pencil, X, MoreVertical } from 'lucide-react'
+import { toast } from '@/lib/toast'
 
 export default function AdminInstitutionsPage() {
   const router = useRouter()
@@ -17,6 +18,7 @@ export default function AdminInstitutionsPage() {
   const [loading, setLoading] = useState(false)
   const [formError, setFormError] = useState('')
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null)
+  const [confirmDeleteSlug, setConfirmDeleteSlug] = useState<string | null>(null)
   const [openMenuSlug, setOpenMenuSlug] = useState<string | null>(null)
   const [editingInst, setEditingInst] = useState<Institution | null>(null)
   const [editFormData, setEditFormData] = useState({ name: '', slug: '', type: 'institution' as 'institution' | 'firm', network_label: '', allowed_email_domains: '' })
@@ -106,9 +108,13 @@ export default function AdminInstitutionsPage() {
   }
 
   const handleDelete = async (slug: string, name: string) => {
-    if (!confirm(`Delete "${name}"? This will detach it from any studios but not delete the studios themselves.`)) {
+    if (confirmDeleteSlug !== slug) {
+      setConfirmDeleteSlug(slug)
+      toast.info(`Click Delete again to permanently remove "${name}".`)
+      setTimeout(() => setConfirmDeleteSlug(null), 3000)
       return
     }
+    setConfirmDeleteSlug(null)
     setFormError('')
     setDeletingSlug(slug)
     try {

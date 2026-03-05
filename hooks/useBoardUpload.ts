@@ -3,6 +3,7 @@
 import { flushSync } from 'react-dom'
 import { Board } from '@/types'
 import { generateOwnerColor } from '@/lib/ownerColors'
+import { toast } from '@/lib/toast'
 
 interface UploadOptions {
   studioId: string
@@ -609,7 +610,7 @@ export const useBoardUpload = (options: UploadOptions) => {
       await options.onBoardUpdate()
       
       if (oversized.length > 0) {
-        alert(`These files are too large (max 25 MB):\n${oversized.join('\n')}`)
+        toast.error(`These files are too large (max 25 MB):\n${oversized.join('\n')}`)
       }
       console.log(`✅ Upload complete: ${successCount} successful, ${failCount} failed`)
     }
@@ -624,7 +625,7 @@ export const useBoardUpload = (options: UploadOptions) => {
     const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25MB
     if (file.size > MAX_FILE_SIZE) {
       const mb = (file.size / (1024 * 1024)).toFixed(1)
-      alert(`${file.name} is too large (${mb} MB). Maximum size is 25 MB.`)
+      toast.error(`${file.name} is too large (${mb} MB). Maximum size is 25 MB.`)
       return false
     }
     try {

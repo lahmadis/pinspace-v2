@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { toast } from '@/lib/toast'
 
 interface QuickNotePanelProps {
   boardId: string
@@ -23,7 +24,7 @@ export default function QuickNotePanel({ boardId, boardTitle, onAddNote }: Quick
       await onAddNote(note, author)
       setNote('')
     } catch (error) {
-      alert('Failed to add note')
+      toast.error('Failed to add note')
     } finally {
       setSubmitting(false)
     }

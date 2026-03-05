@@ -18,7 +18,6 @@ export async function GET(
     // Check if this is a sample board (return sample comments)
     if (boardId.startsWith('sample-board-')) {
       const sampleComments = getSampleComments(boardId)
-      console.log(`✅ [SAMPLE] Returning ${sampleComments.length} sample comments for board ${boardId}`)
       return NextResponse.json({ comments: sampleComments })
     }
 
@@ -36,7 +35,6 @@ export async function GET(
       }
       
       if (foundBoard && foundBoard.comments) {
-        console.log(`✅ [DEMO MODE] Returning ${foundBoard.comments.length} comments for board ${boardId}`)
         return NextResponse.json({ comments: foundBoard.comments })
       }
       
@@ -88,7 +86,6 @@ export async function GET(
         content: c.text,
         createdAt: c.created_at,
       }))
-      console.log(`📖 [Comments API] GET (public) - Board ${boardId} has ${transformedComments.length} comments`)
       return NextResponse.json({ comments: transformedComments })
     }
 
@@ -116,7 +113,6 @@ export async function GET(
       content: c.text,
       createdAt: c.created_at,
     }))
-    console.log(`📖 [Comments API] GET - Board ${boardId} has ${transformedComments.length} comments`)
     return NextResponse.json({ comments: transformedComments })
   } catch (error) {
     console.error('Error fetching comments:', error)
@@ -170,7 +166,6 @@ export async function POST(
         type: 'peer' as const
       }
 
-      console.log(`💬 [DEMO MODE] Mock comment posted to board ${boardId}:`, mockComment)
       return NextResponse.json({ comment: mockComment, success: true })
     }
 
@@ -232,8 +227,6 @@ export async function POST(
       content: newComment.text,
       createdAt: newComment.created_at,
     }
-
-    console.log(`💬 [Comments API] POST - Added comment to board ${boardId}:`, comment)
 
     return NextResponse.json({ comment, success: true })
   } catch (error) {

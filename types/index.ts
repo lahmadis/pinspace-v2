@@ -97,6 +97,7 @@ export interface Institution {
   allowed_email_domains?: string | null
   /** 'institution' = school; 'firm' = e.g. architecture/design firm */
   type?: 'institution' | 'firm'
+  logo_url?: string
 }
 
 export interface Workspace {

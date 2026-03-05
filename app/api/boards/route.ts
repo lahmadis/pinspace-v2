@@ -20,14 +20,12 @@ export async function GET(request: NextRequest) {
     if (isDemo) {
       const demoBoards = getDemoBoards(workspaceId)
       const transformedBoards = demoBoards.map(transformDemoBoard)
-      console.log(`✅ [DEMO MODE] Returning ${transformedBoards.length} demo boards for studio ${workspaceId}`)
       return NextResponse.json({ boards: transformedBoards })
     }
 
     // Check if this is a sample studio (return sample boards)
     if (workspaceId.startsWith('sample-studio-')) {
       const sampleBoards = getSampleBoards(workspaceId)
-      console.log(`✅ [SAMPLE] Returning ${sampleBoards.length} sample boards for studio ${workspaceId}`)
       return NextResponse.json({ boards: sampleBoards })
     }
 
@@ -51,19 +49,42 @@ export async function GET(request: NextRequest) {
         data: { session },
         error: sessionError,
       } = await supabase.auth.getSession()
-      
+
       if (sessionError) {
         console.error('Session error:', sessionError)
         return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
       }
-      
+
       const userId = session?.user?.id
       if (!userId) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
-    }
 
-    console.log('Fetching boards for workspace:', workspaceId)
+      // Verify the user is the workspace owner or a member
+      const adminDb = supabaseServiceRole()
+      const { data: ws } = await adminDb
+        .from('workspaces')
+        .select('owner_id')
+        .eq('id', workspaceId)
+        .single()
+
+      if (!ws) {
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      }
+
+      if (ws.owner_id !== userId) {
+        const { data: membership } = await adminDb
+          .from('workspace_members')
+          .select('id')
+          .eq('workspace_id', workspaceId)
+          .eq('user_id', userId)
+          .maybeSingle()
+
+        if (!membership) {
+          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        }
+      }
+    }
 
     // Fetch boards from Supabase
     const { data: boards, error } = await supabase
@@ -111,7 +132,6 @@ export async function GET(request: NextRequest) {
       physicalHeight: board.physical_height ? parseFloat(board.physical_height) : undefined,
     }))
 
-    console.log('Returning boards:', transformedBoards.length)
     const response = NextResponse.json({ boards: transformedBoards })
     
     // Add caching headers for better performance
@@ -147,13 +167,9 @@ export async function PUT(request: NextRequest) {
     }
 
     const board = await request.json()
-    
-    console.log('📥 [API] PUT request received for board:', board.id)
-    console.log('📥 [API] Position data received:', JSON.stringify(board.position))
-    
+
     // Validate required fields
     if (!board.id || (!board.studioId && !board.workspaceId)) {
-      console.log('❌ [API] Missing required fields!')
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
@@ -238,8 +254,6 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
 
-    console.log('✅ [API] Successfully updated board:', board.id)
-    
     // Transform back to frontend format
     const transformedBoard = {
       id: updatedBoard.id,
@@ -357,7 +371,6 @@ export async function DELETE(request: NextRequest) {
       }, { status: 500 })
     }
 
-    console.log('✅ [API] Board deleted:', boardId)
     return NextResponse.json({ success: true })
   } catch (error: any) {
     console.error('Unexpected error deleting board:', error)

@@ -24,7 +24,6 @@ export async function GET(
     }
 
     const workspaceId = params.id
-    console.log('Fetching workspace:', workspaceId)
 
     // Fetch workspace from Supabase
     const { data: workspace, error } = await supabase
@@ -117,7 +116,6 @@ export async function GET(
       institution: institution || undefined,
     }
 
-    console.log('Returning workspace:', transformedWorkspace.id)
     return NextResponse.json({ workspace: transformedWorkspace })
   } catch (error: any) {
     console.error('Unexpected error fetching workspace:', error)
@@ -217,7 +215,6 @@ export async function DELETE(
     }
 
     const workspaceId = params.id
-    console.log('Deleting workspace:', workspaceId)
 
     // Fetch workspace to check ownership
     const { data: workspace, error: fetchError } = await supabase
@@ -266,7 +263,6 @@ export async function DELETE(
       }, { status: 500 })
     }
 
-    console.log('✅ [API] Workspace deleted:', workspaceId)
     return NextResponse.json({ success: true })
   } catch (error: any) {
     console.error('Unexpected error deleting workspace:', error)

@@ -89,7 +89,6 @@ export async function GET(request: NextRequest) {
       }
       
       const totals = getDemoTotals()
-      console.log(`✅ [DEMO MODE] Returning ${studios.length} filtered demo studios (dept: ${department || 'all'}, year: ${year || 'all'})`)
       return NextResponse.json(
         { studios, totals },
         { headers: { 'Cache-Control': `public, s-maxage=${CACHE_MAX_AGE}, stale-while-revalidate=${STALE_WHILE_REVALIDATE}` } }
@@ -237,7 +236,6 @@ export async function GET(request: NextRequest) {
       students: allStudios.reduce((sum, s) => sum + (s.memberCount || 0), 0),
     }
 
-    console.log(`✅ Fetched ${studios.length} real studios${institutionFilterId ? '' : ` + ${filteredSampleStudios.length} sample studios`} from Supabase`)
     return NextResponse.json(
       { studios: allStudios, totals },
       { headers: { 'Cache-Control': `public, s-maxage=${CACHE_MAX_AGE}, stale-while-revalidate=${STALE_WHILE_REVALIDATE}` } }

@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import { Board } from '@/types'
 import PDFRenderer from './PDFRenderer'
 import { throttle } from '@/lib/throttleDebounce'
+import { toast } from '@/lib/toast'
 
 interface WallDimensions {
   height: number
@@ -135,7 +136,7 @@ export default function WallCanvasEditor({
 
     const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
     if (!validTypes.includes(file.type)) {
-      alert('Please select a valid image file (.jpg, .jpeg, .png, or .pdf)')
+      toast.error('Please select a valid image file (.jpg, .jpeg, .png, or .pdf)')
       return
     }
 
@@ -247,9 +248,9 @@ export default function WallCanvasEditor({
         }
         
         if (uploadedCount === pages.length) {
-          alert(`PDF converted and uploaded successfully! ${uploadedCount} page(s) added.`)
+          toast.success(`PDF converted and uploaded successfully! ${uploadedCount} page(s) added.`)
         } else {
-          alert(`Uploaded ${uploadedCount} of ${pages.length} page(s). Some pages may have failed.`)
+          toast.warning(`Uploaded ${uploadedCount} of ${pages.length} page(s). Some pages may have failed.`)
         }
       } else {
         // Handle regular images
@@ -312,12 +313,12 @@ export default function WallCanvasEditor({
           }
         } else {
           const error = await response.text()
-          alert('Upload failed: ' + error)
+          toast.error('Upload failed: ' + error)
         }
       }
     } catch (error) {
       console.error('Upload error:', error)
-      alert('Upload failed. Please try again.')
+      toast.error('Upload failed. Please try again.')
     } finally {
       setIsUploading(false)
     }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase/server'
+import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 
 export async function POST(request: NextRequest) {
   try {
@@ -59,7 +59,6 @@ export async function POST(request: NextRequest) {
       createdAt: newComment.created_at,
     }
 
-    console.log('✅ Comment created:', commentId)
     return NextResponse.json({ success: true, comment })
   } catch (error) {
     console.error('Comment error:', error)
@@ -69,22 +68,6 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = supabaseServer()
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
-
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const searchParams = request.nextUrl.searchParams
     const boardId = searchParams.get('boardId')
 
@@ -92,8 +75,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'boardId required' }, { status: 400 })
     }
 
+    // Use service role for GET so public workspace viewers can read comments without auth
+    const db = supabaseServiceRole()
+
     // Fetch comments from Supabase
-    const { data: comments, error } = await supabase
+    const { data: comments, error } = await db
       .from('comments')
       .select('*')
       .eq('board_id', boardId)

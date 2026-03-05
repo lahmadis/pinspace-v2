@@ -1,9 +1,6 @@
 import { useThree, useFrame } from '@react-three/fiber'
 import React, { useEffect, useRef } from 'react'
 import * as THREE from 'three'
-
-const isDev = process.env.NODE_ENV === 'development'
-const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 
 function getControls(ref: React.RefObject<unknown> | null | undefined): OrbitControlsType | null {
@@ -35,7 +32,8 @@ export function CameraController({
   onTransitionComplete 
 }: CameraControllerProps) {
   const { camera } = useThree()
-  const SWOOSH_DURATION_SECONDS = 1.1
+  const SWOOSH_DURATION_SECONDS = 0.95
+  const MAX_SWOOSH_STEP_SECONDS = 1 / 45
   const EDIT_VIEW_DISTANCE_INCHES = 400
   
   // Store the camera position before entering edit mode (so we can return to it)
@@ -56,30 +54,24 @@ export function CameraController({
   const defaultPosition = useRef(new THREE.Vector3(cameraX, cameraHeight, cameraZ))
   const defaultTarget = useRef(new THREE.Vector3(0, 60, 0))
   
-  // Track previous editingWall to detect transitions
+  // Track previous editing wall to detect enter/exit.
   const prevEditingWall = useRef<number | null>(null)
   const lastHandledTransitionKey = useRef<number>(-1)
-  // Track if we need to animate once wallPosition is ready
-  const pendingAnimation = useRef<boolean>(false)
-  
-  // Animation state
+  const pendingAnimation = useRef(false)
+  const targetTarget = useRef(new THREE.Vector3())
+  const shouldNotifyOnComplete = useRef(false)
+
+  // Uniform swoosh animation state (same model for every wall).
   const isAnimating = useRef(false)
-  const animationProgress = useRef(0)
-  const animationDuration = useRef(SWOOSH_DURATION_SECONDS)
+  const animationElapsedSeconds = useRef(0)
   const startPosition = useRef(new THREE.Vector3())
   const startTarget = useRef(new THREE.Vector3())
-  const targetPosition = useRef(new THREE.Vector3())
-  const targetTarget = useRef(new THREE.Vector3())
-  const animationStartedAtMs = useRef<number>(0)
-  const animationFirstFrameLogged = useRef(false)
-  const lastLoggedAnimationCompleteToken = useRef<string | null>(null)
-  // Snapshot the live camera pose while in edit mode so exit animation
-  // can always start from the true wall-view position.
-  const lastEditCameraPosition = useRef(new THREE.Vector3())
-  const lastEditCameraTarget = useRef(new THREE.Vector3())
-  const hasLastEditPose = useRef(false)
+  const endPosition = useRef(new THREE.Vector3())
+  const endTarget = useRef(new THREE.Vector3())
+  const startFov = useRef(35)
+  const endFov = useRef(35)
 
-  // When user releases mouse, OrbitControls still applies one frame of leftover delta. Restore position next frame so orbit stops instantly.
+  // When user releases mouse, OrbitControls still applies one frame of leftover delta.
   const restoreOnNextFrame = useRef(false)
   const positionOnEnd = useRef(new THREE.Vector3())
   const targetOnEnd = useRef(new THREE.Vector3())
@@ -87,171 +79,116 @@ export function CameraController({
   const editingWallRef = useRef(editingWall)
   editingWallRef.current = editingWall
 
+  const beginSwoosh = (
+    fromPosition: THREE.Vector3,
+    fromTarget: THREE.Vector3,
+    toPosition: THREE.Vector3,
+    toTarget: THREE.Vector3,
+    fromFov: number,
+    toFov: number,
+    notifyOnComplete: boolean
+  ) => {
+    startPosition.current.copy(fromPosition)
+    startTarget.current.copy(fromTarget)
+    endPosition.current.copy(toPosition)
+    endTarget.current.copy(toTarget)
+    startFov.current = fromFov
+    endFov.current = toFov
+    animationElapsedSeconds.current = 0
+    shouldNotifyOnComplete.current = notifyOnComplete
+    isAnimating.current = true
+  }
+
   useEffect(() => {
-    devLog('📷 [Camera] Effect run - editingWall:', editingWall, 'wallPosition:', wallPosition ? 'exists' : 'null', 'prev:', prevEditingWall.current, 'wallDimensions:', wallDimensions)
-    
     const enteringEditMode = prevEditingWall.current === null && editingWall !== null
+    const switchingWalls =
+      prevEditingWall.current !== null &&
+      editingWall !== null &&
+      prevEditingWall.current !== editingWall
+    const exitingEditMode = prevEditingWall.current !== null && editingWall === null
     const transitionRequested = transitionKey !== lastHandledTransitionKey.current
 
-    const switchingWalls = prevEditingWall.current !== null && 
-                          editingWall !== null && 
-                          prevEditingWall.current !== editingWall
-    const exitingEditMode = prevEditingWall.current !== null && editingWall === null
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-1',hypothesisId:'H1_H2_H3',location:'CameraController.tsx:useEffect',message:'transition state snapshot',data:{editingWall,prevEditingWall:prevEditingWall.current,transitionKey,lastHandledTransitionKey:lastHandledTransitionKey.current,enteringEditMode,switchingWalls,exitingEditMode,hasWallPosition:!!wallPosition,pendingAnimation:pendingAnimation.current},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    
-    devLog('📷 [Camera] Transition detection:', { 
-      enteringEditMode, 
-      switchingWalls, 
-      exitingEditMode,
-      pendingAnimation: pendingAnimation.current,
-      hasWallPosition: !!wallPosition,
-      conditionMet: (enteringEditMode || switchingWalls || pendingAnimation.current) && editingWall !== null && wallPosition
-    })
-    
-    // Save camera position exactly when entering/switching walls (before animating to edit)
-    if (enteringEditMode || switchingWalls) {
+    // Save camera pose before entering edit mode.
+    if (enteringEditMode) {
       savedCameraPosition.current = camera.position.clone()
       const controls = getControls(orbitControlsRef)
       if (controls) {
         savedCameraTarget.current = controls.target.clone()
       }
-      devLog('📷 [Camera] Saved position before entering/switching edit mode, wall:', editingWall)
+    }
+    if (enteringEditMode || switchingWalls || (transitionRequested && editingWall !== null)) {
       pendingAnimation.current = true
     }
 
     if (editingWall !== null && wallPosition) {
       const shouldAnimateToWall =
-        transitionRequested ||
         pendingAnimation.current ||
         enteringEditMode ||
-        switchingWalls
+        switchingWalls ||
+        transitionRequested
 
-      if (shouldAnimateToWall) {
-        pendingAnimation.current = false
-
-      // Entering/editing a wall - animate camera to wall
-      devLog('📷 [Camera] Animating to wall', editingWall, 'prev:', prevEditingWall.current, 'entering:', enteringEditMode, 'switching:', switchingWalls)
-      isAnimating.current = true
-      animationProgress.current = 0
-      animationDuration.current = SWOOSH_DURATION_SECONDS
-      animationStartedAtMs.current = Date.now()
-      animationFirstFrameLogged.current = false
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-1',hypothesisId:'H1_H3_H5',location:'CameraController.tsx:enterAnimation',message:'start swoosh to wall',data:{editingWall,transitionKey,duration:SWOOSH_DURATION_SECONDS,startCamera:{x:camera.position.x,y:camera.position.y,z:camera.position.z},wallPosition:{x:wallPosition.x,y:wallPosition.y,z:wallPosition.z},wallRotation},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      
-      // Current position is our start position
-      startPosition.current.copy(camera.position)
-      const controlsStart = getControls(orbitControlsRef)
-      if (controlsStart) {
-        startTarget.current.copy(controlsStart.target)
+      if (!shouldAnimateToWall) {
+        prevEditingWall.current = editingWall
+        lastHandledTransitionKey.current = transitionKey
+        return
       }
+      pendingAnimation.current = false
 
-      // Calculate target position (in front of wall)
-      // Boards are positioned at z=0.06 in wall's local space (positive Z = front)
-      // To get the front direction in world space, transform local +Z axis
-      // Local +Z in world space = (sin(rotation), 0, cos(rotation))
-      // With 1 unit = 1 inch scale, walls are much larger (8ft × 10ft = 96" × 120")
-      // Calculate optimal distance based on wall dimensions
-      // To see full wall: distance >= max(width, height) / (2 * tan(FOV/2))
-      // Using FOV (45°) for edit mode: tan(22.5°) ≈ 0.414
-      // Scale distance proportionally to wall size, but keep it closer for better 2D editing
-      // Keep wall entry framing consistent across all walls.
       const distance = EDIT_VIEW_DISTANCE_INCHES
-      
-      // 🎯 Use the wallRotation directly - it's already adjusted by WallSystem to account for which face was clicked
-      // The wallRotation passed here is the adjustedRotation from WallSystem, which points toward the clicked face
-      // Calculate the normal vector pointing outward from the clicked face
-      // In the wall's local space, +Z is the front face, so the normal is (0, 0, 1)
-      // Transform this to world space using the wall's rotation
       const wallForward = new THREE.Vector3(
         Math.sin(wallRotation),
         0,
         Math.cos(wallRotation)
       ).normalize()
-
-      devLog(`📷 [Camera] Using wallRotation: ${(wallRotation * 180 / Math.PI).toFixed(0)}° (already adjusted for clicked face)`)
-
-      // Position camera directly in front of the wall, perpendicular to it
       const offset = wallForward.multiplyScalar(distance)
-      targetPosition.current.copy(wallPosition).add(offset)
-      // Position camera at wall center height (wallPosition.y is already at center)
-      targetPosition.current.y = wallPosition.y
-      
-      // Look directly at the center of the wall for head-on view
+
+      const nextPosition = wallPosition.clone().add(offset)
+      nextPosition.y = wallPosition.y
+      const nextTarget = wallPosition.clone()
       targetTarget.current.copy(wallPosition)
-      
-      // Ensure camera is perfectly aligned: position -> wall center
-      // The camera will be positioned along the wall's front normal, looking at the wall center
-      // This gives us a true head-on 2D view
-      }
-      if (!shouldAnimateToWall) {
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-1',hypothesisId:'H3',location:'CameraController.tsx:enterAnimation',message:'swoosh skipped for wall',data:{editingWall,transitionKey,transitionRequested,pendingAnimation:pendingAnimation.current,enteringEditMode,switchingWalls},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-      }
-    } else if (editingWall !== null && !wallPosition) {
-      // Wall was selected but transform hasn't arrived yet; animate once it does.
-      pendingAnimation.current = true
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-1',hypothesisId:'H1',location:'CameraController.tsx:useEffect',message:'waiting for wallPosition before swoosh',data:{editingWall,transitionKey},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-    } else if (exitingEditMode || (transitionRequested && editingWall === null)) {
-      // Exiting edit mode - return to saved position (or default if none saved)
-      devLog('📷 [Camera] Exiting edit mode, animating back to 3D view')
+
+      const controls = getControls(orbitControlsRef)
+      const fromTarget = controls ? controls.target.clone() : targetTarget.current.clone()
+      const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : 35
+      beginSwoosh(
+        camera.position.clone(),
+        fromTarget,
+        nextPosition,
+        nextTarget,
+        fromFov,
+        45,
+        true
+      )
+    } else if (exitingEditMode) {
+      pendingAnimation.current = false
       const returnPosition = savedCameraPosition.current || defaultPosition.current
       const returnTarget = savedCameraTarget.current || defaultTarget.current
-      pendingAnimation.current = false
-      
-      // Always reset and start animation when exiting, even if one was in progress
-      isAnimating.current = true
-      animationProgress.current = 0
-      animationDuration.current = SWOOSH_DURATION_SECONDS
-      animationStartedAtMs.current = Date.now()
-      animationFirstFrameLogged.current = false
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-1',hypothesisId:'H4',location:'CameraController.tsx:exitAnimation',message:'start swoosh to 3D',data:{transitionKey,duration:SWOOSH_DURATION_SECONDS},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      
-      // Start from the last known edit-view pose to avoid any snap-to-default
-      // that can happen in the same render cycle as exiting.
-      if (hasLastEditPose.current) {
-        startPosition.current.copy(lastEditCameraPosition.current)
-      } else {
-        startPosition.current.copy(camera.position)
-      }
-      const controlsExit = getControls(orbitControlsRef)
-      if (controlsExit) {
-        if (hasLastEditPose.current) {
-          startTarget.current.copy(lastEditCameraTarget.current)
-        } else {
-          startTarget.current.copy(controlsExit.target)
-        }
-      }
-      
-      // Return to the saved position (where we were before entering edit mode)
-      targetPosition.current.copy(returnPosition)
-      targetTarget.current.copy(returnTarget)
-      devLog('📷 [Camera] Animating from', startPosition.current, 'to', returnPosition)
+      const controls = getControls(orbitControlsRef)
+      const fromTarget = controls ? controls.target.clone() : defaultTarget.current.clone()
+      const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : 45
+      beginSwoosh(
+        camera.position.clone(),
+        fromTarget,
+        returnPosition.clone(),
+        returnTarget.clone(),
+        fromFov,
+        35,
+        false
+      )
     }
-    
-    // Update previous value AFTER handling transitions
+
     prevEditingWall.current = editingWall
     lastHandledTransitionKey.current = transitionKey
   }, [editingWall, wallPosition, wallRotation, wallDimensions, camera, transitionKey])
 
-  useFrame((state, delta) => {
-    // Use the single OrbitControls from parent (drei ref)
+  useFrame((_state, delta) => {
     const controls = getControls(orbitControlsRef)
     if (!controls) return
 
-    // Attach 'end' listener once when controls are available (ref may not be set when useEffect runs)
     if (!endListenerAdded.current) {
       endListenerAdded.current = true
       controls.addEventListener('end', () => {
-        if (editingWallRef.current !== null) return // only restore when in 3D orbit mode
+        if (editingWallRef.current !== null) return
         positionOnEnd.current.copy(camera.position)
         targetOnEnd.current.copy(controls.target)
         restoreOnNextFrame.current = true
@@ -259,101 +196,55 @@ export function CameraController({
     }
 
     if (isAnimating.current) {
-      if (!animationFirstFrameLogged.current) {
-        animationFirstFrameLogged.current = true
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-2',hypothesisId:'H6',location:'CameraController.tsx:useFrame',message:'first animation frame after start',data:{editingWall,transitionKey,firstFrameDelayMs:Date.now()-animationStartedAtMs.current},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-      }
-      animationProgress.current = Math.min(
-        animationProgress.current + delta / animationDuration.current,
-        1
+      // Cap per-frame progression so transient stalls (e.g. save/exit work)
+      // can't skip the entire swoosh in one frame.
+      const steppedDelta = Math.min(delta, MAX_SWOOSH_STEP_SECONDS)
+      animationElapsedSeconds.current = Math.min(
+        animationElapsedSeconds.current + steppedDelta,
+        SWOOSH_DURATION_SECONDS
       )
-      
-      // Ease in-out function
-      const easeProgress = animationProgress.current < 0.5
-        ? 2 * animationProgress.current * animationProgress.current
-        : 1 - Math.pow(-2 * animationProgress.current + 2, 2) / 2
+      const t = Math.min(animationElapsedSeconds.current / SWOOSH_DURATION_SECONDS, 1)
+      const easeT = t < 0.5
+        ? 2 * t * t
+        : 1 - Math.pow(-2 * t + 2, 2) / 2
 
-      // Interpolate camera position
-      camera.position.lerpVectors(
-        startPosition.current,
-        targetPosition.current,
-        easeProgress
-      )
+      camera.position.lerpVectors(startPosition.current, endPosition.current, easeT)
+      const currentTarget = new THREE.Vector3().lerpVectors(startTarget.current, endTarget.current, easeT)
+      controls.target.copy(currentTarget)
+      camera.lookAt(currentTarget)
+      camera.up.set(0, 1, 0)
 
-      // Interpolate controls target
-      const newTarget = new THREE.Vector3().lerpVectors(
-        startTarget.current,
-        targetTarget.current,
-        easeProgress
-      )
-      controls.target.copy(newTarget)
-      
-      // When in edit mode, ensure camera is looking directly at the wall (head-on view)
-      if (editingWall !== null) {
-        // Force camera to look directly at wall center for perfect head-on view
-        // Do this throughout the animation and after it completes
-        camera.lookAt(newTarget)
-        // Ensure camera's up vector is correct (Y-up) for proper orientation
-        camera.up.set(0, 1, 0)
+      if (camera instanceof THREE.PerspectiveCamera) {
+        camera.fov = THREE.MathUtils.lerp(startFov.current, endFov.current, easeT)
         camera.updateProjectionMatrix()
       }
 
-      // Adjust FOV when entering edit mode for wider view
-      if (editingWall !== null && easeProgress > 0.5) {
-        // Use moderately wider FOV (45°) in edit mode to see full wall without too much distortion
-        const targetFov = 45
-        if (camera instanceof THREE.PerspectiveCamera) {
-          camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.1)
-          camera.updateProjectionMatrix()
-        }
-      } else if (editingWall === null && easeProgress > 0.5) {
-        // Return to normal FOV (35°) when exiting edit mode
-        const targetFov = 35
-        if (camera instanceof THREE.PerspectiveCamera) {
-          camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.1)
-          camera.updateProjectionMatrix()
-        }
-      }
-
-      if (animationProgress.current >= 1) {
+      if (t >= 1) {
         isAnimating.current = false
-        const completeToken = `${editingWall ?? 'none'}:${transitionKey}`
-        if (lastLoggedAnimationCompleteToken.current !== completeToken) {
-          lastLoggedAnimationCompleteToken.current = completeToken
-          // #region agent log
-          fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-1',hypothesisId:'H4_H5',location:'CameraController.tsx:useFrame',message:'swoosh completed',data:{editingWall,transitionKey,elapsedMs:Date.now()-animationStartedAtMs.current},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
+        camera.position.copy(endPosition.current)
+        controls.target.copy(endTarget.current)
+        if (camera instanceof THREE.PerspectiveCamera) {
+          camera.fov = endFov.current
+          camera.updateProjectionMatrix()
         }
-        onTransitionComplete?.()
+        if (shouldNotifyOnComplete.current) {
+          onTransitionComplete?.()
+        }
       }
     }
 
-    // Continuously remember the wall-view camera pose while editing.
-    if (editingWall !== null && !isAnimating.current) {
-      lastEditCameraPosition.current.copy(camera.position)
-      lastEditCameraTarget.current.copy(controls.target)
-      hasLastEditPose.current = true
-    }
-
-    // Disable controls during animation and in edit mode
-    controls.enabled = !isAnimating.current && editingWall === null
-    // Force damping off so rotation stops the instant the user releases the mouse
+    controls.enabled = editingWall === null && !isAnimating.current
     const c = controls as { enableDamping?: boolean }
     c.enableDamping = false
     controls.update()
 
-    // Undo the one-frame lingering rotation that update() just applied so orbit stops the instant the user releases the mouse
     if (restoreOnNextFrame.current) {
       camera.position.copy(positionOnEnd.current)
       controls.target.copy(targetOnEnd.current)
       restoreOnNextFrame.current = false
     }
 
-    // When in edit mode (not animating), ensure camera stays head-on to the wall
-    if (editingWall !== null && !isAnimating.current && targetTarget.current) {
-      // Continuously ensure camera is looking directly at wall center for perfect head-on view
+    if (editingWall !== null && !isAnimating.current) {
       camera.lookAt(targetTarget.current)
       camera.up.set(0, 1, 0)
       camera.updateProjectionMatrix()

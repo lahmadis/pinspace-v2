@@ -73,6 +73,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const [editingContent, setEditingContent] = useState('')
   const [savingCommentId, setSavingCommentId] = useState<string | null>(null)
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null)
+  const [pendingDeleteCommentId, setPendingDeleteCommentId] = useState<string | null>(null)
   const [isVisible, setIsVisible] = useState(false)
   const [isPresentMode, setIsPresentMode] = useState(false)
   const [commentsOpen, setCommentsOpen] = useState(false)
@@ -295,7 +296,13 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
   const handleDeleteComment = async (commentId: string) => {
     if (!board || deletingCommentId) return
-    if (!confirm('Delete this comment?')) return
+    if (pendingDeleteCommentId !== commentId) {
+      setPendingDeleteCommentId(commentId)
+      // Auto-clear after 4 seconds if user doesn't confirm
+      setTimeout(() => setPendingDeleteCommentId((prev) => prev === commentId ? null : prev), 4000)
+      return
+    }
+    setPendingDeleteCommentId(null)
     try {
       setDeletingCommentId(commentId)
       setError(null)
@@ -753,21 +760,37 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                               <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
                             </svg>
                           </button>
-                          <button
-                            onClick={() => handleDeleteComment(comment.id)}
-                            disabled={deletingCommentId === comment.id || savingCommentId === comment.id}
-                            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
-                            aria-label={deletingCommentId === comment.id ? 'Deleting comment' : 'Delete comment'}
-                            title="Delete"
-                          >
-                            {deletingCommentId === comment.id ? (
-                              <div className="h-3.5 w-3.5 rounded-full border-2 border-red-300 border-t-red-600 animate-spin" />
-                            ) : (
-                              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7v12m6-12v12M10 4h4a1 1 0 011 1v2H9V5a1 1 0 011-1zM5 7h14l-1 13a2 2 0 01-2 2H8a2 2 0 01-2-2L5 7z" />
-                              </svg>
-                            )}
-                          </button>
+                          {pendingDeleteCommentId === comment.id ? (
+                            <button
+                              onClick={() => handleDeleteComment(comment.id)}
+                              disabled={deletingCommentId === comment.id || savingCommentId === comment.id}
+                              className="inline-flex items-center justify-center rounded-md px-1.5 h-6 text-[10px] font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                              aria-label="Confirm delete comment"
+                              title="Confirm delete"
+                            >
+                              {deletingCommentId === comment.id ? (
+                                <div className="h-3.5 w-3.5 rounded-full border-2 border-red-200 border-t-white animate-spin" />
+                              ) : (
+                                'Confirm delete'
+                              )}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleDeleteComment(comment.id)}
+                              disabled={deletingCommentId === comment.id || savingCommentId === comment.id}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                              aria-label={deletingCommentId === comment.id ? 'Deleting comment' : 'Delete comment'}
+                              title="Delete"
+                            >
+                              {deletingCommentId === comment.id ? (
+                                <div className="h-3.5 w-3.5 rounded-full border-2 border-red-300 border-t-red-600 animate-spin" />
+                              ) : (
+                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7v12m6-12v12M10 4h4a1 1 0 011 1v2H9V5a1 1 0 011-1zM5 7h14l-1 13a2 2 0 01-2 2H8a2 2 0 01-2-2L5 7z" />
+                                </svg>
+                              )}
+                            </button>
+                          )}
                         </>
                       )}
                     </div>

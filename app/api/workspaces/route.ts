@@ -20,8 +20,6 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    console.log('Fetching workspaces for user:', userId)
-
     // Fetch owned workspaces
     const { data: owned, error: ownedErr } = await supabase
       .from('workspaces')
@@ -72,9 +70,24 @@ export async function GET() {
     }
 
     const allWorkspaces = [...(owned ?? []), ...memberWorkspaces]
-    console.log('Returning workspaces:', allWorkspaces.length)
-    
-    return NextResponse.json(allWorkspaces)
+
+    // Fetch board counts for all workspaces in one query
+    const wsIds = allWorkspaces.map((w) => w.id)
+    let boardCountMap: Record<string, number> = {}
+    if (wsIds.length > 0) {
+      const { data: boardRows } = await supabase
+        .from('boards')
+        .select('workspace_id')
+        .in('workspace_id', wsIds)
+      if (boardRows) {
+        for (const row of boardRows) {
+          boardCountMap[row.workspace_id] = (boardCountMap[row.workspace_id] || 0) + 1
+        }
+      }
+    }
+
+    const result = allWorkspaces.map((w) => ({ ...w, board_count: boardCountMap[w.id] ?? 0 }))
+    return NextResponse.json(result)
   } catch (error: any) {
     console.error('Unexpected error in GET /api/workspaces:', error)
     return NextResponse.json({ 
@@ -134,24 +147,13 @@ export async function POST(req: Request) {
       if (inst?.id) institutionId = inst.id
     }
     if (!institutionId) {
-      const { data: defaultInst } = await supabaseAdmin
-        .from('institutions')
-        .select('id')
-        .eq('slug', 'wit')
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('institution_id')
+        .eq('user_id', userId)
         .maybeSingle()
-      if (defaultInst?.id) institutionId = defaultInst.id
-      else {
-        const { data: first } = await supabaseAdmin
-          .from('institutions')
-          .select('id')
-          .order('name')
-          .limit(1)
-          .maybeSingle()
-        if (first?.id) institutionId = first.id
-      }
+      if (profile?.institution_id) institutionId = profile.institution_id
     }
-
-    console.log('Creating workspace:', { name, description, type, owner_id: userId, institution_id: institutionId ?? undefined })
 
     // Insert workspace
     // Try with type first, if it fails (column doesn't exist), try without type
@@ -170,7 +172,6 @@ export async function POST(req: Request) {
       
       // If error is about column not existing, try without type
       if (error.message?.includes('column') && error.message?.includes('type')) {
-        console.log('Type column doesn\'t exist, retrying without type...')
         const { data: dataWithoutType, error: errorWithoutType } = await supabase
           .from('workspaces')
           .insert(insertData)
@@ -185,7 +186,6 @@ export async function POST(req: Request) {
           }, { status: 500 })
         }
         
-        console.log('Workspace created successfully (without type):', dataWithoutType?.id)
         return NextResponse.json(dataWithoutType, { status: 201 })
       }
       
@@ -195,7 +195,6 @@ export async function POST(req: Request) {
       }, { status: 500 })
     }
 
-    console.log('Workspace created successfully:', data?.id)
     return NextResponse.json(data, { status: 201 })
   } catch (error: any) {
     console.error('Unexpected error in POST /api/workspaces:', error)

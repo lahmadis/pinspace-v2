@@ -67,7 +67,6 @@ export async function GET() {
       physicalHeight: board.physical_height ? parseFloat(board.physical_height) : undefined,
     }))
 
-    console.log(`✅ Fetched ${transformedBoards.length} boards for user:`, userId)
     return NextResponse.json({ boards: transformedBoards })
   } catch (error) {
     console.error('Error fetching boards:', error)

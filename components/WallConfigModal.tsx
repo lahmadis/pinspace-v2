@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Settings, ChevronRight, ChevronDown } from 'lucide-react'
+import { toast } from '@/lib/toast'
 
 interface WallDimensions {
   height: number
@@ -69,7 +70,7 @@ export default function WallConfigModal({ onConfirm, initialConfig }: WallConfig
     )
     
     if (!validWalls) {
-      alert('All walls must be between 5ft and 20ft in both dimensions')
+      toast.error('All walls must be between 5ft and 20ft in both dimensions')
       return
     }
     

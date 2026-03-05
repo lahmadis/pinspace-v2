@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import Link from 'next/link'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
+import { toast } from '@/lib/toast'
 
 export default function NewStudioPage() {
   const router = useRouter()
@@ -42,7 +43,7 @@ export default function NewStudioPage() {
     e.preventDefault()
     
     if (!formData.name.trim()) {
-      alert('Please enter a room name')
+      toast.error('Please enter a room name')
       return
     }
 
@@ -66,13 +67,11 @@ export default function NewStudioPage() {
         throw new Error(data.error || 'Failed to create room')
       }
 
-      console.log('✅ Personal room created:', data.id)
-      
       // Redirect to the studio room
       router.push(`/studio/${data.id}`)
     } catch (error) {
       console.error('Error:', error)
-      alert(error instanceof Error ? error.message : 'Failed to create room')
+      toast.error(error instanceof Error ? error.message : 'Failed to create room')
     } finally {
       setLoading(false)
     }

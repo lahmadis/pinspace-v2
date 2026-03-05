@@ -18,7 +18,7 @@ export async function GET() {
     const supabase = supabaseServiceRole()
     const { data: institutions, error } = await supabase
       .from('institutions')
-      .select('id, name, slug, network_label, allowed_email_domains, type')
+      .select('id, name, slug, network_label, allowed_email_domains, type, logo_url')
       .order('name')
 
     if (error) {
@@ -66,6 +66,7 @@ export async function POST(req: Request) {
     const networkLabel = body?.network_label?.trim() ?? null
     const allowedEmailDomains = body?.allowed_email_domains?.trim() ?? null
     const type = body?.type === 'firm' ? 'firm' : 'institution'
+    const logoUrl = body?.logo_url?.trim() || null
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -77,10 +78,11 @@ export async function POST(req: Request) {
     const admin = supabaseServiceRole()
     const insertPayload: Record<string, unknown> = { name, slug, network_label: networkLabel || name, type }
     if (allowedEmailDomains) insertPayload.allowed_email_domains = allowedEmailDomains
+    if (logoUrl) insertPayload.logo_url = logoUrl
     const { data, error } = await admin
       .from('institutions')
       .insert(insertPayload)
-      .select('id, name, slug, network_label, allowed_email_domains, type')
+      .select('id, name, slug, network_label, allowed_email_domains, type, logo_url')
       .single()
 
     if (error) {

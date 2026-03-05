@@ -1,7 +1,10 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { supabase } from '@/lib/supabase/client'
+import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import { Comment, Board } from '@/types'
+import { toast } from '@/lib/toast'
 
 interface SideCommentPanelProps {
   board: Board | null
@@ -55,12 +58,25 @@ function getAvatarColor(name: string): string {
 }
 
 export default function SideCommentPanel({ board, onClose }: SideCommentPanelProps) {
+  const [user, setUser] = useState<any>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [newComment, setNewComment] = useState('')
   const [posting, setPosting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const authorName = user?.user_metadata?.full_name || user?.user_metadata?.email?.split('@')[0] || 'Anonymous'
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
+      setUser(session?.user || null)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      setUser(session?.user || null)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
   const isOpen = board !== null
 
@@ -116,9 +132,9 @@ export default function SideCommentPanel({ board, onClose }: SideCommentPanelPro
       const response = await fetch(`/api/boards/${board.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           content: newComment.trim(),
-          authorName: 'Linna' // Hardcoded for now
+          authorName,
         }),
       })
 
@@ -138,7 +154,7 @@ export default function SideCommentPanel({ board, onClose }: SideCommentPanelPro
       console.log('💬 [Comment] Posted successfully:', data.comment)
     } catch (err) {
       console.error('Error posting comment:', err)
-      alert('Failed to post comment. Please try again.')
+      toast.error('Failed to post comment. Please try again.')
     } finally {
       setPosting(false)
     }

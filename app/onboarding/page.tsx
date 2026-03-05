@@ -25,6 +25,7 @@ function OnboardingContent() {
   const [hasProfile, setHasProfile] = useState<boolean | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [institutionId, setInstitutionId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     full_name: '',
     role: '',
@@ -53,6 +54,23 @@ function OnboardingContent() {
     })
     return () => subscription.unsubscribe()
   }, [router])
+
+  useEffect(() => {
+    const stored = sessionStorage.getItem('pinspace_institution_id')
+    if (stored) {
+      setInstitutionId(stored)
+      return
+    }
+    const slug = searchParams?.get('institution')
+    if (!slug) return
+    fetch('/api/institutions', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data: { id: string; slug: string }[]) => {
+        const inst = Array.isArray(data) ? data.find((i) => i.slug === slug) : null
+        if (inst) setInstitutionId(inst.id)
+      })
+      .catch(() => {})
+  }, [searchParams])
 
   useEffect(() => {
     if (!user?.id) return
@@ -94,6 +112,7 @@ function OnboardingContent() {
         year,
         major,
         how_heard: formData.how_heard || null,
+        institution_id: institutionId || null,
       }),
     })
     setSubmitting(false)
@@ -102,6 +121,7 @@ function OnboardingContent() {
       setError(data.error || data.details || 'Failed to save')
       return
     }
+    sessionStorage.removeItem('pinspace_institution_id')
     router.replace(redirectTo)
   }
 

@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Board, Comment } from '@/types'
 import Loading from '@/components/Loading'
+import { toast } from '@/lib/toast'
 
 export default function BoardDetailPage() {
   const params = useParams()
@@ -71,10 +72,10 @@ export default function BoardDetailPage() {
         setComments([...comments, data.comment])
         setCommentForm({ authorName: '', authorEmail: '', content: '' })
         setShowCommentForm(false)
-        alert('Comment added!')
+        toast.success('Comment added!')
       }
     } catch (error) {
-      alert('Failed to add comment')
+      toast.error('Failed to add comment')
     } finally {
       setSubmitting(false)
     }
@@ -136,7 +137,7 @@ export default function BoardDetailPage() {
               onClick={() => {
                 const url = window.location.href
                 navigator.clipboard.writeText(url).then(() => {
-                  alert('Link copied to clipboard!')
+                  toast.success('Link copied to clipboard!')
                 })
               }}
               className="px-4 py-2 bg-background-lighter hover:bg-background-light text-text-secondary hover:text-text-primary rounded-lg text-sm transition-colors border border-border"

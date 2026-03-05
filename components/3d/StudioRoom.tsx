@@ -23,6 +23,7 @@ import FloorEditorOverlay from './FloorEditorOverlay'
 import TableWithModel from './TableWithModel'
 import ModelViewer from './ModelViewer'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
+import { toast } from '@/lib/toast'
 
 
 interface WallDimensions {
@@ -90,6 +91,7 @@ function SceneContent({
   onFloorClick,
   onTableModelClick,
   orbitControlsRef,
+  showEditUI,
 }: StudioRoomProps & {
   onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   editingWall: number | null
@@ -117,6 +119,7 @@ function SceneContent({
   onFloorClick?: () => void
   onTableModelClick?: (modelUrl: string) => void
   orbitControlsRef: React.RefObject<any>
+  showEditUI: boolean
 }) {
   const { camera, gl } = useThree()
   const maxWallHeightRef = useRef<number>(96)
@@ -223,7 +226,7 @@ function SceneContent({
       )}
       
       {/* Render draggable boards when in edit mode */}
-      {editingWall !== null && editingWallPosition && editingWallDimensions && (
+      {showEditUI && editingWall !== null && editingWallPosition && editingWallDimensions && (
         <>
           {/* Invisible plane to catch clicks on empty space and deselect */}
           {/* Position it at the wall (z = 0), boards are in front at z = 0.15 */}
@@ -475,6 +478,7 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [commentPanelBoard, setCommentPanelBoard] = useState<Board | null>(null)
   const [hoveredBoardId, setHoveredBoardId] = useState<string | null>(null)
   const copiedBoardRef = useRef<Board | null>(null)
+  const clearWallConfirmedRef = useRef(false)
   const {
     boards: localBoards,
     boardPositions,
@@ -564,11 +568,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     side: 'front' | 'back'
   ) => {
     devLog('🖼️ [StudioRoom] Wall clicked:', wallIndex, 'rotation:', rotation, 'side:', side)
-    const wallClickStart = Date.now()
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-2',hypothesisId:'H6_H7',location:'StudioRoom.tsx:handleWallClick',message:'wall click start',data:{wallIndex,side,totalBoards:localBoards.length},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    
+
     // If we're already editing this wall and side, don't reinitialize
     if (editingWall === wallIndex && editingWallSide === side) {
       devLog('🖼️ [StudioRoom] Already editing this wall side, keeping current positions')
@@ -590,9 +590,6 @@ export default function StudioRoom(props: StudioRoomProps) {
 
     // Load positions from central hook (API → normalized + size)
     const wallPositions = loadWallPositions(wallIndex, wallDimensions, side)
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-2',hypothesisId:'H7',location:'StudioRoom.tsx:handleWallClick',message:'wall positions loaded',data:{wallIndex,side,wallPositionsSize:wallPositions.size,elapsedMs:Date.now()-wallClickStart},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
 
     // Copy all boards on this wall AND this side into placedBoards3D (include fallback so boards don't disappear when pos is missing)
     const newMap = new Map<string, { x: number; y: number; width: number; height: number }>()
@@ -624,9 +621,6 @@ export default function StudioRoom(props: StudioRoomProps) {
 
     devLog('🖼️ [StudioRoom] Total boards to render on', side, 'side:', newMap.size)
     setPlacedBoards3D(newMap)
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/12f004f5-c7b1-4122-aa77-6acb315d4f96',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'064a6e'},body:JSON.stringify({sessionId:'064a6e',runId:'pre-fix-2',hypothesisId:'H6_H7',location:'StudioRoom.tsx:handleWallClick',message:'wall click setup complete',data:{wallIndex,side,wallBoardsForEditCount:wallBoardsForEdit.length,newMapSize:newMap.size,totalElapsedMs:Date.now()-wallClickStart},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
   }
 
 
@@ -638,12 +632,11 @@ export default function StudioRoom(props: StudioRoomProps) {
   }
 
   const handleEditComplete = () => {
-    if (editingWall === null || !editingWallDimensions || !editingWallPosition) return
+    if (editingWall === null) return
 
     const currentBoards = placedBoards3DRef.current
     const wallToSave = editingWall
     const sideToSave = editingWallSide
-
     // Exit to 3D immediately so the transition feels instant
     setShowEditUI(false)
     props.onEditModeChange?.(false)
@@ -764,13 +757,13 @@ export default function StudioRoom(props: StudioRoomProps) {
     if (editingWall === null || !editingWallPosition || !editingWallDimensions) return
     
     if (placedBoards3D.has(board.id)) {
-      alert('This board is already on the wall')
+      toast.error('This board is already on the wall')
       return
     }
-    
+
     const imageUrl = board.fullImageUrl || board.thumbnailUrl || ''
     if (!imageUrl || imageUrl.includes('placeholder')) {
-      alert('This board cannot be displayed (no valid file)')
+      toast.error('This board cannot be displayed (no valid file)')
       return
     }
     
@@ -829,7 +822,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     
     // Check if already on wall
     if (placedBoards3D.has(draggingFromSidebar.id)) {
-      alert('This board is already on the wall')
+      toast.error('This board is already on the wall')
       setDraggingFromSidebar(null)
       return
     }
@@ -1005,7 +998,7 @@ export default function StudioRoom(props: StudioRoomProps) {
       })
     } catch (error) {
       console.error('Error deleting board:', error)
-      alert('Failed to delete board')
+      toast.error('Failed to delete board')
     }
   }, [deleteBoard])
 
@@ -1016,14 +1009,17 @@ export default function StudioRoom(props: StudioRoomProps) {
       b => b.position?.wallIndex === editingWall && (b.position?.side || 'front') === side
     )
     if (wallBoards.length === 0) return
-    const ok = window.confirm(
-      `Remove all ${wallBoards.length} board${wallBoards.length === 1 ? '' : 's'} from this wall? This cannot be undone.`
-    )
-    if (!ok) return
+    if (!clearWallConfirmedRef.current) {
+      clearWallConfirmedRef.current = true
+      toast.info(`Click "Clear wall" again to remove ${wallBoards.length} board${wallBoards.length === 1 ? '' : 's'} from this wall.`)
+      setTimeout(() => { clearWallConfirmedRef.current = false }, 3000)
+      return
+    }
+    clearWallConfirmedRef.current = false
     for (const board of wallBoards) {
       const success = await deleteBoard(board.id)
       if (!success) {
-        alert('Some boards could not be deleted. You may not have permission.')
+        toast.error('Some boards could not be deleted. You may not have permission.')
         break
       }
       setPlacedBoards3D(prev => {
@@ -1123,7 +1119,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         placedBoards3DRef.current = m
         return m
       })
-      alert('Could not paste board. You may need to be a member of the workspace.')
+      toast.error('Could not paste board. You may need to be a member of the workspace.')
     }
   }, [editingWall, editingWallSide, editingWallDimensions, props.studioId, user, addTempBoard, replaceTempBoard, removeTempBoard, setPlacedBoards3D])
 
@@ -1210,7 +1206,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             e.preventDefault()
             e.stopPropagation()
             uploadFileDirect(file).then(ok => {
-              if (!ok) alert('Could not add pasted image as a board.')
+              if (!ok) toast.error('Could not add pasted image as a board.')
             })
           }
           return
@@ -1304,6 +1300,7 @@ export default function StudioRoom(props: StudioRoomProps) {
           <SceneContent
             {...props}
             orbitControlsRef={orbitControlsRef}
+            showEditUI={showEditUI}
             localBoards={localBoards}
             onWallClick={handleWallClick}
             editingWall={editingWall}

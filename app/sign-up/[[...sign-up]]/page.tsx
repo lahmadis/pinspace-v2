@@ -57,6 +57,7 @@ function SignUpInner() {
         setInstitutions(Array.isArray(data) ? data : [])
         const inst = (Array.isArray(data) ? data : []).find((i) => i.slug === (institutionSlug || ''))
         setInstitution(inst || null)
+        if (inst) sessionStorage.setItem('pinspace_institution_id', inst.id)
       })
       .catch(() => setInstitutions([]))
       .finally(() => setLoading(false))
@@ -101,6 +102,21 @@ function SignUpInner() {
         const domainList = allowed.map((d) => `@${d}`).join(' or ')
         setError(`Please use a ${institution.name} email (${domainList})`)
         return
+      }
+    }
+
+    // Auto-detect institution from email domain when no slug-matched institution is set
+    if (!institution && institutions.length > 0) {
+      const emailDomain = trimmedEmail.split('@')[1]?.trim().toLowerCase()
+      if (emailDomain) {
+        const matchingInst = institutions.find((i) => {
+          const domains = getAllowedDomains(i.allowed_email_domains)
+          return domains.includes(emailDomain)
+        })
+        if (matchingInst) {
+          sessionStorage.setItem('pinspace_institution_id', matchingInst.id)
+          sessionStorage.setItem('pinspace_institution', matchingInst.slug)
+        }
       }
     }
 

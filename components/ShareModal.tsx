@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
+import { toast } from '@/lib/toast'
 
 interface ShareModalProps {
   studioId: string
@@ -48,7 +49,7 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
       console.error('Failed to copy:', err)
-      alert('Failed to copy link')
+      toast.error('Failed to copy link')
     }
   }
 

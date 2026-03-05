@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from '@/lib/toast'
 
 interface JoinClassModalProps {
   onClose: () => void
@@ -16,7 +17,7 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
     e.preventDefault()
     
     if (!inviteCode.trim()) {
-      alert('Please enter an invite code')
+      toast.error('Please enter an invite code')
       return
     }
 
@@ -27,7 +28,7 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
       const response = await fetch(`/api/workspaces/by-invite/${inviteCode.trim()}`)
       
       if (!response.ok) {
-        alert('Invalid invite code')
+        toast.error('Invalid invite code')
         return
       }
 
@@ -35,7 +36,7 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
       router.push(`/join/${inviteCode.trim()}`)
     } catch (error) {
       console.error('Error:', error)
-      alert('Failed to validate invite code')
+      toast.error('Failed to validate invite code')
     } finally {
       setLoading(false)
     }

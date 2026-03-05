@@ -4,7 +4,8 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { calculateFloorBounds, getWallTransformResolved, getWallTransform } from '@/lib/wallLayout'
 import type { WallConfig, WallTransformOverride } from '@/lib/wallLayout'
 import type { FloorTable } from '@/types'
-import { X, Plus, Upload, Trash2, MoveHorizontal } from 'lucide-react'
+import { X, Plus, Upload, Trash2 } from 'lucide-react'
+import { toast } from '@/lib/toast'
 
 const TABLE_HEIGHT_INCHES = 18 // 1.5 feet
 const DEFAULT_TABLE_WIDTH = 24
@@ -23,6 +24,8 @@ interface FloorEditorOverlayProps {
 
 const VIEW_WIDTH = 700
 const VIEW_HEIGHT = 500
+const ROTATE_CURSOR =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E\") 12 12, grab"
 
 function worldToScreen(
   x: number,
@@ -197,7 +200,7 @@ export default function FloorEditorOverlay({
       if (!file || !selectedTableId) return
       const isGlb = file.name.toLowerCase().endsWith('.glb') || file.name.toLowerCase().endsWith('.gltf')
       if (!isGlb) {
-        alert('Please select a .glb or .gltf file.')
+        toast.error('Please select a .glb or .gltf file.')
         return
       }
       // Use data URL instead of blob URL so the URL stays valid when opening the model viewer
@@ -458,12 +461,9 @@ export default function FloorEditorOverlay({
     const startZ = transform.z - halfW * sin
     const [endPx, endPy] = worldToScreen(endX, endZ, bounds)
     const [startPx, startPy] = worldToScreen(startX, startZ, bounds)
-    const rotateX = transform.x - sin * 12
-    const rotateZ = transform.z + cos * 12
-    const [rotatePx, rotatePy] = worldToScreen(rotateX, rotateZ, bounds)
     // Front edge = corners 2–3 (the side where you can add boards in the 3D room)
     const frontEdge = [points[4], points[5], points[6], points[7]] as [number, number, number, number]
-    return { points, key: index, rotatePx, rotatePy, startPx, startPy, endPx, endPy, frontEdge }
+    return { points, key: index, startPx, startPy, endPx, endPy, frontEdge }
   })
 
   return (
@@ -536,7 +536,7 @@ export default function FloorEditorOverlay({
         <div className="p-6 overflow-auto">
           <p className="text-sm text-gray-500 mb-4">
             {mode === 'walls'
-              ? 'Top-down view. Drag walls to move. Hover near wall ends to reveal stretch handle, then drag to resize length. Use curved handle to rotate (hold Shift to snap to 90°). Ctrl+Z undo, Ctrl+Y redo. Green edge = front (side you can add boards to); opposite side is back.'
+              ? 'Top-down view. Drag walls to move. Drag from wall endpoints to resize length. Use curved handle to rotate (hold Shift to snap to 90°). Ctrl+Z undo, Ctrl+Y redo. Green edge = front (side you can add boards to); opposite side is back.'
               : 'Top-down view. Drag tables to move. Click a table then "Add model" to place a 3D model on it.'}
           </p>
 
@@ -591,61 +591,58 @@ export default function FloorEditorOverlay({
                 ))}
             </svg>
 
-            {/* Rotate handles (walls mode only) – Illustrator-style: curved arrow on hover */}
+            {/* Rotate hotspots at wall corners (walls mode only) */}
             {mode === 'walls' &&
-              wallOutlines.map(({ key, rotatePx, rotatePy }) => (
-                <div
-                  key={`rotate-${key}`}
-                  className="group absolute cursor-grab active:cursor-grabbing flex items-center justify-center transition-opacity"
-                  style={{
-                    left: rotatePx - 10,
-                    top: rotatePy - 10,
-                    width: 20,
-                    height: 20,
-                  }}
-                  title="Drag to rotate wall"
-                  onPointerDown={(e) => handleWallRotatePointerDown(key, e)}
-                >
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    {/* Curved rotate arrow (Illustrator-style) */}
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                    <path d="M3 3v5h5" />
-                  </svg>
-                </div>
-              ))}
+              wallOutlines
+                .flatMap(({ key, points }) => ([
+                  { id: `${key}-c0`, wallIndex: key, px: points[0], py: points[1] },
+                  { id: `${key}-c1`, wallIndex: key, px: points[2], py: points[3] },
+                  { id: `${key}-c2`, wallIndex: key, px: points[4], py: points[5] },
+                  { id: `${key}-c3`, wallIndex: key, px: points[6], py: points[7] },
+                ]))
+                .map(({ id, wallIndex, px, py }) => (
+                  <div
+                    key={`rotate-${id}`}
+                    className="absolute"
+                    style={{
+                      left: px - 10,
+                      top: py - 10,
+                      width: 20,
+                      height: 20,
+                      cursor: ROTATE_CURSOR,
+                    }}
+                    title="Drag to rotate wall"
+                    onPointerDown={(e) => handleWallRotatePointerDown(wallIndex, e)}
+                  />
+                ))}
 
             {/* Stretch handles (walls mode only) */}
             {mode === 'walls' &&
               wallOutlines
-                .flatMap(({ key, startPx, startPy, endPx, endPy }) => ([
-                  { id: `${key}-start`, wallIndex: key, end: 'start' as const, px: startPx, py: startPy },
-                  { id: `${key}-end`, wallIndex: key, end: 'end' as const, px: endPx, py: endPy },
-                ]))
-                .map(({ id, wallIndex, end, px, py }) => (
+                .flatMap(({ key, startPx, startPy, endPx, endPy }) => {
+                  const stretchCursor =
+                    Math.abs(endPy - startPy) > Math.abs(endPx - startPx)
+                      ? 'ns-resize'
+                      : 'ew-resize'
+                  return [
+                    { id: `${key}-start`, wallIndex: key, end: 'start' as const, px: startPx, py: startPy, stretchCursor },
+                    { id: `${key}-end`, wallIndex: key, end: 'end' as const, px: endPx, py: endPy, stretchCursor },
+                  ]
+                })
+                .map(({ id, wallIndex, end, px, py, stretchCursor }) => (
                   <div
                     key={`stretch-${id}`}
-                    className="group absolute cursor-ew-resize active:cursor-ew-resize flex items-center justify-center"
+                    className="absolute"
                     style={{
                       left: px - 12,
                       top: py - 12,
                       width: 24,
                       height: 24,
+                      cursor: stretchCursor,
                     }}
                     title="Drag to stretch wall length"
                     onPointerDown={(e) => handleWallStretchPointerDown(wallIndex, end, e)}
-                  >
-                    <MoveHorizontal className="w-4 h-4 text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </div>
+                  />
                 ))}
 
             {/* Tables (tables mode only) */}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase/client'
+import { toast } from '@/lib/toast'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import { Comment, Board } from '@/types'
 
@@ -109,7 +110,7 @@ export default function RightCommentPanel({ board, onClose }: RightCommentPanelP
       setNewComment('')
       textareaRef.current?.focus()
     } catch (err) {
-      alert('Failed to post comment')
+      toast.error('Failed to post comment')
     } finally {
       setPosting(false)
     }

@@ -282,13 +282,10 @@ export default function StudioViewPage() {
   useEffect(() => {
     const boardIdFromUrl = searchParams.get('boardId')
     if (boardIdFromUrl && boards.length > 0) {
-      console.log('🔍 [View Mode] Looking for board with ID:', boardIdFromUrl)
-      console.log('📋 [View Mode] Available boards:', boards.map(b => ({ id: b.id, title: b.title })))
       const boardToOpen = boards.find(b => b.id === boardIdFromUrl)
       if (boardToOpen) {
         // Only update if it's a different board
         if (!selectedBoard || selectedBoard.id !== boardToOpen.id) {
-          console.log('✅ [View Mode] Found and opening board:', boardToOpen.title, boardToOpen.id)
           setSelectedBoard(boardToOpen)
         }
       } else {
@@ -313,7 +310,6 @@ export default function StudioViewPage() {
       const url = isDemo 
         ? `/api/boards?workspaceId=${studioId}&demo=true` 
         : `/api/boards?workspaceId=${studioId}`
-      console.log('🔍 [View Mode] Fetching boards from:', url, 'isDemo:', isDemo)
       const response = await fetch(url)
       
       if (!response.ok) {
@@ -322,7 +318,6 @@ export default function StudioViewPage() {
       
       const data = await response.json()
       setBoards(data.boards || [])
-      console.log('📖 [View Mode] Loaded', data.boards?.length || 0, 'boards for studio', studioId)
     } catch (err) {
       console.error('Error fetching boards:', err)
       setError('Failed to load boards')
@@ -346,7 +341,6 @@ export default function StudioViewPage() {
     setCompareBoardIds((prev) => (
       prev.length > 1 && prev.includes(board.id) ? prev : []
     ))
-    console.log('🖱️ [View Mode] Board clicked:', board.id)
     setSelectedBoard(board)
   }
 
@@ -364,7 +358,6 @@ export default function StudioViewPage() {
     
     if (newIndex >= 0 && newIndex < boards.length) {
       setSelectedBoard(boards[newIndex])
-      console.log('🖱️ [View Mode] Navigated to board:', boards[newIndex].id)
     }
   }
 

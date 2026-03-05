@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import Link from 'next/link'
+import { toast } from '@/lib/toast'
 import { Workspace } from '@/types'
 import dynamic from 'next/dynamic'
 import PublishConfirmModal from '@/components/PublishConfirmModal'
@@ -77,7 +78,7 @@ export default function WorkspaceSettingsPage() {
     } catch (error: any) {
       console.error('Error fetching workspace:', error)
       const errorMsg = error?.message || 'Failed to load workspace'
-      alert(errorMsg)
+      toast.error(errorMsg)
       router.push('/dashboard')
     } finally {
       setLoading(false)
@@ -134,7 +135,7 @@ export default function WorkspaceSettingsPage() {
     } catch (error) {
       console.error('Error:', error)
       setPublishError(error instanceof Error ? error.message : 'Failed to update workspace')
-      alert(error instanceof Error ? error.message : 'Failed to update workspace')
+      toast.error(error instanceof Error ? error.message : 'Failed to update workspace')
     } finally {
       setPublishing(false)
     }
@@ -169,7 +170,7 @@ export default function WorkspaceSettingsPage() {
     } catch (error) {
       console.error('Error:', error)
       setPublishError(error instanceof Error ? error.message : 'Failed to update workspace')
-      alert(error instanceof Error ? error.message : 'Failed to update workspace')
+      toast.error(error instanceof Error ? error.message : 'Failed to update workspace')
     } finally {
       setPublishing(false)
     }

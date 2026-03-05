@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase/client'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import Link from 'next/link'
 import type { Institution } from '@/types'
+import { toast } from '@/lib/toast'
 
 export default function NewWorkspacePage() {
   const router = useRouter()
@@ -59,7 +60,7 @@ export default function NewWorkspacePage() {
     e.preventDefault()
     
     if (!formData.name.trim()) {
-      alert('Please enter a workspace name')
+      toast.error('Please enter a workspace name')
       return
     }
 
@@ -90,19 +91,15 @@ export default function NewWorkspacePage() {
       const workspaceId = data.id || data.workspace?.id
       
       if (!workspaceId) {
-        console.error('No workspace ID in response:', data)
         throw new Error('Workspace created but no ID returned')
       }
 
-      console.log('✅ Workspace created:', workspaceId)
-      
       // Redirect to workspace settings
       router.push(`/workspace/${workspaceId}/settings`)
     } catch (error: any) {
       console.error('Error creating workspace:', error)
       const errorMessage = error?.message || error?.error || 'Failed to create workspace'
-      console.error('Full error details:', JSON.stringify(error, null, 2))
-      alert(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -251,7 +248,7 @@ export default function NewWorkspacePage() {
         {/* Help Text */}
         <div className="mt-6 text-center">
           <p className="text-sm text-gray-600">
-            Need help? <Link href="/docs" className="text-[#4444ff] hover:underline">View documentation</Link>
+            Questions? Contact your instructor or system administrator.
           </p>
         </div>
       </div>

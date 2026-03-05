@@ -92,8 +92,7 @@ export async function POST(
       .single()
 
     if (existingMember) {
-      console.log('✅ User already a member of workspace:', workspaceId)
-      return NextResponse.json({ 
+      return NextResponse.json({
         success: true, 
         workspace: {
           id: workspace.id,
@@ -124,8 +123,7 @@ export async function POST(
       }, { status: 500 })
     }
 
-    console.log('✅ [API] User joined workspace:', userId, '→', workspaceId)
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true, 
       workspace: {
         id: workspace.id,

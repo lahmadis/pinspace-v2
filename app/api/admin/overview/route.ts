@@ -40,13 +40,22 @@ export async function GET() {
 
     const withCounts = await Promise.all(
       (institutions || []).map(async (inst) => {
-        const { count, error: countErr } = await admin
-          .from('workspaces')
-          .select('*', { count: 'exact', head: true })
-          .eq('institution_id', inst.id)
+        const [workspacesResult, userCountResult] = await Promise.all([
+          admin
+            .from('workspaces')
+            .select('id, name, type, created_at', { count: 'exact' })
+            .eq('institution_id', inst.id)
+            .order('created_at', { ascending: false }),
+          admin
+            .from('user_profiles')
+            .select('*', { count: 'exact', head: true })
+            .eq('institution_id', inst.id),
+        ])
         return {
           ...inst,
-          workspace_count: countErr ? 0 : (count ?? 0),
+          workspace_count: workspacesResult.error ? 0 : (workspacesResult.count ?? 0),
+          user_count: userCountResult.error ? 0 : (userCountResult.count ?? 0),
+          workspaces: workspacesResult.data ?? [],
         }
       })
     )

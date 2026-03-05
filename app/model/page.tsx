@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import ModelViewer from '@/components/3d/ModelViewer'
 import Loading from '@/components/Loading'
 import { Upload } from 'lucide-react'
+import { toast } from '@/lib/toast'
 
 function ModelPageContent() {
   const searchParams = useSearchParams()
@@ -56,7 +57,7 @@ function ModelPageContent() {
     if (!file) return
     const isGlb = file.name.toLowerCase().endsWith('.glb') || file.name.toLowerCase().endsWith('.gltf')
     if (!isGlb) {
-      alert('Please select a .glb or .gltf file.')
+      toast.error('Please select a .glb or .gltf file.')
       return
     }
     if (lastObjectUrlRef.current) {

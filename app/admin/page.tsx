@@ -4,7 +4,22 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import Link from 'next/link'
-import { Building2, Settings, ExternalLink, LayoutDashboard, BarChart3, Briefcase, ChevronRight } from 'lucide-react'
+import {
+  Building2,
+  ExternalLink,
+  LayoutDashboard,
+  BarChart3,
+  Briefcase,
+  ChevronRight,
+  ChevronDown,
+  Users,
+  LayoutGrid,
+  Plus,
+  X,
+  Pencil,
+} from 'lucide-react'
+
+type WorkspaceRow = { id: string; name: string; type?: string; created_at?: string }
 
 type InstitutionWithCount = {
   id: string
@@ -14,6 +29,8 @@ type InstitutionWithCount = {
   allowed_email_domains?: string | null
   type?: 'institution' | 'firm' | null
   workspace_count: number
+  user_count: number
+  workspaces: WorkspaceRow[]
 }
 
 function StatBlock({ title, data }: { title: string; data: Record<string, number> }) {
@@ -41,6 +58,391 @@ function StatBlock({ title, data }: { title: string; data: Record<string, number
   )
 }
 
+function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    name: '',
+    slug: '',
+    type: 'institution' as 'institution' | 'firm',
+    network_label: '',
+    allowed_email_domains: '',
+  })
+
+  const autoSlug = () => {
+    if (form.slug) return
+    setForm((p) => ({
+      ...p,
+      slug: p.name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+    }))
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    if (!form.name.trim() || !form.slug.trim()) {
+      setError('Name and slug are required')
+      return
+    }
+    setLoading(true)
+    try {
+      const res = await fetch('/api/institutions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          slug: form.slug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+          type: form.type,
+          network_label: form.network_label.trim() || undefined,
+          allowed_email_domains: form.allowed_email_domains.trim() || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error || 'Failed to create')
+        return
+      }
+      setForm({ name: '', slug: '', type: 'institution', network_label: '', allowed_email_domains: '' })
+      setOpen(false)
+      onCreated()
+    } catch {
+      setError('Request failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
+      >
+        <Plus className="w-4 h-4" />
+        New org
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setOpen(false)}>
+          <div
+            className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-semibold text-gray-900">Create organization</h3>
+              <button type="button" onClick={() => setOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <select
+                  value={form.type}
+                  onChange={(e) => setForm((p) => ({ ...p, type: e.target.value as 'institution' | 'firm' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="institution">Institution (school / university)</option>
+                  <option value="firm">Firm</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                  onBlur={autoSlug}
+                  placeholder="e.g. Wentworth Institute of Technology"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Slug</label>
+                <input
+                  type="text"
+                  value={form.slug}
+                  onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value }))}
+                  placeholder="e.g. wit"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">Handoff link: /i/{form.slug || 'slug'}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Allowed email domains
+                </label>
+                <input
+                  type="text"
+                  value={form.allowed_email_domains}
+                  onChange={(e) => setForm((p) => ({ ...p, allowed_email_domains: e.target.value }))}
+                  placeholder="e.g. wit.edu or wit.edu,wentworth.edu"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">Leave blank for no restriction.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Network label <span className="font-normal text-gray-400">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={form.network_label}
+                  onChange={(e) => setForm((p) => ({ ...p, network_label: e.target.value }))}
+                  placeholder="e.g. WIT Design Network"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+              </div>
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 py-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium text-sm"
+                >
+                  {loading ? 'Creating…' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function OrgRow({ inst, onEdit }: { inst: InstitutionWithCount; onEdit: (inst: InstitutionWithCount) => void }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <li className="border-b border-gray-100 last:border-0">
+      <div className="flex items-center gap-4 px-6 py-4 hover:bg-indigo-50/30 transition-colors">
+        {/* Expand toggle */}
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="p-1 text-gray-400 hover:text-gray-600 rounded shrink-0"
+          title={expanded ? 'Collapse' : 'Show studios'}
+        >
+          {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4 text-gray-300" />}
+        </button>
+
+        {/* Name + meta */}
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-gray-900 truncate">{inst.name}</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            /i/{inst.slug}
+            {inst.allowed_email_domains ? ` · ${inst.allowed_email_domains}` : ' · no domain restriction'}
+          </p>
+        </div>
+
+        {/* Counts */}
+        <div className="flex items-center gap-5 shrink-0">
+          <span className="flex items-center gap-1 text-sm text-gray-600 whitespace-nowrap" title="Users">
+            <Users className="w-4 h-4 text-gray-400" />
+            {inst.user_count}
+          </span>
+          <span className="flex items-center gap-1 text-sm text-gray-600 whitespace-nowrap" title="Studio rooms">
+            <LayoutGrid className="w-4 h-4 text-gray-400" />
+            {inst.workspace_count}
+          </span>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 shrink-0">
+          <Link
+            href={`/admin/institutions/${inst.slug}`}
+            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1 rounded hover:bg-indigo-50 whitespace-nowrap"
+          >
+            Full stats
+          </Link>
+          <button
+            type="button"
+            onClick={() => onEdit(inst)}
+            className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100"
+            title="Edit"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <a
+            href={`/i/${inst.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100"
+            title="Open explore"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        </div>
+      </div>
+
+      {/* Expanded studio list */}
+      {expanded && (
+        <div className="px-6 pb-4 ml-10">
+          {inst.workspaces.length === 0 ? (
+            <p className="text-sm text-gray-400 italic">No studio rooms yet</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {inst.workspaces.map((ws) => (
+                <li key={ws.id} className="flex items-center justify-between text-sm text-gray-600 py-1 border-b border-gray-50 last:border-0">
+                  <span className="font-medium text-gray-800">{ws.name || 'Unnamed'}</span>
+                  <span className="text-xs text-gray-400">
+                    {ws.type || 'class'} · {ws.created_at ? new Date(ws.created_at).toLocaleDateString() : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </li>
+  )
+}
+
+function EditOrgModal({
+  inst,
+  onClose,
+  onSaved,
+}: {
+  inst: InstitutionWithCount
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [form, setForm] = useState({
+    name: inst.name,
+    slug: inst.slug,
+    type: (inst.type === 'firm' ? 'firm' : 'institution') as 'institution' | 'firm',
+    network_label: inst.network_label ?? '',
+    allowed_email_domains: inst.allowed_email_domains ?? '',
+  })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    if (!form.name.trim() || !form.slug.trim()) {
+      setError('Name and slug are required')
+      return
+    }
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/admin/institutions/${encodeURIComponent(inst.slug)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          slug: form.slug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+          type: form.type,
+          network_label: form.network_label.trim() || undefined,
+          allowed_email_domains: form.allowed_email_domains.trim() || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error || 'Failed to update')
+        return
+      }
+      onClose()
+      onSaved()
+    } catch {
+      setError('Request failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-lg font-semibold text-gray-900">Edit org</h3>
+          <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+            <select
+              value={form.type}
+              onChange={(e) => setForm((p) => ({ ...p, type: e.target.value as 'institution' | 'firm' }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            >
+              <option value="institution">Institution (school / university)</option>
+              <option value="firm">Firm</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Slug</label>
+            <input
+              type="text"
+              value={form.slug}
+              onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500 mt-1">Handoff link: /i/{form.slug || 'slug'}</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Allowed email domains</label>
+            <input
+              type="text"
+              value={form.allowed_email_domains}
+              onChange={(e) => setForm((p) => ({ ...p, allowed_email_domains: e.target.value }))}
+              placeholder="e.g. wit.edu or wit.edu,wentworth.edu"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Network label <span className="font-normal text-gray-400">(optional)</span></label>
+            <input
+              type="text"
+              value={form.network_label}
+              onChange={(e) => setForm((p) => ({ ...p, network_label: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 py-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium text-sm"
+            >
+              {loading ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function AdminDashboardPage() {
   const [user, setUser] = useState<any>(null)
   const [isLoaded, setIsLoaded] = useState(false)
@@ -51,6 +453,7 @@ export default function AdminDashboardPage() {
   const [signInPassword, setSignInPassword] = useState('')
   const [signInError, setSignInError] = useState('')
   const [signingIn, setSigningIn] = useState(false)
+  const [editingInst, setEditingInst] = useState<InstitutionWithCount | null>(null)
   const [stats, setStats] = useState<{
     total: number
     by_year: Record<string, number>
@@ -83,7 +486,6 @@ export default function AdminDashboardPage() {
     setSigningIn(false)
     if (error) {
       setSignInError(error.message || 'Sign in failed')
-      return
     }
   }
 
@@ -95,18 +497,24 @@ export default function AdminDashboardPage() {
       .catch(() => setIsAdmin(false))
   }, [isLoaded, user?.id])
 
-  useEffect(() => {
+  const loadData = () => {
     if (!isAdmin) return
     setLoading(true)
     Promise.all([
       fetch('/api/admin/overview', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { institutions: [] })),
       fetch('/api/admin/stats', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)),
-    ]).then(([overviewData, statsData]) => {
-      setInstitutions(Array.isArray(overviewData?.institutions) ? overviewData.institutions : [])
-      setStats(statsData)
-    }).catch(() => setInstitutions([]))
-    .finally(() => setLoading(false))
-  }, [isAdmin])
+    ])
+      .then(([overviewData, statsData]) => {
+        setInstitutions(Array.isArray(overviewData?.institutions) ? overviewData.institutions : [])
+        setStats(statsData)
+      })
+      .catch(() => setInstitutions([]))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [isAdmin]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isLoaded) {
     return (
@@ -116,14 +524,13 @@ export default function AdminDashboardPage() {
     )
   }
 
-  // Not logged in: show admin sign-in form (no institution required – use your Gmail)
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
         <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-xl border border-gray-200">
           <div className="text-center mb-6">
             <h1 className="text-2xl font-bold text-gray-900">PinSpace Admin</h1>
-            <p className="text-sm text-gray-500 mt-1">Sign in with your admin email (e.g. Gmail)</p>
+            <p className="text-sm text-gray-500 mt-1">Sign in with your admin email</p>
           </div>
           <form onSubmit={handleAdminSignIn} className="space-y-4">
             <div>
@@ -158,9 +565,6 @@ export default function AdminDashboardPage() {
               {signingIn ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
-          <p className="mt-4 text-xs text-gray-400 text-center">
-            Admin link: <code className="bg-gray-100 px-1 rounded">/admin</code> — bookmark this page
-          </p>
         </div>
       </div>
     )
@@ -171,7 +575,7 @@ export default function AdminDashboardPage() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
         <div className="w-full max-w-md rounded-xl bg-white p-8 shadow border border-gray-200 text-center">
           <h1 className="text-xl font-bold text-gray-900 mb-2">Access denied</h1>
-          <p className="text-gray-600 mb-6">This account is not an admin. Only emails in PINSPACE_ADMIN_EMAILS can access.</p>
+          <p className="text-gray-600 mb-6">This account is not in PINSPACE_ADMIN_EMAILS.</p>
           <button
             onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
             className="text-indigo-600 hover:underline"
@@ -183,39 +587,89 @@ export default function AdminDashboardPage() {
     )
   }
 
+  const institutionsList = institutions.filter((i) => (i.type || 'institution') === 'institution')
+  const firmsList = institutions.filter((i) => i.type === 'firm')
+
+  const renderOrgSection = (
+    list: InstitutionWithCount[],
+    title: string,
+    description: string,
+    icon: React.ReactNode,
+    emptyMsg: string
+  ) => (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {icon}
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+            <p className="text-xs text-gray-500">{description}</p>
+          </div>
+        </div>
+        {/* Column headers */}
+        {list.length > 0 && (
+          <div className="hidden sm:flex items-center gap-5 mr-32 text-xs text-gray-400 font-medium uppercase tracking-wide">
+            <span className="flex items-center gap-1"><Users className="w-3 h-3" /> Users</span>
+            <span className="flex items-center gap-1"><LayoutGrid className="w-3 h-3" /> Studios</span>
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="p-8 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 mx-auto" />
+        </div>
+      ) : list.length === 0 ? (
+        <div className="p-8 text-center text-gray-500">
+          <p className="font-medium text-gray-700">{emptyMsg}</p>
+          <p className="mt-1 text-sm">Create one with the button above.</p>
+        </div>
+      ) : (
+        <ul>
+          {list.map((inst) => (
+            <OrgRow key={inst.id} inst={inst} onEdit={setEditingInst} />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-slate-50 to-indigo-50">
-      <div className="max-w-4xl mx-auto px-6 py-8">
+      <div className="max-w-5xl mx-auto px-6 py-8">
+
+        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="p-2 hover:bg-white/80 rounded-lg transition-colors">
-              <span className="text-gray-600">←</span>
-            </Link>
+            <Link href="/dashboard" className="p-2 hover:bg-white/80 rounded-lg transition-colors text-gray-600">←</Link>
             <div className="flex items-center gap-2">
-              <LayoutDashboard className="w-8 h-8 text-indigo-600" />
+              <LayoutDashboard className="w-7 h-7 text-indigo-600" />
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Admin</h1>
-                <p className="text-sm text-gray-600">Overview of institutions and usage</p>
+                <p className="text-sm text-gray-500">Orgs, users, and studios</p>
               </div>
             </div>
           </div>
-          <Link
-            href="/admin/institutions"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
-          >
-            <Settings className="w-4 h-4" />
-            Manage institutions
-          </Link>
+          <div className="flex items-center gap-2">
+            <CreateOrgForm onCreated={loadData} />
+            <button
+              onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
+              className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-white/80 rounded-lg transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
 
+        {/* Global student stats */}
         {stats && (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-8">
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-indigo-600" />
-              <h2 className="text-lg font-semibold text-gray-900">Student stats</h2>
-              <span className="text-sm text-gray-500">({stats.total} profiles)</span>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+            <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-indigo-600" />
+              <h2 className="text-sm font-semibold text-gray-900">Global stats</h2>
+              <span className="text-xs text-gray-400 ml-1">{stats.total} profiles</span>
             </div>
-            <div className="p-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="p-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
               <StatBlock title="By year" data={stats.by_year} />
               <StatBlock title="By major" data={stats.by_major} />
               <StatBlock title="By age range" data={stats.by_age_range} />
@@ -224,105 +678,34 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {(() => {
-          const institutionsList = institutions.filter((i) => (i.type || 'institution') === 'institution')
-          const firmsList = institutions.filter((i) => i.type === 'firm')
-          const renderList = (list: InstitutionWithCount[], title: string, description: string, icon: React.ReactNode, emptyMsg: string) => (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-8">
-              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
-                {icon}
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-                  <p className="text-sm text-gray-500">{description}</p>
-                </div>
-              </div>
-              {loading ? (
-                <div className="p-8 text-center">
-                  <div className="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600 mx-auto mb-3" />
-                  <p className="text-gray-500 text-sm">Loading…</p>
-                </div>
-              ) : list.length === 0 ? (
-                <div className="p-8 text-center text-gray-500">
-                  <p className="font-medium text-gray-700">{emptyMsg}</p>
-                  <p className="mt-1 text-sm">
-                    Add schools or firms in <Link href="/admin/institutions" className="text-indigo-600 hover:underline">Manage institutions</Link> to see stats for everyone in each one.
-                  </p>
-                  <Link href="/admin/institutions" className="mt-4 inline-flex items-center gap-1 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 text-sm font-medium">
-                    Add one
-                    <ChevronRight className="w-4 h-4" />
-                  </Link>
-                </div>
-              ) : (
-                <>
-                  <p className="px-6 py-2 text-sm text-gray-500 border-b border-gray-100">
-                    Click an institution or firm to see stats for everyone in it (name, email, role, studios).
-                  </p>
-                  <ul className="divide-y divide-gray-200">
-                    {list.map((inst) => (
-                      <li key={inst.id}>
-                        <Link
-                          href={`/admin/institutions/${inst.slug}`}
-                          className="flex items-center justify-between gap-4 px-6 py-4 hover:bg-indigo-50/50 transition-colors group"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="font-medium text-gray-900 truncate group-hover:text-indigo-700">{inst.name}</p>
-                            <p className="text-sm text-gray-500">
-                              {inst.slug}
-                              {inst.network_label ? ` · ${inst.network_label}` : ''}
-                              {inst.allowed_email_domains ? ` · ${inst.allowed_email_domains}` : ''}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-3 shrink-0">
-                            <span className="text-sm text-gray-500 whitespace-nowrap">
-                              {inst.workspace_count} workspace{inst.workspace_count !== 1 ? 's' : ''}
-                            </span>
-                            <span className="inline-flex items-center gap-1 text-sm text-indigo-600 font-medium">
-                              View stats
-                              <ChevronRight className="w-4 h-4" />
-                            </span>
-                            <a
-                              href={`/i/${inst.slug}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 p-1 rounded"
-                              title="Open explore in new tab"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </a>
-                          </div>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </div>
-          )
-          return (
-            <>
-              {renderList(
-                institutionsList,
-                'Institutions',
-                'Schools and universities on PinSpace.',
-                <Building2 className="w-5 h-5 text-indigo-600" />,
-                'No institutions yet.'
-              )}
-              {renderList(
-                firmsList,
-                'Firms',
-                'Architecture and design firms on PinSpace.',
-                <Briefcase className="w-5 h-5 text-indigo-600" />,
-                'No firms yet.'
-              )}
-            </>
-          )
-        })()}
+        {/* Orgs */}
+        {renderOrgSection(
+          institutionsList,
+          'Institutions',
+          'Schools and universities — click a row to expand studio rooms.',
+          <Building2 className="w-4 h-4 text-indigo-600" />,
+          'No institutions yet.'
+        )}
+        {renderOrgSection(
+          firmsList,
+          'Firms',
+          'Architecture and design firms.',
+          <Briefcase className="w-4 h-4 text-amber-500" />,
+          'No firms yet.'
+        )}
 
-        <p className="mt-4 text-sm text-gray-500">
-          Use <strong>Manage institutions</strong> to add schools or firms. Each gets a link like <code className="bg-gray-100 px-1 rounded">/i/[slug]</code>.
+        <p className="text-xs text-gray-400 text-center mt-2">
+          User counts reflect profiles with <code>institution_id</code> set. Studio counts are workspaces linked to this org.
         </p>
       </div>
+
+      {editingInst && (
+        <EditOrgModal
+          inst={editingInst}
+          onClose={() => setEditingInst(null)}
+          onSaved={() => { setEditingInst(null); loadData() }}
+        />
+      )}
     </div>
   )
 }

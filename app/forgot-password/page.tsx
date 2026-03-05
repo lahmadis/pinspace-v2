@@ -57,7 +57,7 @@ function ForgotPasswordInner() {
     }
     setSubmitting(true)
     const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/`,
+      redirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/reset-password`,
     })
     setSubmitting(false)
     if (err) {
