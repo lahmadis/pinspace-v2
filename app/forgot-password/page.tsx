@@ -1,27 +1,12 @@
 'use client'
 
 import { Suspense, useEffect, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
-import type { Institution } from '@/types'
-
-function getAllowedDomains(domainsStr: string | null | undefined): string[] {
-  if (!domainsStr || !domainsStr.trim()) return []
-  return domainsStr.split(',').map((d) => d.trim().toLowerCase()).filter(Boolean)
-}
-
-function emailDomainAllowed(email: string, allowedDomains: string[]): boolean {
-  if (allowedDomains.length === 0) return true
-  if (!email.includes('@')) return false
-  const domain = email.split('@')[1]?.trim().toLowerCase()
-  return domain ? allowedDomains.includes(domain) : false
-}
 
 function ForgotPasswordInner() {
-  const router = useRouter()
   const searchParams = useSearchParams()
-  const [institution, setInstitution] = useState<Institution | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [sent, setSent] = useState(false)
@@ -32,13 +17,7 @@ function ForgotPasswordInner() {
 
   useEffect(() => {
     if (institutionSlug) sessionStorage.setItem('pinspace_institution', institutionSlug)
-    fetch('/api/institutions', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((data: Institution[]) => {
-        const inst = (Array.isArray(data) ? data : []).find((i) => i.slug === (institutionSlug || ''))
-        setInstitution(inst || null)
-      })
-      .finally(() => setLoading(false))
+    setLoading(false)
   }, [institutionSlug])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,13 +26,6 @@ function ForgotPasswordInner() {
     if (!email.trim()) {
       setError('Please enter your email')
       return
-    }
-    if (institution?.allowed_email_domains) {
-      const allowed = getAllowedDomains(institution.allowed_email_domains)
-      if (allowed.length > 0 && !emailDomainAllowed(email.trim(), allowed)) {
-        setError(`Please use a ${institution.name} email`)
-        return
-      }
     }
     setSubmitting(true)
     const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {

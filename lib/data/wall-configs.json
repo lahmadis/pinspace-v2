@@ -649,5 +649,26 @@
         "rotationY": 0
       }
     ]
+  },
+  "dc305935-214a-44e8-989a-ce82729be289": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      }
+    ],
+    "layoutType": "zigzag"
   }
 }
