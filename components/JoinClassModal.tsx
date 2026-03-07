@@ -13,10 +13,29 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
   const [inviteCode, setInviteCode] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const normalizeInviteInput = (raw: string): string => {
+    const trimmed = raw.trim()
+    if (!trimmed) return ''
+    try {
+      if (/^https?:\/\//i.test(trimmed)) {
+        const url = new URL(trimmed)
+        const parts = url.pathname.split('/').filter(Boolean)
+        const joinIdx = parts.findIndex((p) => p.toLowerCase() === 'join')
+        if (joinIdx >= 0 && parts[joinIdx + 1]) {
+          return decodeURIComponent(parts[joinIdx + 1]).trim().toUpperCase()
+        }
+      }
+    } catch {
+      // Fall through to plain code handling.
+    }
+    return decodeURIComponent(trimmed).toUpperCase()
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    if (!inviteCode.trim()) {
+
+    const normalizedCode = normalizeInviteInput(inviteCode)
+    if (!normalizedCode) {
       toast.error('Please enter an invite code')
       return
     }
@@ -25,7 +44,7 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
       setLoading(true)
 
       // Check if code is valid
-      const response = await fetch(`/api/workspaces/by-invite/${inviteCode.trim()}`)
+      const response = await fetch(`/api/workspaces/by-invite/${encodeURIComponent(normalizedCode)}`)
       
       if (!response.ok) {
         toast.error('Invalid invite code')
@@ -33,7 +52,7 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
       }
 
       // Redirect to join page
-      router.push(`/join/${inviteCode.trim()}`)
+      router.push(`/join/${encodeURIComponent(normalizedCode)}`)
     } catch (error) {
       console.error('Error:', error)
       toast.error('Failed to validate invite code')
@@ -77,14 +96,13 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
                 type="text"
                 id="inviteCode"
                 value={inviteCode}
-                onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                onChange={(e) => setInviteCode(e.target.value)}
                 placeholder="ABC12345"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4444ff] focus:border-transparent text-center text-xl font-mono font-bold tracking-wider"
-                maxLength={8}
                 autoFocus
               />
               <p className="mt-2 text-sm text-gray-500">
-                Enter the 8-character code shared by your instructor
+                Enter the 8-character code or paste the full invite link
               </p>
             </div>
 

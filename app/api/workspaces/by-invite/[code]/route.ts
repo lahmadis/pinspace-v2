@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/server'
 
+function extractInviteCode(input: string): string {
+  const trimmed = input.trim()
+  if (!trimmed) return ''
+  try {
+    if (/^https?:\/\//i.test(trimmed)) {
+      const url = new URL(trimmed)
+      const parts = url.pathname.split('/').filter(Boolean)
+      const joinIdx = parts.findIndex((p) => p.toLowerCase() === 'join')
+      if (joinIdx >= 0 && parts[joinIdx + 1]) {
+        return decodeURIComponent(parts[joinIdx + 1]).trim().toUpperCase()
+      }
+    }
+  } catch {
+    // Fall through to plain-code parsing.
+  }
+  return decodeURIComponent(trimmed).trim().toUpperCase()
+}
+
 // GET workspace by invite code (public endpoint for join page)
 // Uses service role to bypass RLS since this is a public lookup
 export async function GET(
@@ -9,14 +27,32 @@ export async function GET(
 ) {
   try {
     const supabase = supabaseServiceRole()
-    const inviteCode = params.code.toUpperCase().trim()
+    const inviteCode = extractInviteCode(params.code || '')
+    if (!inviteCode) {
+      return NextResponse.json({ error: 'Invalid invite code' }, { status: 404 })
+    }
 
     // Fetch workspace by invite code (include institution for sign-in context)
-    const { data: workspace, error } = await supabase
+    let { data: workspace, error } = await supabase
       .from('workspaces')
       .select('id, name, invite_code, institution_id')
       .eq('invite_code', inviteCode)
-      .single()
+      .maybeSingle()
+
+    // Backward compatibility: older workspaces may not have invite_code persisted.
+    // Accept the same 8-char fallback shown in settings (workspace ID prefix).
+    if (!workspace && inviteCode.length === 8) {
+      const prefix = inviteCode.toLowerCase()
+      const { data: fallbackRows, error: fallbackError } = await supabase
+        .from('workspaces')
+        .select('id, name, invite_code, institution_id')
+        .ilike('id', `${prefix}%`)
+        .limit(1)
+      if (!fallbackError && fallbackRows && fallbackRows.length > 0) {
+        workspace = fallbackRows[0]
+        error = null
+      }
+    }
 
     if (error || !workspace) {
       console.error('Error finding workspace by invite code:', error)

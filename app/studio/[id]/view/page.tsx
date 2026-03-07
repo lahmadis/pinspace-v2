@@ -187,7 +187,6 @@ export default function StudioViewPage() {
       setWallConfig(cached.wallConfig as WallConfig)
       setLoading(false)
       setError(null)
-      return
     }
 
     let cancelled = false
@@ -273,7 +272,6 @@ export default function StudioViewPage() {
       setBoards(cached.boards)
       setLoading(false)
       setError(null)
-      return
     }
     fetchBoards()
   }, [studioId, isDemo])

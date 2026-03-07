@@ -70,6 +70,42 @@ export default function StudioPage() {
 
   const isDemo = searchParams?.get('demo') === 'true'
 
+  const cacheWallConfigLocally = (config: WallConfig) => {
+    const savedConfigKey = `studio-${studioId}-wall-config`
+    const rawTables = (config as { tables?: Array<{ modelUrl?: string }> }).tables
+    const compactConfig =
+      Array.isArray(rawTables)
+        ? {
+            ...config,
+            tables: rawTables.map((t) => ({
+              ...t,
+              modelUrl:
+                typeof t.modelUrl === 'string' &&
+                (t.modelUrl.startsWith('data:') || t.modelUrl.startsWith('blob:'))
+                  ? undefined
+                  : t.modelUrl,
+            })),
+          }
+        : config
+
+    try {
+      localStorage.setItem(savedConfigKey, JSON.stringify(compactConfig))
+    } catch (error) {
+      console.warn('Wall config local cache skipped (quota/full storage)', error)
+      try {
+        localStorage.setItem(
+          savedConfigKey,
+          JSON.stringify({
+            layoutType: config.layoutType,
+            walls: config.walls,
+          })
+        )
+      } catch {
+        // Local fallback is optional; API remains source of truth.
+      }
+    }
+  }
+
   const persistWallConfig = async (config: WallConfig) => {
     try {
       await fetch(`/api/studios/${studioId}/wall-config`, {
@@ -77,8 +113,7 @@ export default function StudioPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       })
-      const savedConfigKey = `studio-${studioId}-wall-config`
-      localStorage.setItem(savedConfigKey, JSON.stringify(config))
+      cacheWallConfigLocally(config)
     } catch (e) {
       console.error('Failed to save wall config', e)
     }
@@ -144,8 +179,7 @@ export default function StudioPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       })
-      const savedConfigKey = `studio-${studioId}-wall-config`
-      localStorage.setItem(savedConfigKey, JSON.stringify(config))
+      cacheWallConfigLocally(config)
     } catch (error) {
       console.error('Failed to save wall config', error)
     }

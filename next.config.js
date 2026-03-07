@@ -2,7 +2,8 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['three'],
-  // distDir defaults to '.next' - Vercel expects this default
+  // Use a custom build directory to avoid intermittent OneDrive locks on .next/trace.
+  distDir: '.next-local',
   eslint: {
     // Disable ESLint during builds to allow deployment
     // Fix linting errors in development

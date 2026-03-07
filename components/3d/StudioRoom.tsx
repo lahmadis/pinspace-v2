@@ -512,19 +512,59 @@ export default function StudioRoom(props: StudioRoomProps) {
     const tablesToSave = tables.map((t) => {
       const url = t.modelUrl ?? ''
       const isBlob = url.startsWith('blob:')
-      const isPersistable = !isBlob && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/') && !url.startsWith('//') || url.startsWith('data:'))
+      const isPersistable =
+        !isBlob &&
+        (url.startsWith('http://') ||
+          url.startsWith('https://') ||
+          (url.startsWith('/') && !url.startsWith('//')))
       return { ...t, modelUrl: isPersistable ? url : undefined }
     })
     const payload = { ...props.wallConfig, tables: tablesToSave }
     const savedConfigKey = `studio-${props.studioId}-wall-config`
-    const saved = localStorage.getItem(savedConfigKey)
-    const parsed = saved ? JSON.parse(saved) : {}
-    localStorage.setItem(savedConfigKey, JSON.stringify({ ...parsed, ...props.wallConfig, tables: tablesToSave }))
-    fetch(`/api/studios/${props.studioId}/wall-config`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }).catch((e) => console.error('Failed to save floor/wall config', e))
+    try {
+      // Keep local fallback compact and avoid huge transient model payloads.
+      localStorage.setItem(savedConfigKey, JSON.stringify(payload))
+    } catch (error) {
+      console.warn('Wall config local cache skipped (quota/full storage)', error)
+      try {
+        localStorage.setItem(
+          savedConfigKey,
+          JSON.stringify({
+            layoutType: props.wallConfig.layoutType,
+            walls: props.wallConfig.walls,
+          })
+        )
+      } catch {
+        // Local cache is best-effort only; API save remains source of truth.
+      }
+    }
+    const savePayload = JSON.stringify(payload)
+    const saveOnce = async () => {
+      const res = await fetch(`/api/studios/${props.studioId}/wall-config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: savePayload,
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({} as { error?: string }))
+        throw new Error(data.error || `HTTP ${res.status}`)
+      }
+    }
+
+    ;(async () => {
+      try {
+        await saveOnce()
+      } catch (firstError) {
+        try {
+          await saveOnce()
+        } catch (secondError) {
+          console.error('Failed to save floor/wall config', { firstError, secondError })
+          const message = secondError instanceof Error ? secondError.message : 'Please try again.'
+          toast.error(`Could not save studio model layout. ${message}`)
+        }
+      }
+    })()
   }, [props.studioId, props.wallConfig, tables])
 
   // Keep placedBoards3D in sync with boardPositions (e.g. after undo/redo)
@@ -1248,6 +1288,7 @@ export default function StudioRoom(props: StudioRoomProps) {
 
       {floorEditorOpen && (
         <FloorEditorOverlay
+          studioId={props.studioId}
           wallConfig={props.wallConfig}
           tables={tables}
           setTables={setTables}

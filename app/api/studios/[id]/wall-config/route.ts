@@ -17,12 +17,8 @@ function readConfigs(): Record<string, any> {
   }
 }
 
-function writeConfigs(configs: Record<string, any>) {
-  try {
-    writeFileSync(DATA_PATH, JSON.stringify(configs, null, 2), 'utf-8')
-  } catch (err) {
-    console.error('Failed to write wall configs:', err)
-  }
+function writeConfigs(configs: Record<string, any>): void {
+  writeFileSync(DATA_PATH, JSON.stringify(configs, null, 2), 'utf-8')
 }
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {

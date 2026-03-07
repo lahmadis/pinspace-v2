@@ -12,6 +12,7 @@ const DEFAULT_TABLE_WIDTH = 24
 const DEFAULT_TABLE_DEPTH = 18
 
 interface FloorEditorOverlayProps {
+  studioId: string
   wallConfig: WallConfig
   tables: FloorTable[]
   setTables: (tables: FloorTable[] | ((prev: FloorTable[]) => FloorTable[])) => void
@@ -60,6 +61,7 @@ function screenToWorld(
 }
 
 export default function FloorEditorOverlay({
+  studioId,
   wallConfig,
   tables,
   setTables,
@@ -68,6 +70,7 @@ export default function FloorEditorOverlay({
   onWallConfigChange,
 }: FloorEditorOverlayProps) {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
+  const [uploadingTableId, setUploadingTableId] = useState<string | null>(null)
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null)
   const [dragStart, setDragStart] = useState<{ x: number; z: number; startPx: number; startPy: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -195,27 +198,47 @@ export default function FloorEditorOverlay({
   )
 
   const handleTableFileChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
-      if (!file || !selectedTableId) return
+      const tableId = selectedTableId
+      if (!file || !tableId) return
+
       const isGlb = file.name.toLowerCase().endsWith('.glb') || file.name.toLowerCase().endsWith('.gltf')
       if (!isGlb) {
         toast.error('Please select a .glb or .gltf file.')
+        e.target.value = ''
         return
       }
-      // Use data URL instead of blob URL so the URL stays valid when opening the model viewer
-      // (blob URLs can fail with "Failed to fetch" in GLTFLoader)
-      const reader = new FileReader()
-      reader.onload = () => {
-        const dataUrl = reader.result as string
+
+      try {
+        setUploadingTableId(tableId)
+        const formData = new FormData()
+        formData.append('model', file)
+        formData.append('studioId', studioId)
+
+        const response = await fetch('/api/upload-model', {
+          method: 'POST',
+          body: formData,
+        })
+        const data = await response.json().catch(() => ({} as { error?: string; url?: string }))
+        if (!response.ok || !data.url) {
+          throw new Error(data.error || `Upload failed (${response.status})`)
+        }
+
         setTables((prev) =>
-          prev.map((t) => (t.id === selectedTableId ? { ...t, modelUrl: dataUrl } : t))
+          prev.map((t) => (t.id === tableId ? { ...t, modelUrl: data.url } : t))
         )
+        toast.success('3D model uploaded')
+      } catch (error) {
+        console.error('Model upload failed:', error)
+        const message = error instanceof Error ? error.message : 'Please try again.'
+        toast.error(`Could not upload model. ${message}`)
+      } finally {
+        setUploadingTableId(null)
+        e.target.value = ''
       }
-      reader.readAsDataURL(file)
-      e.target.value = ''
     },
-    [selectedTableId, setTables]
+    [selectedTableId, setTables, studioId]
   )
 
   const handlePointerDownOnTable = useCallback(
@@ -708,10 +731,11 @@ export default function FloorEditorOverlay({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingTableId === selectedTableId}
                 className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg text-sm font-medium text-gray-700 transition-colors"
               >
                 <Upload className="w-4 h-4" />
-                Add model
+                {uploadingTableId === selectedTableId ? 'Uploading...' : 'Add model'}
               </button>
               <button
                 type="button"
