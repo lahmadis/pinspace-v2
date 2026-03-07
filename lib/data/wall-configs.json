@@ -651,6 +651,7 @@
     ]
   },
   "dc305935-214a-44e8-989a-ce82729be289": {
+    "layoutType": "zigzag",
     "walls": [
       {
         "height": 10,
@@ -669,6 +670,43 @@
         "width": 8
       }
     ],
-    "layoutType": "zigzag"
+    "tables": [
+      {
+        "id": "table-1772857788525",
+        "x": -49.82903225806452,
+        "z": -73.70357142857141,
+        "width": 24,
+        "depth": 18,
+        "rotation": 0,
+        "modelUrl": "https://ppmxccxtogucadiehmug.supabase.co/storage/v1/object/public/board-images/0ab595c6-f981-4832-99f7-3880b5e990b0/models/1772858353339-n1ilnf-wonne-model.glb"
+      },
+      {
+        "id": "table-1772857987462",
+        "x": 43.07419354838711,
+        "z": 17.01071428571429,
+        "width": 24,
+        "depth": 18,
+        "rotation": 0,
+        "modelUrl": "https://ppmxccxtogucadiehmug.supabase.co/storage/v1/object/public/board-images/0ab595c6-f981-4832-99f7-3880b5e990b0/models/1772858421211-8fyzcc-kvg-model.glb"
+      },
+      {
+        "id": "table-1772858026456",
+        "x": 80.85483870967747,
+        "z": 49.66785714285714,
+        "width": 24,
+        "depth": 18,
+        "rotation": 4.71238898038469,
+        "modelUrl": "https://ppmxccxtogucadiehmug.supabase.co/storage/v1/object/public/board-images/0ab595c6-f981-4832-99f7-3880b5e990b0/models/1772858390527-de364m-thomas-models.glb"
+      },
+      {
+        "id": "table-1772858445420",
+        "x": -13.596774193548395,
+        "z": -37.41785714285715,
+        "width": 24,
+        "depth": 18,
+        "rotation": 1.5707963267948966,
+        "modelUrl": "https://ppmxccxtogucadiehmug.supabase.co/storage/v1/object/public/board-images/0ab595c6-f981-4832-99f7-3880b5e990b0/models/1772864476143-rlhxv5-camilo-model.glb"
+      }
+    ]
   }
 }
