@@ -1,0 +1,8 @@
+.git
+node_modules
+.next
+.next-local
+.next-build
+.cursor
+agent-transcripts
+terminals

@@ -1,9 +1,12 @@
 /** @type {import('next').NextConfig} */
+const isVercelBuild = process.env.VERCEL === '1' || process.env.VERCEL === 'true'
+
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['three'],
-  // Use a custom build directory to avoid intermittent OneDrive locks on .next/trace.
-  distDir: '.next-local',
+  // Use a custom build directory locally to avoid intermittent OneDrive locks on .next/trace.
+  // Keep Vercel on the default output directory (.next).
+  distDir: isVercelBuild ? '.next' : '.next-local',
   eslint: {
     // Disable ESLint during builds to allow deployment
     // Fix linting errors in development
