@@ -176,7 +176,7 @@ export default function JoinWorkspacePage() {
                   Joining...
                 </span>
               ) : (
-                'Join as Student'
+                'Join'
               )}
             </button>
 

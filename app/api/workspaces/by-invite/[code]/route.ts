@@ -43,14 +43,36 @@ export async function GET(
     // Accept the same 8-char fallback shown in settings (workspace ID prefix).
     if (!workspace && inviteCode.length === 8) {
       const prefix = inviteCode.toLowerCase()
-      const { data: fallbackRows, error: fallbackError } = await supabase
-        .from('workspaces')
-        .select('id, name, invite_code, institution_id')
-        .ilike('id', `${prefix}%`)
-        .limit(1)
-      if (!fallbackError && fallbackRows && fallbackRows.length > 0) {
-        workspace = fallbackRows[0]
-        error = null
+      const isHexPrefix = /^[0-9a-f]{8}$/i.test(prefix)
+
+      if (isHexPrefix) {
+        // UUID-safe prefix lookup (works when id column type is uuid).
+        const lowerUuid = `${prefix}-0000-0000-0000-000000000000`
+        const upperUuid = `${prefix}-ffff-ffff-ffff-ffffffffffff`
+        const { data: uuidRows, error: uuidError } = await supabase
+          .from('workspaces')
+          .select('id, name, invite_code, institution_id')
+          .gte('id', lowerUuid)
+          .lte('id', upperUuid)
+          .limit(1)
+
+        if (!uuidError && uuidRows && uuidRows.length > 0) {
+          workspace = uuidRows[0]
+          error = null
+        }
+      }
+
+      // Fallback for non-UUID id columns/environments.
+      if (!workspace) {
+        const { data: fallbackRows, error: fallbackError } = await supabase
+          .from('workspaces')
+          .select('id, name, invite_code, institution_id')
+          .ilike('id', `${prefix}%`)
+          .limit(1)
+        if (!fallbackError && fallbackRows && fallbackRows.length > 0) {
+          workspace = fallbackRows[0]
+          error = null
+        }
       }
     }
 

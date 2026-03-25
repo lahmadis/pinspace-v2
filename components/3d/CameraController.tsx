@@ -34,7 +34,10 @@ export function CameraController({
   const { camera } = useThree()
   const SWOOSH_DURATION_SECONDS = 0.95
   const MAX_SWOOSH_STEP_SECONDS = 1 / 45
-  const EDIT_VIEW_DISTANCE_INCHES = 400
+  // Keep edit view close enough to comfortably place boards.
+  // Scale with wall width so large walls still frame well.
+  const MIN_EDIT_VIEW_DISTANCE_INCHES = 140
+  const MAX_EDIT_VIEW_DISTANCE_INCHES = 240
   
   // Store the camera position before entering edit mode (so we can return to it)
   const savedCameraPosition = useRef<THREE.Vector3 | null>(null)
@@ -134,7 +137,12 @@ export function CameraController({
       }
       pendingAnimation.current = false
 
-      const distance = EDIT_VIEW_DISTANCE_INCHES
+      const wallWidthInches = (wallDimensions?.width ?? 8) * 12
+      const distance = THREE.MathUtils.clamp(
+        wallWidthInches * 1.35,
+        MIN_EDIT_VIEW_DISTANCE_INCHES,
+        MAX_EDIT_VIEW_DISTANCE_INCHES
+      )
       const wallForward = new THREE.Vector3(
         Math.sin(wallRotation),
         0,

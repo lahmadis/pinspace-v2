@@ -1,6 +1,7 @@
 .git
 node_modules
 .next
+.next-dev
 .next-local
 .next-build
 .cursor

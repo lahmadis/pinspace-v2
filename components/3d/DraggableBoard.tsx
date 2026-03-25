@@ -332,7 +332,9 @@ if (e.intersections && e.intersections.length > 0) {
       Math.abs(localOffsetY) > boardHeight / 2 - cornerMargin
     if (inCorner) {
       const cornerIndex = localOffsetY > 0 ? (renderLocalOffsetX > 0 ? 0 : 1) : (renderLocalOffsetX > 0 ? 3 : 2)
-      handleCornerPointerDown(e, cornerIndex)
+      const resizeCursor =
+        (renderLocalOffsetX > 0) === (localOffsetY > 0) ? 'nwse-resize' : 'nesw-resize'
+      handleCornerPointerDown(e, cornerIndex, resizeCursor)
       return
     }
   }
@@ -483,7 +485,11 @@ if (e.intersections && e.intersections.length > 0) {
     return { x: offset.dot(wallRight), y: offset.dot(wallUp) }
   }, [wallPosition, coordRotation])
 
-  const handleCornerPointerDown = useCallback((e: ThreeEvent<PointerEvent>, cornerIndex: number) => {
+  const handleCornerPointerDown = useCallback((
+    e: ThreeEvent<PointerEvent>,
+    cornerIndex: number,
+    resizeCursor: 'nwse-resize' | 'nesw-resize'
+  ) => {
     e.stopPropagation()
     if (isLocked) return
     const ptr = getPointerOnWallPlane(e.clientX, e.clientY)
@@ -510,7 +516,8 @@ if (e.intersections && e.intersections.length > 0) {
     const MAX_SIZE = 1
     resizeStartRef.current = { anchorX: anchor.x, anchorY: anchor.y, initialCornerX: initialCorner.x, initialCornerY: initialCorner.y, initialWidth: w, initialHeight: h }
     setIsResizing(true)
-    gl.domElement.style.cursor = cornerIndex % 2 === 0 ? 'nwse-resize' : 'nesw-resize'
+    // Keep click/drag cursor exactly aligned with hover computation for this corner.
+    gl.domElement.style.cursor = resizeCursor
     const onMove = (ev: PointerEvent) => {
       const p = getPointerOnWallPlane(ev.clientX, ev.clientY)
       if (!p || !resizeStartRef.current) return
@@ -522,11 +529,15 @@ if (e.intersections && e.intersections.length > 0) {
       const dirX = (initialCorner.x - ax) / initialDiagonal
       const dirY = (initialCorner.y - ay) / initialDiagonal
       const projectedLength = dx * dirX + dy * dirY
-      const scale = Math.max(0.01, projectedLength / initialDiagonal)
-      let newW = resizeStartRef.current.initialWidth * scale
-      let newH = resizeStartRef.current.initialHeight * scale
-      newW = THREE.MathUtils.clamp(newW, MIN_SIZE, MAX_SIZE)
-      newH = THREE.MathUtils.clamp(newH, MIN_SIZE, MAX_SIZE)
+      const rawScale = Math.max(0.01, projectedLength / initialDiagonal)
+      const initialW = resizeStartRef.current.initialWidth
+      const initialH = resizeStartRef.current.initialHeight
+      // Clamp scale (not width/height independently) so aspect ratio stays locked.
+      const minScale = Math.max(MIN_SIZE / initialW, MIN_SIZE / initialH)
+      const maxScale = Math.min(MAX_SIZE / initialW, MAX_SIZE / initialH)
+      const scale = THREE.MathUtils.clamp(rawScale, minScale, maxScale)
+      const newW = initialW * scale
+      const newH = initialH * scale
       const newCornerX = ax + dirX * initialDiagonal * scale
       const newCornerY = ay + dirY * initialDiagonal * scale
       const newCenterX = (ax + newCornerX) / 2
@@ -618,10 +629,13 @@ if (e.intersections && e.intersections.length > 0) {
               Math.abs(renderLocalX) > boardWidth / 2 - cornerMargin &&
               Math.abs(localY) > boardHeight / 2 - cornerMargin
             if (isSelected && canEdit && nearCorner) {
-              // Use different diagonal cursors so left/right corners feel correct
-              // Right-side corners → ↘↖ (nwse-resize), left-side corners → ↙↗ (nesw-resize)
+              // Use different diagonal cursors so each corner matches expected direction.
+              // Right-side corners (TR/BR): TR uses ↗↙ (nesw), BR uses ↖↘ (nwse)
+              // Left-side corners (TL/BL): TL uses ↖↘ (nwse), BL uses ↗↙ (nesw)
               const isRightSide = renderLocalX > 0
-              gl.domElement.style.cursor = isRightSide ? 'nwse-resize' : 'nesw-resize'
+              const isTopSide = localY > 0
+              // nwse when x/y have same sign (TL or BR), nesw when signs differ (TR or BL)
+              gl.domElement.style.cursor = isRightSide === isTopSide ? 'nwse-resize' : 'nesw-resize'
             } else if (!isDragging) {
               gl.domElement.style.cursor = isLocked ? 'not-allowed' : 'grab'
             }

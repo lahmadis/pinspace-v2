@@ -707,6 +707,103 @@
         "rotation": 1.5707963267948966,
         "modelUrl": "https://ppmxccxtogucadiehmug.supabase.co/storage/v1/object/public/board-images/0ab595c6-f981-4832-99f7-3880b5e990b0/models/1772864476143-rlhxv5-camilo-model.glb"
       }
+    ],
+    "customTransforms": [
+      {
+        "x": -46.5,
+        "z": -93,
+        "rotationY": 0
+      },
+      {
+        "x": 1.5,
+        "z": -46.5,
+        "rotationY": 1.5707963267948966
+      },
+      {
+        "x": 48,
+        "z": 0,
+        "rotationY": 0
+      },
+      {
+        "x": 94.5,
+        "z": 46.5,
+        "rotationY": 1.5707963267948966
+      }
+    ]
+  },
+  "794b9e64-fea6-4581-a496-a50b176ce4ae": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      }
+    ],
+    "layoutType": "zigzag"
+  },
+  "1d994a34-965b-4b7e-8437-56bf0ba40d76": {
+    "walls": [
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      },
+      {
+        "height": 10,
+        "width": 8
+      }
+    ],
+    "layoutType": "zigzag",
+    "customTransforms": [
+      {
+        "x": -46.5,
+        "z": -93,
+        "rotationY": 0
+      },
+      {
+        "x": 1.5,
+        "z": -46.5,
+        "rotationY": 1.5707963267948966
+      },
+      {
+        "x": 48.916498953894916,
+        "z": -1.8142857142857085,
+        "rotationY": 0
+      },
+      {
+        "x": 94.5,
+        "z": 46.5,
+        "rotationY": 1.5707963267948966
+      }
+    ],
+    "tables": [
+      {
+        "id": "table-1773360179213",
+        "x": -49.82903225806451,
+        "z": -66.90000000000003,
+        "width": 24,
+        "depth": 18,
+        "rotation": 0,
+        "modelUrl": "https://ppmxccxtogucadiehmug.supabase.co/storage/v1/object/public/board-images/0ab595c6-f981-4832-99f7-3880b5e990b0/models/1773360194780-gtvtgv-wonne-model.glb"
+      }
     ]
   }
 }

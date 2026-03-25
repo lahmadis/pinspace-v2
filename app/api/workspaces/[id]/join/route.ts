@@ -84,12 +84,20 @@ export async function POST(
     }
 
     // Check if already a member (use admin so we can read before membership exists)
-    const { data: existingMember } = await admin
+    const { data: existingMember, error: existingMemberError } = await admin
       .from('workspace_members')
       .select('*')
       .eq('workspace_id', workspaceId)
       .eq('user_id', userId)
-      .single()
+      .maybeSingle()
+
+    if (existingMemberError) {
+      console.error('Error checking existing membership:', existingMemberError)
+      return NextResponse.json(
+        { error: 'Failed to verify membership', details: existingMemberError.message || existingMemberError },
+        { status: 500 }
+      )
+    }
 
     if (existingMember) {
       return NextResponse.json({
@@ -102,18 +110,34 @@ export async function POST(
       })
     }
 
-    // Add user as student member (use admin so insert succeeds after domain check)
-    const { data: newMember, error: insertError } = await admin
+    // Add user as student member (support schema variants with/without "name" column).
+    let insertPayload: Record<string, unknown> = {
+      workspace_id: workspaceId,
+      user_id: userId,
+      role: 'student',
+    }
+    if (userName) insertPayload.name = userName
+
+    let { data: newMember, error: insertError } = await admin
       .from('workspace_members')
-      .insert({
-        workspace_id: workspaceId,
-        user_id: userId,
-        name: userName,
-        role: 'student',
-        joined_at: new Date().toISOString(),
-      })
+      .insert(insertPayload)
       .select()
       .single()
+
+    if (insertError && String(insertError.message || '').includes("'name' column")) {
+      const fallbackPayload = {
+        workspace_id: workspaceId,
+        user_id: userId,
+        role: 'student',
+      }
+      const retry = await admin
+        .from('workspace_members')
+        .insert(fallbackPayload)
+        .select()
+        .single()
+      newMember = retry.data
+      insertError = retry.error
+    }
 
     if (insertError) {
       console.error('Error adding member to workspace:', insertError)
