@@ -78,9 +78,10 @@ function SignInInner() {
     if (institutionSlug) sessionStorage.setItem('pinspace_institution', institutionSlug)
     fetch('/api/institutions', { cache: 'no-store' })
       .then((r) => r.json())
-      .then((data: Institution[]) => {
-        setInstitutions(Array.isArray(data) ? data : [])
-        const inst = (Array.isArray(data) ? data : []).find((i) => i.slug === (institutionSlug || ''))
+      .then((data: { institutions: Institution[] }) => {
+        const list = data?.institutions || []
+        setInstitutions(list)
+        const inst = list.find((i) => i.slug === (institutionSlug || ''))
         setInstitution(inst || null)
       })
       .catch(() => setInstitutions([]))

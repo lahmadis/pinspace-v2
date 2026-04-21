@@ -5,18 +5,21 @@ import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
+import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import GalleryAvatarModal, { AvatarFormValues } from '@/components/GalleryAvatarModal'
 import DemoBanner from '@/components/DemoBanner'
 import { isDemoMode } from '@/lib/demoMode'
+import InstitutionCard, { Institution } from '@/components/InstitutionCard'
 
 function HomeInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [showGalleryModal, setShowGalleryModal] = useState(false)
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [institutionSlug, setInstitutionSlug] = useState<string | null>(null)
+  const [institutions, setInstitutions] = useState<Institution[]>([])
+  const [institutionsLoading, setInstitutionsLoading] = useState(true)
 
   const isDemo = isDemoMode(searchParams)
   const institutionFromUrl = searchParams?.get('institution') ?? null
@@ -44,6 +47,14 @@ function HomeInner() {
     return () => subscription.unsubscribe()
   }, [])
 
+  useEffect(() => {
+    fetch('/api/institutions')
+      .then((r) => r.json())
+      .then((data) => setInstitutions(data.institutions || []))
+      .catch(() => {})
+      .finally(() => setInstitutionsLoading(false))
+  }, [])
+
   const handleEnterGallery = (values: AvatarFormValues) => {
     const params = new URLSearchParams({
       color: values.color,
@@ -60,7 +71,7 @@ function HomeInner() {
   }
 
   const content = (
-    <div className="min-h-screen bg-background relative overflow-hidden">
+    <div className="min-h-screen bg-background relative overflow-x-hidden">
       <DemoBanner />
       {/* Auth buttons in top-right */}
       <div className="absolute top-6 right-6 z-20 flex items-center gap-3">
@@ -149,26 +160,34 @@ function HomeInner() {
           </motion.p>
 
           {/* CTA Buttons */}
-          <motion.div 
+          <motion.div
             className="flex flex-col sm:flex-row gap-4 justify-center items-center"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.8 }}
           >
-            <Link href={isDemo ? '/explore?demo=true' : institutionSlug ? `/explore?institution=${institutionSlug}` : '/explore'}>
-              <button className="group relative px-8 py-4 bg-primary hover:bg-primary-light text-white rounded-lg font-medium transition-all duration-300 hover:scale-105 hover:shadow-lg min-w-[200px]">
-                <span className="relative z-10">Enter the Network</span>
-              </button>
-            </Link>
-
-            {/* Gallery button hidden for demo video - functionality preserved below */}
-            {/* <button
-              onClick={() => setShowGalleryModal(true)}
-              className="px-8 py-4 bg-white/80 border border-primary/40 text-primary-dark hover:bg-primary hover:text-white rounded-lg font-medium transition-all duration-300 hover:scale-105 min-w-[200px] shadow-md"
+            <a
+              href="#institutions"
+              className="group relative px-8 py-4 bg-primary hover:bg-primary-light text-white rounded-lg font-medium transition-all duration-300 hover:scale-105 hover:shadow-lg min-w-[200px] text-center"
+              onClick={(e) => {
+                e.preventDefault()
+                document.getElementById('institutions')?.scrollIntoView({ behavior: 'smooth' })
+              }}
             >
-              Enter Gallery
-            </button> */}
+              Browse Institutions ↓
+            </a>
           </motion.div>
+          <motion.p
+            className="mt-4 text-sm text-text-muted"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.8, delay: 1 }}
+          >
+            or{' '}
+            <Link href="/sign-up" className="text-primary hover:underline">
+              create a free personal account →
+            </Link>
+          </motion.p>
 
           {/* Feature Pills */}
           <motion.div 
@@ -177,7 +196,7 @@ function HomeInner() {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.8, delay: 1 }}
           >
-            {['3D Studio Rooms', 'Interactive Network', 'Live Critiques', 'Spatial Feedback'].map((feature, i) => (
+            {['3D Studio Rooms', 'Interactive Network', 'Spatial Feedback'].map((feature) => (
               <div 
                 key={feature}
                 className="px-4 py-2 bg-white/60 backdrop-blur-sm border border-border rounded-full text-sm text-text-secondary hover:text-text-primary hover:border-primary/50 transition-all duration-300 cursor-default shadow-sm"
@@ -188,23 +207,60 @@ function HomeInner() {
           </motion.div>
         </motion.div>
 
-        {/* Scroll Indicator */}
-        <motion.div
-          className="absolute bottom-8 left-1/2 transform -translate-x-1/2"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1, y: [0, 10, 0] }}
-          transition={{ 
-            opacity: { duration: 1, delay: 1.5 },
-            y: { duration: 2, repeat: Infinity, ease: "easeInOut" }
-          }}
-        >
-          <div className="w-6 h-10 border-2 border-text-muted rounded-full flex justify-center">
-            <div className="w-1 h-3 bg-text-secondary rounded-full mt-2"></div>
-          </div>
-        </motion.div>
       </div>
 
-      <GalleryAvatarModal 
+      {/* Institution Directory */}
+      <section id="institutions" className="relative z-10 bg-white/80 backdrop-blur-sm border-t border-gray-100 px-4 py-16">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2 text-center">
+            Schools &amp; Firms on PinSpace
+          </h2>
+          <p className="text-gray-500 text-center mb-10 text-sm">Pick your institution to explore their studio network.</p>
+
+          {institutionsLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-4 animate-pulse">
+                  <div className="flex items-start justify-between">
+                    <div className="w-12 h-12 rounded-lg bg-gray-100" />
+                    <div className="w-16 h-5 rounded-full bg-gray-100" />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="h-4 bg-gray-100 rounded w-3/4" />
+                    <div className="h-3 bg-gray-100 rounded w-1/2" />
+                  </div>
+                  <div className="h-4 bg-gray-100 rounded w-16 mt-auto" />
+                </div>
+              ))}
+            </div>
+          ) : institutions.length === 0 ? (
+            <p className="text-center text-gray-400 py-12">Coming soon — no institutions yet.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {institutions.map((inst, i) => (
+                <InstitutionCard key={inst.id} institution={inst} index={i} />
+              ))}
+            </div>
+          )}
+
+          <p className="mt-10 text-center text-sm text-gray-400">
+            Don&apos;t see your school?{' '}
+            <a
+              href="mailto:hello@pinspace.app?subject=Request%20Access"
+              className="text-primary hover:underline"
+            >
+              Request access →
+            </a>
+            {' · '}
+            Just want a personal archive?{' '}
+            <Link href="/sign-up" className="text-primary hover:underline">
+              Sign up free →
+            </Link>
+          </p>
+        </div>
+      </section>
+
+      <GalleryAvatarModal
         isOpen={showGalleryModal}
         onClose={() => setShowGalleryModal(false)}
         onEnter={handleEnterGallery}

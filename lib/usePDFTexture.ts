@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 // Simple hook that just returns info about the PDF
 // Actual rendering will be done via embed/iframe in components

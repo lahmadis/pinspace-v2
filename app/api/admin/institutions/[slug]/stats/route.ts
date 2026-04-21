@@ -63,7 +63,7 @@ export async function GET(
       if (w.owner_id) ownerIds.add(w.owner_id)
     })
 
-    let memberUserIds = new Set<string>()
+    const memberUserIds = new Set<string>()
     if (workspaceIds.length > 0) {
       const { data: members, error: memErr } = await admin
         .from('workspace_members')
@@ -198,7 +198,7 @@ export async function GET(
   } catch (error) {
     console.error('Error in GET /api/admin/institutions/[slug]/stats:', error)
     return NextResponse.json(
-      { error: 'Internal Server Error', details: (error as Error).message },
+      { error: 'Internal Server Error' },
       { status: 500 }
     )
   }

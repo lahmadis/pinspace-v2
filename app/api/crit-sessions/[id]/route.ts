@@ -21,16 +21,17 @@ export async function PATCH(
     const fileContent = await readFile(dataPath, 'utf-8')
     let sessions = JSON.parse(fileContent)
     
-    sessions = sessions.map((s: any) => {
+    sessions = sessions.map((s: Record<string, unknown>) => {
       if (s.id === sessionId) {
-        const updates: any = {}
+        const updates: Record<string, unknown> = {}
+        const existingParticipants = Array.isArray(s.participants) ? s.participants : []
         
         if (activeBoardId !== undefined) {
           updates.activeBoardId = activeBoardId
         }
         
-        if (participant && !s.participants.includes(participant)) {
-          updates.participants = [...s.participants, participant]
+        if (participant && !existingParticipants.includes(participant)) {
+          updates.participants = [...existingParticipants, participant]
         }
         
         return { ...s, ...updates }

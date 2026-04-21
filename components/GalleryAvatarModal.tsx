@@ -23,7 +23,7 @@ interface GalleryAvatarModalProps {
 
 export default function GalleryAvatarModal({ isOpen, onClose, onEnter }: GalleryAvatarModalProps) {
   const [color, setColor] = useState(COLORS[0])
-  const [appearance, setAppearance] = useState(APPEARANCES[0])
+  const appearance = APPEARANCES[0]
   const [department, setDepartment] = useState('')
   const [year, setYear] = useState('')
 

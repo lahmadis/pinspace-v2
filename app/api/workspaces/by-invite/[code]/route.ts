@@ -110,7 +110,7 @@ export async function GET(
     })
   } catch (error) {
     console.error('Error finding workspace by invite:', error)
-    return NextResponse.json({ error: 'Failed to find workspace', details: (error as Error).message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to find workspace' }, { status: 500 })
   }
 }
 

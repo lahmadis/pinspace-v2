@@ -3,14 +3,14 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
+import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import Link from 'next/link'
 import type { Institution } from '@/types'
 import { toast } from '@/lib/toast'
 
 export default function NewWorkspacePage() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [institutions, setInstitutions] = useState<Institution[]>([])
@@ -96,9 +96,9 @@ export default function NewWorkspacePage() {
 
       // Redirect to workspace settings
       router.push(`/workspace/${workspaceId}/settings`)
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error creating workspace:', error)
-      const errorMessage = error?.message || error?.error || 'Failed to create workspace'
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create workspace'
       toast.error(errorMessage)
     } finally {
       setLoading(false)

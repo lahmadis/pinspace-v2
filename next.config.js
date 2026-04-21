@@ -14,9 +14,7 @@ const nextConfig = {
         ? '.next-local'
         : '.next',
   eslint: {
-    // Disable ESLint during builds to allow deployment
-    // Fix linting errors in development
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   typescript: {
     // Allow deployment even if there are TypeScript errors
@@ -37,8 +35,6 @@ const nextConfig = {
   },
   // Enable compression
   compress: true,
-  // Optimize production builds
-  swcMinify: true,
   // Reduce bundle size
   experimental: {
     optimizePackageImports: ['three', '@react-three/fiber', '@react-three/drei'],

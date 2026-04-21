@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, useEffect, useMemo } from 'react'
-import { useFrame, useThree } from '@react-three/fiber'
+import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { throttle } from '@/lib/throttleDebounce'
 
@@ -26,7 +26,7 @@ export function WallDropZone({
   const meshRef = useRef<THREE.Mesh>(null)
   const { camera, raycaster, gl } = useThree()
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
+  const [, setIsDragging] = useState(false)
   
   const SCALE = 0.5
   const scaledWidth = wallDimensions.width * SCALE

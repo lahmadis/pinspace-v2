@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
+import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import Link from 'next/link'
-import { Building2, ExternalLink, Users, LayoutGrid, Image, ChevronLeft } from 'lucide-react'
+import { Building2, ExternalLink, Users, LayoutGrid, Image as ImageIcon, ChevronLeft } from 'lucide-react'
 
 type UserRole = 'faculty' | 'student' | 'professional'
 
@@ -42,7 +42,7 @@ export default function InstitutionStatsPage() {
   const params = useParams()
   const router = useRouter()
   const slug = params?.slug as string
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
   const [stats, setStats] = useState<InstitutionStats | null>(null)
@@ -191,7 +191,7 @@ export default function InstitutionStatsPage() {
           </div>
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <div className="flex items-center gap-2 text-gray-500 mb-1">
-              <Image className="w-5 h-5" />
+              <ImageIcon className="w-5 h-5" />
               <span className="text-sm font-medium">Boards</span>
             </div>
             <p className="text-2xl font-bold text-gray-900">{summary.board_count}</p>

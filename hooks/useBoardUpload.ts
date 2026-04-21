@@ -49,20 +49,30 @@ const calculateBoardDimensions = (
   aspectRatio: number,
   wallDimensions: { width: number; height: number } | null
 ): { widthPercent: number; heightPercent: number } => {
-  let widthPercent = 0.30
-  const heightPercent = 0.30
-  
-  if (wallDimensions) {
-    const defaultHeightPercent = 0.30
-    const wallAspectRatio = wallDimensions.width / wallDimensions.height
-    widthPercent = defaultHeightPercent * aspectRatio / wallAspectRatio
-    
-    const maxWidth = 0.50
-    if (widthPercent > maxWidth) {
-      widthPercent = maxWidth
-    }
+  const baseHeightPercent = 0.30
+  const maxWidthPercent = 0.50
+  const maxHeightPercent = 0.50
+  const safeAspectRatio = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 1
+  const wallAspectRatio =
+    wallDimensions && wallDimensions.width > 0 && wallDimensions.height > 0
+      ? wallDimensions.width / wallDimensions.height
+      : 1
+
+  // Convert image aspect ratio into wall-normalized percentage dimensions.
+  // displayedAR = (width% * wallW) / (height% * wallH)
+  let heightPercent = baseHeightPercent
+  let widthPercent = (safeAspectRatio * heightPercent) / wallAspectRatio
+
+  // Fit within bounds while keeping aspect ratio locked.
+  if (widthPercent > maxWidthPercent) {
+    widthPercent = maxWidthPercent
+    heightPercent = (widthPercent * wallAspectRatio) / safeAspectRatio
   }
-  
+  if (heightPercent > maxHeightPercent) {
+    heightPercent = maxHeightPercent
+    widthPercent = (safeAspectRatio * heightPercent) / wallAspectRatio
+  }
+
   return { widthPercent, heightPercent }
 }
 
@@ -242,7 +252,6 @@ const cleanupTempBoard = (
     placedBoards3DRef: React.MutableRefObject<Map<string, { x: number; y: number; width?: number; height?: number }>>
   }
 ) => {
-  console.log(`🧹 [Upload] Cleaning up temp board ${tempId}`)
   options.removeTempBoard(tempId)
   options.setPlacedBoards3D(prev => {
     const newMap = new Map(prev)
@@ -269,16 +278,18 @@ const uploadFile = async (
 ): Promise<{ success: boolean; uploadedBoard?: Board }> => {
   const title = file.name.replace(/\.[^/.]+$/, '')
   let tempBoardId: string | null = null
+  let blobUrl: string | null = null
 
   // Show board on wall immediately at center (no await)
   if (options.editingWall !== null && options.editingWallDimensions) {
-    const blobUrl = URL.createObjectURL(file)
+    const createdBlobUrl = URL.createObjectURL(file)
+    blobUrl = createdBlobUrl
     tempBoardId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     const tempBoard = createTempBoard(tempBoardId, {
       studioId: options.studioId,
       title,
       user: options.user,
-      blobUrl,
+      blobUrl: createdBlobUrl,
       width: 100,
       height: 100,
       aspectRatio: DEFAULT_PLACEHOLDER_ASPECT,
@@ -301,7 +312,7 @@ const uploadFile = async (
           addTempBoard: options.addTempBoard,
           setPlacedBoards3D: options.setPlacedBoards3D,
           placedBoards3DRef: options.placedBoards3DRef,
-          blobUrl,
+          blobUrl: createdBlobUrl,
         }
       )
     })
@@ -370,7 +381,6 @@ const uploadFile = async (
       } catch {
         // use errMsg as-is
       }
-      console.error(`❌ [Upload] API error ${response.status}:`, errMsg)
       throw new Error(errMsg)
     }
 
@@ -399,10 +409,14 @@ const uploadFile = async (
       )
     }
 
+    // Blob URL is no longer needed once the real board has a permanent URL
+    if (tempBoardId) URL.revokeObjectURL(blobUrl!)
+
     return { success: true, uploadedBoard }
   } catch (error) {
-    console.error(`❌ [Upload] Failed to upload ${file.name}:`, error)
+    console.error(`[Upload] Failed to upload ${file.name}:`, error)
     if (tempBoardId) {
+      URL.revokeObjectURL(blobUrl!)
       cleanupTempBoard(tempBoardId, {
         removeTempBoard: options.removeTempBoard,
         setPlacedBoards3D: options.setPlacedBoards3D,
@@ -423,31 +437,31 @@ const uploadPDF = async (
   const { convertPDFToImages } = await import('@/lib/pdfToImage')
   const pages = await convertPDFToImages(file)
   
-  console.log(`✅ PDF converted to ${pages.length} image(s)`)
-  
   // Calculate grid layout
   const cols = Math.ceil(Math.sqrt(pages.length))
   const rows = Math.ceil(pages.length / cols)
-  
+
   let successCount = 0
-  
+
   for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
     const page = pages[pageIndex]
-    const pageTitle = pages.length > 1 
+    const pageTitle = pages.length > 1
       ? `${file.name.replace('.pdf', '')} - Page ${page.pageNumber}`
       : file.name.replace('.pdf', '')
-    
+
     const { widthPercent, heightPercent } = calculateBoardDimensions(
       page.aspectRatio,
       options.editingWallDimensions
     )
-    
+
     const gridPos = calculateGridPosition(pageIndex, pages.length)
-    
+
     // Create temp board
     let tempBoardId: string | null = null
+    let pageBlobUrl: string | null = null
     if (options.editingWall !== null && options.editingWallDimensions) {
-      const blobUrl = URL.createObjectURL(page.imageFile)
+      pageBlobUrl = URL.createObjectURL(page.imageFile)
+      const blobUrl = pageBlobUrl
       tempBoardId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       
       const tempBoard = createTempBoard(tempBoardId, {
@@ -471,7 +485,6 @@ const uploadPDF = async (
         }
       })
       
-      console.log(`📤 [Upload PDF] Adding temp board ${pageIndex + 1}/${pages.length} at grid position (${Math.floor(pageIndex % cols)}, ${Math.floor(pageIndex / cols)}):`, tempBoardId)
       addTempBoardToState(tempBoard, { x: gridPos.x, y: gridPos.y, width: widthPercent, height: heightPercent }, {
         addTempBoard: options.addTempBoard,
         setPlacedBoards3D: options.setPlacedBoards3D,
@@ -532,10 +545,14 @@ const uploadPDF = async (
           }
         )
       }
-      
+
+      // Blob URL no longer needed once the real board has a permanent URL
+      if (pageBlobUrl) URL.revokeObjectURL(pageBlobUrl)
+
       successCount++
     } catch (error) {
-      console.error(`❌ [Upload PDF] Failed to upload page ${pageIndex + 1}:`, error)
+      console.error(`[Upload PDF] Failed to upload page ${pageIndex + 1}:`, error)
+      if (pageBlobUrl) URL.revokeObjectURL(pageBlobUrl)
       if (tempBoardId) {
         cleanupTempBoard(tempBoardId, {
           removeTempBoard: options.removeTempBoard,
@@ -559,21 +576,18 @@ export const useBoardUpload = (options: UploadOptions) => {
     input.accept = '.jpg,.jpeg,.png,.pdf'
     input.multiple = true
     
-    const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25MB (must match API)
+    const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB (must match API)
     input.onchange = async (e) => {
       const files = Array.from((e.target as HTMLInputElement).files || [])
       if (files.length === 0) return
-      
-      console.log(`📤 Uploading ${files.length} file(s)...`)
       
       const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
       let successCount = 0
       let failCount = 0
       const oversized: string[] = []
-      
+
       for (const file of files) {
         if (!validTypes.includes(file.type)) {
-          console.warn(`⚠️ Skipping invalid file type: ${file.name}`)
           failCount++
           continue
         }
@@ -601,18 +615,17 @@ export const useBoardUpload = (options: UploadOptions) => {
             }
           }
         } catch (error) {
-          console.error(`❌ Failed to upload ${file.name}:`, error)
+          console.error(`[Upload] Failed to upload ${file.name}:`, error)
           failCount++
         }
       }
-      
+
       // Refresh boards list after all uploads
       await options.onBoardUpdate()
-      
+
       if (oversized.length > 0) {
-        toast.error(`These files are too large (max 25 MB):\n${oversized.join('\n')}`)
+        toast.error(`These files are too large (max 50 MB):\n${oversized.join('\n')}`)
       }
-      console.log(`✅ Upload complete: ${successCount} successful, ${failCount} failed`)
     }
     
     input.click()
@@ -622,10 +635,10 @@ export const useBoardUpload = (options: UploadOptions) => {
   const uploadFileDirect = async (file: File): Promise<boolean> => {
     const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png']
     if (!validImageTypes.includes(file.type)) return false
-    const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25MB
+    const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
     if (file.size > MAX_FILE_SIZE) {
       const mb = (file.size / (1024 * 1024)).toFixed(1)
-      toast.error(`${file.name} is too large (${mb} MB). Maximum size is 25 MB.`)
+      toast.error(`${file.name} is too large (${mb} MB). Maximum size is 50 MB.`)
       return false
     }
     try {
@@ -637,6 +650,42 @@ export const useBoardUpload = (options: UploadOptions) => {
     }
   }
 
-  return { handleUpload, uploadFileDirect }
+  /** Upload multiple files (e.g. from drag-and-drop). Supports images + PDFs. */
+  const uploadFilesDirect = async (files: File[]): Promise<void> => {
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
+    const MAX_FILE_SIZE = 50 * 1024 * 1024
+    let successCount = 0
+    let failCount = 0
+    const oversized: string[] = []
+
+    for (const file of files) {
+      if (!validTypes.includes(file.type)) { failCount++; continue }
+      if (file.size > MAX_FILE_SIZE) {
+        const mb = (file.size / (1024 * 1024)).toFixed(1)
+        oversized.push(`${file.name} (${mb} MB)`)
+        failCount++
+        continue
+      }
+      try {
+        if (file.type === 'application/pdf') {
+          const result = await uploadPDF(file, options)
+          if (result.success) successCount += result.count; else failCount++
+        } else {
+          const result = await uploadFile(file, options)
+          if (result.success) successCount++; else failCount++
+        }
+      } catch { failCount++ }
+    }
+
+    await options.onBoardUpdate()
+
+    if (oversized.length > 0) {
+      toast.error(`Files too large (max 50 MB):\n${oversized.join('\n')}`)
+    } else if (failCount > 0 && successCount === 0) {
+      toast.error('No files could be uploaded.')
+    }
+  }
+
+  return { handleUpload, uploadFileDirect, uploadFilesDirect }
 }
 

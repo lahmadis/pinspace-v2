@@ -11,7 +11,7 @@ interface WallProps {
   wallIndex: number
 }
 
-export default function Wall({ position, rotation, boards, wallIndex }: WallProps) {
+export default function Wall({ position, rotation, boards }: WallProps) {
   const wallWidth = 8
   const wallHeight = 5
   const wallDepth = 0.1

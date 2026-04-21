@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url)
     const department = url.searchParams.get('department')
     const year = url.searchParams.get('year')
+    const academicYear = url.searchParams.get('academic_year')
     const institutionSlug = url.searchParams.get('institution_slug')
     const institutionId = url.searchParams.get('institution_id')
 
@@ -38,6 +39,9 @@ export async function GET(request: NextRequest) {
 
     if (institutionFilterId) {
       query = query.eq('institution_id', institutionFilterId)
+    } else {
+      // No institution filter → global view: only show globally-published studios
+      query = query.eq('is_globally_public', true)
     }
     if (department) {
       query = query.eq('network_metadata->>department', department)
@@ -45,20 +49,20 @@ export async function GET(request: NextRequest) {
     if (year) {
       query = query.eq('network_metadata->>year', year)
     }
+    if (academicYear) {
+      query = query.eq('academic_year', academicYear)
+    }
 
     const { data: publicWorkspaces, error } = await query
 
     if (error) {
       console.error('Error fetching public workspaces:', error)
-      return NextResponse.json({ 
-        error: 'Failed to fetch public workspaces', 
-        details: error.message || error 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch public workspaces' }, { status: 500 })
     }
 
     // Get member counts for each workspace
     const workspaceIds = publicWorkspaces?.map(w => w.id) || []
-    let memberCounts: Record<string, number> = {}
+    const memberCounts: Record<string, number> = {}
     
     if (workspaceIds.length > 0) {
       const { data: membersData, error: membersError } = await supabase
@@ -87,11 +91,14 @@ export async function GET(request: NextRequest) {
       studioId: w.id, // For backward compatibility
       inviteCode: w.invite_code,
       isPublic: w.is_public,
+      isGloballyPublic: w.is_globally_public || false,
       publishedAt: w.published_at,
       networkMetadata: w.network_metadata,
+      academicYear: w.academic_year || undefined,
       instructor: w.instructor,
       type: w.type || 'class',
       memberCount: memberCounts[w.id] || 0,
+      viewCount: w.view_count || 0,
       members: [], // Not including full member list for public endpoint
     }))
 
@@ -106,10 +113,7 @@ export async function GET(request: NextRequest) {
     return response
   } catch (error) {
     console.error('Error fetching public workspaces:', error)
-    return NextResponse.json({ 
-      error: 'Failed to fetch public workspaces', 
-      details: (error as Error).message 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch public workspaces' }, { status: 500 })
   }
 }
 

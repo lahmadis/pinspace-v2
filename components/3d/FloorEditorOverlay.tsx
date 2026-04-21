@@ -44,22 +44,6 @@ function worldToScreen(
   return [px, py]
 }
 
-function screenToWorld(
-  px: number,
-  py: number,
-  bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
-): [number, number] {
-  const { minX, maxX, minZ, maxZ } = bounds
-  const floorWidth = maxX - minX
-  const floorDepth = maxZ - minZ
-  const padding = 40
-  const w = VIEW_WIDTH - padding * 2
-  const h = VIEW_HEIGHT - padding * 2
-  const x = minX + ((px - padding) / w) * floorWidth
-  const z = maxZ - ((py - padding) / h) * floorDepth
-  return [x, z]
-}
-
 export default function FloorEditorOverlay({
   studioId,
   wallConfig,

@@ -1,52 +1,84 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readFile, writeFile } from 'fs/promises'
-import { existsSync } from 'fs'
-import path from 'path'
+import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const { wallIndex, x, y } = await request.json()
+    const supabase = supabaseServer()
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError || !session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const userId = session.user.id
     const boardId = params.id
+    const { wallIndex, x, y, width, height, side } = await request.json()
 
     if (wallIndex === undefined || x === undefined || y === undefined) {
       return NextResponse.json({ error: 'Missing position data' }, { status: 400 })
     }
 
-    const dataPath = path.join(process.cwd(), 'lib', 'data', 'boards.json')
-    
-    if (!existsSync(dataPath)) {
-      return NextResponse.json({ error: 'No boards found' }, { status: 404 })
-    }
+    const admin = supabaseServiceRole()
 
-    const fileContent = await readFile(dataPath, 'utf-8')
-    let boards = JSON.parse(fileContent)
-    
-    // Find and update board
-    const boardIndex = boards.findIndex((b: any) => b.id === boardId)
-    
-    if (boardIndex === -1) {
+    // Verify user has access to this board's workspace
+    const { data: board } = await admin
+      .from('boards')
+      .select('workspace_id, owner_id')
+      .eq('id', boardId)
+      .single()
+
+    if (!board) {
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
 
-    boards[boardIndex].position = { wallIndex, x, y }
-    
-    await writeFile(dataPath, JSON.stringify(boards, null, 2))
+    const { data: workspace } = await admin
+      .from('workspaces')
+      .select('owner_id')
+      .eq('id', board.workspace_id)
+      .single()
 
-    return NextResponse.json({ success: true, board: boards[boardIndex] })
+    const isWorkspaceOwner = workspace?.owner_id === userId
+    const { data: membership } = await admin
+      .from('workspace_members')
+      .select('user_id')
+      .eq('workspace_id', board.workspace_id)
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (board.owner_id !== userId && !isWorkspaceOwner && !membership) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const updateData: Record<string, unknown> = {
+      position_wall_index: wallIndex,
+      position_x: x.toString(),
+      position_y: y.toString(),
+      position_side: side === 'back' ? 'back' : 'front',
+    }
+    if (width !== undefined) updateData.position_width = width.toString()
+    if (height !== undefined) updateData.position_height = height.toString()
+
+    const { data: updated, error: updateError } = await admin
+      .from('boards')
+      .update(updateData)
+      .eq('id', boardId)
+      .select()
+      .single()
+
+    if (updateError || !updated) {
+      console.error('Error updating board position:', updateError)
+      return NextResponse.json({ error: 'Failed to update position' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, board: updated })
   } catch (error) {
     console.error('Error updating position:', error)
     return NextResponse.json({ error: 'Failed to update position' }, { status: 500 })
   }
 }
-
-
-
-
-
-
-
-
-

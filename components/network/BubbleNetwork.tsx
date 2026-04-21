@@ -273,7 +273,6 @@ export default function BubbleNetwork({
   const [connectionLines, setConnectionLines] = useState<ConnectionLine[]>([])
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 })
   const [isDragging, setIsDragging] = useState(false)
-  const [isStabilized, setIsStabilized] = useState(false)
   
   const simulationRef = useRef<d3.Simulation<BubbleNode, undefined> | null>(null)
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
@@ -328,8 +327,7 @@ export default function BubbleNetwork({
 
     const { width, height } = dimensions
     
-    // Reset stabilization state when nodes change
-    setIsStabilized(false)
+    // Reset stabilization state when nodes change (simulation will re-run)
 
     // Create simulation nodes with initial positions spread across canvas
     const simNodes: BubbleNode[] = nodes.map((n, i) => {
@@ -381,7 +379,6 @@ export default function BubbleNetwork({
       console.log('✅ Simulation stabilized - bubbles now FROZEN')
       // Save final positions
       setPositions([...simNodes])
-      setIsStabilized(true)
       // Completely stop the simulation
       simulation.stop()
     })
@@ -514,10 +511,9 @@ export default function BubbleNetwork({
     [getRelatedNodes, findConnections]
   )
 
-  const handleMouseEnter = useCallback((node: BubbleNode, event: React.MouseEvent) => {
+  const handleMouseEnter = useCallback((node: BubbleNode, _event: React.MouseEvent) => {
     if (isDragging) return
     onNodeHover?.(node)
-    const rect = containerRef.current?.getBoundingClientRect()
     const screenX = (node.x || 0) * transform.k + transform.x
     const screenY = (node.y || 0) * transform.k + transform.y
     debouncedHover(node, screenX, screenY)
@@ -726,7 +722,7 @@ export default function BubbleNetwork({
         <g ref={gRef}>
           {/* Connection Lines Layer */}
           <g className="connection-lines">
-            {connectionLines.map((line, i) => {
+            {connectionLines.map((line) => {
               const style = RELATIONSHIP_STYLES[line.type]
               const path = generateBezierPath(
                 line.source.x || 0,
@@ -775,7 +771,7 @@ export default function BubbleNetwork({
 
           {/* Bubbles Layer */}
           <g className="bubbles">
-          {positions.map((node, i) => {
+          {positions.map((node) => {
               const nodeStyle = getNodeStyle(node)
               const r = node.radius || 60
               const isHovered = hoveredNode?.id === node.id

@@ -33,11 +33,11 @@ export async function GET(
           break
         }
       }
-      
+
       if (foundBoard && foundBoard.comments) {
         return NextResponse.json({ comments: foundBoard.comments })
       }
-      
+
       // If board not found, return empty comments
       return NextResponse.json({ comments: [] })
     }
@@ -72,13 +72,10 @@ export async function GET(
 
       if (publicError) {
         console.error('Error fetching comments with service role:', publicError)
-        return NextResponse.json({
-          error: 'Failed to fetch comments',
-          details: publicError.message,
-        }, { status: 500 })
+        return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
       }
 
-      const transformedComments = (publicComments || []).map((c: any) => ({
+      const transformedComments = (publicComments || []).map((c) => ({
         id: c.id,
         boardId: c.board_id,
         authorId: c.author_id,
@@ -99,13 +96,10 @@ export async function GET(
 
     if (error) {
       console.error('Error fetching comments (private workspace):', error)
-      return NextResponse.json({
-        error: 'Failed to fetch comments',
-        details: error.message,
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
     }
 
-    const transformedComments = (comments || []).map((c: any) => ({
+    const transformedComments = (comments || []).map((c) => ({
       id: c.id,
       boardId: c.board_id,
       authorId: c.author_id,
@@ -116,10 +110,7 @@ export async function GET(
     return NextResponse.json({ comments: transformedComments })
   } catch (error) {
     console.error('Error fetching comments:', error)
-    return NextResponse.json({
-      error: 'Failed to fetch comments',
-      details: (error as Error).message,
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
   }
 }
 
@@ -150,7 +141,7 @@ export async function POST(
           break
         }
       }
-      
+
       if (!foundBoard) {
         return NextResponse.json({ error: 'Board not found' }, { status: 404 })
       }
@@ -177,7 +168,7 @@ export async function POST(
 
     if (sessionError) {
       console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
 
     const userId = session?.user?.id
@@ -185,10 +176,11 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Verify board exists
-    const { data: board, error: boardError } = await supabase
+    // Resolve board/workspace with service role so we can enforce access explicitly.
+    const admin = supabaseServiceRole()
+    const { data: board, error: boardError } = await admin
       .from('boards')
-      .select('id')
+      .select('id, workspace_id')
       .eq('id', boardId)
       .single()
 
@@ -196,9 +188,31 @@ export async function POST(
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
 
-    // Insert comment into Supabase
+    // For private workspaces, require membership/ownership before writing.
+    const { data: workspace } = await admin
+      .from('workspaces')
+      .select('owner_id, is_public, published_at')
+      .eq('id', board.workspace_id)
+      .single()
+
+    const isPublicWorkspace = workspace?.is_public && workspace?.published_at != null
+    if (!isPublicWorkspace) {
+      const isOwner = workspace?.owner_id === userId
+      const { data: membership } = await admin
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', board.workspace_id)
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (!isOwner && !membership) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
+
+    // Insert comment with service role after explicit authorization.
     const commentId = `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    const { data: newComment, error: insertError } = await supabase
+    const { data: newComment, error: insertError } = await admin
       .from('comments')
       .insert({
         id: commentId,
@@ -212,10 +226,7 @@ export async function POST(
 
     if (insertError) {
       console.error('Error creating comment:', insertError)
-      return NextResponse.json({ 
-        error: 'Failed to add comment', 
-        details: insertError.message || insertError 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to add comment' }, { status: 500 })
     }
 
     // Transform to frontend format
@@ -231,10 +242,7 @@ export async function POST(
     return NextResponse.json({ comment, success: true })
   } catch (error) {
     console.error('Error adding comment:', error)
-    return NextResponse.json({ 
-      error: 'Failed to add comment', 
-      details: (error as Error).message 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to add comment' }, { status: 500 })
   }
 }
 
@@ -266,7 +274,8 @@ export async function PATCH(
     } = await supabase.auth.getSession()
 
     if (sessionError) {
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError.message }, { status: 500 })
+      console.error('Session error:', sessionError)
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
 
     const userId = session?.user?.id
@@ -299,10 +308,7 @@ export async function PATCH(
     return NextResponse.json({ comment, success: true })
   } catch (error) {
     console.error('Error editing comment:', error)
-    return NextResponse.json({
-      error: 'Failed to edit comment',
-      details: (error as Error).message,
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to edit comment' }, { status: 500 })
   }
 }
 
@@ -332,7 +338,8 @@ export async function DELETE(
     } = await supabase.auth.getSession()
 
     if (sessionError) {
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError.message }, { status: 500 })
+      console.error('Session error:', sessionError)
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
 
     const userId = session?.user?.id
@@ -349,7 +356,8 @@ export async function DELETE(
       .select('id')
 
     if (deleteError) {
-      return NextResponse.json({ error: 'Failed to delete comment', details: deleteError.message }, { status: 500 })
+      console.error('Error deleting comment:', deleteError)
+      return NextResponse.json({ error: 'Failed to delete comment' }, { status: 500 })
     }
     if (!deletedComments || deletedComments.length === 0) {
       return NextResponse.json({ error: 'Comment not found or not deletable by this user' }, { status: 404 })
@@ -358,10 +366,6 @@ export async function DELETE(
     return NextResponse.json({ success: true, commentId })
   } catch (error) {
     console.error('Error deleting comment:', error)
-    return NextResponse.json({
-      error: 'Failed to delete comment',
-      details: (error as Error).message,
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to delete comment' }, { status: 500 })
   }
 }
-

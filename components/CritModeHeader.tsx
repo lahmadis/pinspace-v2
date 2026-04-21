@@ -10,12 +10,10 @@ interface CritModeHeaderProps {
   onEndCrit: () => void
 }
 
-export default function CritModeHeader({ 
-  sessionId, 
-  hostName, 
-  participants, 
+export default function CritModeHeader({
+  participants,
   activeBoardTitle,
-  onEndCrit 
+  onEndCrit
 }: CritModeHeaderProps) {
   return (
     <motion.div

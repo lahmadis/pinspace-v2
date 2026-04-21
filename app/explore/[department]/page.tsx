@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { notFound, useSearchParams, useRouter } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
+import { currentAcademicYear } from '@/lib/academicYear'
 
 const DEPT_MAP: Record<string, { name: string; color: string; accent: string }> = {
   'architecture': { name: 'Architecture', color: '#6366f1', accent: 'text-indigo-600' },
@@ -27,7 +28,7 @@ type StudioItem = {
   name: string
   studioId?: string
   memberCount?: number
-  members?: any[]
+  members?: unknown[]
   instructor?: string
   semester?: string
   networkMetadata?: { year?: string }
@@ -43,9 +44,38 @@ export default function DepartmentPage({ params }: { params: { department: strin
   const [studioNodes, setStudioNodes] = useState<BubbleNode[]>([])
   const [studios, setStudios] = useState<StudioItem[]>([])
   const [yearFilter, setYearFilter] = useState<string>('All Years')
-  
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(currentAcademicYear())
+  const [availableAcademicYears, setAvailableAcademicYears] = useState<{ year: string; count: number }[]>([])
+
   const meta = DEPT_MAP[params.department]
-  if (!meta) return notFound()
+
+  useEffect(() => {
+    if (!meta) return
+    document.title = `${meta.name} Studios – PinSpace`
+  }, [meta])
+
+  // Load available academic years for the tab bar
+  useEffect(() => {
+    if (!meta) return
+    const loadAcademicYears = async () => {
+      try {
+        const res = await fetch(`/api/explore/academic-years`, { cache: 'no-store' })
+        if (res.ok) {
+          const data = await res.json()
+          setAvailableAcademicYears(data.academicYears || [])
+          const current = currentAcademicYear()
+          const ayList: { year: string; count: number }[] = data.academicYears || []
+          const hasCurrentYear = ayList.some((y) => y.year === current)
+          if (!hasCurrentYear && ayList.length > 0) {
+            setSelectedAcademicYear(ayList[0].year)
+          }
+        }
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    loadAcademicYears()
+  }, [meta])
 
   // sync URL
   useEffect(() => {
@@ -58,11 +88,14 @@ export default function DepartmentPage({ params }: { params: { department: strin
 
   // Load years (for years view)
   useEffect(() => {
+    if (!meta) return
     const loadYears = async () => {
       try {
-        const res = await fetch(`/api/explore/${params.department}/years`, { cache: 'no-store' })
+        const qs = selectedAcademicYear ? `?academic_year=${encodeURIComponent(selectedAcademicYear)}` : ''
+        const res = await fetch(`/api/explore/${params.department}/years${qs}`, { cache: 'no-store' })
         if (!res.ok) return
-        const data: YearItem[] = await res.json()
+        const resp = await res.json()
+        const data: YearItem[] = resp.years || []
         setYears(data)
         setYearNodes(data.map((y) => ({
           id: y.slug,
@@ -78,14 +111,16 @@ export default function DepartmentPage({ params }: { params: { department: strin
       }
     }
     loadYears()
-  }, [params.department, meta.color])
+  }, [params.department, meta?.color, selectedAcademicYear])
 
   // Load all studios for "view all"
   useEffect(() => {
-    if (viewMode !== 'all') return
+    if (!meta || viewMode !== 'all') return
     const loadStudios = async () => {
       try {
-        const res = await fetch(`/api/workspaces/public?department=${encodeURIComponent(meta.name)}`, { cache: 'no-store' })
+        const params = new URLSearchParams({ department: meta.name })
+        if (selectedAcademicYear) params.set('academic_year', selectedAcademicYear)
+        const res = await fetch(`/api/workspaces/public?${params.toString()}`, { cache: 'no-store' })
         if (!res.ok) return
         const data = await res.json()
         const list: StudioItem[] = data.workspaces || []
@@ -95,11 +130,11 @@ export default function DepartmentPage({ params }: { params: { department: strin
       }
     }
     loadStudios()
-  }, [viewMode, meta.name])
+  }, [viewMode, meta?.name, selectedAcademicYear])
 
   // Build studio nodes with filters
   useEffect(() => {
-    if (viewMode !== 'all') return
+    if (!meta || viewMode !== 'all') return
     const filtered = studios.filter((s) => {
       if (yearFilter === 'All Years') return true
       return s.networkMetadata?.year === yearFilter
@@ -127,13 +162,15 @@ export default function DepartmentPage({ params }: { params: { department: strin
       semester: s.semester,
       year: parseYear(s.networkMetadata?.year),
     })))
-  }, [studios, viewMode, yearFilter, meta.color])
+  }, [studios, viewMode, yearFilter, meta?.color])
 
   const handleNodeClick = (node: BubbleNode) => {
     if (node.url) window.location.href = node.url
   }
 
   const uniqueYears = useMemo(() => ['All Years', ...Array.from(new Set(studios.map(s => s.networkMetadata?.year).filter(Boolean)))], [studios])
+
+  if (!meta) return notFound()
 
   // Full screen mode for "View All Studios"
   if (viewMode === 'all') {
@@ -194,13 +231,56 @@ export default function DepartmentPage({ params }: { params: { department: strin
           </div>
         </header>
 
+        {/* Academic Year Tab Bar */}
+        {availableAcademicYears.length > 0 && (
+          <div className="fixed top-[73px] left-0 right-0 z-30 bg-slate-900/95 border-b border-slate-700/50 px-6 py-2 flex items-center gap-2 overflow-x-auto">
+            <button
+              onClick={() => setSelectedAcademicYear('')}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                selectedAcademicYear === ''
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600'
+              }`}
+            >
+              All Years
+            </button>
+            {availableAcademicYears.map(({ year, count }) => (
+              <button
+                key={year}
+                onClick={() => setSelectedAcademicYear(year)}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                  selectedAcademicYear === year
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600'
+                }`}
+              >
+                {year}
+                <span className={`ml-1.5 text-xs ${selectedAcademicYear === year ? 'text-indigo-200' : 'text-slate-500'}`}>
+                  {count}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Full Canvas Bubble Network */}
-        <BubbleNetwork 
-          nodes={studioNodes} 
-          onNodeClick={handleNodeClick}
-          fullScreen={true}
-          headerHeight={73}
-        />
+        {studioNodes.length === 0 ? (
+          <div className="flex items-center justify-center h-full" style={{ paddingTop: availableAcademicYears.length > 0 ? 113 : 73 }}>
+            <div className="text-center">
+              <p className="text-slate-400 text-lg font-medium">No studios yet</p>
+              <p className="text-slate-500 text-sm mt-1">
+                {selectedAcademicYear ? `No published studios for ${selectedAcademicYear}` : 'No published studios in this department'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <BubbleNetwork
+            nodes={studioNodes}
+            onNodeClick={handleNodeClick}
+            fullScreen={true}
+            headerHeight={availableAcademicYears.length > 0 ? 113 : 73}
+          />
+        )}
       </div>
     )
   }
@@ -251,8 +331,51 @@ export default function DepartmentPage({ params }: { params: { department: strin
             })()}
           </div>
 
+          {/* Academic Year Tab Bar */}
+          {availableAcademicYears.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setSelectedAcademicYear('')}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                  selectedAcademicYear === ''
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                All Years
+              </button>
+              {availableAcademicYears.map(({ year, count }) => (
+                <button
+                  key={year}
+                  onClick={() => setSelectedAcademicYear(year)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                    selectedAcademicYear === year
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  {year}
+                  <span className={`ml-1.5 text-xs ${selectedAcademicYear === year ? 'text-indigo-200' : 'text-gray-400'}`}>
+                    {count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden" style={{ height: 620 }}>
-            <BubbleNetwork nodes={yearNodes} onNodeClick={handleNodeClick} />
+            {yearNodes.every((n) => n.count === 0) && yearNodes.length > 0 ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <p className="text-gray-500 text-lg font-medium">No studios yet</p>
+                  <p className="text-gray-400 text-sm mt-1">
+                    {selectedAcademicYear ? `No published studios for ${selectedAcademicYear}` : 'No published studios in this department'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <BubbleNetwork nodes={yearNodes} onNodeClick={handleNodeClick} />
+            )}
           </div>
         </div>
 

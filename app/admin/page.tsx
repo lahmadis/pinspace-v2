@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
+import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import Link from 'next/link'
 import {
   Building2,
@@ -444,7 +444,7 @@ function EditOrgModal({
 }
 
 export default function AdminDashboardPage() {
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
   const [institutions, setInstitutions] = useState<InstitutionWithCount[]>([])

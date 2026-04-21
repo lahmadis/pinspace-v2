@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { toast } from '@/lib/toast'
 
 interface QuickNotePanelProps {
@@ -10,7 +10,7 @@ interface QuickNotePanelProps {
   onAddNote: (note: string, author: string) => Promise<void>
 }
 
-export default function QuickNotePanel({ boardId, boardTitle, onAddNote }: QuickNotePanelProps) {
+export default function QuickNotePanel({ boardTitle, onAddNote }: QuickNotePanelProps) {
   const [note, setNote] = useState('')
   const [author, setAuthor] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -23,7 +23,7 @@ export default function QuickNotePanel({ boardId, boardTitle, onAddNote }: Quick
     try {
       await onAddNote(note, author)
       setNote('')
-    } catch (error) {
+    } catch {
       toast.error('Failed to add note')
     } finally {
       setSubmitting(false)

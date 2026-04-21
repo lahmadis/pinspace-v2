@@ -2,13 +2,54 @@
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
 import { Board } from '@/types'
 import WallConfigModal from '@/components/WallConfigModal'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
 import { ArrowLeft, Share2, Settings, Box } from 'lucide-react'
+import { supabase } from '@/lib/supabase/client'
+
+type RealtimeBoardPayload = {
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE'
+  new: Record<string, unknown>
+  old: Record<string, unknown>
+}
+
+function transformBoardRow(row: Record<string, unknown>): Board {
+  return {
+    id: row.id as string,
+    studioId: row.workspace_id as string,
+    workspaceId: row.workspace_id as string,
+    studentName: row.student_name as string,
+    studentEmail: row.student_email as string | undefined,
+    title: row.title as string,
+    description: row.description as string | undefined,
+    thumbnailUrl: row.thumbnail_url as string,
+    fullImageUrl: row.full_image_url as string,
+    tags: (row.tags as string[]) || [],
+    uploadedAt: new Date(row.uploaded_at as string),
+    position:
+      row.position_wall_index != null && row.position_x != null && row.position_y != null
+        ? {
+            wallIndex: Number(row.position_wall_index),
+            x: Number(row.position_x),
+            y: Number(row.position_y),
+            width: row.position_width != null ? Number(row.position_width) : undefined,
+            height: row.position_height != null ? Number(row.position_height) : undefined,
+            side: String(row.position_side || '').trim().toLowerCase() === 'back' ? 'back' : 'front',
+          }
+        : undefined,
+    ownerId: row.owner_id as string,
+    ownerName: row.owner_name as string,
+    ownerColor: row.owner_color as string | undefined,
+    originalWidth: row.original_width as number | undefined,
+    originalHeight: row.original_height as number | undefined,
+    aspectRatio: row.aspect_ratio ? parseFloat(row.aspect_ratio as string) : undefined,
+    physicalWidth: row.physical_width ? parseFloat(row.physical_width as string) : undefined,
+    physicalHeight: row.physical_height ? parseFloat(row.physical_height as string) : undefined,
+  }
+}
 
 const StudioRoom = dynamic(
   () => import(/* webpackChunkName: "StudioRoom" */ '@/components/3d/StudioRoom'),
@@ -64,6 +105,8 @@ export default function StudioPage() {
   const [showShareModal, setShowShareModal] = useState(false)
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [boardsError, setBoardsError] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
   const [isEditMode, setIsEditMode] = useState(false)
   const [floorEditorOpen, setFloorEditorOpen] = useState(false)
   const [floorEditorMode, setFloorEditorMode] = useState<'tables' | 'walls'>('tables')
@@ -121,20 +164,26 @@ export default function StudioPage() {
 
   // Load boards and wall config (API + localStorage fallback)
   useEffect(() => {
+    const controller = new AbortController()
+    const { signal } = controller
+
     const loadData = async () => {
       try {
         // Load boards (studioId is actually workspaceId now)
         const url = isDemo ? `/api/boards?workspaceId=${studioId}&demo=true` : `/api/boards?workspaceId=${studioId}`
-        const response = await fetch(url)
+        const response = await fetch(url, { signal })
         if (response.ok) {
           const data = await response.json()
           setBoards(data.boards || [])
+          setBoardsError(false)
+        } else {
+          setBoardsError(true)
         }
 
         // Try API first
         let loadedConfig: WallConfig | null = null
         try {
-          const resConfig = await fetch(`/api/studios/${studioId}/wall-config`)
+          const resConfig = await fetch(`/api/studios/${studioId}/wall-config`, { signal })
           if (resConfig.ok) {
             const data = await resConfig.json()
             if (data?.config) {
@@ -142,6 +191,7 @@ export default function StudioPage() {
             }
           }
         } catch (e) {
+          if (signal.aborted) return
           console.warn('Wall config API fetch failed, falling back to localStorage', e)
         }
 
@@ -162,15 +212,48 @@ export default function StudioPage() {
           setShowWallConfig(true)
         }
       } catch (error) {
+        if (signal.aborted) return
         console.error('Error loading data:', error)
-        setShowWallConfig(true)
+        setBoardsError(true)
       } finally {
-        setIsLoading(false)
+        if (!signal.aborted) setIsLoading(false)
       }
     }
 
     loadData()
-  }, [studioId])
+
+    // Realtime: keep boards in sync with other users in the same studio
+    const channel = isDemo
+      ? null
+      : supabase
+          .channel(`studio-boards:${studioId}`)
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'boards', filter: `workspace_id=eq.${studioId}` },
+            (payload: RealtimeBoardPayload) => {
+              if (payload.eventType === 'INSERT') {
+                const incoming = transformBoardRow(payload.new as Record<string, unknown>)
+                setBoards((prev) => {
+                  // Skip if we already have this board (optimistic upload by this user)
+                  if (prev.some((b) => b.id === incoming.id)) return prev
+                  return [...prev, incoming]
+                })
+              } else if (payload.eventType === 'UPDATE') {
+                const updated = transformBoardRow(payload.new as Record<string, unknown>)
+                setBoards((prev) => prev.map((b) => (b.id === updated.id ? updated : b)))
+              } else if (payload.eventType === 'DELETE') {
+                const deletedId = (payload.old as { id?: string }).id
+                if (deletedId) setBoards((prev) => prev.filter((b) => b.id !== deletedId))
+              }
+            }
+          )
+          .subscribe()
+
+    return () => {
+      controller.abort()
+      if (channel) supabase.removeChannel(channel)
+    }
+  }, [studioId, isDemo, retryCount])
 
   const handleWallConfigConfirm = async (config: WallConfig) => {
     try {
@@ -218,8 +301,41 @@ export default function StudioPage() {
     )
   }
 
+  if (boardsError) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
+        <div className="text-center">
+          <p className="text-white font-semibold text-lg mb-2">Failed to load boards</p>
+          <p className="text-white/70 text-sm mb-6">Check your connection and try again.</p>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => { setBoardsError(false); setIsLoading(true); setRetryCount(c => c + 1) }}
+              className="px-5 py-2 bg-white text-indigo-600 rounded-lg font-medium hover:bg-white/90 transition-colors"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="px-5 py-2 bg-white/20 text-white rounded-lg font-medium hover:bg-white/30 transition-colors"
+            >
+              Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <>
+      {/* Mobile warning — 3D canvas requires a desktop browser */}
+      <div className="md:hidden fixed inset-0 z-[9999] bg-gray-900 flex items-center justify-center p-6">
+        <div className="text-center max-w-sm">
+          <p className="text-4xl mb-4">🖥️</p>
+          <h2 className="text-white text-xl font-bold mb-2">Desktop required</h2>
+          <p className="text-gray-400 text-sm">The 3D studio editor requires a desktop browser. Please visit on a laptop or desktop computer.</p>
+        </div>
+      </div>
       <DemoBanner />
       {showWallConfig && (
         <WallConfigModal

@@ -15,7 +15,8 @@ export async function POST(request: NextRequest) {
     } = await supabase.auth.getSession()
 
     if (sessionError) {
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      console.error('Session error:', sessionError)
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
 
     const userId = session?.user?.id
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
 
     if (insertError) {
       console.error('Duplicate board insert error:', insertError)
-      return NextResponse.json({ error: 'Failed to duplicate board', details: insertError.message }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to duplicate board' }, { status: 500 })
     }
 
     const board = {
@@ -158,8 +159,8 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true, board })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Duplicate board error:', error)
-    return NextResponse.json({ error: 'Internal Server Error', details: error?.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }

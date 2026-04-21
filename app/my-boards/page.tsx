@@ -111,10 +111,11 @@ export default function MyBoardsPage() {
                   >
                     {/* Board preview */}
                     <div className="relative aspect-[16/10] bg-background-lighter overflow-hidden">
-                      {board.thumbnailUrl && board.thumbnailUrl.startsWith('/uploads/') ? (
-                        <img 
-                          src={board.thumbnailUrl} 
+                      {board.thumbnailUrl ? (
+                        <img
+                          src={board.thumbnailUrl}
                           alt={board.title}
+                          loading="lazy"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                       ) : (

@@ -78,9 +78,13 @@ export function CameraController({
   const restoreOnNextFrame = useRef(false)
   const positionOnEnd = useRef(new THREE.Vector3())
   const targetOnEnd = useRef(new THREE.Vector3())
-  const endListenerAdded = useRef(false)
   const editingWallRef = useRef(editingWall)
   editingWallRef.current = editingWall
+
+  // Track the controls instance we registered the 'end' listener on so we
+  // can remove it if the instance changes or the component unmounts.
+  const listenerControlsRef = useRef<OrbitControlsType | null>(null)
+  const endHandlerRef = useRef<(() => void) | null>(null)
 
   const beginSwoosh = (
     fromPosition: THREE.Vector3,
@@ -189,18 +193,37 @@ export function CameraController({
     lastHandledTransitionKey.current = transitionKey
   }, [editingWall, wallPosition, wallRotation, wallDimensions, camera, transitionKey])
 
+  // Remove the 'end' listener when the component unmounts
+  useEffect(() => {
+    return () => {
+      if (listenerControlsRef.current && endHandlerRef.current) {
+        listenerControlsRef.current.removeEventListener('end', endHandlerRef.current)
+      }
+    }
+  }, [])
+
+  // Register/re-register the 'end' listener whenever the controls instance changes.
+  // Runs inside useFrame so we pick up the controls as soon as they're available,
+  // but we avoid the anti-pattern of addEventListener inside the hot frame path by
+  // guarding on instance identity rather than a boolean flag.
   useFrame((_state, delta) => {
     const controls = getControls(orbitControlsRef)
     if (!controls) return
 
-    if (!endListenerAdded.current) {
-      endListenerAdded.current = true
-      controls.addEventListener('end', () => {
+    if (listenerControlsRef.current !== controls) {
+      // Remove from old instance if there was one
+      if (listenerControlsRef.current && endHandlerRef.current) {
+        listenerControlsRef.current.removeEventListener('end', endHandlerRef.current)
+      }
+      // Create a stable handler that reads from refs so it never goes stale
+      endHandlerRef.current = () => {
         if (editingWallRef.current !== null) return
         positionOnEnd.current.copy(camera.position)
         targetOnEnd.current.copy(controls.target)
         restoreOnNextFrame.current = true
-      })
+      }
+      controls.addEventListener('end', endHandlerRef.current)
+      listenerControlsRef.current = controls
     }
 
     if (isAnimating.current) {

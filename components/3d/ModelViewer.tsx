@@ -32,19 +32,36 @@ function CrispOrbitRestore({ orbitControlsRef }: { orbitControlsRef: React.RefOb
   const restoreOnNextFrame = useRef(false)
   const positionOnEnd = useRef(new THREE.Vector3())
   const targetOnEnd = useRef(new THREE.Vector3())
-  const endListenerAdded = useRef(false)
+
+  // Track controls instance to register/remove listener when it changes
+  const listenerControlsRef = useRef<OrbitControlsType | null>(null)
+  const endHandlerRef = useRef<(() => void) | null>(null)
+
+  // Remove listener on unmount
+  useEffect(() => {
+    return () => {
+      if (listenerControlsRef.current && endHandlerRef.current) {
+        listenerControlsRef.current.removeEventListener('end', endHandlerRef.current)
+      }
+    }
+  }, [])
 
   useFrame(() => {
     const controls = getControls(orbitControlsRef)
     if (!controls) return
 
-    if (!endListenerAdded.current) {
-      endListenerAdded.current = true
-      controls.addEventListener('end', () => {
+    // Re-register listener if controls instance changed
+    if (listenerControlsRef.current !== controls) {
+      if (listenerControlsRef.current && endHandlerRef.current) {
+        listenerControlsRef.current.removeEventListener('end', endHandlerRef.current)
+      }
+      endHandlerRef.current = () => {
         positionOnEnd.current.copy(camera.position)
         targetOnEnd.current.copy(controls.target)
         restoreOnNextFrame.current = true
-      })
+      }
+      controls.addEventListener('end', endHandlerRef.current)
+      listenerControlsRef.current = controls
     }
 
     controls.update()

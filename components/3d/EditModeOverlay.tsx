@@ -1,6 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
+import { Board } from '@/types'
 
 interface EditModeOverlayProps {
   isVisible: boolean
@@ -11,10 +12,10 @@ interface EditModeOverlayProps {
   onCopy?: () => void
   onPaste?: () => void
   hasSelection?: boolean
-  availableBoards?: any[] // Optional - kept for API compatibility but not used
+  availableBoards?: Board[] // Optional - kept for API compatibility but not used
   wallDimensions?: { width: number; height: number } | null // Optional - kept for API compatibility but not used
-  onBoardSelect?: (board: any) => void // Optional - kept for API compatibility but not used
-  onBoardDragStart?: (board: any) => void // Optional - kept for API compatibility but not used
+  onBoardSelect?: (board: Board) => void // Optional - kept for API compatibility but not used
+  onBoardDragStart?: (board: Board) => void // Optional - kept for API compatibility but not used
 }
 
 export function EditModeOverlay({
@@ -38,7 +39,7 @@ export function EditModeOverlay({
           >
             <div className="px-4 py-2 bg-indigo-600 rounded-lg shadow-lg">
               <h2 className="text-xl font-semibold text-white">Edit Wall {wallIndex + 1}</h2>
-              <p className="text-sm text-white/90">Drag and drop boards to arrange them on the wall</p>
+              <p className="text-sm text-white/90">Drag files onto the canvas to upload, or arrange boards on the wall</p>
             </div>
             <div className="flex items-center gap-3">
               {onClearWall && (

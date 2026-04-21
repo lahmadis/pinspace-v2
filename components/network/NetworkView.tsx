@@ -10,7 +10,7 @@ interface NetworkNode {
   id: string
   type: 'school' | 'year' | 'studio'
   label: string
-  data: any
+  data: unknown
   x?: number
   y?: number
   radius: number
@@ -31,10 +31,8 @@ export default function NetworkView({
   schools,
   selectedSchool,
   selectedYear,
-  selectedStudio,
   onSelectSchool,
   onSelectYear,
-  onSelectStudio,
 }: NetworkViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [nodes, setNodes] = useState<NetworkNode[]>([])
@@ -97,11 +95,12 @@ export default function NetworkView({
     }
 
     // Run D3 force simulation to position nodes
-    const simulation = d3
-      .forceSimulation(newNodes as any)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const simulation = d3.forceSimulation(newNodes as any)
       .force('charge', d3.forceManyBody().strength(100))
       .force('center', d3.forceCenter(dimensions.width / 2, dimensions.height / 2))
-      .force('collision', d3.forceCollide().radius((d: any) => d.radius + 20))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .force('collision', d3.forceCollide().radius((d: any) => (d as NetworkNode).radius + 20))
       .stop()
 
     // Run simulation
@@ -112,7 +111,7 @@ export default function NetworkView({
 
   const handleNodeClick = (node: NetworkNode) => {
     if (node.type === 'school') {
-      onSelectSchool(node.data)
+      onSelectSchool(node.data as School)
     } else if (node.type === 'year') {
       onSelectYear(node.id)
     } else if (node.type === 'studio') {
@@ -123,8 +122,10 @@ export default function NetworkView({
 
   const handleBack = () => {
     if (selectedYear) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onSelectYear(null as any)
     } else if (selectedSchool) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onSelectSchool(null as any)
     }
   }

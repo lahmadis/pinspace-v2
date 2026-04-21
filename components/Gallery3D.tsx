@@ -2,10 +2,9 @@
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Text, Html } from '@react-three/drei'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Board } from '@/types'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { X } from 'lucide-react'
 import WallSystem from './3d/WallSystem'
@@ -36,9 +35,6 @@ type GalleryStudio = {
   isMock?: boolean
 }
 
-const DEFAULT_FLOOR = { width: 12, depth: 10 }
-const SPACING = 6
-const AVATAR_RADIUS = 0.6
 // Movement speed scaled for 1 unit = 1 inch
 // Normal walking speed: ~3-4 mph = ~70-90 inches/second
 // Scale from old 3.2 units/sec to ~80 inches/sec
@@ -62,15 +58,9 @@ const JUMP_VELOCITY = 120 // 120 inches/sec initial jump velocity
 const ORBIT_LERP = 0.1
 const PITCH_MIN = -0.6
 const PITCH_MAX = 1.2
-const MINIMAP_SCALE = 4
 // Entrance detection distance in inches
 const ENTRANCE_DISTANCE = 36 // 36 inches = 3 feet
-// Reduced from 30 to 15 for better performance - only render closest studios
-const MAX_RENDER_STUDIOS = 50 // Increased to show more studios with boards
-const BOARD_RENDER_DISTANCE = 28
 const DEFAULT_ROOM = { width: 20, depth: 15, height: 10 }
-// Reduce booth spacing: ~1.5 units (~4-5ft) between studios
-const WALKWAY = 1.5
 
 const lerpAngle = (a: number, b: number, t: number) => {
   const diff = THREE.MathUtils.euclideanModulo(b - a + Math.PI, Math.PI * 2) - Math.PI
@@ -157,98 +147,6 @@ const buildWallConfig = (footprint?: { width: number; depth: number }) => {
   }
 }
 
-const mockNames = [
-  'Urban Design Lab',
-  'Creative Studio',
-  'Tech Collective',
-  'Material Futures',
-  'Adaptive Habitat',
-  'Light & Space',
-  'Civic Ideas',
-  'Digital Fabrication',
-  'Eco Systems',
-  'Narrative Spaces',
-  'Interface Studio',
-  'Color Field'
-]
-
-const mockDepartments = ['Design', 'Engineering', 'Art', 'Architecture', 'Media', 'Computation']
-
-const randomBetween = (min: number, max: number) => Math.random() * (max - min) + min
-
-function generateMockStudios(count = 9): GalleryStudio[] {
-  const studios: GalleryStudio[] = []
-  const cols = 3
-  const STUDIO_SPACING = 1 // 1 inch spacing between rectangles
-
-  for (let i = 0; i < count; i++) {
-    const width = parseFloat(randomBetween(18, 24).toFixed(1))
-    const depth = parseFloat(randomBetween(14, 20).toFixed(1))
-    const name = mockNames[i % mockNames.length]
-    const dept = mockDepartments[i % mockDepartments.length]
-
-    const boards: Board[] = Array.from({ length: Math.floor(randomBetween(6, 10)) }).map((_, idx) => {
-      const id = `mock-board-${i}-${idx}`
-      const title = `${name} Pin ${idx + 1}`
-      const wallIndex = Math.floor(Math.random() * 4)
-      const px = parseFloat(randomBetween(-0.3, 0.3).toFixed(3))
-      const py = parseFloat(randomBetween(-0.2, 0.2).toFixed(3))
-      const w = parseFloat(randomBetween(0.2, 0.35).toFixed(3))
-      const h = parseFloat(randomBetween(0.2, 0.35).toFixed(3))
-      return {
-        id,
-        studioId: `mock-studio-${i}`,
-        studentName: 'Mock User',
-        title,
-        thumbnailUrl: '',
-        fullImageUrl: '',
-        uploadedAt: new Date(),
-        position: { wallIndex, x: px, y: py, width: w, height: h },
-        ownerColor: `hsl(${(i * 35 + idx * 20) % 360}, 70%, 60%)`,
-      }
-    })
-
-    const wallConfig = buildWallConfig({ width, depth })
-    
-    // Calculate actual bounding rectangle from wall config
-    const boundingRect = getBoundingRectangle({ 
-      wallConfig, 
-      boundingBox: { width, depth } 
-    } as GalleryStudio)
-
-    studios.push({
-      id: `mock-studio-${i}`,
-      studioId: `mock-studio-${i}`,
-      name,
-      department: dept,
-      year: 2024,
-      studentCount: Math.floor(randomBetween(8, 24)),
-      boundingBox: { width, depth },
-      boundingRectangle: boundingRect,
-      galleryPosition: { x: 0, z: 0 }, // Will be positioned in layout
-      boards,
-      wallConfig,
-      isMock: true,
-    })
-  }
-
-  // Position studios in grid using their actual bounding rectangles
-  const rows = Math.ceil(count / cols)
-  const boundingRects = studios.map(s => getBoundingRectangle(s))
-  const maxWidth = Math.max(...boundingRects.map(r => r.width * 12)) + STUDIO_SPACING
-  const maxDepth = Math.max(...boundingRects.map(r => r.depth * 12)) + STUDIO_SPACING
-  
-  const offsetX = -((cols - 1) * maxWidth) / 2
-  const offsetZ = -((rows - 1) * maxDepth) / 2
-  
-  return studios.map((studio, index) => {
-    const row = Math.floor(index / cols)
-    const col = index % cols
-    const x = offsetX + col * maxWidth
-    const z = offsetZ + row * maxDepth
-    return { ...studio, galleryPosition: { x, z } }
-  })
-}
 
 type MoveKeys = {
   forward: boolean
@@ -370,7 +268,7 @@ function CameraRig({
 }) {
   const lookAt = useRef(new THREE.Vector3())
 
-  useFrame((state, delta) => {
+  useFrame((state, _delta) => {
     const camera = state.camera as THREE.PerspectiveCamera
     const target = targetRef.current
     const { yaw } = orbitState.current
@@ -468,7 +366,7 @@ function StudioPlot({
     <group position={[position.x, 0, position.z]}>
       <WallSystem
         boards={renderBoards ? studio.boards || [] : []}
-        wallConfig={{ ...wallConfig, layoutType: wallConfig.layoutType || 'square' } as any}
+        wallConfig={{ ...wallConfig, layoutType: wallConfig.layoutType || 'square' } as any} // eslint-disable-line @typescript-eslint/no-explicit-any
         onWallClick={() => {}}
         editingWall={null}
         highlightedBoardId={highlightedBoardId}
@@ -493,7 +391,7 @@ function StudioPlot({
 
 function BoardProximityDetector({
   studios,
-  avatarPos,
+  avatarPos: _avatarPos,
   onNearbyBoardChange,
 }: {
   studios: GalleryStudio[]
@@ -610,7 +508,7 @@ function BoardProximityDetector({
 }
 
 // Helper function to get wall transform (matches WallSystem logic exactly)
-function getWallTransform(wall: { width: number; height: number }, wallIndex: number, wallConfig: any) {
+function getWallTransform(wall: { width: number; height: number }, wallIndex: number, wallConfig: { walls: Array<{ width: number; height: number }>; layoutType?: string }) {
   const SCALE = 12 // 1 unit = 1 inch, so 8ft = 96 units
   const layoutType = wallConfig.layoutType || 'square'
   const walls = wallConfig.walls || []
@@ -779,7 +677,7 @@ function SceneContents({
         onNearbyBoardChange={onNearbyBoardChange}
       />
 
-      {studiosSorted.map(({ studio, dist }) => {
+      {studiosSorted.map(({ studio }) => {
         // Always render boards immediately - no distance restriction
         // Boards should be visible as soon as studios are rendered
         const shouldRenderBoards = true
@@ -828,9 +726,9 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
   const aimingRef = useRef<boolean>(false)
   const avatarRef = useRef<Vec3>(avatarPos)
   const [isWalking, setIsWalking] = useState(false)
-  const [hoveredPin, setHoveredPin] = useState<{ id: string; name: string; position: THREE.Vector3 } | null>(null)
+  const [hoveredPin, _setHoveredPin] = useState<{ id: string; name: string; position: THREE.Vector3 } | null>(null)
   const orbitRef = useRef<{ yaw: number; pitch: number; radius: number }>({ yaw: 0, pitch: 0.15, radius: CAMERA_RADIUS })
-  const [cursorMode, setCursorMode] = useState<'crosshair' | 'cell' | 'pointer' | 'zoom-in'>('crosshair')
+  const [cursorMode, _setCursorMode] = useState<'crosshair' | 'cell' | 'pointer' | 'zoom-in'>('crosshair')
   const [pointerLocked, setPointerLocked] = useState(false)
   const [nearEntrance, setNearEntrance] = useState(false)
   const [promptStudio, setPromptStudio] = useState<{ studio: GalleryStudio; entrance: THREE.Vector3 } | null>(null)
@@ -977,8 +875,11 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
         const res = await fetch('/api/explore/studios')
         if (!res.ok) throw new Error('Failed to load studios')
         const data = await res.json()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const filtered = (data.studios || []).filter((s: any) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const numOnly = (val: any) => {
             const m = `${val || ''}`.match(/\d+/)
             return m ? m[0] : `${val || ''}`
@@ -994,6 +895,7 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
           return matchesDept && matchesYear
         })
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const studiosWithDefaults: GalleryStudio[] = filtered.map((s: any) => ({
           id: s.id || s.studioId || crypto.randomUUID(),
           studioId: s.studioId || s.id,
@@ -1049,9 +951,9 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
         const BOUNDING_DEPTH_INCHES = BOUNDING_DEPTH_FT * 12  // 720 inches
         const STUDIO_SPACING = 1 // 1 inch spacing between rectangles
         
-        // Cell size for grid layout (bounding rectangle + spacing)
-        const cellWidth = BOUNDING_WIDTH_INCHES + STUDIO_SPACING
-        const cellDepth = BOUNDING_DEPTH_INCHES + STUDIO_SPACING
+        // Cell size for grid layout (bounding rectangle + spacing) - used as max per-studio cell
+        const _cellWidth = BOUNDING_WIDTH_INCHES + STUDIO_SPACING
+        const _cellDepth = BOUNDING_DEPTH_INCHES + STUDIO_SPACING
 
         const placed = studiosWithBoards.map((studio, index) => {
           // Calculate actual bounding rectangle from wall configuration
@@ -1060,8 +962,8 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
           const boundingDepthInches = boundingRect.depth * 12
           
           // Use the actual bounding rectangle dimensions for cell size
-          const cellWidth = boundingWidthInches + STUDIO_SPACING
-          const cellDepth = boundingDepthInches + STUDIO_SPACING
+          const _cellWidth = boundingWidthInches + STUDIO_SPACING
+          const _cellDepth = boundingDepthInches + STUDIO_SPACING
           
           const col = index % cols
           const row = Math.floor(index / cols)
@@ -1123,6 +1025,58 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
       ? 'zoom-in'
       : 'crosshair'
 
+  // Stable Canvas event handlers — all use refs so they never need to change
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleCanvasWheel = useCallback((e: any) => {
+    e.preventDefault()
+    const delta = e.deltaY
+    const next = THREE.MathUtils.clamp(
+      orbitRef.current.radius + (delta > 0 ? 6 : -6),
+      40,
+      120
+    )
+    orbitRef.current.radius = next
+  }, [])
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleCanvasPointerDown = useCallback((e: any) => {
+    const hitObject = e.object
+    const isClickingBoard = hitObject && (
+      hitObject.userData?.isBoard === true ||
+      hitObject.parent?.userData?.isBoard === true ||
+      (hitObject.type === 'Mesh' && hitObject.material?.map !== undefined)
+    )
+    const mightBeClickingBoard = nearbyBoardRef.current && e.button === 0
+    if (!isClickingBoard && !mightBeClickingBoard) {
+      const canvasEl = e.target as HTMLElement
+      if (canvasEl?.requestPointerLock) {
+        canvasEl.requestPointerLock()
+      }
+    }
+    if (e.button === 2) {
+      aimingRef.current = true
+    }
+  }, [])
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleCanvasPointerUp = useCallback((e: any) => {
+    if (e.button === 2) {
+      aimingRef.current = false
+    }
+  }, [])
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleCanvasPointerMove = useCallback((e: any) => {
+    const dx = e.movementX || 0
+    const dy = e.movementY || 0
+    orbitRef.current.yaw -= dx * 0.004
+    orbitRef.current.pitch = THREE.MathUtils.clamp(
+      orbitRef.current.pitch + dy * 0.006,
+      PITCH_MIN,
+      PITCH_MAX
+    )
+  }, [])
+
   return (
     <div className="relative w-full h-full">
       <Canvas
@@ -1130,55 +1084,10 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
         camera={{ position: [0, 60, 96], fov: 55 }} // 60" high, 96" away (8 feet) - scaled for 1 unit = 1 inch
         style={{ cursor: canvasCursor }}
         onContextMenu={(e) => e.preventDefault()}
-        onWheel={(e) => {
-          e.preventDefault()
-          const delta = e.deltaY
-          const next = THREE.MathUtils.clamp(
-            orbitRef.current.radius + (delta > 0 ? 6 : -6), // 6 inches per scroll step
-            40, // Minimum zoom: 40 inches (~3.3ft)
-            120 // Maximum zoom: 120 inches (10ft)
-          )
-          orbitRef.current.radius = next
-        }}
-        onPointerDown={(e) => {
-          // Check if this click hit a 3D object (like a board)
-          // If it did, don't request pointer lock so the mouse stays visible
-          const hitObject = (e as any).object
-          const isClickingBoard = hitObject && (
-            hitObject.userData?.isBoard === true ||
-            hitObject.parent?.userData?.isBoard === true ||
-            (hitObject.type === 'Mesh' && hitObject.material?.map !== undefined) // Likely a board with texture
-          )
-          
-          // Also check if we're near a board (might be clicking on it)
-          const mightBeClickingBoard = nearbyBoard && e.button === 0
-          
-          // Only request pointer lock if clicking on empty space (not on a board)
-          if (!isClickingBoard && !mightBeClickingBoard) {
-            const canvasEl = e.target as HTMLElement
-            if (canvasEl?.requestPointerLock) {
-              canvasEl.requestPointerLock()
-            }
-          }
-          
-          if (e.button === 2) {
-            aimingRef.current = true
-          }
-        }}
-        onPointerUp={(e) => {
-          if (e.button === 2) {
-            aimingRef.current = false
-          }
-        }}
-        onPointerMove={(e) => {
-          const dx = e.movementX || 0
-          const dy = e.movementY || 0
-          // Invert yaw so dragging left rotates left (natural orbit feel)
-          orbitRef.current.yaw -= dx * 0.004
-          // Increase pitch responsiveness for easier up/down look
-          // Invert pitch so dragging up looks up, dragging down looks down
-          orbitRef.current.pitch = THREE.MathUtils.clamp(orbitRef.current.pitch + dy * 0.006, PITCH_MIN, PITCH_MAX)
-        }}
+        onWheel={handleCanvasWheel}
+        onPointerDown={handleCanvasPointerDown}
+        onPointerUp={handleCanvasPointerUp}
+        onPointerMove={handleCanvasPointerMove}
       >
         <color attach="background" args={['#f8fafc']} />
         <fog attach="fog" args={['#f8fafc', 480, 1680]} /> {/* Scaled: 40ft near, 140ft far */}
@@ -1433,7 +1342,7 @@ function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avatarPos: 
   // In R3F orthographic camera, zoom controls the visible area size
   // Lower zoom = shows more area (zoomed out), higher zoom = shows less area (zoomed in)
   // We want to fit all studios with some padding
-  const paddingFactor = 1.2 // 20% padding around studios
+  const _paddingFactor = 1.2 // 20% padding around studios
   
   // Calculate zoom: for orthographic, we need to relate viewSize to pixel size
   // Lower zoom values show more area (zoomed out)

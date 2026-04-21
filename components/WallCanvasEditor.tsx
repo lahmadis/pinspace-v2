@@ -263,7 +263,9 @@ export default function WallCanvasEditor({
         // For images, try to extract physical dimensions if available (e.g., from EXIF)
         // This is optional - images may not have physical dimensions
         if ('physicalWidth' in dims && 'physicalHeight' in dims) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           physicalWidth = (dims as any).physicalWidth
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           physicalHeight = (dims as any).physicalHeight
         }
         

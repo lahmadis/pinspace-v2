@@ -4,17 +4,24 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import Link from 'next/link'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
+import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import { toast } from '@/lib/toast'
 
 export default function JoinWorkspacePage() {
   const params = useParams()
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
+  interface WorkspaceInfo {
+    id: string
+    name: string
+    inviteCode: string
+    memberCount: number
+    institutionSlug?: string
+  }
+  const [user, setUser] = useState<User | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const inviteCode = params.code as string
-  
-  const [workspace, setWorkspace] = useState<any>(null)
+
+  const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState('')
@@ -131,7 +138,7 @@ export default function JoinWorkspacePage() {
             Join Workspace
           </h1>
           <p className="text-gray-600">
-            You've been invited to join
+            You&apos;ve been invited to join
           </p>
         </div>
 
@@ -181,7 +188,7 @@ export default function JoinWorkspacePage() {
             </button>
 
             <p className="text-xs text-gray-500 text-center">
-              By joining, you'll have access to the shared 3D studio and can add your own boards
+              By joining, you&apos;ll have access to the shared 3D studio and can add your own boards
             </p>
           </div>
         ) : (
@@ -199,7 +206,7 @@ export default function JoinWorkspacePage() {
             </Link>
 
             <p className="text-center text-sm text-gray-600">
-              Don't have an account?{' '}
+              Don&apos;t have an account?{' '}
               <Link href={workspace?.institutionSlug ? `/sign-up?institution=${workspace.institutionSlug}&redirect=/join/${inviteCode}` : `/sign-up?redirect=/join/${inviteCode}`} className="text-[#4444ff] hover:underline font-semibold">
                 Sign up
               </Link>

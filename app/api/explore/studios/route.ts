@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
     const isDemo = searchParams.get('demo') === 'true'
     const department = searchParams.get('department')
     const year = searchParams.get('year')
+    const academicYear = searchParams.get('academic_year')
     const institutionSlug = searchParams.get('institution_slug')
     const institutionId = searchParams.get('institution_id')
 
@@ -32,15 +33,15 @@ export async function GET(request: NextRequest) {
 
       if (department) {
         filtered = filtered.filter(s => {
-          const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
+          const norm = (val: string | number | null | undefined) => `${val || ''}`.toLowerCase().trim()
           return norm(s.department) === norm(department)
         })
       }
 
       if (year) {
         filtered = filtered.filter(s => {
-          const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
-          const numOnly = (val: any) => {
+          const norm = (val: string | number | null | undefined) => `${val || ''}`.toLowerCase().trim()
+          const numOnly = (val: string | number | null | undefined) => {
             const m = `${val || ''}`.match(/\d+/)
             return m ? m[0] : `${val || ''}`
           }
@@ -67,7 +68,7 @@ export async function GET(request: NextRequest) {
       // Filter by department if provided
       if (department) {
         studios = studios.filter(s => {
-          const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
+          const norm = (val: string | number | null | undefined) => `${val || ''}`.toLowerCase().trim()
           return norm(s.department) === norm(department)
         })
       }
@@ -75,8 +76,8 @@ export async function GET(request: NextRequest) {
       // Filter by year if provided
       if (year) {
         studios = studios.filter(s => {
-          const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
-          const numOnly = (val: any) => {
+          const norm = (val: string | number | null | undefined) => `${val || ''}`.toLowerCase().trim()
+          const numOnly = (val: string | number | null | undefined) => {
             const m = `${val || ''}`.match(/\d+/)
             return m ? m[0] : `${val || ''}`
           }
@@ -131,11 +132,17 @@ export async function GET(request: NextRequest) {
 
     if (institutionFilterId) {
       query = query.eq('institution_id', institutionFilterId)
+    } else {
+      // No institution filter → global view: only show globally-published studios
+      query = query.eq('is_globally_public', true)
     }
     if (department) {
       query = query.eq('network_metadata->>department', department)
     }
-    
+    if (academicYear) {
+      query = query.eq('academic_year', academicYear)
+    }
+
     // Fetch public workspaces from Supabase (with filters applied)
     const { data: publicWorkspaces, error } = await query
 
@@ -151,7 +158,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch member counts for each workspace
     const workspaceIds = publicWorkspaces?.map(w => w.id) || []
-    let memberCounts: Record<string, number> = {}
+    const memberCounts: Record<string, number> = {}
     
     if (workspaceIds.length > 0) {
       const { data: membersData, error: membersError } = await supabase
@@ -172,8 +179,8 @@ export async function GET(request: NextRequest) {
     if (year) {
       filteredWorkspaces = filteredWorkspaces.filter((w) => {
         const wYear = w.network_metadata?.year
-        const norm = (val: any) => `${val || ''}`.toLowerCase().trim()
-        const numOnly = (val: any) => {
+        const norm = (val: string | number | null | undefined) => `${val || ''}`.toLowerCase().trim()
+        const numOnly = (val: string | number | null | undefined) => {
           const m = `${val || ''}`.match(/\d+/)
           return m ? m[0] : `${val || ''}`
         }
@@ -216,11 +223,13 @@ export async function GET(request: NextRequest) {
         instructor: w.instructor || undefined,
         semester: undefined, // Not stored in DB currently
         year: yearNum,
+        academicYear: w.academic_year || undefined,
         memberCount: memberCounts[w.id] || 0,
         count: memberCounts[w.id] || 0,
         color: BUBBLE_COLOR, // Same color for all - connections differentiate
         url: `/studio/${w.id}/view`,
         studioId: w.id,
+        isGloballyPublic: w.is_globally_public || false,
       }
     })
 
@@ -242,7 +251,7 @@ export async function GET(request: NextRequest) {
     )
   } catch (error) {
     console.error('Error fetching studios:', error)
-    return NextResponse.json({ error: 'Failed to fetch studios', details: (error as Error).message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch studios' }, { status: 500 })
   }
 }
 

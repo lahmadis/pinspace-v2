@@ -16,13 +16,12 @@ import { DraggableBoard } from './DraggableBoard'
 import { WallDropZone } from '@/components/3d/WallDropZone'
 import RightCommentPanel from '@/components/RightCommentPanel'
 import LightboxModal from '@/components/LightboxModal'
-import { generateOwnerColor } from '@/lib/ownerColors'
 import { useBoardState } from './useBoardState'
 import { useBoardUpload } from '@/hooks/useBoardUpload'
 import FloorEditorOverlay from './FloorEditorOverlay'
 import TableWithModel from './TableWithModel'
 import ModelViewer from './ModelViewer'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
+import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import { toast } from '@/lib/toast'
 
 
@@ -60,11 +59,11 @@ interface StudioRoomProps {
   onWallConfigChange?: (config: WallConfig) => void
 }
 
-function SceneContent({ 
-  studioId, 
-  boards, 
+function SceneContent({
+  studioId,
+  boards: _boards,
   wallConfig,
-  onBoardUpdate,
+  onBoardUpdate: _onBoardUpdate,
   onWallClick,
   editingWall,
   placedBoards3D,
@@ -118,10 +117,11 @@ function SceneContent({
   tables: FloorTable[]
   onFloorClick?: () => void
   onTableModelClick?: (modelUrl: string) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   orbitControlsRef: React.RefObject<any>
   showEditUI: boolean
 }) {
-  const { camera, gl } = useThree()
+  useThree()
   const maxWallHeightRef = useRef<number>(96)
   const [targetY, setTargetY] = useState<number>(48) // inches; focus point for zoom
   const sceneInitLoggedRef = useRef(false)
@@ -315,7 +315,6 @@ function SceneContent({
 
         // Baseline room: 8ft wide, 8ft tall
         const baseWidthInches = 8 * 12
-        const baseHeightInches = 8 * 12
 
         // Scale distance based on overall footprint, not just a single wall.
         // For zigzag / multi-wall layouts, back the camera up further so ALL walls are visible on first load.
@@ -328,8 +327,6 @@ function SceneContent({
 
         // Wider rooms (or more connected walls) push the camera back more.
         const distanceScale = ((maxWallWidthInches * layoutFactor) / baseWidthInches) || 1
-        const heightScale = maxWallHeightInches / baseHeightInches || 1
-
         const minDistance = 80 * distanceScale       // Pull camera back a bit more by default
         const maxDistance = 1200 * distanceScale     // Allow zooming further out for very long rooms
 
@@ -391,9 +388,10 @@ function SceneContent({
 }
 
 export default function StudioRoom(props: StudioRoomProps) {
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null)
   const [isWorkspaceMember, setIsWorkspaceMember] = useState<boolean>(false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const orbitControlsRef = useRef<any>(null)
   
   useEffect(() => {
@@ -476,7 +474,6 @@ export default function StudioRoom(props: StudioRoomProps) {
   }, [placedBoards3D])
   const [draggingFromSidebar, setDraggingFromSidebar] = useState<Board | null>(null)
   const [commentPanelBoard, setCommentPanelBoard] = useState<Board | null>(null)
-  const [hoveredBoardId, setHoveredBoardId] = useState<string | null>(null)
   const copiedBoardRef = useRef<Board | null>(null)
   const clearWallConfirmedRef = useRef(false)
   const {
@@ -579,22 +576,17 @@ export default function StudioRoom(props: StudioRoomProps) {
         const existing = currentPlaced.get(board.id)
         // Temp boards: never overwrite center with boardPositions (avoids jump to corner from async timing)
         const alreadyAtCenter = existing && Math.abs(existing.x) < 0.01 && Math.abs(existing.y) < 0.01
-        let added = false
         if (isTemp && existing && alreadyAtCenter) {
           newMap.set(board.id, existing)
-          added = true
-        } else         if (pos) {
+        } else if (pos) {
           const usePos = isTemp ? { ...pos, x: 0, y: 0 } : pos
           newMap.set(board.id, usePos)
-          added = true
         } else if (isTemp) {
           // Temp not in boardPositions yet (async batching); keep at center so upload always shows immediately
           newMap.set(board.id, existing ?? { x: 0, y: 0, width: 0.3, height: 0.3 })
-          added = true
         } else if (existing) {
           // Real board not in boardPositions yet (e.g. after refetch/race); keep current placement so it doesn't disappear
           newMap.set(board.id, existing)
-          added = true
         }
       })
     setPlacedBoards3D(newMap)
@@ -1218,7 +1210,12 @@ export default function StudioRoom(props: StudioRoomProps) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedBoardId, editingWall, localBoards, handleBoardDelete, commentPanelBoard, undo, redo])
 
-  const { handleUpload, uploadFileDirect } = useBoardUpload({
+  const [isDragOver, setIsDragOver] = useState(false)
+  const dragCounterRef = useRef(0)
+  const showEditUIRef = useRef(showEditUI)
+  useEffect(() => { showEditUIRef.current = showEditUI }, [showEditUI])
+
+  const { handleUpload, uploadFileDirect, uploadFilesDirect } = useBoardUpload({
     studioId: props.studioId,
     user,
     editingWall,
@@ -1262,6 +1259,42 @@ export default function StudioRoom(props: StudioRoomProps) {
     return () => window.removeEventListener('paste', onPaste)
   }, [editingWall, uploadFileDirect, handlePaste])
 
+  // Window-level drag-and-drop: only active when in wall edit mode
+  useEffect(() => {
+    const onDragEnter = (e: DragEvent) => {
+      if (!showEditUIRef.current) return
+      if (!e.dataTransfer?.types.includes('Files')) return
+      dragCounterRef.current++
+      setIsDragOver(true)
+    }
+    const onDragLeave = () => {
+      dragCounterRef.current = Math.max(0, dragCounterRef.current - 1)
+      if (dragCounterRef.current === 0) setIsDragOver(false)
+    }
+    const onDragOver = (e: DragEvent) => {
+      if (showEditUIRef.current && e.dataTransfer?.types.includes('Files')) e.preventDefault()
+    }
+    const onDrop = async (e: DragEvent) => {
+      e.preventDefault()
+      dragCounterRef.current = 0
+      setIsDragOver(false)
+      if (!showEditUIRef.current) return
+      const files = Array.from(e.dataTransfer?.files || [])
+      if (files.length === 0) return
+      await uploadFilesDirect(files)
+    }
+    window.addEventListener('dragenter', onDragEnter)
+    window.addEventListener('dragleave', onDragLeave)
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragenter', onDragEnter)
+      window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [uploadFilesDirect])
+
   return (
     <>
       {/* Full-screen 3D model viewer overlay (keeps blob URLs valid) */}
@@ -1298,6 +1331,20 @@ export default function StudioRoom(props: StudioRoomProps) {
         />
       )}
 
+      {/* Drag-and-drop overlay — only shown when user is in wall edit mode and dragging files */}
+      {isDragOver && showEditUI && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none">
+          <div className="absolute inset-4 rounded-2xl border-4 border-dashed border-indigo-400 bg-indigo-600/20" />
+          <div className="relative bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl px-10 py-8 flex flex-col items-center gap-3">
+            <svg className="w-12 h-12 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <p className="text-indigo-700 font-semibold text-xl">Drop to add to wall</p>
+            <p className="text-indigo-400 text-sm">JPG, PNG, or PDF · max 50 MB each</p>
+          </div>
+        </div>
+      )}
+
       <EditModeOverlay
         isVisible={showEditUI}
         wallIndex={editingWall ?? 0}
@@ -1326,6 +1373,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap },
             alpha: true,
             premultipliedAlpha: false
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } as any}
           style={{ background: '#D8DEFF' }}
         >
@@ -1355,11 +1403,12 @@ export default function StudioRoom(props: StudioRoomProps) {
             draggingFromSidebar={draggingFromSidebar}
             onBoardDrop={handleBoardDrop}
             onDragCancel={handleDragCancel}
-          onCommentClick={(board) => {
-            devLog('💬 [Lightbox] Opening for:', board.id)
-            handleLightboxOpen(board)
+          onCommentClick={(board: unknown) => {
+            const selected = board as Board
+            devLog('💬 [Lightbox] Opening for:', selected.id)
+            handleLightboxOpen(selected)
           }}
-          onBoardClick={handleLightboxOpen}
+          onBoardClick={(board: unknown) => handleLightboxOpen(board as Board)}
             selectedBoardId={selectedBoardId}
             setSelectedBoardId={setSelectedBoardId}
             onDeselect={() => setSelectedBoardId(null)}

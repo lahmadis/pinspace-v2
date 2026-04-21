@@ -29,25 +29,23 @@ const YEAR_COLORS: Record<string, string> = {
 
 export default function YearPage({ params }: { params: { department: string; year: string } }) {
   const deptMeta = DEPT_MAP[params.department]
-  if (!deptMeta) return notFound()
-
   const yearInfo = YEAR_MAP[params.year]
-  if (!yearInfo) return notFound()
-  
-  const yearLabel = yearInfo.label
-  const yearNum = yearInfo.num
 
   const [nodes, setNodes] = useState<BubbleNode[]>([])
   const [studioCount, setStudioCount] = useState(0)
   const [isFullScreen, setIsFullScreen] = useState(false)
 
+  const yearLabel = yearInfo?.label ?? ''
+  const yearNum = yearInfo?.num ?? 0
+
   useEffect(() => {
+    if (!deptMeta || !yearInfo) return
     const load = async () => {
       try {
         const res = await fetch(`/api/workspaces/public?department=${encodeURIComponent(deptMeta.name)}&year=${encodeURIComponent(yearLabel)}`, { cache: 'no-store' })
         if (!res.ok) return
         const data = await res.json()
-        const studios: any[] = data.workspaces || []
+        const studios: { id: string; name: string; memberCount?: number; members?: unknown[]; studioId?: string; instructor?: string; semester?: string }[] = data.workspaces || []
         setStudioCount(studios.length)
         setNodes(studios.map((studio) => ({
           id: studio.id,
@@ -68,7 +66,10 @@ export default function YearPage({ params }: { params: { department: string; yea
       }
     }
     load()
-  }, [deptMeta.name, deptMeta.color, yearLabel, yearNum])
+  }, [deptMeta?.name, deptMeta?.color, yearLabel, yearNum])
+
+  if (!deptMeta) return notFound()
+  if (!yearInfo) return notFound()
 
   const handleClick = (node: BubbleNode) => {
     if (node.url) window.location.href = node.url

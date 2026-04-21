@@ -5,14 +5,13 @@ import Link from 'next/link'
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import DemoBanner from '@/components/DemoBanner'
 import Loading from '@/components/Loading'
 import { getStudioById, getBoardsByStudio, transformDemoBoard, type DemoStudio } from '@/lib/mockData'
 import { Board } from '@/types'
 import WallSystem from '@/components/3d/WallSystem'
 import { CameraController } from '@/components/3d/CameraController'
-import { EditModeOverlay } from '@/components/3d/EditModeOverlay'
 import { addDemoParam } from '@/lib/demoMode'
 
 export default function DemoStudioRoomPage() {
@@ -23,7 +22,7 @@ export default function DemoStudioRoomPage() {
   const [studio, setStudio] = useState<Pick<DemoStudio, 'id' | 'name' | 'description' | 'instructor'> | null>(null)
   const [boards, setBoards] = useState<Board[]>([])
   const [loading, setLoading] = useState<boolean>(true)
-  const [editingWall, setEditingWall] = useState<number | null>(null)
+  const [editingWall] = useState<number | null>(null)
   const orbitControlsRef = useRef<unknown>(null)
 
   // Default wall config for demo (4 walls, 8ft × 10ft each)
@@ -156,7 +155,7 @@ export default function DemoStudioRoomPage() {
               onBoardClick={(board) => {
                 console.log('Board clicked:', board.title)
               }}
-              onWallClick={(wallIndex, wallDimensions, position, rotation) => {
+              onWallClick={(wallIndex) => {
                 // View mode - no edit functionality
                 console.log('Wall clicked:', wallIndex)
               }}

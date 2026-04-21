@@ -75,19 +75,13 @@ export async function PATCH(
         return NextResponse.json({ error: 'An institution with this slug already exists' }, { status: 409 })
       }
       console.error('Error updating institution:', updateErr)
-      return NextResponse.json(
-        { error: 'Failed to update institution', details: updateErr.message },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'Failed to update institution' }, { status: 500 })
     }
 
     return NextResponse.json(updated)
   } catch (error) {
     console.error('Error in PATCH /api/admin/institutions/[slug]:', error)
-    return NextResponse.json(
-      { error: 'Internal Server Error', details: (error as Error).message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 
@@ -142,19 +136,12 @@ export async function DELETE(
 
     if (delErr) {
       console.error('Error deleting institution:', delErr)
-      return NextResponse.json(
-        { error: 'Failed to delete institution', details: delErr.message },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'Failed to delete institution' }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error in DELETE /api/admin/institutions/[slug]:', error)
-    return NextResponse.json(
-      { error: 'Internal Server Error', details: (error as Error).message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
-

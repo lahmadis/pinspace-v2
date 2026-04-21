@@ -9,7 +9,6 @@ import { toast } from '@/lib/toast'
 
 export default function NewStudioPage() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
@@ -23,7 +22,6 @@ export default function NewStudioPage() {
         router.push('/sign-in')
         return
       }
-      setUser(session.user)
       setIsLoaded(true)
     })
     
@@ -32,7 +30,6 @@ export default function NewStudioPage() {
         router.push('/sign-in')
         return
       }
-      setUser(session.user)
       setIsLoaded(true)
     })
     
@@ -68,7 +65,7 @@ export default function NewStudioPage() {
       }
 
       // Redirect to the studio room
-      router.push(`/studio/${data.id}`)
+      router.push(`/studio/${data.workspace?.id || data.id}`)
     } catch (error) {
       console.error('Error:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to create room')
@@ -167,7 +164,7 @@ export default function NewStudioPage() {
                   <ul className="text-sm text-indigo-800 space-y-1">
                     <li>• A new 3D studio room will be created</li>
                     <li>• You can add boards and organize your work</li>
-                    <li>• The room will appear in "My Personal Rooms" on your dashboard</li>
+                    <li>• The room will appear in &quot;My Personal Rooms&quot; on your dashboard</li>
                   </ul>
                 </div>
               </div>

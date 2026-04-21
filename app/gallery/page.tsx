@@ -14,8 +14,6 @@ function GalleryContent() {
   const avatarColor = searchParams?.get('color') || '#6366f1'
   const department = searchParams?.get('department') || null
   const year = searchParams?.get('year') || null
-  const isDemo = searchParams?.get('demo') === 'true'
-
   return (
     <main className="w-full h-screen">
       <Gallery3D avatarColor={avatarColor} department={department} year={year} />

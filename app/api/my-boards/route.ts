@@ -13,7 +13,7 @@ export async function GET() {
 
     if (sessionError) {
       console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
 
     const userId = session?.user?.id
@@ -30,14 +30,11 @@ export async function GET() {
 
     if (error) {
       console.error('Error fetching user boards:', error)
-      return NextResponse.json({ 
-        error: 'Failed to fetch boards', 
-        details: error.message || error 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch boards' }, { status: 500 })
     }
 
     // Transform to frontend format
-    const transformedBoards = (boards || []).map((board: any) => ({
+    const transformedBoards = (boards || []).map((board) => ({
       id: board.id,
       studioId: board.workspace_id,
       workspaceId: board.workspace_id,
@@ -70,9 +67,6 @@ export async function GET() {
     return NextResponse.json({ boards: transformedBoards })
   } catch (error) {
     console.error('Error fetching boards:', error)
-    return NextResponse.json({ 
-      error: 'Failed to fetch boards', 
-      details: (error as Error).message 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch boards' }, { status: 500 })
   }
 }

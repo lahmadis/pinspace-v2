@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import DemoBanner from '@/components/DemoBanner'
 import Loading from '@/components/Loading'
 import { getStudioById, getBoardsByStudio, transformDemoBoard, type DemoStudio } from '@/lib/mockData'
@@ -148,7 +148,7 @@ export default function DemoStudioRoomPage() {
               onBoardClick={(board) => {
                 console.log('Board clicked:', board.title)
               }}
-              onWallClick={(wallIndex, wallDimensions, position, rotation) => {
+              onWallClick={(wallIndex) => {
                 if (editingWall === null) {
                   setEditingWall(wallIndex)
                 }

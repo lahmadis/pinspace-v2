@@ -12,12 +12,12 @@ export async function GET(
       data: { session },
       error: sessionError,
     } = await supabase.auth.getSession()
-    
+
     if (sessionError) {
       console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
-    
+
     const userId = session?.user?.id
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -38,10 +38,7 @@ export async function GET(
         // No rows returned
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
-      return NextResponse.json({ 
-        error: 'Failed to fetch workspace', 
-        details: error.message || error 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch workspace' }, { status: 500 })
     }
 
     if (!workspace) {
@@ -61,16 +58,21 @@ export async function GET(
 
     // Check if user owns the workspace or is a member
     const isOwner = workspace.owner_id === userId
-    
+
     // Check membership
-    const { data: membership } = await supabase
+    const { data: membership, error: membershipError } = await supabase
       .from('workspace_members')
-      .select('*')
+      .select('user_id')
       .eq('workspace_id', workspaceId)
       .eq('user_id', userId)
-      .single()
+      .maybeSingle()
 
-    if (!isOwner && !membership) {
+    if (membershipError) {
+      console.error('Error checking workspace membership:', membershipError)
+      return NextResponse.json({ error: 'Failed to verify access' }, { status: 500 })
+    }
+
+    if (!isOwner && membership === null) {
       return NextResponse.json({ error: 'Not a member of this workspace' }, { status: 403 })
     }
 
@@ -100,7 +102,7 @@ export async function GET(
       type: workspace.type || 'class',
       createdBy: workspace.owner_id,
       studioId: workspace.id, // For backward compatibility
-      members: membersList.map((m: any) => ({
+      members: membersList.map((m) => ({
         userId: m.user_id,
         name: m.name || 'Unknown',
         role: m.role || 'student',
@@ -109,6 +111,7 @@ export async function GET(
       inviteCode: workspace.invite_code || workspace.id.substring(0, 8).toUpperCase(), // Generate from ID if no code
       createdAt: workspace.created_at || new Date(),
       isPublic: workspace.is_public || false,
+      isGloballyPublic: workspace.is_globally_public || false,
       publishedAt: workspace.published_at || undefined,
       networkMetadata: workspace.network_metadata || undefined,
       instructor: workspace.instructor || undefined,
@@ -117,12 +120,9 @@ export async function GET(
     }
 
     return NextResponse.json({ workspace: transformedWorkspace })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Unexpected error fetching workspace:', error)
-    return NextResponse.json({ 
-      error: 'Internal Server Error', 
-      details: error?.message || String(error) 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 
@@ -140,7 +140,7 @@ export async function PATCH(
 
     if (sessionError) {
       console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
 
     const userId = session?.user?.id
@@ -182,13 +182,13 @@ export async function PATCH(
 
     if (updateError) {
       console.error('Error updating workspace:', updateError)
-      return NextResponse.json({ error: 'Failed to update workspace', details: updateError.message }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to update workspace' }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Unexpected error updating workspace:', error)
-    return NextResponse.json({ error: 'Internal Server Error', details: error?.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 
@@ -203,12 +203,12 @@ export async function DELETE(
       data: { session },
       error: sessionError,
     } = await supabase.auth.getSession()
-    
+
     if (sessionError) {
       console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
-    
+
     const userId = session?.user?.id
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -230,10 +230,10 @@ export async function DELETE(
 
     // Check if user owns the workspace
     const isOwner = workspace.owner_id === userId
-    
+
     if (!isOwner) {
-      return NextResponse.json({ 
-        error: 'Only workspace owners can delete workspaces' 
+      return NextResponse.json({
+        error: 'Only workspace owners can delete workspaces'
       }, { status: 403 })
     }
 
@@ -257,19 +257,12 @@ export async function DELETE(
 
     if (deleteError) {
       console.error('Error deleting workspace:', deleteError)
-      return NextResponse.json({ 
-        error: 'Failed to delete workspace', 
-        details: deleteError.message || deleteError 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to delete workspace' }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Unexpected error deleting workspace:', error)
-    return NextResponse.json({ 
-      error: 'Internal Server Error', 
-      details: error?.message || String(error) 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
-

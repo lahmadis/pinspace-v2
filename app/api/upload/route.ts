@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase/server'
+import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import sharp from 'sharp'
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,34 +9,46 @@ export async function POST(request: NextRequest) {
       data: { session },
       error: sessionError,
     } = await supabase.auth.getSession()
-    
+
     if (sessionError) {
       console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
-    
+
     const userId = session?.user?.id
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { data: userProfile } = await supabase
+      .from('user_profiles')
+      .select('full_name')
+      .eq('user_id', userId)
+      .single()
+    const profileName = userProfile?.full_name?.trim() || null
+
     const formData = await request.formData()
-    
+
     const file = formData.get('image') as File | null
     const rawWorkspaceId = (formData.get('workspaceId') ?? formData.get('studioId')) as string | null
     const workspaceId = (rawWorkspaceId && String(rawWorkspaceId).trim() && String(rawWorkspaceId) !== 'undefined') ? String(rawWorkspaceId).trim() : null
     const rawStudentName = formData.get('studentName') as string | null
-    const studentName = (rawStudentName && String(rawStudentName).trim()) ? String(rawStudentName).trim() : (session?.user?.user_metadata?.email?.split('@')[0] || 'Uploaded Board')
+    const studentName = (rawStudentName && String(rawStudentName).trim())
+      ? String(rawStudentName).trim()
+      : (profileName || session?.user?.user_metadata?.email?.split('@')[0] || 'Uploaded Board')
     const studentEmail = formData.get('studentEmail') as string
     const rawTitle = formData.get('title') as string | null
     const title = (rawTitle && String(rawTitle).trim()) ? String(rawTitle).trim() : 'Untitled Board'
     const description = formData.get('description') as string
     const tags = formData.get('tags') as string
-    
+
     // Owner information (from authenticated user)
-    const ownerName = formData.get('ownerName') as string | null || session.user.user_metadata?.email?.split('@')[0] || 'User'
+    const ownerName = (formData.get('ownerName') as string | null)?.trim() ||
+                      profileName ||
+                      session.user.user_metadata?.email?.split('@')[0] ||
+                      'User'
     const ownerColor = formData.get('ownerColor') as string | null
-    
+
     // Dimensions for aspect ratio preservation
     const originalWidth = formData.get('originalWidth') as string | null
     const originalHeight = formData.get('originalHeight') as string | null
@@ -43,7 +56,7 @@ export async function POST(request: NextRequest) {
     // Physical dimensions in inches
     const physicalWidth = formData.get('physicalWidth') as string | null
     const physicalHeight = formData.get('physicalHeight') as string | null
-    
+
     // Optional position data (0-100 percentage; 50,50 = center of wall)
     const wallIndex = formData.get('position_wall_index')
     const posX = formData.get('position_x')
@@ -79,10 +92,10 @@ export async function POST(request: NextRequest) {
     }
     const uploadFile = file as File
 
-    // Validate file size (25MB limit so typical phone photos can upload)
-    const maxSize = 25 * 1024 * 1024 // 25MB
+    // Validate file size (50MB limit)
+    const maxSize = 50 * 1024 * 1024 // 50MB
     if (uploadFile.size > maxSize) {
-      return NextResponse.json({ error: 'File size exceeds 25MB limit' }, { status: 400 })
+      return NextResponse.json({ error: 'File size exceeds 50MB limit' }, { status: 400 })
     }
 
     // Validate file type
@@ -91,30 +104,46 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid file type. Only JPEG, PNG, WebP, and PDF are allowed' }, { status: 400 })
     }
 
+    // Convert File to ArrayBuffer
+    const arrayBuffer = await uploadFile.arrayBuffer()
+    const inputBuffer = Buffer.from(arrayBuffer)
+
+    // Compress images to WebP (skip for PDFs — handled as pre-converted images)
+    let uploadBuffer: Buffer = inputBuffer
+    let uploadContentType = uploadFile.type
+    const isPdf = uploadFile.type === 'application/pdf'
+
+    if (!isPdf) {
+      try {
+        uploadBuffer = await sharp(inputBuffer)
+          .resize({ width: 2400, withoutEnlargement: true })
+          .webp({ quality: 85 })
+          .toBuffer()
+        uploadContentType = 'image/webp'
+      } catch (compressErr) {
+        // Fall back to original if sharp fails (e.g. unsupported format)
+        console.warn('Image compression failed, using original:', compressErr)
+        uploadBuffer = inputBuffer
+        uploadContentType = uploadFile.type
+      }
+    }
+
     // Upload file to Supabase Storage
-    const ext = uploadFile.name.split('.').pop() || 'jpg'
+    const ext = isPdf ? (uploadFile.name.split('.').pop() || 'jpg') : 'webp'
     const timestamp = Date.now()
     const filename = `${userId}/${timestamp}-${Math.random().toString(36).substring(7)}.${ext}`
-    // File path should NOT include bucket name - just the path within the bucket
     const filePath = filename
 
-    // Convert File to ArrayBuffer then to Uint8Array for Supabase
-    const arrayBuffer = await uploadFile.arrayBuffer()
-    const uint8Array = new Uint8Array(arrayBuffer)
-
-    const { data: uploadData, error: uploadError } = await supabase.storage
+    const { error: uploadError } = await supabase.storage
       .from('board-images')
-      .upload(filePath, uint8Array, {
-        contentType: uploadFile.type,
-        upsert: false, // Don't overwrite existing files
+      .upload(filePath, uploadBuffer, {
+        contentType: uploadContentType,
+        upsert: false,
       })
 
     if (uploadError) {
       console.error('Error uploading to Supabase Storage:', uploadError)
-      return NextResponse.json({ 
-        error: 'Failed to upload image', 
-        details: uploadError.message || uploadError 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to upload image' }, { status: 500 })
     }
 
     // Get public URL for the uploaded image
@@ -152,19 +181,60 @@ export async function POST(request: NextRequest) {
       physical_width: physicalWidth ? parseFloat(physicalWidth) : null,
       physical_height: physicalHeight ? parseFloat(physicalHeight) : null,
     }
-    
-    const { data: savedBoard, error: dbError } = await supabase
+
+    let { data: savedBoard, error: dbError } = await supabase
       .from('boards')
       .insert(boardData)
       .select()
       .single()
 
     if (dbError) {
+      // Fallback for environments with stricter/misaligned RLS:
+      // verify user access explicitly, then insert with service role.
+      const admin = supabaseServiceRole()
+      const { data: workspace } = await admin
+        .from('workspaces')
+        .select('owner_id, is_public')
+        .eq('id', workspaceId)
+        .maybeSingle()
+
+      const isOwner = workspace?.owner_id === userId
+      let isMember = false
+      if (!isOwner) {
+        const { data: membership } = await admin
+          .from('workspace_members')
+          .select('user_id')
+          .eq('workspace_id', workspaceId)
+          .eq('user_id', userId)
+          .maybeSingle()
+        isMember = !!membership
+      }
+
+      if (!workspace || (!isOwner && !isMember && !workspace.is_public)) {
+        console.error('Upload forbidden after RLS fallback check:', dbError)
+        // Use service role for cleanup — user session may lack storage DELETE permission
+        await admin.storage.from('board-images').remove([filePath])
+        return NextResponse.json(
+          { error: 'Not authorized to save board in this workspace' },
+          { status: 403 }
+        )
+      }
+
+      const fallbackInsert = await admin
+        .from('boards')
+        .insert(boardData)
+        .select()
+        .single()
+      savedBoard = fallbackInsert.data
+      dbError = fallbackInsert.error
+    }
+
+    if (dbError || !savedBoard) {
       console.error('Error saving board to database:', dbError)
-      return NextResponse.json({ 
-        error: 'Failed to save board', 
-        details: dbError.message || dbError 
-      }, { status: 500 })
+      // Use service role for cleanup — user session may lack storage DELETE permission
+      const adminCleanup = supabaseServiceRole()
+      await adminCleanup.storage.from('board-images').remove([filePath])
+      return NextResponse.json({ error: 'Failed to save board' }, { status: 500 })
     }
 
     // Transform to frontend format

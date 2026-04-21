@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
+import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import Link from 'next/link'
 import type { Institution } from '@/types'
 import { Building2, Plus, ExternalLink, Trash2, Pencil, X, MoreVertical } from 'lucide-react'
@@ -11,7 +11,7 @@ import { toast } from '@/lib/toast'
 
 export default function AdminInstitutionsPage() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
   const [institutions, setInstitutions] = useState<Institution[]>([])
@@ -52,7 +52,7 @@ export default function AdminInstitutionsPage() {
   const fetchInstitutions = () => {
     fetch('/api/institutions', { cache: 'no-store' })
       .then((res) => res.json())
-      .then((data: Institution[]) => setInstitutions(Array.isArray(data) ? data : []))
+      .then((data: { institutions: Institution[] }) => setInstitutions(Array.isArray(data.institutions) ? data.institutions : []))
       .catch(() => setInstitutions([]))
   }
 
@@ -95,7 +95,7 @@ export default function AdminInstitutionsPage() {
       })
       const data = await res.json()
       if (!res.ok) {
-        setEditError(data.error || data.details || 'Failed to update')
+        setEditError(data.error || 'Failed to update')
         return
       }
       setEditingInst(null)
@@ -123,7 +123,7 @@ export default function AdminInstitutionsPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setFormError(data.error || data.details || 'Failed to delete institution')
+        setFormError(data.error || 'Failed to delete institution')
         return
       }
       fetchInstitutions()
@@ -182,12 +182,12 @@ export default function AdminInstitutionsPage() {
       const data = await res.json()
       if (!res.ok) {
         const msg = data.error || (res.status === 403 ? 'Only admins can add institutions. Set PINSPACE_ADMIN_EMAILS in env.' : 'Failed to create')
-        setFormError(data.details ? `${msg}: ${data.details}` : msg)
+        setFormError(msg)
         return
       }
       setFormData({ name: '', slug: '', type: 'institution', network_label: '', allowed_email_domains: '' })
       fetchInstitutions()
-    } catch (err) {
+    } catch {
       setFormError('Request failed')
     } finally {
       setLoading(false)

@@ -74,7 +74,7 @@ export default function BoardDetailPage() {
         setShowCommentForm(false)
         toast.success('Comment added!')
       }
-    } catch (error) {
+    } catch {
       toast.error('Failed to add comment')
     } finally {
       setSubmitting(false)

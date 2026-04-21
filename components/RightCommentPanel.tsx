@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
+import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import { Comment, Board } from '@/types'
 
 interface RightCommentPanelProps {
@@ -39,7 +39,7 @@ function getAvatarColor(name: string): string {
 }
 
 export default function RightCommentPanel({ board, onClose }: RightCommentPanelProps) {
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(false)
   const [newComment, setNewComment] = useState('')
@@ -109,7 +109,7 @@ export default function RightCommentPanel({ board, onClose }: RightCommentPanelP
       setComments(prev => [...prev, data.comment])
       setNewComment('')
       textareaRef.current?.focus()
-    } catch (err) {
+    } catch {
       toast.error('Failed to post comment')
     } finally {
       setPosting(false)

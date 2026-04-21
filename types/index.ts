@@ -111,6 +111,7 @@ export interface Workspace {
   inviteCode: string // random code for joining
   createdAt: Date
   isPublic: boolean // Whether visible in public network (default: false)
+  isGloballyPublic?: boolean // Whether visible in the global PinSpace network (default: false)
   publishedAt?: Date // When it was published to network
   instructor?: string // Instructor/professor name
   semester?: string // e.g., "Fall 2024"

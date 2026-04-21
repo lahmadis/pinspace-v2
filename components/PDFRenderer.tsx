@@ -8,37 +8,41 @@ interface PDFRendererProps {
   scale?: number
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PdfJsWindow = Window & { pdfjsLib?: any }
+
 // Load PDF.js from CDN
 const loadPdfJs = (() => {
   let loading = false
   let loaded = false
-  
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async (): Promise<any> => {
-    if (loaded && (window as any).pdfjsLib) {
-      return (window as any).pdfjsLib
+    if (loaded && (window as PdfJsWindow).pdfjsLib) {
+      return (window as PdfJsWindow).pdfjsLib
     }
-    
+
     if (loading) {
       // Wait for the script to load
       return new Promise((resolve) => {
         const checkLoaded = setInterval(() => {
-          if ((window as any).pdfjsLib) {
+          if ((window as PdfJsWindow).pdfjsLib) {
             clearInterval(checkLoaded)
-            resolve((window as any).pdfjsLib)
+            resolve((window as PdfJsWindow).pdfjsLib)
           }
         }, 100)
       })
     }
-    
+
     loading = true
-    
+
     return new Promise((resolve, reject) => {
       const script = document.createElement('script')
       script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'
       script.async = true
-      
+
       script.onload = () => {
-        const pdfjsLib = (window as any).pdfjsLib
+        const pdfjsLib = (window as PdfJsWindow).pdfjsLib
         if (pdfjsLib) {
           pdfjsLib.GlobalWorkerOptions.workerSrc = 
             'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'

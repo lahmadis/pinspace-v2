@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import * as THREE from 'three'
@@ -59,11 +58,13 @@ function CrispOrbitRestore({ orbitControlsRef }: { orbitControlsRef: React.RefOb
     // Match StudioRoom controls: no damping, specific mouse buttons, screen-space panning
     ;(controls as { enableDamping?: boolean; dampingFactor?: number }).enableDamping = false
     ;(controls as { enableDamping?: boolean; dampingFactor?: number }).dampingFactor = 0
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(controls as any).mouseButtons = {
       LEFT: THREE.MOUSE.ROTATE,
       MIDDLE: THREE.MOUSE.DOLLY,
       RIGHT: THREE.MOUSE.PAN,
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(controls as any).screenSpacePanning = true
 
     controls.update()
@@ -90,7 +91,6 @@ function StudioViewCameraControls({ wallConfig }: { wallConfig: WallConfig | nul
 
   // Baseline room: 8ft wide, 8ft tall
   const baseWidthInches = 8 * 12
-  const baseHeightInches = 8 * 12
 
   const wallCount = wallConfig?.walls?.length ?? 1
   const layoutType = wallConfig?.layoutType ?? 'zigzag'
@@ -178,6 +178,12 @@ export default function StudioViewPage() {
       modelUrl: t.modelUrl?.startsWith('blob:') ? undefined : t.modelUrl,
     }))
   })()
+
+  // Increment view counter once per page visit (fire-and-forget, never blocks rendering)
+  useEffect(() => {
+    if (isDemo) return
+    fetch(`/api/studios/${studioId}/view`, { method: 'POST' }).catch(() => {})
+  }, [studioId, isDemo])
 
   // Load data: use cache first for instant open when coming from bubble network prefetch
   useEffect(() => {
@@ -299,6 +305,10 @@ export default function StudioViewPage() {
     }
   }, [boards, searchParams])
 
+  useEffect(() => {
+    document.title = 'Studio View – PinSpace'
+  }, [])
+
   const fetchBoards = async () => {
     try {
       // Avoid flashing loading if cache was populated (e.g. prefetch completed after nav)
@@ -325,8 +335,7 @@ export default function StudioViewPage() {
   }
 
   const handleBoardClick = (board: Board) => {
-    const clickShift = !!((window as any).event?.shiftKey)
-    const shiftActive = shiftPressedRef.current || clickShift
+    const shiftActive = shiftPressedRef.current
     if (shiftActive) {
       setCompareBoardIds((prev) =>
         prev.includes(board.id)
@@ -390,6 +399,14 @@ export default function StudioViewPage() {
 
   return (
     <div className="relative w-full h-screen overflow-hidden" style={{ background: '#B3B3FF' }}>
+      {/* Mobile warning — 3D canvas requires a desktop browser */}
+      <div className="md:hidden absolute inset-0 z-[9999] bg-gray-900 flex items-center justify-center p-6">
+        <div className="text-center max-w-sm">
+          <p className="text-4xl mb-4">🖥️</p>
+          <h2 className="text-white text-xl font-bold mb-2">Desktop required</h2>
+          <p className="text-gray-400 text-sm">The 3D studio viewer requires a desktop browser. Please visit on a laptop or desktop computer.</p>
+        </div>
+      </div>
       <DemoBanner />
 
       {/* Animated gradient background effects (match studio room page) */}
@@ -478,6 +495,7 @@ export default function StudioViewPage() {
           shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap },
           alpha: true,
           premultipliedAlpha: false,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
         style={{ background: '#D8DEFF' }}
       >

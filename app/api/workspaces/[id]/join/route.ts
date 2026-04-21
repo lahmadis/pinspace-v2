@@ -31,7 +31,7 @@ export async function POST(
 
     if (sessionError) {
       console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
 
     const userId = session?.user?.id
@@ -93,32 +93,29 @@ export async function POST(
 
     if (existingMemberError) {
       console.error('Error checking existing membership:', existingMemberError)
-      return NextResponse.json(
-        { error: 'Failed to verify membership', details: existingMemberError.message || existingMemberError },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'Failed to verify membership' }, { status: 500 })
     }
 
     if (existingMember) {
       return NextResponse.json({
-        success: true, 
+        success: true,
         workspace: {
           id: workspace.id,
           name: workspace.name,
         },
-        alreadyMember: true 
+        alreadyMember: true
       })
     }
 
     // Add user as student member (support schema variants with/without "name" column).
-    let insertPayload: Record<string, unknown> = {
+    const insertPayload: Record<string, unknown> = {
       workspace_id: workspaceId,
       user_id: userId,
       role: 'student',
     }
     if (userName) insertPayload.name = userName
 
-    let { data: newMember, error: insertError } = await admin
+    let { error: insertError } = await admin
       .from('workspace_members')
       .insert(insertPayload)
       .select()
@@ -135,20 +132,16 @@ export async function POST(
         .insert(fallbackPayload)
         .select()
         .single()
-      newMember = retry.data
       insertError = retry.error
     }
 
     if (insertError) {
       console.error('Error adding member to workspace:', insertError)
-      return NextResponse.json({ 
-        error: 'Failed to join workspace', 
-        details: insertError.message || insertError 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to join workspace' }, { status: 500 })
     }
 
     return NextResponse.json({
-      success: true, 
+      success: true,
       workspace: {
         id: workspace.id,
         name: workspace.name,
@@ -156,10 +149,6 @@ export async function POST(
     })
   } catch (error) {
     console.error('Error joining workspace:', error)
-    return NextResponse.json({ 
-      error: 'Failed to join workspace', 
-      details: (error as Error).message 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to join workspace' }, { status: 500 })
   }
 }
-

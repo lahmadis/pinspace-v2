@@ -53,9 +53,10 @@ function SignUpInner() {
     if (institutionSlug) sessionStorage.setItem('pinspace_institution', institutionSlug)
     fetch('/api/institutions', { cache: 'no-store' })
       .then((r) => r.json())
-      .then((data: Institution[]) => {
-        setInstitutions(Array.isArray(data) ? data : [])
-        const inst = (Array.isArray(data) ? data : []).find((i) => i.slug === (institutionSlug || ''))
+      .then((data: { institutions: Institution[] }) => {
+        const list = data?.institutions || []
+        setInstitutions(list)
+        const inst = list.find((i) => i.slug === (institutionSlug || ''))
         setInstitution(inst || null)
         if (inst) sessionStorage.setItem('pinspace_institution_id', inst.id)
       })
@@ -242,21 +243,6 @@ function SignUpInner() {
     )
   }
 
-  const hasAnyDomainRestriction = institutions.some((i) => i.allowed_email_domains)
-  if (hasAnyDomainRestriction && !institutionSlug) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200 text-center">
-          <h1 className="text-xl font-bold text-gray-900 mb-2">Use your school&apos;s link</h1>
-          <p className="text-gray-600 mb-6">
-            To sign up, please use your institution&apos;s PinSpace link (e.g. yourapp.com/i/wit). Contact your school for the correct link.
-          </p>
-          <Link href="/" className="text-indigo-600 hover:underline">← Back to home</Link>
-        </div>
-      </div>
-    )
-  }
-
   const signInUrl = institutionSlug ? `/sign-in?institution=${institutionSlug}${redirectTo ? `&redirect=${encodeURIComponent(redirectTo)}` : ''}` : '/sign-in'
 
   if (needsPassword) {
@@ -376,7 +362,7 @@ function SignUpInner() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@school.edu"
+              placeholder="you@example.com"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               autoComplete="email"
             />

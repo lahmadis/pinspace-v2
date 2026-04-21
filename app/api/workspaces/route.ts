@@ -9,12 +9,12 @@ export async function GET() {
       data: { session },
       error: sessionError,
     } = await supabase.auth.getSession()
-    
+
     if (sessionError) {
       console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
-    
+
     const userId = session?.user?.id
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -28,10 +28,7 @@ export async function GET() {
 
     if (ownedErr) {
       console.error('Error fetching owned workspaces:', ownedErr)
-      return NextResponse.json({ 
-        error: 'Failed to fetch owned workspaces', 
-        details: ownedErr.message || ownedErr 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch owned workspaces' }, { status: 500 })
     }
 
     // Fetch workspace memberships
@@ -42,16 +39,13 @@ export async function GET() {
 
     if (memErr) {
       console.error('Error fetching workspace members:', memErr)
-      return NextResponse.json({ 
-        error: 'Failed to fetch workspace members', 
-        details: memErr.message || memErr 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch workspace members' }, { status: 500 })
     }
 
     // Fetch workspaces where user is a member
     const memberIds = memberRows?.map((r) => r.workspace_id) ?? []
-    let memberWorkspaces: any[] = []
-    
+    let memberWorkspaces: Record<string, unknown>[] = []
+
     if (memberIds.length > 0) {
       const { data, error: memberWsErr } = await supabase
         .from('workspaces')
@@ -60,12 +54,9 @@ export async function GET() {
 
       if (memberWsErr) {
         console.error('Error fetching member workspaces:', memberWsErr)
-        return NextResponse.json({ 
-          error: 'Failed to fetch member workspaces', 
-          details: memberWsErr.message || memberWsErr 
-        }, { status: 500 })
+        return NextResponse.json({ error: 'Failed to fetch member workspaces' }, { status: 500 })
       }
-      
+
       memberWorkspaces = data ?? []
     }
 
@@ -73,7 +64,7 @@ export async function GET() {
 
     // Fetch board counts for all workspaces in one query
     const wsIds = allWorkspaces.map((w) => w.id)
-    let boardCountMap: Record<string, number> = {}
+    const boardCountMap: Record<string, number> = {}
     if (wsIds.length > 0) {
       const { data: boardRows } = await supabase
         .from('boards')
@@ -87,13 +78,10 @@ export async function GET() {
     }
 
     const result = allWorkspaces.map((w) => ({ ...w, board_count: boardCountMap[w.id] ?? 0 }))
-    return NextResponse.json(result)
-  } catch (error: any) {
+    return NextResponse.json({ workspaces: result })
+  } catch (error) {
     console.error('Unexpected error in GET /api/workspaces:', error)
-    return NextResponse.json({ 
-      error: 'Internal Server Error', 
-      details: error?.message || String(error) 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 
@@ -105,12 +93,12 @@ export async function POST(req: Request) {
       data: { session },
       error: sessionError,
     } = await supabase.auth.getSession()
-    
+
     if (sessionError) {
       console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
-    
+
     const userId = session?.user?.id
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -155,9 +143,36 @@ export async function POST(req: Request) {
       if (profile?.institution_id) institutionId = profile.institution_id
     }
 
+    const ensureOwnerMembership = async (workspaceId: string) => {
+      const ownerName =
+        session.user.user_metadata?.full_name ||
+        session.user.email?.split('@')[0] ||
+        'Owner'
+      const admin = supabaseServiceRole()
+      const { data: existingMembership } = await admin
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (!existingMembership) {
+        const { error: membershipError } = await admin
+          .from('workspace_members')
+          .insert({
+            workspace_id: workspaceId,
+            user_id: userId,
+            role: 'instructor',
+            name: ownerName,
+          })
+        if (membershipError) {
+          console.error('Error ensuring owner membership:', membershipError)
+        }
+      }
+    }
+
     // Insert workspace
     // Try with type first, if it fails (column doesn't exist), try without type
-    let insertData: any = { name, description, owner_id: userId }
+    const insertData: Record<string, unknown> = { name, description, owner_id: userId }
     if (institutionId) insertData.institution_id = institutionId
 
     // Only include type if the column exists (we'll try with it first)
@@ -169,7 +184,7 @@ export async function POST(req: Request) {
 
     if (error) {
       console.error('Error creating workspace (with type):', error)
-      
+
       // If error is about column not existing, try without type
       if (error.message?.includes('column') && error.message?.includes('type')) {
         const { data: dataWithoutType, error: errorWithoutType } = await supabase
@@ -177,31 +192,23 @@ export async function POST(req: Request) {
           .insert(insertData)
           .select()
           .single()
-        
+
         if (errorWithoutType) {
           console.error('Error creating workspace (without type):', errorWithoutType)
-          return NextResponse.json({ 
-            error: 'Failed to create workspace', 
-            details: errorWithoutType.message || errorWithoutType 
-          }, { status: 500 })
+          return NextResponse.json({ error: 'Failed to create workspace' }, { status: 500 })
         }
-        
-        return NextResponse.json(dataWithoutType, { status: 201 })
+
+        await ensureOwnerMembership(dataWithoutType.id)
+        return NextResponse.json({ workspace: dataWithoutType }, { status: 201 })
       }
-      
-      return NextResponse.json({ 
-        error: 'Failed to create workspace', 
-        details: error.message || error 
-      }, { status: 500 })
+
+      return NextResponse.json({ error: 'Failed to create workspace' }, { status: 500 })
     }
 
-    return NextResponse.json(data, { status: 201 })
-  } catch (error: any) {
+    await ensureOwnerMembership(data.id)
+    return NextResponse.json({ workspace: data }, { status: 201 })
+  } catch (error) {
     console.error('Unexpected error in POST /api/workspaces:', error)
-    return NextResponse.json({ 
-      error: 'Internal Server Error', 
-      details: error?.message || String(error) 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
-

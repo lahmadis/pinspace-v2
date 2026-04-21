@@ -17,7 +17,7 @@ function slugToDept(slug: string) {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: { department: string } }
 ) {
   try {
@@ -27,20 +27,29 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid department' }, { status: 400 })
     }
 
+    const { searchParams } = new URL(req.url)
+    const academicYear = searchParams.get('academic_year')
+
     // Use service role to bypass RLS for public endpoint
     const supabase = supabaseServiceRole()
-    
+
     // Fetch public workspaces for this department
-    const { data: publicWorkspaces, error } = await supabase
+    let query = supabase
       .from('workspaces')
       .select('network_metadata')
       .eq('is_public', true)
       .not('published_at', 'is', null)
       .eq('network_metadata->>department', deptName)
 
+    if (academicYear) {
+      query = query.eq('academic_year', academicYear)
+    }
+
+    const { data: publicWorkspaces, error } = await query
+
     if (error) {
       console.error('Error fetching workspaces:', error)
-      return NextResponse.json({ error: 'Failed to fetch years', details: error.message }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch years' }, { status: 500 })
     }
 
     // Count studios per year
@@ -52,10 +61,10 @@ export async function GET(
       return { ...y, studioCount: count }
     })
 
-    return NextResponse.json(years)
+    return NextResponse.json({ years })
   } catch (error) {
     console.error('Error fetching years:', error)
-    return NextResponse.json({ error: 'Failed to fetch years', details: (error as Error).message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch years' }, { status: 500 })
   }
 }
 

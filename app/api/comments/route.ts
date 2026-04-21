@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
 
     if (sessionError) {
       console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
 
     const userId = session?.user?.id
@@ -25,9 +25,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields (boardId, authorName, content)' }, { status: 400 })
     }
 
+    // Resolve board/workspace and enforce access, then insert via service role to avoid fragile RLS coupling.
+    const admin = supabaseServiceRole()
+    const { data: board, error: boardError } = await admin
+      .from('boards')
+      .select('id, workspace_id')
+      .eq('id', boardId)
+      .single()
+
+    if (boardError || !board) {
+      return NextResponse.json({ error: 'Board not found' }, { status: 404 })
+    }
+
+    const { data: workspace } = await admin
+      .from('workspaces')
+      .select('owner_id, is_public, published_at')
+      .eq('id', board.workspace_id)
+      .single()
+
+    const isPublicWorkspace = workspace?.is_public && workspace?.published_at != null
+    if (!isPublicWorkspace) {
+      const isOwner = workspace?.owner_id === userId
+      const { data: membership } = await admin
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', board.workspace_id)
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (!isOwner && !membership) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
+
     // Insert comment into Supabase
     const commentId = `comment-${Date.now()}`
-    const { data: newComment, error: insertError } = await supabase
+    const { data: newComment, error: insertError } = await admin
       .from('comments')
       .insert({
         id: commentId,
@@ -42,10 +75,7 @@ export async function POST(request: NextRequest) {
 
     if (insertError) {
       console.error('Error creating comment:', insertError)
-      return NextResponse.json({ 
-        error: 'Failed to add comment', 
-        details: insertError.message || insertError 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to add comment' }, { status: 500 })
     }
 
     // Transform to frontend format
@@ -62,7 +92,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, comment })
   } catch (error) {
     console.error('Comment error:', error)
-    return NextResponse.json({ error: 'Failed to add comment', details: (error as Error).message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to add comment' }, { status: 500 })
   }
 }
 
@@ -87,14 +117,11 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Error fetching comments:', error)
-      return NextResponse.json({ 
-        error: 'Failed to fetch comments', 
-        details: error.message || error 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
     }
 
     // Transform to frontend format
-    const transformedComments = (comments || []).map((c: any) => ({
+    const transformedComments = (comments || []).map((c) => ({
       id: c.id,
       boardId: c.board_id,
       authorName: c.author_name,
@@ -107,6 +134,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ comments: transformedComments })
   } catch (error) {
     console.error('Error fetching comments:', error)
-    return NextResponse.json({ error: 'Failed to fetch comments', details: (error as Error).message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
   }
 }

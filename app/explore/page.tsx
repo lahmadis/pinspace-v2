@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
 import DemoBanner from '@/components/DemoBanner'
 import { prefetchStudioView } from '@/lib/studioViewCache'
+import { currentAcademicYear } from '@/lib/academicYear'
 
 type StudioResponse = {
   studios: BubbleNode[]
@@ -28,8 +29,16 @@ function ExplorePageInner() {
   const [selectedYear, setSelectedYear] = useState<string | number | null>(null)
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(currentAcademicYear())
+  const [availableAcademicYears, setAvailableAcademicYears] = useState<{ year: string; count: number }[]>([])
 
   const isDemo = searchParams?.get('demo') === 'true'
+
+  // Institution switcher state
+  const [activeInstitution, setActiveInstitution] = useState<string | null>(() => {
+    return searchParams?.get('institution') ?? null
+  })
+  const [institutions, setInstitutions] = useState<{ id: string; name: string; slug: string; network_label?: string }[]>([])
 
   // Filter nodes by search (studio name or professor/instructor)
   const searchFilteredNodes = useMemo(() => {
@@ -42,21 +51,75 @@ function ExplorePageInner() {
     )
   }, [nodes, searchQuery])
 
-  const institutionSlug = searchParams?.get('institution') ?? null
-
   // Persist institution so other pages (Dashboard, etc.) can link "home" to this institution
   useEffect(() => {
-    if (typeof window !== 'undefined' && institutionSlug) {
-      window.sessionStorage.setItem('pinspace_institution', institutionSlug)
+    if (typeof window !== 'undefined' && activeInstitution) {
+      window.sessionStorage.setItem('pinspace_institution', activeInstitution)
     }
-  }, [institutionSlug])
+  }, [activeInstitution])
+
+  // On mount: initialize activeInstitution from URL or sessionStorage
+  useEffect(() => {
+    const urlInst = searchParams?.get('institution') ?? null
+    if (urlInst) {
+      setActiveInstitution(urlInst)
+    } else if (typeof window !== 'undefined') {
+      const stored = window.sessionStorage.getItem('pinspace_institution')
+      // Don't auto-restore from sessionStorage — start global if no URL param
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch institution list for tab bar
+  useEffect(() => {
+    if (isDemo) return
+    const fetchInstitutions = async () => {
+      try {
+        const res = await fetch('/api/institutions', { cache: 'no-store' })
+        if (res.ok) {
+          const data = await res.json()
+          setInstitutions(data.institutions || [])
+        }
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    fetchInstitutions()
+  }, [isDemo])
+
+  // Load available academic years for the tab bar
+  useEffect(() => {
+    if (isDemo) return
+    const loadAcademicYears = async () => {
+      try {
+        const params = new URLSearchParams()
+        if (activeInstitution) params.set('institution_slug', activeInstitution)
+        const url = `/api/explore/academic-years${params.toString() ? `?${params.toString()}` : ''}`
+        const res = await fetch(url, { cache: 'no-store' })
+        if (res.ok) {
+          const data = await res.json()
+          setAvailableAcademicYears(data.academicYears || [])
+          // Default to current year if available, otherwise first available
+          const current = currentAcademicYear()
+          const years: { year: string; count: number }[] = data.academicYears || []
+          const hasCurrentYear = years.some((y: { year: string }) => y.year === current)
+          if (!hasCurrentYear && years.length > 0) {
+            setSelectedAcademicYear(years[0].year)
+          }
+        }
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    loadAcademicYears()
+  }, [isDemo, activeInstitution])
 
   useEffect(() => {
     const load = async () => {
       try {
         const params = new URLSearchParams()
         if (isDemo) params.set('demo', 'true')
-        if (institutionSlug) params.set('institution_slug', institutionSlug)
+        if (activeInstitution) params.set('institution_slug', activeInstitution)
+        if (!isDemo && selectedAcademicYear) params.set('academic_year', selectedAcademicYear)
         const url = `/api/explore/studios${params.toString() ? `?${params.toString()}` : ''}`
         const res = await fetch(url, { cache: 'no-store' })
         if (res.ok) {
@@ -78,7 +141,7 @@ function ExplorePageInner() {
       }
     }
     load()
-  }, [isDemo, institutionSlug, router])
+  }, [isDemo, activeInstitution, selectedAcademicYear, router])
 
   const handleNodeHover = useCallback(
     (node: BubbleNode) => {
@@ -169,8 +232,8 @@ function ExplorePageInner() {
         <div className="max-w-full px-6 py-3 flex items-center justify-between gap-4">
           {/* Left: logo + title */}
           <div className="flex items-center gap-4 min-w-0 flex-1 justify-start">
-            <Link 
-              href={institutionSlug ? `/i/${institutionSlug}` : '/'}
+            <Link
+              href={activeInstitution ? `/i/${activeInstitution}` : '/'}
               className="text-xl font-bold text-white hover:text-indigo-400 transition-colors shrink-0"
             >
               PinSpace
@@ -236,14 +299,98 @@ function ExplorePageInner() {
         </div>
       </header>
 
-      {/* Full Canvas Bubble Network */}
-      <BubbleNetwork 
-        nodes={displayedNodes} 
-        onNodeClick={handleClick}
-        onNodeHover={handleNodeHover}
-        fullScreen={true}
-        headerHeight={65}
-      />
+      {/* Institution Switcher Tab Bar */}
+      {!isDemo && institutions.length > 0 && (
+        <div className="fixed top-[57px] left-0 right-0 z-[31] bg-slate-900/95 border-b border-slate-700/30 px-6 py-2 flex items-center gap-2 overflow-x-auto">
+          <button
+            onClick={() => setActiveInstitution(null)}
+            className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              activeInstitution === null
+                ? 'bg-indigo-600 text-white'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600'
+            }`}
+          >
+            🌍 All Schools
+          </button>
+          {institutions.map((inst) => (
+            <button
+              key={inst.slug}
+              onClick={() => setActiveInstitution(inst.slug)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                activeInstitution === inst.slug
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600'
+              }`}
+            >
+              {inst.network_label || inst.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Academic Year Tab Bar */}
+      {!isDemo && availableAcademicYears.length > 0 && (
+        <div className={`fixed ${!isDemo && institutions.length > 0 ? 'top-[101px]' : 'top-[57px]'} left-0 right-0 z-30 bg-slate-900/95 border-b border-slate-700/50 px-6 py-2 flex items-center gap-2 overflow-x-auto`}>
+          <button
+            onClick={() => setSelectedAcademicYear('')}
+            className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              selectedAcademicYear === ''
+                ? 'bg-indigo-600 text-white'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600'
+            }`}
+          >
+            All Years
+          </button>
+          {availableAcademicYears.map(({ year, count }) => (
+            <button
+              key={year}
+              onClick={() => setSelectedAcademicYear(year)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                selectedAcademicYear === year
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600'
+              }`}
+            >
+              {year}
+              <span className={`ml-1.5 text-xs ${selectedAcademicYear === year ? 'text-indigo-200' : 'text-slate-500'}`}>
+                {count}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Full Canvas Bubble Network or empty state */}
+      {(() => {
+        const hasInstBar = !isDemo && institutions.length > 0
+        const hasYearBar = !isDemo && availableAcademicYears.length > 0
+        const headerHeight = 57 + (hasInstBar ? 44 : 0) + (hasYearBar ? 44 : 0)
+        return displayedNodes.length === 0 ? (
+          <div
+            className="flex items-center justify-center"
+            style={{ height: '100vh', paddingTop: headerHeight }}
+          >
+            <div className="text-center">
+              <p className="text-slate-400 text-xl font-medium">No studios yet</p>
+              <p className="text-slate-500 text-sm mt-2">
+                {!isDemo && selectedAcademicYear
+                  ? `No published studios for ${selectedAcademicYear}`
+                  : activeInstitution
+                    ? 'No published studios found for this institution'
+                    : 'No globally published studios found'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <BubbleNetwork
+            nodes={displayedNodes}
+            onNodeClick={handleClick}
+            onNodeHover={handleNodeHover}
+            fullScreen={true}
+            headerHeight={headerHeight}
+          />
+        )
+      })()}
 
       {/* Connection Legend - Bottom Left */}
       <div className="fixed bottom-4 left-4 z-30 bg-slate-800/90 backdrop-blur-sm rounded-lg border border-slate-700 p-4">

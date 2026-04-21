@@ -91,10 +91,10 @@ export function getSampleStudios() {
     color: string
     url: string
     studioId: string
-    wallConfig?: any
+    wallConfig?: Record<string, unknown>
   }> = []
 
-  YEARS.forEach((year, yearIdx) => {
+  YEARS.forEach((year) => {
     // Generate 10 studios per year, distributed across departments
     for (let i = 0; i < 10; i++) {
       const dept = DEPARTMENTS[i % DEPARTMENTS.length]
@@ -155,9 +155,6 @@ function getArchitectureImageUrl(index: number, width: number, height: number, t
   return `https://placehold.co/${width}x${height}/${color.bg}/${color.text}?text=${encodeURIComponent(shortTitle)}`
 }
 
-function getRandomItem<T>(array: T[]): T {
-  return array[Math.floor(Math.random() * array.length)]
-}
 
 function generateBoardPositions(count: number, wallCount: number = 5): Array<{
   wallIndex: number
@@ -356,7 +353,7 @@ export function getSampleComments(boardId: string): Comment[] {
 
   // Get the studio ID from board ID
   const studioIdMatch = boardId.match(/sample-board-(.+?)-/)
-  const studioId = studioIdMatch ? studioIdMatch[1] : ''
+  const _studioId = studioIdMatch ? studioIdMatch[1] : ''
 
   return Array.from({ length: commentCount }, (_, i) => {
     const commentIndex = (boardHash + i) % COMMENT_TEMPLATES.length

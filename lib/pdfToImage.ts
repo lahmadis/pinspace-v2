@@ -1,26 +1,31 @@
 // Convert PDF to image on client-side during upload
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PdfJsWindow = Window & { pdfjsLib?: any }
+
 // Load PDF.js from CDN
 const loadPdfJs = (() => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let promise: Promise<any> | null = null
-  
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async (): Promise<any> => {
-    if ((window as any).pdfjsLib) {
-      return (window as any).pdfjsLib
+    if ((window as PdfJsWindow).pdfjsLib) {
+      return (window as PdfJsWindow).pdfjsLib
     }
-    
+
     if (promise) {
       return promise
     }
-    
+
     promise = new Promise((resolve, reject) => {
       const script = document.createElement('script')
       // Use jsDelivr CDN instead - less likely to be blocked
       script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'
       script.async = true
-      
+
       script.onload = () => {
-        const pdfjsLib = (window as any).pdfjsLib
+        const pdfjsLib = (window as PdfJsWindow).pdfjsLib
         if (pdfjsLib) {
           pdfjsLib.GlobalWorkerOptions.workerSrc = 
             'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'
@@ -34,10 +39,10 @@ const loadPdfJs = (() => {
         promise = null
         reject(new Error('Failed to load PDF.js'))
       }
-      
+
       document.head.appendChild(script)
     })
-    
+
     return promise
   }
 })()

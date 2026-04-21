@@ -6,7 +6,7 @@ const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { useThree, ThreeEvent } from '@react-three/fiber'
 import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
+import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import * as THREE from 'three'
 import type { Board } from '@/types'
 import { Suspense } from 'react'
@@ -34,11 +34,6 @@ interface DraggableBoardProps {
 }
 
 function BoardTexture({ imageUrl }: { imageUrl: string }) {
-  // Don't try to load PDFs as textures
-  if (imageUrl.toLowerCase().endsWith('.pdf')) {
-    return <meshStandardMaterial color="#ff4444" side={THREE.DoubleSide} />
-  }
-  
   // Use Suspense for texture loading - this handles the loading state properly
   const texture = useTexture(imageUrl)
   
@@ -60,7 +55,7 @@ function BoardTexture({ imageUrl }: { imageUrl: string }) {
 
 export function DraggableBoard({
   board,
-  wallIndex,
+  wallIndex: _wallIndex,
   wallPosition,
   wallRotation,
   wallBaseRotationForCoords,
@@ -68,15 +63,15 @@ export function DraggableBoard({
   side = 'front',
   initialLocalPosition = { x: 0, y: 0 },
   onDragEnd,
-  onDelete,
+  onDelete: _onDelete,
   onCommentClick,
   onSelect,
   onDeselect,
   isSelected = false,
-  workspaceId,
+  workspaceId: _workspaceId,
   isWorkspaceMember = false
 }: DraggableBoardProps) {
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
@@ -167,7 +162,36 @@ useEffect(() => {
   devLog('🎨 [DraggableBoard] Rendering board:', board.id, 'at position:', localPosition)
   
   const { camera, gl, raycaster } = useThree()
-  
+
+  // Pre-allocated scratch objects for updatePosition — avoids per-event allocation at 60fps
+  const _wallNormal = useRef(new THREE.Vector3())
+  const _renderRightWorld = useRef(new THREE.Vector3())
+  const _plane = useRef(new THREE.Plane())
+  const _ndcVec = useRef(new THREE.Vector2())
+  const _intersectionPoint = useRef(new THREE.Vector3())
+  const _axisY = useRef(new THREE.Vector3(0, 1, 0))
+  const _pointOnWall = useRef(new THREE.Vector3())
+
+  // Track active drag/resize window listeners so we can remove them on unmount
+  const dragListenersRef = useRef<{
+    move: ((e: PointerEvent) => void) | null
+    up: ((e: PointerEvent) => void) | null
+  }>({ move: null, up: null })
+  const resizeListenersRef = useRef<{
+    move: ((e: PointerEvent) => void) | null
+    up: (() => void) | null
+  }>({ move: null, up: null })
+
+  // Remove any lingering window listeners when the component unmounts mid-drag/resize
+  useEffect(() => {
+    return () => {
+      if (dragListenersRef.current.move) window.removeEventListener('pointermove', dragListenersRef.current.move)
+      if (dragListenersRef.current.up) window.removeEventListener('pointerup', dragListenersRef.current.up)
+      if (resizeListenersRef.current.move) window.removeEventListener('pointermove', resizeListenersRef.current.move)
+      if (resizeListenersRef.current.up) window.removeEventListener('pointerup', resizeListenersRef.current.up)
+    }
+  }, [])
+
   // Scene scale: 1 unit = 1 inch
   // So an 8ft × 10ft wall = 96 × 120 units
   const SCALE = 12 // Convert feet to inches (1 ft = 12 inches)
@@ -190,10 +214,11 @@ useEffect(() => {
   }
   // Else use physical dimensions if available
   if ((boardWidth === undefined || boardHeight === undefined) && board.physicalWidth && board.physicalHeight) {
-    boardWidth = board.physicalWidth
-    boardHeight = board.physicalHeight
-    boardWidth = Math.min(boardWidth, wallWidthInches)
-    boardHeight = Math.min(boardHeight, wallHeightInches)
+    const rawWidth = board.physicalWidth
+    const rawHeight = board.physicalHeight
+    const fitScale = Math.min(wallWidthInches / rawWidth, wallHeightInches / rawHeight, 1)
+    boardWidth = rawWidth * fitScale
+    boardHeight = rawHeight * fitScale
     devLog(`📐 [DraggableBoard] Using physical dimensions: ${board.physicalWidth}" x ${board.physicalHeight}" = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
   }
   // Fallback for existing boards without physical dimensions: default to 8.5×11 inches
@@ -215,36 +240,29 @@ useEffect(() => {
 
   const updatePosition = (clientX: number, clientY: number) => {
     const rotationForCoords = wallBaseRotationForCoords ?? wallRotation
-    const wallNormal = new THREE.Vector3(-Math.sin(rotationForCoords), 0, -Math.cos(rotationForCoords)).normalize()
-    const renderRightWorld = new THREE.Vector3(renderXSign, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), wallRotation).normalize()
-    const renderUpWorld = new THREE.Vector3(0, 1, 0)
-    const plane = new THREE.Plane(wallNormal, 0)
-    plane.constant = -wallNormal.dot(wallPosition)
+
+    // Reuse pre-allocated scratch objects — no heap allocation on the hot drag path
+    _wallNormal.current.set(-Math.sin(rotationForCoords), 0, -Math.cos(rotationForCoords)).normalize()
+    _renderRightWorld.current.set(renderXSign, 0, 0).applyAxisAngle(_axisY.current, wallRotation).normalize()
+    _plane.current.setFromNormalAndCoplanarPoint(_wallNormal.current, wallPosition)
 
     const rect = gl.domElement.getBoundingClientRect()
     const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1
     const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1
-    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera)
-    const intersectionPoint = new THREE.Vector3()
+    _ndcVec.current.set(ndcX, ndcY)
+    raycaster.setFromCamera(_ndcVec.current, camera)
 
-    if (raycaster.ray.intersectPlane(plane, intersectionPoint)) {
-      const pointOnWall = intersectionPoint.clone().sub(wallPosition)
-      const pointerRenderX = pointOnWall.dot(renderRightWorld)
-      const pointerRenderY = pointOnWall.dot(renderUpWorld)
+    if (raycaster.ray.intersectPlane(_plane.current, _intersectionPoint.current)) {
+      _pointOnWall.current.copy(_intersectionPoint.current).sub(wallPosition)
+      const pointerRenderX = _pointOnWall.current.dot(_renderRightWorld.current)
+      const pointerRenderY = _pointOnWall.current.y
 
       const offsetX = dragOffset.current ? dragOffset.current.x : 0
       const offsetY = dragOffset.current ? dragOffset.current.y : 0
-      const nextRenderX = pointerRenderX - offsetX
-      const nextRenderY = pointerRenderY - offsetY
 
-      const stateX = nextRenderX
-      const stateY = nextRenderY
+      const normalizedX = THREE.MathUtils.clamp((pointerRenderX - offsetX) / scaledWallWidth, -0.5, 0.5)
+      const normalizedY = THREE.MathUtils.clamp((pointerRenderY - offsetY) / scaledWallHeight, -0.5, 0.5)
 
-      const normalizedX = THREE.MathUtils.clamp(stateX / scaledWallWidth, -0.5, 0.5)
-      const normalizedY = THREE.MathUtils.clamp(stateY / scaledWallHeight, -0.5, 0.5)
-
-      const dxPixels = clientX - lastPointerRef.current.clientX
-      const dNorm = normalizedX - lastPointerRef.current.normalizedX
       lastPointerRef.current = { clientX, normalizedX }
 
       const newPos = {
@@ -292,13 +310,6 @@ if (e.intersections && e.intersections.length > 0) {
   // Same Z as render: always 3.2 in edit view (group +Z is toward camera)
   const currentBoardZ = 3.2
   
-  // Transform to board's local space (accounting for wall rotation and position)
-  const boardWorldPosition = new THREE.Vector3(
-    wallPosition.x + currentBoardX,
-    wallPosition.y + currentBoardY,
-    wallPosition.z + currentBoardZ
-  )
-
   // Compute rotated board center in world space to validate against actual mesh position
   const boardOffset = new THREE.Vector3(currentBoardX, currentBoardY, currentBoardZ)
   const meshWorldCenter = new THREE.Vector3()
@@ -435,17 +446,14 @@ if (e.intersections && e.intersections.length > 0) {
       dragOffset.current = null // Clear drag offset
       
       // Clean up listeners
+      dragListenersRef.current = { move: null, up: null }
       window.removeEventListener('pointermove', handleMove)
       window.removeEventListener('pointerup', handleUp)
     }
     
+    dragListenersRef.current = { move: handleMove, up: handleUp }
     window.addEventListener('pointermove', handleMove)
     window.addEventListener('pointerup', handleUp)
-  }
-
-  const handleDeleteClick = (e: ThreeEvent<MouseEvent>) => {
-    e.stopPropagation()
-    onDelete(board.id)
   }
 
   // Calculate board position in wall's local space (matching WallSystem approach)
@@ -555,9 +563,11 @@ if (e.intersections && e.intersections.length > 0) {
       onDragEnd(board.id, ref.x, ref.y, ref.width, ref.height, side)
       resizeStartRef.current = null
       setIsResizing(false)
+      resizeListenersRef.current = { move: null, up: null }
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
+    resizeListenersRef.current = { move: onMove, up: onUp }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
   }, [board.id, getPointerOnWallPlane, gl, isLocked, onDragEnd, scaledWallHeight, scaledWallWidth, side, wallHeightInches, wallWidthInches, worldToWallLocal])

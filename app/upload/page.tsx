@@ -5,18 +5,19 @@ import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { generateOwnerColor } from '@/lib/ownerColors'
-import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
 import { toast } from '@/lib/toast'
 
 export default function UploadPage() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [uploadedBoardId, setUploadedBoardId] = useState<string | null>(null)
   const [uploadedWorkspaceId, setUploadedWorkspaceId] = useState<string | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [workspaces, setWorkspaces] = useState<any[]>([])
+  const [workspaces, setWorkspaces] = useState<{ id: string; name: string; type: string }[]>([])
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true)
   
   const [formData, setFormData] = useState({
@@ -73,6 +74,12 @@ export default function UploadPage() {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
+      if (file.size > MAX_SIZE) {
+        toast.error('File is too large. Maximum size is 10 MB.')
+        e.target.value = ''
+        return
+      }
       setSelectedFile(file)
       const reader = new FileReader()
       reader.onloadend = () => {
@@ -115,24 +122,39 @@ export default function UploadPage() {
     }
 
     try {
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: submitData,
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', '/api/upload')
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            setUploadProgress(Math.round((e.loaded / e.total) * 100))
+          }
+        })
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            const data = JSON.parse(xhr.responseText)
+            setUploadedBoardId(data.board.id)
+            setUploadedWorkspaceId(formData.workspaceId)
+            toast.success('Board uploaded successfully!')
+            resolve()
+          } else {
+            let errMsg = 'Unknown error'
+            try { errMsg = JSON.parse(xhr.responseText).error || errMsg } catch {}
+            toast.error('Upload failed: ' + errMsg)
+            reject(new Error(errMsg))
+          }
+        }
+        xhr.onerror = () => {
+          toast.error('Upload failed. Please try again.')
+          reject(new Error('Network error'))
+        }
+        xhr.send(submitData)
       })
-
-      if (response.ok) {
-        const data = await response.json()
-        setUploadedBoardId(data.board.id)
-        setUploadedWorkspaceId(formData.workspaceId)
-        toast.success('Board uploaded successfully!')
-      } else {
-        const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-        toast.error('Upload failed: ' + (error.error || 'Unknown error'))
-      }
-    } catch (error) {
-      toast.error('Upload failed. Please try again.')
+    } catch {
+      // errors already toasted above
     } finally {
       setLoading(false)
+      setUploadProgress(null)
     }
   }
 
@@ -347,6 +369,22 @@ export default function UploadPage() {
                   placeholder="sustainable, residential, urban"
                 />
               </div>
+
+              {/* Upload progress */}
+              {uploadProgress !== null && (
+                <div>
+                  <div className="flex justify-between text-sm text-text-muted mb-1">
+                    <span>Uploading…</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-background-lighter rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-primary h-2 rounded-full transition-all duration-200"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Submit */}
               <div className="flex gap-4">

@@ -5,7 +5,7 @@
  * Used when ?demo=true is in the URL
  */
 
-import { Board, Studio } from '@/types'
+import { Board } from '@/types'
 
 // ============================================================================
 // WENTWORTH INSTITUTE OF TECHNOLOGY - MOCK DATA

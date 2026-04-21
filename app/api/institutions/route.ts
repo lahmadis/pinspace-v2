@@ -23,19 +23,34 @@ export async function GET() {
 
     if (error) {
       console.error('Error fetching institutions:', error)
-      return NextResponse.json(
-        { error: 'Failed to fetch institutions', details: error.message },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'Failed to fetch institutions' }, { status: 500 })
     }
 
-    return NextResponse.json(institutions || [])
+    const withCounts = await Promise.all(
+      (institutions || []).map(async (inst) => {
+        const [studiosResult, studentsResult] = await Promise.all([
+          supabase
+            .from('workspaces')
+            .select('*', { count: 'exact', head: true })
+            .eq('institution_id', inst.id)
+            .eq('is_published', true),
+          supabase
+            .from('user_profiles')
+            .select('*', { count: 'exact', head: true })
+            .eq('institution_id', inst.id),
+        ])
+        return {
+          ...inst,
+          studio_count: studiosResult.error ? 0 : (studiosResult.count ?? 0),
+          student_count: studentsResult.error ? 0 : (studentsResult.count ?? 0),
+        }
+      })
+    )
+
+    return NextResponse.json({ institutions: withCounts })
   } catch (error) {
     console.error('Error in GET /api/institutions:', error)
-    return NextResponse.json(
-      { error: 'Internal Server Error', details: (error as Error).message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 
@@ -90,18 +105,12 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'An institution with this slug already exists' }, { status: 409 })
       }
       console.error('Error creating institution:', error)
-      return NextResponse.json(
-        { error: 'Failed to create institution', details: error.message },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'Failed to create institution' }, { status: 500 })
     }
 
-    return NextResponse.json(data, { status: 201 })
+    return NextResponse.json({ institution: data }, { status: 201 })
   } catch (error) {
     console.error('Error in POST /api/institutions:', error)
-    return NextResponse.json(
-      { error: 'Internal Server Error', details: (error as Error).message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }

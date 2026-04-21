@@ -11,12 +11,12 @@ export async function GET(
       data: { session },
       error: sessionError,
     } = await supabase.auth.getSession()
-    
+
     if (sessionError) {
       console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
-    
+
     const userId = session?.user?.id
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -33,10 +33,7 @@ export async function GET(
 
     if (error) {
       console.error('Error fetching board:', error)
-      return NextResponse.json({ 
-        error: 'Failed to fetch board', 
-        details: error.message || error 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch board' }, { status: 500 })
     }
 
     if (!board) {
@@ -75,11 +72,8 @@ export async function GET(
     }
 
     return NextResponse.json({ board: transformedBoard })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Unexpected error fetching board:', error)
-    return NextResponse.json({ 
-      error: 'Internal Server Error', 
-      details: error?.message || String(error) 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }

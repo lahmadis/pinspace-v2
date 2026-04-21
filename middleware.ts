@@ -8,6 +8,8 @@ const PROTECTED_PREFIXES = [
   '/workspace',
   '/upload',
   '/board',
+  '/my-boards',
+  '/onboarding',
   '/admin',
   '/debug',
 ]

@@ -48,8 +48,8 @@ function DebugBoardsPageInner() {
       }
 
       setBoardsByWall(data.boardsByWall || {})
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
@@ -75,9 +75,10 @@ function DebugBoardsPageInner() {
       // Refresh the board list
       await fetchBoards()
       alert(`✅ Board "${data.board.title}" moved from wall ${currentWallIndex ?? 'none'} to wall ${newWallIndex}`)
-    } catch (err: any) {
-      setError(err.message)
-      alert(`❌ Error: ${err.message}`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(msg)
+      alert(`❌ Error: ${msg}`)
     } finally {
       setUpdating(null)
     }
@@ -91,7 +92,11 @@ function DebugBoardsPageInner() {
       return a - b
     })
 
-  const [typeInfo, setTypeInfo] = useState<any>(null)
+  interface TypeCheckData {
+    summary?: { total: number; typeCounts: Record<string, number> }
+    typeIssues?: { title: string; id: string; rawValue: unknown; rawType: string; parsedValue: number }[]
+  }
+  const [typeInfo, setTypeInfo] = useState<TypeCheckData | null>(null)
   const [checkingTypes, setCheckingTypes] = useState(false)
 
   const checkTypes = async () => {
@@ -108,8 +113,8 @@ function DebugBoardsPageInner() {
       } else {
         alert('Error: ' + data.error)
       }
-    } catch (err: any) {
-      alert('Error checking types: ' + err.message)
+    } catch (err) {
+      alert('Error checking types: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
       setCheckingTypes(false)
     }
@@ -136,8 +141,8 @@ function DebugBoardsPageInner() {
       } else {
         alert('Error: ' + data.error)
       }
-    } catch (err: any) {
-      alert('Error fixing types: ' + err.message)
+    } catch (err) {
+      alert('Error fixing types: ' + (err instanceof Error ? err.message : String(err)))
     }
   }
 
@@ -195,9 +200,9 @@ function DebugBoardsPageInner() {
                 <div>
                   <p className="font-semibold text-red-700">⚠️ Found {typeInfo.typeIssues.length} board(s) with string wallIndex values:</p>
                   <ul className="list-disc list-inside ml-4 mt-2">
-                    {typeInfo.typeIssues.map((issue: any, i: number) => (
+                    {typeInfo.typeIssues.map((issue, i: number) => (
                       <li key={i}>
-                        {issue.title} (ID: {issue.id}): "{issue.rawValue}" (type: {issue.rawType}) → {issue.parsedValue}
+                        {issue.title} (ID: {issue.id}): {'"'}{String(issue.rawValue)}{'"'} (type: {issue.rawType}) &rarr; {issue.parsedValue}
                       </li>
                     ))}
                   </ul>

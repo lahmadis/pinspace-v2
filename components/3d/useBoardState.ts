@@ -26,6 +26,17 @@ interface TempBoard {
   blobUrl: string
 }
 
+const fitAspectWithinBounds = (
+  width: number,
+  height: number,
+  maxWidth: number,
+  maxHeight: number
+): { width: number; height: number } => {
+  if (!(width > 0) || !(height > 0)) return { width: maxWidth, height: maxHeight }
+  const scale = Math.min(maxWidth / width, maxHeight / height, 1)
+  return { width: width * scale, height: height * scale }
+}
+
 export function useBoardState(
   initialBoards: Board[],
   studioId: string,
@@ -40,16 +51,19 @@ export function useBoardState(
   const boardsRef = useRef(boards)
   const boardPositionsRef = useRef(boardPositions)
   const tempBoardsRef = useRef(tempBoards)
+  const optimisticBoardUntilRef = useRef<Map<string, number>>(new Map())
   
   // Undo/redo: snapshot is serializable boardPositions for current wall
   const undoStackRef = useRef<Array<[string, BoardPosition][]>>([])
   const redoStackRef = useRef<Array<[string, BoardPosition][]>>([])
   const MAX_UNDO = 50
   
-  // Keep refs in sync
-  useEffect(() => { boardsRef.current = boards }, [boards])
-  useEffect(() => { boardPositionsRef.current = boardPositions }, [boardPositions])
-  useEffect(() => { tempBoardsRef.current = tempBoards }, [tempBoards])
+  // Keep refs in sync with latest state
+  useEffect(() => {
+    boardsRef.current = boards
+    boardPositionsRef.current = boardPositions
+    tempBoardsRef.current = tempBoards
+  }, [boards, boardPositions, tempBoards])
   
   // Normalize position so wallIndex/x/y are numbers (API or cache can return strings and break wall filter)
   const normalizePosition = (p: NonNullable<Board['position']>) => ({
@@ -100,13 +114,17 @@ export function useBoardState(
       } else {
         boardMap.set(parentBoard.id, parentBoard)
       }
+      // Once server includes this board, clear optimistic hold.
+      optimisticBoardUntilRef.current.delete(parentBoard.id)
     })
 
     // Remove deleted boards (except temp ones)
     if (initialBoards.length > 0) {
       const parentIds = new Set(initialBoards.map((b) => b.id))
       Array.from(boardMap.keys()).forEach((id) => {
-        if (!parentIds.has(id) && !id.startsWith('temp-')) {
+        const holdUntil = optimisticBoardUntilRef.current.get(id) ?? 0
+        const keepOptimistic = holdUntil > Date.now()
+        if (!parentIds.has(id) && !id.startsWith('temp-') && !keepOptimistic) {
           boardMap.delete(id)
         }
       })
@@ -184,16 +202,20 @@ export function useBoardState(
       } else if (board.physicalWidth && board.physicalHeight) {
         const wallWidthInches = wallDimensions.width * 12
         const wallHeightInches = wallDimensions.height * 12
-        width = Math.min(board.physicalWidth / wallWidthInches, 1.0)
-        height = Math.min(board.physicalHeight / wallHeightInches, 1.0)
+        const rawWidth = board.physicalWidth / wallWidthInches
+        const rawHeight = board.physicalHeight / wallHeightInches
+        const fitted = fitAspectWithinBounds(rawWidth, rawHeight, 1.0, 1.0)
+        width = fitted.width
+        height = fitted.height
       } else if (board.aspectRatio) {
         // Calculate from aspect ratio
         const baseHeight = 0.35
-        height = baseHeight
         const wallAspectRatio = wallDimensions.width / wallDimensions.height
-        width = baseHeight * board.aspectRatio / wallAspectRatio
-        width = Math.min(width, 0.50)
-        height = Math.min(height, 0.60)
+        const rawWidth = baseHeight * board.aspectRatio / wallAspectRatio
+        const rawHeight = baseHeight
+        const fitted = fitAspectWithinBounds(rawWidth, rawHeight, 0.50, 0.60)
+        width = fitted.width
+        height = fitted.height
       } else {
         // Default
         width = 0.30
@@ -353,7 +375,8 @@ export function useBoardState(
       })
       
       // Create board object without position, then add it explicitly
-      const { position: _, ...boardWithoutPosition } = board
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { position: _position, ...boardWithoutPosition } = board
       
       const response = await fetch('/api/boards', {
         method: 'PUT',
@@ -488,7 +511,19 @@ export function useBoardState(
     })
     
     // Replace in boards list
-    setBoards(prev => prev.map(b => b.id === tempId ? realBoard : b))
+    optimisticBoardUntilRef.current.set(realBoard.id, Date.now() + 30000)
+    setBoards(prev => {
+      let replaced = false
+      const next = prev.map(b => {
+        if (b.id === tempId) {
+          replaced = true
+          return realBoard
+        }
+        return b
+      })
+      if (!replaced) next.push(realBoard)
+      return next
+    })
     
     // Update positions map
     setBoardPositions(prev => {

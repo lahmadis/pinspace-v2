@@ -3,14 +3,14 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
-import Link from 'next/link'
+import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 
-const ROLES = ['Student', 'Faculty', 'Professional (working at a firm)'] as const
+const ROLES = ['Student', 'Faculty', 'Professional (working at a firm)', 'Independent Creator'] as const
 const ROLE_TO_VALUE: Record<string, 'student' | 'faculty' | 'professional' | null> = {
   Student: 'student',
   Faculty: 'faculty',
   'Professional (working at a firm)': 'professional',
+  'Independent Creator': null,
 }
 const YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Masters'] as const
 const MAJORS = ['Architecture', 'Interior Design', 'Industrial Design', 'Other'] as const
@@ -20,14 +20,15 @@ const HOW_HEARD = ['Professor or instructor', 'Classmate', 'School website', 'So
 function OnboardingContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [hasProfile, setHasProfile] = useState<boolean | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [institutionId, setInstitutionId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
-    full_name: '',
+    first_name: '',
+    last_name: '',
     role: '',
     age_range: '',
     year: '',
@@ -65,8 +66,8 @@ function OnboardingContent() {
     if (!slug) return
     fetch('/api/institutions', { cache: 'no-store' })
       .then((r) => r.json())
-      .then((data: { id: string; slug: string }[]) => {
-        const inst = Array.isArray(data) ? data.find((i) => i.slug === slug) : null
+      .then((data: { institutions: { id: string; slug: string }[] }) => {
+        const inst = (data?.institutions || []).find((i) => i.slug === slug)
         if (inst) setInstitutionId(inst.id)
       })
       .catch(() => {})
@@ -80,7 +81,7 @@ function OnboardingContent() {
         return r.json()
       })
       .then((data) => {
-        setHasProfile(data && data.user_id)
+        setHasProfile(!!(data && data.user_id))
       })
       .catch(() => setHasProfile(false))
   }, [user?.id])
@@ -94,19 +95,19 @@ function OnboardingContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    if (!formData.first_name.trim() || !formData.last_name.trim()) {
+      setError('First and last name are required.')
+      return
+    }
     const year = formData.year || null
     const major = formData.major === 'Other' ? (formData.major_other.trim() || null) : (formData.major || null)
     const role = ROLE_TO_VALUE[formData.role] ?? null
-    if (!year && !major) {
-      setError('Please fill in at least year and major')
-      return
-    }
     setSubmitting(true)
     const res = await fetch('/api/user-profile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        full_name: formData.full_name.trim() || null,
+        full_name: `${formData.first_name.trim()} ${formData.last_name.trim()}`.trim() || null,
         role,
         age_range: formData.age_range || null,
         year,
@@ -147,15 +148,29 @@ function OnboardingContent() {
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Welcome to PinSpace</h1>
         <p className="text-sm text-gray-500 mb-6">Quick info to help us understand our community (used for stats only).</p>
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Full name</label>
-            <input
-              type="text"
-              value={formData.full_name}
-              onChange={(e) => setFormData((p) => ({ ...p, full_name: e.target.value }))}
-              placeholder="e.g. Jane Smith"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">First name <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                value={formData.first_name}
+                onChange={(e) => setFormData((p) => ({ ...p, first_name: e.target.value }))}
+                placeholder="Jane"
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Last name <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                value={formData.last_name}
+                onChange={(e) => setFormData((p) => ({ ...p, last_name: e.target.value }))}
+                placeholder="Smith"
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">I am a</label>
@@ -184,13 +199,13 @@ function OnboardingContent() {
               ))}
             </select>
           </div>
+          {formData.role !== 'Independent Creator' && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Year *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
             <select
               value={formData.year}
               onChange={(e) => setFormData((p) => ({ ...p, year: e.target.value }))}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              required
             >
               <option value="">Select year</option>
               {YEARS.map((y) => (
@@ -198,13 +213,13 @@ function OnboardingContent() {
               ))}
             </select>
           </div>
+          )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Major / Program *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Major / Program</label>
             <select
               value={formData.major}
               onChange={(e) => setFormData((p) => ({ ...p, major: e.target.value }))}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              required
             >
               <option value="">Select major</option>
               {MAJORS.map((m) => (

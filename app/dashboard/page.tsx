@@ -1,7 +1,7 @@
 'use client'
 
 import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
+import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { toast } from '@/lib/toast'
 import { useEffect, useState, useRef, Suspense } from 'react'
@@ -29,8 +29,16 @@ interface Studio {
   createdAt: string
 }
 
+type DashboardWorkspace = Workspace & {
+  owner_id?: string
+  type?: string
+  board_count?: number
+  created_at?: string
+  description?: string
+}
+
 interface WorkspaceCardProps {
-  workspace: any
+  workspace: DashboardWorkspace
   isOwner: boolean
   onDelete: (id: string, name: string) => void
   onRename: (id: string, currentName: string) => void
@@ -155,10 +163,10 @@ function WorkspaceCard({ workspace, isOwner, onDelete, onRename, openMenuId, set
 
 function DashboardContent() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [studios, setStudios] = useState<Studio[]>([])
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [workspaces, setWorkspaces] = useState<DashboardWorkspace[]>([])
   const [loading, setLoading] = useState(true)
   const [showJoinModal, setShowJoinModal] = useState(false)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
@@ -205,13 +213,13 @@ function DashboardContent() {
 
         // Separate classes from personal rooms
         // Personal rooms: type === 'personal' OR (no type field and owned by user with no members)
-        const classes = workspacesArray.filter((w: any) => w.type !== 'personal')
-        const personalRooms = workspacesArray.filter((w: any) => w.type === 'personal')
-        
+        const classes = workspacesArray.filter((w: { type?: string }) => w.type !== 'personal')
+        const personalRooms = workspacesArray.filter((w: { type?: string }) => w.type === 'personal')
+
         setWorkspaces(classes)
-        
+
         // Convert personal rooms to studios format
-        const personalStudios = personalRooms.map((w: any) => ({
+        const personalStudios = personalRooms.map((w: { id: string; name: string; board_count?: number; created_at?: string }) => ({
           id: w.id,
           name: w.name,
           boardCount: w.board_count ?? 0,
@@ -450,7 +458,7 @@ function DashboardContent() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {workspaces.map((workspace: any) => (
+              {workspaces.map((workspace) => (
                 <WorkspaceCard
                   key={workspace.id}
                   workspace={workspace}
@@ -588,7 +596,7 @@ function DashboardContent() {
           <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Studio?</h3>
             <p className="text-sm text-gray-600 mb-6">
-              <strong>"{confirmDeleteName}"</strong> and all its boards will be permanently deleted. This cannot be undone.
+              <strong>{'"'}{confirmDeleteName}{'"'}</strong> and all its boards will be permanently deleted. This cannot be undone.
             </p>
             <div className="flex gap-3">
               <button

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
+import type { AuthChangeEvent } from '@supabase/supabase-js'
 
 function ResetPasswordInner() {
   const router = useRouter()
@@ -19,7 +19,7 @@ function ResetPasswordInner() {
     // Supabase fires PASSWORD_RECOVERY when the user arrives via the reset link.
     // The token is extracted from the URL hash automatically by the Supabase client.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event: AuthChangeEvent, _session: Session | null) => {
+      (event: AuthChangeEvent) => {
         if (event === 'PASSWORD_RECOVERY') {
           setReady(true)
         } else if (event === 'SIGNED_IN' && !ready) {

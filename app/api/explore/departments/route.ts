@@ -21,10 +21,7 @@ export async function GET() {
 
     if (error) {
       console.error('Error fetching workspaces:', error)
-      return NextResponse.json({ 
-        error: 'Failed to fetch departments', 
-        details: error.message || error 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch departments' }, { status: 500 })
     }
 
     // Get member counts for totals
@@ -62,10 +59,7 @@ export async function GET() {
     return NextResponse.json({ departments, totals })
   } catch (error) {
     console.error('Error fetching departments:', error)
-    return NextResponse.json({ 
-      error: 'Failed to fetch departments', 
-      details: (error as Error).message 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch departments' }, { status: 500 })
   }
 }
 

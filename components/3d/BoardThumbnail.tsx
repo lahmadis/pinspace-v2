@@ -22,6 +22,7 @@ class TextureErrorBoundary extends React.Component<
   { children: React.ReactNode; fallback: React.ReactNode },
   { hasError: boolean }
 > {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(props: any) {
     super(props)
     this.state = { hasError: false }
@@ -60,37 +61,14 @@ function BoardImage({
   hovered: boolean
   isHighlighted?: boolean
   meshRef: React.RefObject<THREE.Mesh>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onClick?: (e: any) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onPointerDown?: (e: any) => void
 }) {
   const { gl } = useThree()
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
-  
-  // Handle PDFs - show red placeholder
-  if (imageUrl.toLowerCase().endsWith('.pdf')) {
-    return (
-      <mesh 
-        ref={meshRef} 
-        castShadow 
-        receiveShadow 
-        renderOrder={1}
-        onClick={onClick}
-        onPointerDown={onPointerDown}
-      >
-        <boxGeometry args={[width, height, BOARD_THICKNESS]} />
-        <meshStandardMaterial
-          color="#ff4444"
-          roughness={0.7}
-          metalness={0.0}
-          emissive={isHighlighted ? '#6366f1' : (hovered ? '#6366f1' : '#000000')}
-          emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
-          depthWrite={true}
-          depthTest={true}
-        />
-      </mesh>
-    )
-  }
-  
+
   // Use Suspense for texture loading - this handles the loading state properly
   const texture = useTexture(imageUrl)
   
@@ -147,7 +125,9 @@ function BoardFallback({
   hovered: boolean
   isHighlighted?: boolean
   meshRef: React.RefObject<THREE.Mesh>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onClick?: (e: any) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onPointerDown?: (e: any) => void
 }) {
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
@@ -183,25 +163,27 @@ function BoardFallback({
 }
 
 // PDF component - renders actual PDF content as texture
-function BoardPDF({ 
+function BoardPDF({
   pdfUrl,
-  title,
-  width, 
-  height, 
-  hovered, 
-  isHighlighted,
+  title: _title,
+  width,
+  height,
+  hovered,
+  isHighlighted: _isHighlighted,
   meshRef,
   onClick,
   onPointerDown
-}: { 
+}: {
   pdfUrl: string
-  title: string
+  title?: string
   width: number
   height: number
   hovered: boolean
   isHighlighted?: boolean
   meshRef: React.RefObject<THREE.Mesh>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onClick?: (e: any) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onPointerDown?: (e: any) => void
 }) {
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
@@ -223,6 +205,11 @@ function BoardPDF({
 export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted, onHover }: BoardThumbnailProps) {
   const [hovered, setHovered] = useState(false)
   const meshRef = useRef<THREE.Mesh>(null)
+  const uploaderName =
+    board.studentName?.trim() ||
+    board.ownerName?.trim() ||
+    board.studentEmail?.split('@')[0]?.trim() ||
+    'Unknown uploader'
   
   // Combined hover state: true if pointer hovered OR board is highlighted (in camera view)
   const isHovered = hovered || !!isHighlighted
@@ -243,14 +230,17 @@ export default function BoardThumbnail({ board, position, width, height, onClick
     imageUrl.startsWith('https://')
   ) && !isPDF
 
-  // Subtle animation on hover
+  // Subtle animation on hover — skip when already at target to avoid per-frame writes on every board
   useFrame(() => {
-    if (meshRef.current) {
-      const targetZ = isHovered ? 0.15 : 0
-      meshRef.current.position.z += (targetZ - meshRef.current.position.z) * 0.1
+    if (!meshRef.current) return
+    const targetZ = isHovered ? 0.15 : 0
+    const delta = targetZ - meshRef.current.position.z
+    if (Math.abs(delta) > 0.001) {
+      meshRef.current.position.z += delta * 0.1
     }
   })
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleClick = (e: any) => {
     // Open comment panel when board is clicked
     if (onClick) {
@@ -259,6 +249,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handlePointerDown = (e: any) => {
     // Stop propagation to prevent pointer lock from activating
     // This keeps the mouse visible when clicking on boards
@@ -337,36 +328,28 @@ export default function BoardThumbnail({ board, position, width, height, onClick
         />
       )}
 
-      {/* Owner name tooltip - only show on hover */}
-      {(() => {
-        // Get the display name: prefer studentName, fallback to ownerName
-        // Only show if we have a valid name (not empty, "Anonymous", or "Uploaded Board")
-        const displayName = (board.studentName && board.studentName !== 'Anonymous' && board.studentName !== 'Uploaded Board'
-          ? board.studentName 
-          : (board.ownerName && board.ownerName !== 'Anonymous' && board.ownerName !== 'Uploaded Board' ? board.ownerName : null))
-        
-        return isHovered && displayName ? (
-          <Html
-            position={[0, -height / 2 - 0.1, 0.1]}
-            center
-            distanceFactor={10}
-            style={{ pointerEvents: 'none' }}
-          >
-            <div style={{
-              background: 'rgba(0, 0, 0, 0.8)',
-              color: 'white',
-              padding: '6px 12px',
-              borderRadius: '6px',
-              fontSize: '12px',
-              fontWeight: 500,
-              whiteSpace: 'nowrap',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}>
-              {displayName}
-            </div>
-          </Html>
-        ) : null
-      })()}
+      {/* Uploader name tooltip - visible in 3D room hover */}
+      {isHovered && (
+        <Html
+          position={[0, -height / 2 - 0.1, 0.1]}
+          center
+          distanceFactor={10}
+          style={{ pointerEvents: 'none' }}
+        >
+          <div style={{
+            background: 'rgba(0, 0, 0, 0.8)',
+            color: 'white',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            fontSize: '12px',
+            fontWeight: 500,
+            whiteSpace: 'nowrap',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+          }}>
+            Uploaded by {uploaderName}
+          </div>
+        </Html>
+      )}
 
 
       {/* Frame around board when hovered or highlighted */}

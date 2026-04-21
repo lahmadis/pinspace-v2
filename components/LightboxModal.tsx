@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { Comment, Board } from '@/types'
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
+import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 
 interface LightboxModalProps {
   board: Board | null
@@ -63,7 +63,7 @@ function getAvatarColor(name: string): string {
 export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -360,7 +360,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 }
               }
             })
-          } catch (e) {
+          } catch {
             // Ignore referrer parsing errors
           }
         }

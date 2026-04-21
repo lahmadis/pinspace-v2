@@ -3,8 +3,8 @@ import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoBoards, transformDemoBoard } from '@/lib/mockData'
 import { getSampleBoards } from '@/lib/sampleData'
 
-// Cache boards for 30 seconds (shorter than public workspaces since boards change more frequently)
-export const revalidate = 30
+// No static caching — boards change frequently (uploads, position updates)
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,17 +32,17 @@ export async function GET(request: NextRequest) {
     // Normal mode: use Supabase
     // For public workspaces, we should allow unauthenticated access
     const supabase = supabaseServer()
-    
+
     // Check if this workspace is public (allow unauthenticated access for public workspaces)
     const { data: workspace, error: workspaceError } = await supabase
       .from('workspaces')
       .select('is_public')
       .eq('id', workspaceId)
       .single()
-    
+
     // If workspace doesn't exist, require authentication (might be a private workspace)
     const isPublicWorkspace = workspace && !workspaceError && workspace.is_public === true
-    
+
     // Only require authentication for private workspaces or if workspace doesn't exist
     if (!isPublicWorkspace) {
       const {
@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
 
       if (sessionError) {
         console.error('Session error:', sessionError)
-        return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+        return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
       }
 
       const userId = session?.user?.id
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
       if (ws.owner_id !== userId) {
         const { data: membership } = await adminDb
           .from('workspace_members')
-          .select('id')
+          .select('user_id')
           .eq('workspace_id', workspaceId)
           .eq('user_id', userId)
           .maybeSingle()
@@ -86,8 +86,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Fetch boards from Supabase
-    const { data: boards, error } = await supabase
+    // Fetch boards with service role after explicit access checks above.
+    // This avoids differences in RLS policy setups causing "saved then disappeared on refresh."
+    const adminDb = supabaseServiceRole()
+    const { data: boards, error } = await adminDb
       .from('boards')
       .select('*')
       .eq('workspace_id', workspaceId)
@@ -95,14 +97,11 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Error fetching boards:', error)
-      return NextResponse.json({ 
-        error: 'Failed to fetch boards', 
-        details: error.message || error 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch boards' }, { status: 500 })
     }
 
     // Transform database format to frontend format
-    const transformedBoards = (boards || []).map((board: any) => ({
+    const transformedBoards = (boards || []).map((board) => ({
       id: board.id,
       studioId: board.workspace_id, // Keep for backward compatibility
       workspaceId: board.workspace_id,
@@ -133,18 +132,12 @@ export async function GET(request: NextRequest) {
     }))
 
     const response = NextResponse.json({ boards: transformedBoards })
-    
-    // Add caching headers for better performance
-    response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60')
-    
+    response.headers.set('Cache-Control', 'no-store')
     return response
   }
-  catch (error: any) {
+  catch (error) {
     console.error('Unexpected error in GET /api/boards:', error)
-    return NextResponse.json({ 
-      error: 'Internal Server Error', 
-      details: error?.message || String(error) 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 
@@ -155,12 +148,12 @@ export async function PUT(request: NextRequest) {
       data: { session },
       error: sessionError,
     } = await supabase.auth.getSession()
-    
+
     if (sessionError) {
       console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
-    
+
     const userId = session?.user?.id
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -173,11 +166,9 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const workspaceId = board.workspaceId || board.studioId
-
     // Prepare update data for Supabase
-    const updateData: any = {}
-    
+    const updateData: Record<string, unknown> = {}
+
     if (board.position) {
       updateData.position_wall_index = board.position.wallIndex
       updateData.position_x = board.position.x.toString()
@@ -187,16 +178,17 @@ export async function PUT(request: NextRequest) {
       // Always persist side when updating position so 'back' is never lost (default 'front')
       updateData.position_side = board.position.side === 'back' ? 'back' : 'front'
     }
-    
+
     if (board.title) updateData.title = board.title
     if (board.description !== undefined) updateData.description = board.description
     if (board.tags) updateData.tags = board.tags
     if (board.studentName) updateData.student_name = board.studentName
     if (board.studentEmail) updateData.student_email = board.studentEmail
 
-    // Check if user is a member of the workspace (owner or member)
-    // First, get the board to find its workspace
-    const { data: boardData, error: boardFetchError } = await supabase
+    // Use service role for access checks to avoid RLS mismatches
+    const adminDb = supabaseServiceRole()
+
+    const { data: boardData, error: boardFetchError } = await adminDb
       .from('boards')
       .select('workspace_id, owner_id')
       .eq('id', board.id)
@@ -207,8 +199,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
 
-    // Check if user owns the workspace
-    const { data: workspace } = await supabase
+    const { data: workspace } = await adminDb
       .from('workspaces')
       .select('owner_id')
       .eq('id', boardData.workspace_id)
@@ -216,26 +207,28 @@ export async function PUT(request: NextRequest) {
 
     const isWorkspaceOwner = workspace?.owner_id === userId
 
-    // Check if user is a member of the workspace
-    const { data: membership } = await supabase
+    const { data: membership, error: membershipError } = await adminDb
       .from('workspace_members')
-      .select('*')
+      .select('user_id')
       .eq('workspace_id', boardData.workspace_id)
       .eq('user_id', userId)
-      .single()
+      .maybeSingle()
 
-    // Allow if: user owns the board OR user is a member of the workspace
-    const canEdit = boardData.owner_id === userId || isWorkspaceOwner || membership
+    if (membershipError) {
+      console.error('Error checking workspace membership:', membershipError)
+      return NextResponse.json({ error: 'Failed to verify access' }, { status: 500 })
+    }
+
+    const canEdit = boardData.owner_id === userId || isWorkspaceOwner || membership !== null
 
     if (!canEdit) {
-      console.error('❌ [API] User not authorized to edit this board')
-      return NextResponse.json({ 
-        error: 'Not authorized to edit this board. You must be a member of the workspace.' 
+      return NextResponse.json({
+        error: 'Not authorized to edit this board. You must be a member of the workspace.'
       }, { status: 403 })
     }
 
-    // Update board in Supabase (remove owner_id restriction since workspace members can edit)
-    const { data: updatedBoard, error } = await supabase
+    // Update using service role so RLS UPDATE policy can't silently block members
+    const { data: updatedBoard, error } = await adminDb
       .from('boards')
       .update(updateData)
       .eq('id', board.id)
@@ -244,10 +237,7 @@ export async function PUT(request: NextRequest) {
 
     if (error) {
       console.error('❌ [API] Error updating board:', error)
-      return NextResponse.json({ 
-        error: 'Failed to update board', 
-        details: error.message || error 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to update board' }, { status: 500 })
     }
 
     if (!updatedBoard) {
@@ -281,12 +271,9 @@ export async function PUT(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true, board: transformedBoard })
-  } catch (error: any) {
+  } catch (error) {
     console.error('❌ [API] Unexpected error updating board:', error)
-    return NextResponse.json({ 
-      error: 'Internal Server Error', 
-      details: error?.message || String(error) 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 
@@ -297,12 +284,12 @@ export async function DELETE(request: NextRequest) {
       data: { session },
       error: sessionError,
     } = await supabase.auth.getSession()
-    
+
     if (sessionError) {
       console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session', details: sessionError }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
     }
-    
+
     const userId = session?.user?.id
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -315,9 +302,10 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'boardId required' }, { status: 400 })
     }
 
-    // Check if user is a member of the workspace before allowing delete
-    // First, get the board to find its workspace
-    const { data: boardData, error: boardFetchError } = await supabase
+    // Use service role for all access checks (consistent with GET and PUT)
+    const admin = supabaseServiceRole()
+
+    const { data: boardData, error: boardFetchError } = await admin
       .from('boards')
       .select('workspace_id, owner_id, owner_name')
       .eq('id', boardId)
@@ -328,8 +316,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
 
-    // Check if user owns the workspace
-    const { data: workspace } = await supabase
+    const { data: workspace } = await admin
       .from('workspaces')
       .select('owner_id')
       .eq('id', boardData.workspace_id)
@@ -337,27 +324,26 @@ export async function DELETE(request: NextRequest) {
 
     const isWorkspaceOwner = workspace?.owner_id === userId
 
-    // Check if user is a member of the workspace
-    const { data: membership } = await supabase
+    const { data: membership, error: membershipError } = await admin
       .from('workspace_members')
-      .select('*')
+      .select('user_id')
       .eq('workspace_id', boardData.workspace_id)
       .eq('user_id', userId)
-      .single()
+      .maybeSingle()
 
-    // Allow delete if: user owns the board OR user is a member of the workspace
-    const canDelete = boardData.owner_id === userId || isWorkspaceOwner || membership
+    if (membershipError) {
+      console.error('Error checking workspace membership:', membershipError)
+      return NextResponse.json({ error: 'Failed to verify access' }, { status: 500 })
+    }
+
+    const canDelete = boardData.owner_id === userId || isWorkspaceOwner || membership !== null
 
     if (!canDelete) {
-      console.error('❌ [API] User not authorized to delete this board')
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Not authorized to delete this board',
         ownerName: boardData.owner_name || undefined
       }, { status: 403 })
     }
-
-    // Delete board using service role (RLS only allows owner delete; we already verified member/owner above)
-    const admin = supabaseServiceRole()
     const { error } = await admin
       .from('boards')
       .delete()
@@ -365,18 +351,12 @@ export async function DELETE(request: NextRequest) {
 
     if (error) {
       console.error('Error deleting board:', error)
-      return NextResponse.json({ 
-        error: 'Failed to delete board', 
-        details: error.message || error 
-      }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to delete board' }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Unexpected error deleting board:', error)
-    return NextResponse.json({ 
-      error: 'Internal Server Error', 
-      details: error?.message || String(error) 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }

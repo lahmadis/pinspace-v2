@@ -30,8 +30,7 @@ interface WallSystemProps {
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallClick, editingWall, onBoardClick, highlightedBoardId, onBoardHover, onFloorClick }: WallSystemProps) {
-  const SCALE = 12
+export default function WallSystem({ boards, wallConfig, onWallClick, editingWall, onBoardClick, highlightedBoardId, onBoardHover }: WallSystemProps) {
 
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
   const floorBounds = calculateFloorBounds(wallConfig)
@@ -181,8 +180,11 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
                 boardWidth = (board.position.width / 100) * wallWidthInches
                 boardHeight = (board.position.height / 100) * wallHeightInches
               } else if (board.physicalWidth && board.physicalHeight) {
-                boardWidth = Math.min(board.physicalWidth, wallWidthInches)
-                boardHeight = Math.min(board.physicalHeight, wallHeightInches)
+                const rawWidth = board.physicalWidth
+                const rawHeight = board.physicalHeight
+                const fitScale = Math.min(wallWidthInches / rawWidth, wallHeightInches / rawHeight, 1)
+                boardWidth = rawWidth * fitScale
+                boardHeight = rawHeight * fitScale
               } else {
                 const DEFAULT_WIDTH_INCHES = 8.5
                 const DEFAULT_HEIGHT_INCHES = 11

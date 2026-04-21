@@ -1,11 +1,13 @@
 'use client'
 
 import { useState } from 'react'
+import { academicYearOptions, currentAcademicYear } from '@/lib/academicYear'
 
 export interface NetworkMetadata {
   department: string
   year: string
   instructor: string
+  academicYear: string
 }
 
 interface PublishConfirmModalProps {
@@ -39,8 +41,9 @@ export default function PublishConfirmModal({
 }: PublishConfirmModalProps) {
   const [department, setDepartment] = useState(currentMetadata?.department || '')
   const [year, setYear] = useState(currentMetadata?.year || '')
+  const [academicYear, setAcademicYear] = useState(currentMetadata?.academicYear || currentAcademicYear())
   const [instructor, setInstructor] = useState(currentMetadata?.instructor || '')
-  const [errors, setErrors] = useState<{ department?: string; year?: string; instructor?: string }>({})
+  const [errors, setErrors] = useState<{ department?: string; year?: string; academicYear?: string; instructor?: string }>({})
 
   const handleConfirm = () => {
     if (isCurrentlyPublic) {
@@ -53,6 +56,7 @@ export default function PublishConfirmModal({
     const newErrors: typeof errors = {}
     if (!department) newErrors.department = 'Please select a department'
     if (!year) newErrors.year = 'Please select a year'
+    if (!academicYear) newErrors.academicYear = 'Please select an academic year'
     if (!instructor.trim()) newErrors.instructor = 'Please enter instructor name'
 
     if (Object.keys(newErrors).length > 0) {
@@ -60,7 +64,7 @@ export default function PublishConfirmModal({
       return
     }
 
-    onConfirm({ department, year, instructor: instructor.trim() })
+    onConfirm({ department, year, academicYear, instructor: instructor.trim() })
   }
 
   // If unpublishing, show simple confirmation
@@ -187,6 +191,31 @@ export default function PublishConfirmModal({
             </select>
             {errors.year && (
               <p className="text-red-500 text-xs mt-1">{errors.year}</p>
+            )}
+          </div>
+
+          {/* Academic Year */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Academic Year <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={academicYear}
+              onChange={(e) => {
+                setAcademicYear(e.target.value)
+                setErrors(prev => ({ ...prev, academicYear: undefined }))
+              }}
+              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
+                errors.academicYear ? 'border-red-500' : 'border-gray-300'
+              }`}
+            >
+              <option value="">Select academic year...</option>
+              {academicYearOptions().map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            {errors.academicYear && (
+              <p className="text-red-500 text-xs mt-1">{errors.academicYear}</p>
             )}
           </div>
 

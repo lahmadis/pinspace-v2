@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import NetworkView from '@/components/network/NetworkView'
 import DemoBanner from '@/components/DemoBanner'
-import { getSchools, getYearsBySchool, getStudiosByYear, type DemoSchool } from '@/lib/mockData'
+import { getSchools, type DemoSchool } from '@/lib/mockData'
 import { School } from '@/types'
 
 export default function DemoNetworkPage() {

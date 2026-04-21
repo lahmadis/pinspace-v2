@@ -1,7 +1,7 @@
 'use client'
 
 import '@/components/3d/setupDraco'
-import { Suspense, useMemo } from 'react'
+import { Suspense, useMemo, useEffect } from 'react'
 import { useGLTF, Center } from '@react-three/drei'
 import * as THREE from 'three'
 import type { FloorTable } from '@/types'
@@ -53,6 +53,20 @@ function ModelOnTable({ url, tableWidth, tableDepth }: { url: string; tableWidth
     const scale = Math.min(scaleX, scaleZ)
     return { cloned: c, scale, size: sizeVec }
   }, [scene, tableWidth, tableDepth])
+
+  // Dispose cloned geometries and materials when the clone is replaced or the component unmounts
+  useEffect(() => {
+    return () => {
+      cloned.traverse((child) => {
+        const mesh = child as THREE.Mesh
+        if (!mesh.isMesh) return
+        mesh.geometry?.dispose()
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        materials.forEach((m) => (m as THREE.Material)?.dispose())
+      })
+    }
+  }, [cloned])
+
   // Center horizontally (XZ) but place bottom on table: offset up by half height so bottom sits at table top
   return (
     <group position={[0, TABLE_HEIGHT, 0]} scale={scale}>

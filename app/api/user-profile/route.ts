@@ -28,10 +28,7 @@ export async function GET() {
     return NextResponse.json(data)
   } catch (error) {
     console.error('Error in GET /api/user-profile:', error)
-    return NextResponse.json(
-      { error: 'Internal Server Error', details: (error as Error).message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 
@@ -83,16 +80,12 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error('Error saving user profile:', error)
-      const msg = error.message || 'Failed to save profile'
-      return NextResponse.json({ error: msg, details: error.details }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to save profile' }, { status: 500 })
     }
 
     return NextResponse.json(data)
   } catch (error) {
     console.error('Error in POST /api/user-profile:', error)
-    return NextResponse.json(
-      { error: 'Internal Server Error', details: (error as Error).message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
