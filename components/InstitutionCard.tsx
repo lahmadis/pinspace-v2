@@ -9,7 +9,7 @@ export interface Institution {
   id: string
   name: string
   slug: string
-  type: 'institution' | 'firm'
+  type: 'university' | 'firm'
   logo_url: string | null
   studio_count: number
   student_count: number
@@ -22,7 +22,7 @@ interface InstitutionCardProps {
 
 export default function InstitutionCard({ institution, index = 0 }: InstitutionCardProps) {
   const { name, slug, type, logo_url, studio_count, student_count } = institution
-  const isUniversity = type === 'institution'
+  const isUniversity = type === 'university'
 
   return (
     <motion.div

@@ -21,13 +21,13 @@ export default function AdminInstitutionsPage() {
   const [confirmDeleteSlug, setConfirmDeleteSlug] = useState<string | null>(null)
   const [openMenuSlug, setOpenMenuSlug] = useState<string | null>(null)
   const [editingInst, setEditingInst] = useState<Institution | null>(null)
-  const [editFormData, setEditFormData] = useState({ name: '', slug: '', type: 'institution' as 'institution' | 'firm', network_label: '', allowed_email_domains: '' })
+  const [editFormData, setEditFormData] = useState({ name: '', slug: '', type: 'university' as 'university' | 'firm', network_label: '', allowed_email_domains: '' })
   const [editLoading, setEditLoading] = useState(false)
   const [editError, setEditError] = useState('')
   const [formData, setFormData] = useState({
     name: '',
     slug: '',
-    type: 'institution' as 'institution' | 'firm',
+    type: 'university' as 'university' | 'firm',
     network_label: '',
     allowed_email_domains: ''
   })
@@ -61,7 +61,7 @@ export default function AdminInstitutionsPage() {
     setEditFormData({
       name: inst.name,
       slug: inst.slug,
-      type: (inst.type === 'firm' ? 'firm' : 'institution') as 'institution' | 'firm',
+      type: (inst.type === 'firm' ? 'firm' : 'university') as 'university' | 'firm',
       network_label: inst.network_label ?? '',
       allowed_email_domains: inst.allowed_email_domains ?? ''
     })
@@ -185,7 +185,7 @@ export default function AdminInstitutionsPage() {
         setFormError(msg)
         return
       }
-      setFormData({ name: '', slug: '', type: 'institution', network_label: '', allowed_email_domains: '' })
+      setFormData({ name: '', slug: '', type: 'university', network_label: '', allowed_email_domains: '' })
       fetchInstitutions()
     } catch {
       setFormError('Request failed')
@@ -250,10 +250,10 @@ export default function AdminInstitutionsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
                 <select
                   value={formData.type}
-                  onChange={(e) => setFormData((p) => ({ ...p, type: e.target.value as 'institution' | 'firm' }))}
+                  onChange={(e) => setFormData((p) => ({ ...p, type: e.target.value as 'university' | 'firm' }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 >
-                  <option value="institution">Institution (school / university)</option>
+                  <option value="university">University (school)</option>
                   <option value="firm">Firm (e.g. architecture firm)</option>
                 </select>
               </div>
@@ -306,7 +306,7 @@ export default function AdminInstitutionsPage() {
                 disabled={loading}
                 className="w-full py-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
               >
-                {loading ? 'Adding…' : `Add ${formData.type === 'firm' ? 'firm' : 'institution'}`}
+                {loading ? 'Adding…' : `Add ${formData.type === 'firm' ? 'firm' : 'university'}`}
               </button>
             </form>
           </div>
@@ -404,10 +404,10 @@ export default function AdminInstitutionsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
                   <select
                     value={editFormData.type}
-                    onChange={(e) => setEditFormData((p) => ({ ...p, type: e.target.value as 'institution' | 'firm' }))}
+                    onChange={(e) => setEditFormData((p) => ({ ...p, type: e.target.value as 'university' | 'firm' }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   >
-                    <option value="institution">Institution (school / university)</option>
+                    <option value="university">University (school)</option>
                     <option value="firm">Firm (e.g. architecture firm)</option>
                   </select>
                 </div>

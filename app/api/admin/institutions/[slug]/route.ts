@@ -38,7 +38,7 @@ export async function PATCH(
     const newSlug = typeof body?.slug === 'string' ? body.slug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : undefined
     const networkLabel = typeof body?.network_label === 'string' ? body.network_label.trim() || null : undefined
     const allowedEmailDomains = typeof body?.allowed_email_domains === 'string' ? body.allowed_email_domains.trim() || null : undefined
-    const type = body?.type === 'firm' ? 'firm' : body?.type === 'institution' ? 'institution' : undefined
+    const type = body?.type === 'firm' ? 'firm' : body?.type === 'university' ? 'university' : undefined
 
     const admin = supabaseServiceRole()
 

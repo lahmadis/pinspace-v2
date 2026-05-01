@@ -80,7 +80,7 @@ export async function POST(req: Request) {
     const slug = body?.slug?.trim()?.toLowerCase()?.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') ?? ''
     const networkLabel = body?.network_label?.trim() ?? null
     const allowedEmailDomains = body?.allowed_email_domains?.trim() ?? null
-    const type = body?.type === 'firm' ? 'firm' : 'institution'
+    const type = body?.type === 'firm' ? 'firm' : 'university'
     const logoUrl = body?.logo_url?.trim() || null
 
     if (!name) {

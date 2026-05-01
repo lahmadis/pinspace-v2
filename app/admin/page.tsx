@@ -27,7 +27,7 @@ type InstitutionWithCount = {
   slug: string
   network_label?: string | null
   allowed_email_domains?: string | null
-  type?: 'institution' | 'firm' | null
+  type?: 'university' | 'firm' | null
   workspace_count: number
   user_count: number
   workspaces: WorkspaceRow[]
@@ -65,7 +65,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
   const [form, setForm] = useState({
     name: '',
     slug: '',
-    type: 'institution' as 'institution' | 'firm',
+    type: 'university' as 'university' | 'firm',
     network_label: '',
     allowed_email_domains: '',
   })
@@ -103,7 +103,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
         setError(data.error || 'Failed to create')
         return
       }
-      setForm({ name: '', slug: '', type: 'institution', network_label: '', allowed_email_domains: '' })
+      setForm({ name: '', slug: '', type: 'university', network_label: '', allowed_email_domains: '' })
       setOpen(false)
       onCreated()
     } catch {
@@ -141,10 +141,10 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
                 <select
                   value={form.type}
-                  onChange={(e) => setForm((p) => ({ ...p, type: e.target.value as 'institution' | 'firm' }))}
+                  onChange={(e) => setForm((p) => ({ ...p, type: e.target.value as 'university' | 'firm' }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 >
-                  <option value="institution">Institution (school / university)</option>
+                  <option value="university">University (school)</option>
                   <option value="firm">Firm</option>
                 </select>
               </div>
@@ -320,7 +320,7 @@ function EditOrgModal({
   const [form, setForm] = useState({
     name: inst.name,
     slug: inst.slug,
-    type: (inst.type === 'firm' ? 'firm' : 'institution') as 'institution' | 'firm',
+    type: (inst.type === 'firm' ? 'firm' : 'university') as 'university' | 'firm',
     network_label: inst.network_label ?? '',
     allowed_email_domains: inst.allowed_email_domains ?? '',
   })
@@ -375,10 +375,10 @@ function EditOrgModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
             <select
               value={form.type}
-              onChange={(e) => setForm((p) => ({ ...p, type: e.target.value as 'institution' | 'firm' }))}
+              onChange={(e) => setForm((p) => ({ ...p, type: e.target.value as 'university' | 'firm' }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
-              <option value="institution">Institution (school / university)</option>
+              <option value="university">University (school)</option>
               <option value="firm">Firm</option>
             </select>
           </div>
@@ -587,7 +587,7 @@ export default function AdminDashboardPage() {
     )
   }
 
-  const institutionsList = institutions.filter((i) => (i.type || 'institution') === 'institution')
+  const institutionsList = institutions.filter((i) => (i.type || 'university') === 'university')
   const firmsList = institutions.filter((i) => i.type === 'firm')
 
   const renderOrgSection = (
