@@ -47,12 +47,6 @@ function SignInInner() {
 
   useEffect(() => { setMounted(true) }, [])
 
-  // Write institution URL param into sessionStorage so downstream pages pick it up
-  useEffect(() => {
-    if (!mounted || !institutionSlug) return
-    sessionStorage.setItem('pinspace_institution', institutionSlug)
-  }, [mounted, institutionSlug])
-
   // After any successful sign-in: write org context, check profile, redirect
   const redirectAfterSignIn = useCallback(async (orgSlug?: string) => {
     if (hasRedirected.current) return
@@ -256,7 +250,10 @@ function SignInInner() {
 
   if (step === 'email-input' || step === 'password-fallback') {
     const isPassword = step === 'password-fallback'
-    const signUpHref = `/sign-up${email ? `?email=${encodeURIComponent(email)}` : ''}`
+    const signUpParams = new URLSearchParams()
+    if (email) signUpParams.set('email', email)
+    if (institutionSlug) signUpParams.set('institution', institutionSlug)
+    const signUpHref = `/sign-up${signUpParams.size ? `?${signUpParams}` : ''}`
     return (
       <Shell>
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Sign in</h1>
