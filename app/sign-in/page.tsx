@@ -4,194 +4,267 @@ import { Suspense, useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
-import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
-import type { Institution } from '@/types'
 
-function getAllowedDomains(domainsStr: string | null | undefined): string[] {
-  if (!domainsStr || !domainsStr.trim()) return []
-  return domainsStr.split(',').map((d) => d.trim().toLowerCase()).filter(Boolean)
+interface OrgMatch {
+  id: string
+  name: string
+  slug: string
+  type: 'university' | 'firm'
+  logo_url: string | null
+  network_label: string | null
 }
 
-function emailDomainAllowed(email: string, allowedDomains: string[]): boolean {
-  if (allowedDomains.length === 0) return true
-  if (!email.includes('@')) return false
-  const domain = email.split('@')[1]?.trim().toLowerCase()
-  return domain ? allowedDomains.includes(domain) : false
-}
+type Step =
+  | 'email-input'
+  | 'checking'        // spinner while lookup-domain runs + OTP sends
+  | 'check-email'     // OTP sent, waiting for 6-digit code
+  | 'verifying'       // spinner while verifyOtp runs
+  | 'workspace-picker' // OTP verified, 2+ orgs — user picks one
+  | 'no-match'        // 0 orgs found for domain
+  | 'request-sent'    // org request submitted successfully
+  | 'password-fallback' // user chose "sign in with password instead"
 
 function SignInInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [mounted, setMounted] = useState(false)
-  const [institution, setInstitution] = useState<Institution | null>(null)
-  const [institutions, setInstitutions] = useState<Institution[]>([])
-  const [loading, setLoading] = useState(true)
-  const [signingIn, setSigningIn] = useState(false)
-  const [error, setError] = useState('')
+  const [step, setStep] = useState<Step>('email-input')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [otp, setOtp] = useState('')
+  const [orgs, setOrgs] = useState<OrgMatch[]>([])
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
   const hasRedirected = useRef(false)
 
-  const institutionSlug = searchParams?.get('institution') ?? (typeof window !== 'undefined' ? sessionStorage.getItem('pinspace_institution') : null)
+  const institutionSlug = searchParams?.get('institution') ?? null
+  // TODO (Phase 3.5 – Bug 2): institutionSlug is available but the email-input step shows
+  // no visual indication of which workspace the user is signing into. When institutionSlug
+  // is set, add a subtitle or badge ("Signing in to Wentworth Institute of Technology")
+  // above the email input. Requires fetching the org name from the slug (either a small
+  // API call or passing name through the URL from the /i/[slug] handoff page).
   const redirectTo = searchParams?.get('redirect') ?? undefined
 
-  useEffect(() => {
-    setMounted(true)
-  }, [])
+  useEffect(() => { setMounted(true) }, [])
 
-  const redirectAfterSignIn = useCallback(async () => {
+  // Write institution URL param into sessionStorage so downstream pages pick it up
+  useEffect(() => {
+    if (!mounted || !institutionSlug) return
+    sessionStorage.setItem('pinspace_institution', institutionSlug)
+  }, [mounted, institutionSlug])
+
+  // After any successful sign-in: write org context, check profile, redirect
+  const redirectAfterSignIn = useCallback(async (orgSlug?: string) => {
     if (hasRedirected.current) return
     hasRedirected.current = true
 
-    const defaultTarget = redirectTo || '/dashboard'
-    const withInstitution = (base: string) => {
-      if (!institutionSlug) return base
-      const sep = base.includes('?') ? '&' : '?'
-      return `${base}${sep}institution=${encodeURIComponent(institutionSlug)}`
+    if (orgSlug) {
+      sessionStorage.setItem('pinspace_institution', orgSlug)
     }
 
+    const target = redirectTo || '/dashboard'
     try {
       const res = await fetch('/api/user-profile', { cache: 'no-store' })
-      let hasProfile = false
-      if (res.ok) {
-        const data = await res.json().catch(() => null)
-        hasProfile = !!(data && data.user_id)
-      }
-
-      if (hasProfile) {
-        // Existing user with profile → go directly to target (usually dashboard)
-        router.replace(withInstitution(defaultTarget))
+      const data = res.ok ? await res.json().catch(() => null) : null
+      if (data?.user_id) {
+        router.replace(target)
       } else {
-        // No profile yet → go through onboarding once
-        const base = `/onboarding?redirect=${encodeURIComponent(defaultTarget)}`
-        router.replace(withInstitution(base))
+        router.replace(`/onboarding?redirect=${encodeURIComponent(target)}`)
       }
     } catch {
-      // Fallback: preserve previous behavior (always send to onboarding)
-      const base = `/onboarding?redirect=${encodeURIComponent(defaultTarget)}`
-      router.replace(withInstitution(base))
+      router.replace(`/onboarding?redirect=${encodeURIComponent(target)}`)
     }
-  }, [redirectTo, institutionSlug, router])
+  }, [redirectTo, router])
 
-  useEffect(() => {
-    if (!mounted) return
-    if (institutionSlug) sessionStorage.setItem('pinspace_institution', institutionSlug)
-    fetch('/api/institutions', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((data: { institutions: Institution[] }) => {
-        const list = data?.institutions || []
-        setInstitutions(list)
-        const inst = list.find((i) => i.slug === (institutionSlug || ''))
-        setInstitution(inst || null)
-      })
-      .catch(() => setInstitutions([]))
-      .finally(() => setLoading(false))
-  }, [mounted, institutionSlug])
+  // ── HANDLERS ─────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    if (!mounted) return
-    let isInitial = true
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
-      if (isInitial) {
-        isInitial = false
-        return
-      }
-      if (event === 'SIGNED_IN' && session?.user) {
-        redirectAfterSignIn()
-      }
-    })
-    return () => subscription.unsubscribe()
-  }, [mounted, redirectAfterSignIn])
-
-  const handleSignIn = async (e: React.FormEvent) => {
+  // Step 1: look up domain, then send OTP if orgs found
+  const handleEmailContinue = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    const trimmedEmail = email.trim()
-    if (!trimmedEmail) {
-      setError('Please enter your email')
-      return
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+    const trimmed = email.trim().toLowerCase()
+    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
       setError('Please enter a valid email address')
       return
     }
+    setEmail(trimmed)
+    setStep('checking')
+
+    try {
+      const res = await fetch('/api/auth/lookup-domain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: trimmed }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error || 'Something went wrong')
+        setStep('email-input')
+        return
+      }
+
+      const matched: OrgMatch[] = data.orgs ?? []
+
+      if (matched.length === 0) {
+        setOrgs([])
+        setStep('no-match')
+        return
+      }
+
+      // Domain recognized — send OTP
+      setOrgs(matched)
+      const { error: otpErr } = await supabase.auth.signInWithOtp({
+        email: trimmed,
+        options: { shouldCreateUser: true },
+      })
+      if (otpErr) {
+        setError(otpErr.message || 'Failed to send verification code')
+        setStep('email-input')
+        return
+      }
+      setStep('check-email')
+    } catch {
+      setError('Something went wrong. Please try again.')
+      setStep('email-input')
+    }
+  }
+
+  // Step 2: verify the OTP code
+  const handleOtpVerify = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    if (otp.length !== 6) {
+      setError('Please enter the 6-digit code from your email')
+      return
+    }
+    setStep('verifying')
+    // NOTE (Bug 3, resolved): Supabase OTP length was 8 during Phase 3 testing; changed to
+    // 6 in Auth → Email → OTP expiry settings. If this breaks after a config sync, reset it.
+
+    try {
+      const { data, error: verifyErr } = await supabase.auth.verifyOtp({
+        email,
+        token: otp,
+        type: 'email',
+      })
+      if (verifyErr || !data.session) {
+        setError(verifyErr?.message || 'Invalid or expired code — try resending.')
+        setStep('check-email')
+        return
+      }
+
+      if (orgs.length === 1) {
+        await redirectAfterSignIn(orgs[0].slug)
+      } else if (orgs.length > 1) {
+        setStep('workspace-picker')
+      } else {
+        // Edge case: orgs were empty (state lost) — redirect without org context
+        await redirectAfterSignIn()
+      }
+    } catch {
+      setError('Something went wrong. Please try again.')
+      setStep('check-email')
+    }
+  }
+
+  // Resend OTP from check-email step
+  const handleResendOtp = async () => {
+    setError('')
+    setBusy(true)
+    try {
+      const { error: otpErr } = await supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: true },
+      })
+      if (otpErr) setError(otpErr.message || 'Failed to resend code')
+    } catch {
+      setError('Failed to resend. Please try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Workspace picker: user selects one org
+  const handlePickOrg = async (org: OrgMatch) => {
+    await redirectAfterSignIn(org.slug)
+  }
+
+  // Password fallback sign-in
+  const handlePasswordSignIn = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
     if (!password) {
       setError('Please enter your password')
       return
     }
-
-    if (institution?.allowed_email_domains) {
-      const allowed = getAllowedDomains(institution.allowed_email_domains)
-      if (allowed.length > 0 && !emailDomainAllowed(trimmedEmail, allowed)) {
-        const domainList = allowed.map((d) => `@${d}`).join(' or ')
-        setError(`Please use a ${institution.name} email (${domainList})`)
-        return
-      }
-    }
-
-    setSigningIn(true)
+    setBusy(true)
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: trimmedEmail,
-        password,
-      })
-      setSigningIn(false)
-      if (authError) {
-        setError(authError.message || 'Invalid email or password')
+      const { error: authErr } = await supabase.auth.signInWithPassword({ email, password })
+      if (authErr) {
+        setError(authErr.message || 'Invalid email or password')
+        setBusy(false)
         return
       }
-      // onAuthStateChange will call redirectAfterSignIn
-    } catch (err) {
-      setSigningIn(false)
-      setError((err as Error).message || 'Something went wrong')
+      // Resolve org context for sessionStorage after password sign-in
+      let orgSlug: string | undefined
+      try {
+        const res = await fetch('/api/auth/lookup-domain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        })
+        const data = res.ok ? await res.json() : null
+        orgSlug = (data?.orgs as OrgMatch[] | undefined)?.[0]?.slug
+      } catch { /* non-fatal — user still signs in, just without org context */ }
+
+      await redirectAfterSignIn(orgSlug)
+    } catch {
+      setError('Something went wrong. Please try again.')
+      setBusy(false)
     }
   }
 
-  if (!mounted) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
-      </div>
-    )
+  // No-match: submit org request lead
+  const handleRequestOrg = async () => {
+    setError('')
+    setBusy(true)
+    const domain = email.split('@')[1] ?? ''
+    try {
+      const res = await fetch('/api/auth/request-org', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, domain }),
+      })
+      if (res.ok) {
+        setStep('request-sent')
+      } else {
+        const data = await res.json().catch(() => null)
+        setError(data?.error || 'Failed to submit request')
+      }
+    } catch {
+      setError('Failed to submit. Please try again.')
+    } finally {
+      setBusy(false)
+    }
   }
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
-      </div>
-    )
+  // ── RENDER ────────────────────────────────────────────────────────────────
+
+  if (!mounted || step === 'checking' || step === 'verifying') {
+    return <Spinner />
   }
 
-  const hasAnyDomainRestriction = institutions.some((i) => i.allowed_email_domains)
-  if (hasAnyDomainRestriction && !institutionSlug) {
+  if (step === 'email-input' || step === 'password-fallback') {
+    const isPassword = step === 'password-fallback'
+    const signUpHref = `/sign-up${email ? `?email=${encodeURIComponent(email)}` : ''}`
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200 text-center">
-          <h1 className="text-xl font-bold text-gray-900 mb-2">Use your school&apos;s link</h1>
-          <p className="text-gray-600 mb-6">
-            To sign in, please use your institution&apos;s PinSpace link (e.g. yourapp.com/i/wit). Contact your school for the correct link.
-          </p>
-          <Link href="/" className="text-indigo-600 hover:underline">← Back to home</Link>
-        </div>
-      </div>
-    )
-  }
-
-  const signUpUrl = institutionSlug ? `/sign-up?institution=${institutionSlug}${redirectTo ? `&redirect=${encodeURIComponent(redirectTo)}` : ''}` : '/sign-up'
-  const forgotPasswordUrl = institutionSlug ? `/forgot-password?institution=${institutionSlug}` : '/forgot-password'
-
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
+      <Shell>
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Sign in</h1>
-        {institution && (
-          <p className="text-sm text-gray-500 mb-6">Use your {institution.name} email and password.</p>
-        )}
-        {!institution && (
-          <p className="text-sm text-gray-500 mb-6">Enter your email and password to sign in.</p>
-        )}
-        <form onSubmit={handleSignIn} className="space-y-4">
+        <p className="text-sm text-gray-500 mb-6">
+          {isPassword ? 'Enter your password to sign in.' : 'Enter your work or school email to get started.'}
+        </p>
+
+        <form onSubmit={isPassword ? handlePasswordSignIn : handleEmailContinue} className="space-y-4">
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
@@ -200,54 +273,283 @@ function SignInInner() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@school.edu"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isPassword ? 'bg-gray-50 text-gray-500' : ''}`}
               autoComplete="email"
+              autoFocus={!isPassword}
+              readOnly={isPassword}
             />
           </div>
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              autoComplete="current-password"
-            />
-          </div>
-          <div className="flex justify-end">
-            <Link href={forgotPasswordUrl} className="text-sm text-indigo-600 hover:underline">
-              Forgot password?
-            </Link>
-          </div>
+
+          {isPassword && (
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                autoComplete="current-password"
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+              />
+              <div className="flex justify-end mt-1">
+                <Link href="/forgot-password" className="text-sm text-indigo-600 hover:underline">
+                  Forgot password?
+                </Link>
+              </div>
+            </div>
+          )}
+
           {error && <p className="text-sm text-red-600">{error}</p>}
+
           <button
             type="submit"
-            disabled={signingIn}
+            disabled={busy}
             className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
           >
-            {signingIn ? 'Signing in…' : 'Sign in'}
+            {busy ? (isPassword ? 'Signing in…' : 'Continuing…') : (isPassword ? 'Sign in' : 'Continue')}
           </button>
         </form>
+
+        {isPassword ? (
+          <button
+            type="button"
+            onClick={() => { setError(''); setPassword(''); setStep('email-input') }}
+            className="mt-3 w-full text-center text-sm text-gray-500 hover:text-gray-700"
+          >
+            ← Use email verification instead
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => { setError(''); setStep('password-fallback') }}
+            className="mt-3 w-full text-center text-sm text-gray-500 hover:text-gray-700"
+          >
+            Sign in with password instead
+          </button>
+        )}
+
         <div className="mt-6 pt-4 border-t border-gray-200 flex justify-between text-sm">
-          <Link href={signUpUrl} className="text-indigo-600 hover:underline">
+          <Link href={signUpHref} className="text-indigo-600 hover:underline">
             Don&apos;t have an account? Sign up
           </Link>
           <Link href="/" className="text-gray-500 hover:underline">← Back</Link>
         </div>
+      </Shell>
+    )
+  }
+
+  if (step === 'check-email') {
+    return (
+      <Shell>
+        <div className="text-center mb-6">
+          <div className="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-3">
+            <MailIcon />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">Check your email</h1>
+          <p className="text-sm text-gray-500">
+            We sent a 6-digit code to{' '}
+            <span className="font-medium text-gray-700">{email}</span>
+            {orgs.length === 1 && (
+              <> for <span className="font-medium">{orgs[0].name}</span></>
+            )}
+            .
+          </p>
+        </div>
+
+        <form onSubmit={handleOtpVerify} className="space-y-4">
+          <div>
+            <label htmlFor="otp" className="block text-sm font-medium text-gray-700 mb-1">
+              Verification code
+            </label>
+            <input
+              id="otp"
+              type="text"
+              inputMode="numeric"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="123456"
+              maxLength={6}
+              autoComplete="one-time-code"
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-center text-xl tracking-widest font-mono"
+            />
+          </div>
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+
+          <button
+            type="submit"
+            className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium"
+          >
+            Verify
+          </button>
+        </form>
+
+        <div className="mt-4 flex justify-between text-sm">
+          <button
+            type="button"
+            onClick={handleResendOtp}
+            disabled={busy}
+            className="text-indigo-600 hover:underline disabled:opacity-50"
+          >
+            {busy ? 'Sending…' : 'Resend code'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setError(''); setOtp(''); setStep('email-input') }}
+            className="text-gray-500 hover:underline"
+          >
+            Use a different email
+          </button>
+        </div>
+      </Shell>
+    )
+  }
+
+  if (step === 'workspace-picker') {
+    return (
+      <Shell>
+        <h1 className="text-2xl font-bold text-gray-900 mb-1">Choose a workspace</h1>
+        <p className="text-sm text-gray-500 mb-6">
+          Your email is linked to multiple organizations. Pick one to continue.
+        </p>
+        <div className="space-y-2">
+          {orgs.map((org) => (
+            <button
+              key={org.id}
+              type="button"
+              onClick={() => handlePickOrg(org)}
+              className="w-full flex items-center gap-3 p-4 border border-gray-200 rounded-xl hover:border-indigo-400 hover:bg-indigo-50 transition-all text-left"
+            >
+              <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 text-sm font-bold text-gray-600">
+                {org.name.charAt(0)}
+              </div>
+              <div>
+                <p className="font-medium text-gray-900">{org.name}</p>
+                <p className="text-xs text-gray-400">
+                  {org.type === 'university' ? 'University' : 'Firm'}
+                  {org.network_label ? ` · ${org.network_label}` : ''}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </Shell>
+    )
+  }
+
+  if (step === 'no-match') {
+    const domain = email.split('@')[1] ?? ''
+    return (
+      <Shell>
+        <h1 className="text-2xl font-bold text-gray-900 mb-1">
+          We don&apos;t recognize{' '}
+          <span className="text-gray-400">@{domain}</span>
+        </h1>
+        <p className="text-sm text-gray-500 mb-6">
+          No PinSpace organization is set up for this domain yet.
+        </p>
+        <div className="space-y-3">
+          <Link
+            href={`/sign-up?email=${encodeURIComponent(email)}`}
+            className="block w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium text-center"
+          >
+            Create a free personal account
+          </Link>
+          <button
+            type="button"
+            onClick={handleRequestOrg}
+            disabled={busy}
+            className="w-full py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 font-medium"
+          >
+            {busy ? 'Submitting…' : 'Request your organization'}
+          </button>
+        </div>
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        <button
+          type="button"
+          onClick={() => { setError(''); setStep('email-input') }}
+          className="mt-5 w-full text-center text-sm text-gray-500 hover:text-gray-700"
+        >
+          ← Use a different email
+        </button>
+      </Shell>
+    )
+  }
+
+  if (step === 'request-sent') {
+    const domain = email.split('@')[1] ?? ''
+    return (
+      <Shell>
+        <div className="text-center">
+          <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
+            <CheckIcon />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Request received</h1>
+          <p className="text-sm text-gray-500 mb-6">
+            We&apos;ve noted interest in adding{' '}
+            <span className="font-medium text-gray-700">@{domain}</span> to PinSpace.
+            We&apos;ll be in touch at <span className="font-medium">{email}</span>.
+          </p>
+          <button
+            type="button"
+            onClick={() => { setError(''); setStep('email-input') }}
+            className="text-indigo-600 hover:underline text-sm"
+          >
+            ← Back to sign in
+          </button>
+        </div>
+      </Shell>
+    )
+  }
+
+  return null
+}
+
+// ── Layout helpers ────────────────────────────────────────────────────────────
+
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
+        {children}
       </div>
     </div>
   )
 }
 
+function Spinner() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-gray-50">
+      <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
+    </div>
+  )
+}
+
+function MailIcon() {
+  return (
+    <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  )
+}
+
 export default function SignInPage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
-      </div>
-    }>
+    <Suspense fallback={<Spinner />}>
       <SignInInner />
     </Suspense>
   )

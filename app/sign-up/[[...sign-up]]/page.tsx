@@ -41,12 +41,21 @@ function SignUpInner() {
   const hasRedirected = useRef(false)
   const pendingSetPasswordRef = useRef(false)
 
+  // TODO (Phase 3.5 – Bug 1): institutionSlug falls back to sessionStorage, which can be
+  // stale. A user arriving via no-match → "Create personal account" will still see the
+  // institution banner (line ~354) because a prior /i/[slug] visit already wrote to
+  // sessionStorage. Fix: strip institution context when ?email= is present without
+  // ?institution=, or verify the typed email domain against org_domains before rendering
+  // the institution name.
   const institutionSlug = searchParams?.get('institution') ?? (typeof window !== 'undefined' ? sessionStorage.getItem('pinspace_institution') : null)
   const redirectTo = searchParams?.get('redirect') ?? undefined
 
   useEffect(() => {
     setMounted(true)
-  }, [])
+    // Pre-fill email if passed from the sign-in no-match flow
+    const emailParam = searchParams?.get('email')
+    if (emailParam) setEmail(emailParam)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!mounted) return
