@@ -38,14 +38,25 @@ function SignInInner() {
   const hasRedirected = useRef(false)
 
   const institutionSlug = searchParams?.get('institution') ?? null
-  // TODO (Phase 3.5 – Bug 2): institutionSlug is available but the email-input step shows
-  // no visual indication of which workspace the user is signing into. When institutionSlug
-  // is set, add a subtitle or badge ("Signing in to Wentworth Institute of Technology")
-  // above the email input. Requires fetching the org name from the slug (either a small
-  // API call or passing name through the URL from the /i/[slug] handoff page).
   const redirectTo = searchParams?.get('redirect') ?? undefined
+  const [orgName, setOrgName] = useState<string | null>(null)
+  const [orgFetchDone, setOrgFetchDone] = useState(false)
 
   useEffect(() => { setMounted(true) }, [])
+
+  useEffect(() => {
+    if (!mounted || !institutionSlug) return
+    supabase
+      .from('organizations')
+      .select('name')
+      .eq('slug', institutionSlug)
+      .maybeSingle()
+      .then(({ data }) => {
+        setOrgName(data?.name ?? null)
+        setOrgFetchDone(true)
+      })
+      .catch(() => setOrgFetchDone(true))
+  }, [mounted, institutionSlug])
 
   // After any successful sign-in: write org context, check profile, redirect
   const redirectAfterSignIn = useCallback(async (orgSlug?: string) => {
@@ -254,12 +265,22 @@ function SignInInner() {
     if (email) signUpParams.set('email', email)
     if (institutionSlug) signUpParams.set('institution', institutionSlug)
     const signUpHref = `/sign-up${signUpParams.size ? `?${signUpParams}` : ''}`
+    const genericSubtitle = isPassword
+      ? 'Enter your password to sign in.'
+      : 'Enter your work or school email to get started.'
+    const subtitle = !institutionSlug
+      ? genericSubtitle
+      : !orgFetchDone
+      ? ' '
+      : orgName
+      ? (isPassword
+          ? `Enter your password to sign in to ${orgName}.`
+          : `Sign in to ${orgName} with your institutional email.`)
+      : genericSubtitle
     return (
       <Shell>
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Sign in</h1>
-        <p className="text-sm text-gray-500 mb-6">
-          {isPassword ? 'Enter your password to sign in.' : 'Enter your work or school email to get started.'}
-        </p>
+        <p className="text-sm text-gray-500 mb-6">{subtitle}</p>
 
         <form onSubmit={isPassword ? handlePasswordSignIn : handleEmailContinue} className="space-y-4">
           <div>
