@@ -17,6 +17,7 @@ import {
   Plus,
   X,
   Pencil,
+  Trash2,
 } from 'lucide-react'
 
 type WorkspaceRow = { id: string; name: string; type?: string; created_at?: string }
@@ -326,6 +327,28 @@ function EditOrgModal({
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/admin/institutions/${encodeURIComponent(inst.slug)}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json()
+        setError(data.error || 'Failed to delete')
+        setDeleting(false)
+        setConfirmDelete(false)
+        return
+      }
+      onClose()
+      onSaved()
+    } catch {
+      setError('Request failed')
+      setDeleting(false)
+      setConfirmDelete(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -438,6 +461,39 @@ function EditOrgModal({
             </button>
           </div>
         </form>
+        <div className="mt-5 pt-4 border-t border-gray-100">
+          {!confirmDelete ? (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete org
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm text-red-700 font-medium">Delete <span className="font-bold">{inst.name}</span>? This cannot be undone.</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="flex-1 py-1.5 px-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"
+                >
+                  Keep org
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex-1 py-1.5 px-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
+                >
+                  {deleting ? 'Deleting…' : 'Yes, delete'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

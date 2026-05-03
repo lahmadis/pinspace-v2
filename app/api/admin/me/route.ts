@@ -1,13 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
-
-function isAdmin(email: string | undefined): boolean {
-  if (!email) return false
-  const list = process.env.PINSPACE_ADMIN_EMAILS
-  if (!list) return false
-  const emails = list.split(',').map((e) => e.trim().toLowerCase())
-  return emails.includes(email.toLowerCase())
-}
+import { isAdmin } from '@/lib/auth/isAdmin'
 
 /** GET /api/admin/me – returns whether the current user is an admin (email in PINSPACE_ADMIN_EMAILS). */
 export async function GET() {
