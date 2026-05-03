@@ -258,6 +258,18 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Network label <span className="font-normal text-gray-400">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={form.network_label}
+                  onChange={(e) => setForm((p) => ({ ...p, network_label: e.target.value }))}
+                  placeholder="e.g. WIT Design Network"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Allowed email domains
                 </label>
                 <DomainChipInput
@@ -268,18 +280,6 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
                   onErrorClear={() => setDomainError('')}
                 />
                 <p className="text-xs text-gray-500 mt-1">Leave empty for no restriction.</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Network label <span className="font-normal text-gray-400">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={form.network_label}
-                  onChange={(e) => setForm((p) => ({ ...p, network_label: e.target.value }))}
-                  placeholder="e.g. WIT Design Network"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                />
               </div>
               {error && <p className="text-sm text-red-600">{error}</p>}
               <div className="flex gap-2 pt-1">
@@ -576,6 +576,39 @@ function EditOrgModal({
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Allowed email domains</label>
+            {domainsLoading ? (
+              <p className="text-xs text-gray-400">Loading…</p>
+            ) : (
+              <>
+                {domains.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {domains.map((d) => (
+                      <span key={d.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-xs font-medium border border-indigo-100">
+                        {d.domain}
+                        <button
+                          type="button"
+                          onClick={() => handleDomainRemove(d.id, d.domain)}
+                          className="text-indigo-400 hover:text-indigo-600 ml-0.5"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <DomainChipInput
+                  domains={[]}
+                  onAdd={handleDomainAdd}
+                  onRemove={() => {}}
+                  error={domainError}
+                  onErrorClear={() => setDomainError('')}
+                />
+                {domainAdding && <p className="text-xs text-gray-400 mt-1">Adding…</p>}
+              </>
+            )}
+          </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2 pt-1">
             <button
@@ -595,43 +628,8 @@ function EditOrgModal({
           </div>
         </form>
 
-        {/* Domain management — changes apply immediately */}
-        <div className="mt-5 pt-4 border-t border-gray-100">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Allowed email domains</label>
-          {domainsLoading ? (
-            <p className="text-xs text-gray-400">Loading…</p>
-          ) : (
-            <>
-              {domains.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {domains.map((d) => (
-                    <span key={d.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-xs font-medium border border-indigo-100">
-                      {d.domain}
-                      <button
-                        type="button"
-                        onClick={() => handleDomainRemove(d.id, d.domain)}
-                        className="text-indigo-400 hover:text-indigo-600 ml-0.5"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <DomainChipInput
-                domains={[]}
-                onAdd={handleDomainAdd}
-                onRemove={() => {}}
-                error={domainError}
-                onErrorClear={() => setDomainError('')}
-              />
-              {domainAdding && <p className="text-xs text-gray-400 mt-1">Adding…</p>}
-            </>
-          )}
-        </div>
-
         {/* Delete zone */}
-        <div className="mt-4 pt-4 border-t border-gray-100">
+        <div className="mt-5 pt-4 border-t border-gray-100">
           {!confirmDelete ? (
             <button
               type="button"
