@@ -31,9 +31,24 @@ export async function GET() {
       return NextResponse.json({ error: 'Failed to fetch institutions' }, { status: 500 })
     }
 
+    const allOrgIds = (institutions || []).map((i) => i.id)
+
+    // Single batch query for all domains — eliminates the per-org N+1.
+    const domainsMap = new Map<string, string[]>(allOrgIds.map((id) => [id, []]))
+    if (allOrgIds.length > 0) {
+      const { data: allDomains } = await admin
+        .from('org_domains')
+        .select('org_id, domain')
+        .in('org_id', allOrgIds)
+        .order('domain')
+      for (const row of allDomains ?? []) {
+        domainsMap.get(row.org_id)?.push(row.domain)
+      }
+    }
+
     const withCounts = await Promise.all(
       (institutions || []).map(async (inst) => {
-        const [workspacesResult, userCountResult, domainsResult] = await Promise.all([
+        const [workspacesResult, userCountResult] = await Promise.all([
           admin
             .from('workspaces')
             .select('id, name, type, created_at', { count: 'exact' })
@@ -43,18 +58,13 @@ export async function GET() {
             .from('user_profiles')
             .select('*', { count: 'exact', head: true })
             .eq('institution_id', inst.id),
-          admin
-            .from('org_domains')
-            .select('domain')
-            .eq('org_id', inst.id)
-            .order('domain'),
         ])
         return {
           ...inst,
           workspace_count: workspacesResult.error ? 0 : (workspacesResult.count ?? 0),
           user_count: userCountResult.error ? 0 : (userCountResult.count ?? 0),
           workspaces: workspacesResult.data ?? [],
-          domains: domainsResult.data?.map((r) => r.domain) ?? [],
+          domains: domainsMap.get(inst.id) ?? [],
         }
       })
     )
