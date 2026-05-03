@@ -27,12 +27,14 @@ type InstitutionWithCount = {
   name: string
   slug: string
   network_label?: string | null
-  allowed_email_domains?: string | null
   type?: 'university' | 'firm' | null
   workspace_count: number
   user_count: number
   workspaces: WorkspaceRow[]
+  domains: string[]
 }
+
+const DOMAIN_RE = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/
 
 function StatBlock({ title, data }: { title: string; data: Record<string, number> }) {
   const entries = Object.entries(data).sort(([, a], [, b]) => b - a)
@@ -59,6 +61,69 @@ function StatBlock({ title, data }: { title: string; data: Record<string, number
   )
 }
 
+function DomainChipInput({
+  domains,
+  onAdd,
+  onRemove,
+  error,
+  onErrorClear,
+}: {
+  domains: string[]
+  onAdd: (d: string) => void
+  onRemove: (d: string) => void
+  error: string
+  onErrorClear: () => void
+}) {
+  const [input, setInput] = useState('')
+
+  const commit = () => {
+    const d = input.trim().toLowerCase().replace(/^https?:\/\//i, '')
+    onErrorClear()
+    if (!d) return
+    if (!DOMAIN_RE.test(d)) {
+      onAdd('\x00INVALID:' + d)
+      return
+    }
+    onAdd(d)
+    setInput('')
+  }
+
+  return (
+    <div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit() } }}
+          placeholder="e.g. wit.edu"
+          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+        />
+        <button
+          type="button"
+          onClick={commit}
+          className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium"
+        >
+          Add
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      {domains.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {domains.map((d) => (
+            <span key={d} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-xs font-medium border border-indigo-100">
+              {d}
+              <button type="button" onClick={() => onRemove(d)} className="text-indigo-400 hover:text-indigo-600 ml-0.5">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -68,8 +133,9 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
     slug: '',
     type: 'university' as 'university' | 'firm',
     network_label: '',
-    allowed_email_domains: '',
   })
+  const [domains, setDomains] = useState<string[]>([])
+  const [domainError, setDomainError] = useState('')
 
   const autoSlug = () => {
     if (form.slug) return
@@ -77,6 +143,25 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
       ...p,
       slug: p.name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
     }))
+  }
+
+  const handleDomainAdd = (d: string) => {
+    if (d.startsWith('\x00INVALID:')) {
+      setDomainError('Invalid format — use e.g. wit.edu')
+      return
+    }
+    if (domains.includes(d)) {
+      setDomainError('Already added')
+      return
+    }
+    setDomains((prev) => [...prev, d])
+  }
+
+  const reset = () => {
+    setForm({ name: '', slug: '', type: 'university', network_label: '' })
+    setDomains([])
+    setDomainError('')
+    setError('')
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -96,7 +181,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
           slug: form.slug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
           type: form.type,
           network_label: form.network_label.trim() || undefined,
-          allowed_email_domains: form.allowed_email_domains.trim() || undefined,
+          domains,
         }),
       })
       const data = await res.json()
@@ -104,7 +189,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
         setError(data.error || 'Failed to create')
         return
       }
-      setForm({ name: '', slug: '', type: 'university', network_label: '', allowed_email_domains: '' })
+      reset()
       setOpen(false)
       onCreated()
     } catch {
@@ -126,14 +211,14 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => { reset(); setOpen(false) }}>
           <div
-            className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6"
+            className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-semibold text-gray-900">Create organization</h3>
-              <button type="button" onClick={() => setOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+              <button type="button" onClick={() => { reset(); setOpen(false) }} className="p-1 text-gray-400 hover:text-gray-600 rounded">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -175,14 +260,14 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Allowed email domains
                 </label>
-                <input
-                  type="text"
-                  value={form.allowed_email_domains}
-                  onChange={(e) => setForm((p) => ({ ...p, allowed_email_domains: e.target.value }))}
-                  placeholder="e.g. wit.edu or wit.edu,wentworth.edu"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                <DomainChipInput
+                  domains={domains}
+                  onAdd={handleDomainAdd}
+                  onRemove={(d) => setDomains((prev) => prev.filter((x) => x !== d))}
+                  error={domainError}
+                  onErrorClear={() => setDomainError('')}
                 />
-                <p className="text-xs text-gray-500 mt-1">Leave blank for no restriction.</p>
+                <p className="text-xs text-gray-500 mt-1">Leave empty for no restriction.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -200,7 +285,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => setOpen(false)}
+                  onClick={() => { reset(); setOpen(false) }}
                   className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm"
                 >
                   Cancel
@@ -242,7 +327,7 @@ function OrgRow({ inst, onEdit }: { inst: InstitutionWithCount; onEdit: (inst: I
           <p className="font-medium text-gray-900 truncate">{inst.name}</p>
           <p className="text-xs text-gray-400 mt-0.5">
             /i/{inst.slug}
-            {inst.allowed_email_domains ? ` · ${inst.allowed_email_domains}` : ' · no domain restriction'}
+            {inst.domains?.length ? ` · ${inst.domains.join(', ')}` : ' · no domain restriction'}
           </p>
         </div>
 
@@ -323,12 +408,71 @@ function EditOrgModal({
     slug: inst.slug,
     type: (inst.type === 'firm' ? 'firm' : 'university') as 'university' | 'firm',
     network_label: inst.network_label ?? '',
-    allowed_email_domains: inst.allowed_email_domains ?? '',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // Domain management — fetched live on open
+  const [domains, setDomains] = useState<{ id: string; domain: string }[]>([])
+  const [domainsLoading, setDomainsLoading] = useState(true)
+  const [domainError, setDomainError] = useState('')
+  const [domainAdding, setDomainAdding] = useState(false)
+
+  useEffect(() => {
+    fetch(`/api/admin/institutions/${encodeURIComponent(inst.slug)}/domains`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data: { domains?: { id: string; domain: string }[] }) => {
+        setDomains(Array.isArray(data.domains) ? data.domains : [])
+      })
+      .catch(() => {})
+      .finally(() => setDomainsLoading(false))
+  }, [inst.slug])
+
+  const handleDomainAdd = async (d: string) => {
+    if (d.startsWith('\x00INVALID:')) {
+      setDomainError('Invalid format — use e.g. wit.edu')
+      return
+    }
+    setDomainError('')
+    setDomainAdding(true)
+    try {
+      const res = await fetch(`/api/admin/institutions/${encodeURIComponent(inst.slug)}/domains`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: d }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setDomainError(data.error || 'Failed to add domain')
+        return
+      }
+      setDomains((prev) => [...prev, data.domain])
+    } catch {
+      setDomainError('Request failed')
+    } finally {
+      setDomainAdding(false)
+    }
+  }
+
+  const handleDomainRemove = async (domainId: string, domainStr: string) => {
+    setDomainError('')
+    try {
+      const res = await fetch(
+        `/api/admin/institutions/${encodeURIComponent(inst.slug)}/domains/${encodeURIComponent(domainStr)}`,
+        { method: 'DELETE' }
+      )
+      if (!res.ok) {
+        const data = await res.json()
+        setDomainError(data.error || 'Failed to remove domain')
+        return
+      }
+      setDomains((prev) => prev.filter((d) => d.id !== domainId))
+    } catch {
+      setDomainError('Request failed')
+    }
+  }
 
   const handleDelete = async () => {
     setDeleting(true)
@@ -367,7 +511,6 @@ function EditOrgModal({
           slug: form.slug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
           type: form.type,
           network_label: form.network_label.trim() || undefined,
-          allowed_email_domains: form.allowed_email_domains.trim() || undefined,
         }),
       })
       const data = await res.json()
@@ -386,7 +529,7 @@ function EditOrgModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-semibold text-gray-900">Edit org</h3>
           <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded">
@@ -425,16 +568,6 @@ function EditOrgModal({
             <p className="text-xs text-gray-500 mt-1">Handoff link: /i/{form.slug || 'slug'}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Allowed email domains</label>
-            <input
-              type="text"
-              value={form.allowed_email_domains}
-              onChange={(e) => setForm((p) => ({ ...p, allowed_email_domains: e.target.value }))}
-              placeholder="e.g. wit.edu or wit.edu,wentworth.edu"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
-          </div>
-          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Network label <span className="font-normal text-gray-400">(optional)</span></label>
             <input
               type="text"
@@ -461,7 +594,44 @@ function EditOrgModal({
             </button>
           </div>
         </form>
+
+        {/* Domain management — changes apply immediately */}
         <div className="mt-5 pt-4 border-t border-gray-100">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Allowed email domains</label>
+          {domainsLoading ? (
+            <p className="text-xs text-gray-400">Loading…</p>
+          ) : (
+            <>
+              {domains.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {domains.map((d) => (
+                    <span key={d.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-xs font-medium border border-indigo-100">
+                      {d.domain}
+                      <button
+                        type="button"
+                        onClick={() => handleDomainRemove(d.id, d.domain)}
+                        className="text-indigo-400 hover:text-indigo-600 ml-0.5"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <DomainChipInput
+                domains={[]}
+                onAdd={handleDomainAdd}
+                onRemove={() => {}}
+                error={domainError}
+                onErrorClear={() => setDomainError('')}
+              />
+              {domainAdding && <p className="text-xs text-gray-400 mt-1">Adding…</p>}
+            </>
+          )}
+        </div>
+
+        {/* Delete zone */}
+        <div className="mt-4 pt-4 border-t border-gray-100">
           {!confirmDelete ? (
             <button
               type="button"

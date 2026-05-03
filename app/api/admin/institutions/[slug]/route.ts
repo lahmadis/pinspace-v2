@@ -30,7 +30,6 @@ export async function PATCH(
     const name = typeof body?.name === 'string' ? body.name.trim() : undefined
     const newSlug = typeof body?.slug === 'string' ? body.slug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : undefined
     const networkLabel = typeof body?.network_label === 'string' ? body.network_label.trim() || null : undefined
-    const allowedEmailDomains = typeof body?.allowed_email_domains === 'string' ? body.allowed_email_domains.trim() || null : undefined
     const type = body?.type === 'firm' ? 'firm' : body?.type === 'university' ? 'university' : undefined
 
     const admin = supabaseServiceRole()
@@ -49,7 +48,6 @@ export async function PATCH(
     if (name !== undefined) updates.name = name
     if (newSlug !== undefined) updates.slug = newSlug
     if (networkLabel !== undefined) updates.network_label = networkLabel
-    if (allowedEmailDomains !== undefined) updates.allowed_email_domains = allowedEmailDomains
     if (type !== undefined) updates.type = type
 
     if (Object.keys(updates).length === 0) {
@@ -60,7 +58,7 @@ export async function PATCH(
       .from('institutions')
       .update(updates)
       .eq('id', institution.id)
-      .select('id, name, slug, network_label, allowed_email_domains, type')
+      .select('id, name, slug, network_label, type')
       .single()
 
     if (updateErr) {

@@ -47,7 +47,7 @@ export async function GET() {
   }
 }
 
-/** POST /api/institutions – create institution (admin only). Set PINSPACE_ADMIN_EMAILS (comma-separated) to allow. */
+/** POST /api/institutions – create org (admin only). Calls create_organization_with_domains RPC for atomicity. */
 export async function POST(req: Request) {
   try {
     const supabase = supabaseServer()
@@ -63,42 +63,47 @@ export async function POST(req: Request) {
     const email = session.user.email
     if (!isAdmin(email)) {
       return NextResponse.json(
-        { error: 'Forbidden. Only admins can create institutions. Set PINSPACE_ADMIN_EMAILS in env.' },
+        { error: 'Forbidden. Only admins can create organizations. Set PINSPACE_ADMIN_EMAILS in env.' },
         { status: 403 }
       )
     }
 
     const body = await req.json().catch(() => null)
-    const name = body?.name?.trim()
+    const name = body?.name?.trim() ?? ''
     const slug = body?.slug?.trim()?.toLowerCase()?.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') ?? ''
-    const networkLabel = body?.network_label?.trim() ?? null
-    const allowedEmailDomains = body?.allowed_email_domains?.trim() ?? null
+    const networkLabel = body?.network_label?.trim() || null
     const type = body?.type === 'firm' ? 'firm' : 'university'
-    const logoUrl = body?.logo_url?.trim() || null
+    const rawDomains: unknown = body?.domains
+    const domains: string[] = Array.isArray(rawDomains)
+      ? rawDomains.filter((d): d is string => typeof d === 'string' && d.trim() !== '').map((d) => d.trim().toLowerCase())
+      : []
 
-    if (!name) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
-    }
-    if (!slug) {
-      return NextResponse.json({ error: 'Slug is required (e.g. wit, mit)' }, { status: 400 })
-    }
+    if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+    if (!slug) return NextResponse.json({ error: 'Slug is required (e.g. wit, mit)' }, { status: 400 })
 
     const admin = supabaseServiceRole()
-    const insertPayload: Record<string, unknown> = { name, slug, network_label: networkLabel || name, type }
-    if (allowedEmailDomains) insertPayload.allowed_email_domains = allowedEmailDomains
-    if (logoUrl) insertPayload.logo_url = logoUrl
-    const { data, error } = await admin
-      .from('institutions')
-      .insert(insertPayload)
-      .select('id, name, slug, network_label, allowed_email_domains, type, logo_url')
-      .single()
+    const { data, error } = await admin.rpc('create_organization_with_domains', {
+      p_name: name,
+      p_slug: slug,
+      p_type: type,
+      p_network_label: networkLabel,
+      p_domains: domains,
+    })
 
     if (error) {
       if (error.code === '23505') {
-        return NextResponse.json({ error: 'An institution with this slug already exists' }, { status: 409 })
+        if (error.message?.includes('org_domains_domain_unique')) {
+          const match = (error as { details?: string }).details?.match(/Key \(domain\)=\(([^)]+)\)/)
+          const conflicting = match?.[1] ?? 'a domain'
+          return NextResponse.json(
+            { error: `Domain ${conflicting} is already registered to another organization` },
+            { status: 409 }
+          )
+        }
+        return NextResponse.json({ error: 'An organization with that slug already exists' }, { status: 409 })
       }
-      console.error('Error creating institution:', error)
-      return NextResponse.json({ error: 'Failed to create institution' }, { status: 500 })
+      console.error('Error creating organization:', error)
+      return NextResponse.json({ error: 'Failed to create organization' }, { status: 500 })
     }
 
     return NextResponse.json({ institution: data }, { status: 201 })
