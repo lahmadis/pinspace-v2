@@ -61,16 +61,6 @@ Instead of scrolling through a flat grid, you **walk through a studio space** wi
 - Database integration planned
 - Multi-user features designed
 
-## 📚 Important Documents
-
-### **READ BEFORE DEMO:**
-- **`DEMO_GUIDE.md`** ← Your demo script and talking points
-- **`FEATURES_COMPLETE.md`** ← Full feature list
-
-### Reference:
-- **`QUICK_START.md`** ← Testing instructions
-- **`COMPARISON.md`** ← Before/after design decisions
-
 ## Keyboard Shortcuts
 
 - **ESC** - Go back / navigate up
