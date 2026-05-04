@@ -23,7 +23,7 @@ export async function GET() {
     const admin = supabaseServiceRole()
     const { data: institutions, error: instErr } = await admin
       .from('institutions')
-      .select('id, name, slug, network_label, allowed_email_domains, type')
+      .select('id, name, slug, network_label, type')
       .order('name')
 
     if (instErr) {
