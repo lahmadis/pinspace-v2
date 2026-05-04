@@ -11,12 +11,21 @@ export async function GET() {
     const supabase = supabaseServiceRole()
     const { data: institutions, error } = await supabase
       .from('institutions')
-      .select('id, name, slug, network_label, allowed_email_domains, type, logo_url')
+      .select('id, name, slug, network_label, type, logo_url')
       .order('name')
 
     if (error) {
       console.error('Error fetching institutions:', error)
       return NextResponse.json({ error: 'Failed to fetch institutions' }, { status: 500 })
+    }
+
+    const allOrgIds = (institutions || []).map((i) => i.id)
+    const domainsMap = new Map<string, string[]>(allOrgIds.map((id) => [id, []]))
+    const allDomainsResult = await (allOrgIds.length > 0
+      ? supabase.from('org_domains').select('org_id, domain').in('org_id', allOrgIds).order('domain')
+      : Promise.resolve({ data: [] as { org_id: string; domain: string }[], error: null }))
+    for (const row of allDomainsResult.data ?? []) {
+      domainsMap.get(row.org_id)?.push(row.domain)
     }
 
     const withCounts = await Promise.all(
@@ -33,7 +42,13 @@ export async function GET() {
             .eq('institution_id', inst.id),
         ])
         return {
-          ...inst,
+          id: inst.id,
+          name: inst.name,
+          slug: inst.slug,
+          network_label: inst.network_label,
+          type: inst.type,
+          logo_url: inst.logo_url,
+          domains: domainsMap.get(inst.id) ?? [],
           studio_count: studiosResult.error ? 0 : (studiosResult.count ?? 0),
           student_count: studentsResult.error ? 0 : (studentsResult.count ?? 0),
         }

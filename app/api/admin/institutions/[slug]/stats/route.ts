@@ -37,7 +37,7 @@ export async function GET(
 
     const { data: institution, error: instErr } = await admin
       .from('institutions')
-      .select('id, name, slug, network_label, allowed_email_domains')
+      .select('id, name, slug, network_label')
       .eq('slug', slug)
       .single()
 
@@ -46,6 +46,13 @@ export async function GET(
     }
 
     const institutionId = institution.id
+
+    const { data: orgDomainsRows } = await admin
+      .from('org_domains')
+      .select('domain')
+      .eq('org_id', institutionId)
+      .order('domain')
+    const institutionDomains = (orgDomainsRows ?? []).map((r) => r.domain)
 
     const { data: workspaces, error: wsErr } = await admin
       .from('workspaces')
@@ -182,7 +189,7 @@ export async function GET(
         name: institution.name,
         slug: institution.slug,
         network_label: institution.network_label,
-        allowed_email_domains: institution.allowed_email_domains,
+        domains: institutionDomains,
       },
       summary: {
         total_users: usersList.length,
