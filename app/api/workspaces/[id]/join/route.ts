@@ -1,21 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 
-function getAllowedDomains(domainsStr: string | null | undefined): string[] {
-  if (!domainsStr || !domainsStr.trim()) return []
-  return domainsStr
-    .split(',')
-    .map((d) => d.trim().toLowerCase())
-    .filter(Boolean)
-}
-
-function userEmailDomainAllowed(userEmail: string | undefined, allowedDomains: string[]): boolean {
-  if (allowedDomains.length === 0) return true
-  if (!userEmail || !userEmail.includes('@')) return false
-  const domain = userEmail.split('@')[1]?.trim().toLowerCase()
-  if (!domain) return false
-  return allowedDomains.includes(domain)
-}
 
 // JOIN workspace - Add user to workspace_members table. Enforces institution email domain when set.
 export async function POST(
@@ -61,24 +46,31 @@ export async function POST(
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
-    // If workspace has an institution with allowed_email_domains, enforce domain
+    // If workspace has an institution, enforce domain restrictions from org_domains
     if (workspace.institution_id) {
       const { data: institution, error: instError } = await admin
         .from('institutions')
-        .select('name, allowed_email_domains')
+        .select('id, name')
         .eq('id', workspace.institution_id)
         .single()
-      if (!instError && institution?.allowed_email_domains) {
-        const allowed = getAllowedDomains(institution.allowed_email_domains)
-        if (allowed.length > 0 && !userEmailDomainAllowed(userEmail, allowed)) {
-          const domainList = allowed.map((d) => `@${d}`).join(' or ')
-          return NextResponse.json(
-            {
-              error: 'Email domain not allowed',
-              message: `You can only join this workspace with a ${institution.name} email (e.g. ${domainList}). Sign in with your school email and try again.`,
-            },
-            { status: 403 }
-          )
+      if (!instError && institution) {
+        const { data: orgDomainRows } = await admin
+          .from('org_domains')
+          .select('domain')
+          .eq('org_id', institution.id)
+        const configuredDomains = (orgDomainRows ?? []).map((r) => r.domain)
+        if (configuredDomains.length > 0) {
+          const userDomain = userEmail?.split('@')[1]?.trim().toLowerCase()
+          if (!userDomain || !configuredDomains.includes(userDomain)) {
+            const domainList = configuredDomains.map((d) => `@${d}`).join(' or ')
+            return NextResponse.json(
+              {
+                error: 'Email domain not allowed',
+                message: `You can only join this workspace with a ${institution.name} email (e.g. ${domainList}). Sign in with your school email and try again.`,
+              },
+              { status: 403 }
+            )
+          }
         }
       }
     }

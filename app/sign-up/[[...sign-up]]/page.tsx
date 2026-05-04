@@ -7,11 +7,6 @@ import { supabase } from '@/lib/supabase/client'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import type { Institution } from '@/types'
 
-function getAllowedDomains(domainsStr: string | null | undefined): string[] {
-  if (!domainsStr || !domainsStr.trim()) return []
-  return domainsStr.split(',').map((d) => d.trim().toLowerCase()).filter(Boolean)
-}
-
 function emailDomainAllowed(email: string, allowedDomains: string[]): boolean {
   if (allowedDomains.length === 0) return true
   if (!email.includes('@')) return false
@@ -100,13 +95,11 @@ function SignUpInner() {
       return
     }
 
-    if (institution?.allowed_email_domains) {
-      const allowed = getAllowedDomains(institution.allowed_email_domains)
-      if (allowed.length > 0 && !emailDomainAllowed(trimmedEmail, allowed)) {
-        const domainList = allowed.map((d) => `@${d}`).join(' or ')
-        setError(`Please use a ${institution.name} email (${domainList})`)
-        return
-      }
+    const allowed = institution?.domains ?? []
+    if (allowed.length > 0 && !emailDomainAllowed(trimmedEmail, allowed)) {
+      const domainList = allowed.map((d) => `@${d}`).join(' or ')
+      setError(`Please use a ${institution.name} email (${domainList})`)
+      return
     }
 
     // Auto-detect institution from email domain when no slug-matched institution is set
@@ -114,7 +107,7 @@ function SignUpInner() {
       const emailDomain = trimmedEmail.split('@')[1]?.trim().toLowerCase()
       if (emailDomain) {
         const matchingInst = institutions.find((i) => {
-          const domains = getAllowedDomains(i.allowed_email_domains)
+          const domains = i.domains ?? []
           return domains.includes(emailDomain)
         })
         if (matchingInst) {
