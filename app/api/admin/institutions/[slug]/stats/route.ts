@@ -36,7 +36,7 @@ export async function GET(
     const admin = supabaseServiceRole()
 
     const { data: institution, error: instErr } = await admin
-      .from('institutions')
+      .from('organizations')
       .select('id, name, slug, network_label')
       .eq('slug', slug)
       .single()
@@ -57,7 +57,7 @@ export async function GET(
     const { data: workspaces, error: wsErr } = await admin
       .from('workspaces')
       .select('id, name, owner_id, type, created_at')
-      .eq('institution_id', institutionId)
+      .eq('organization_id', institutionId)
 
     if (wsErr) {
       console.error('Error fetching workspaces:', wsErr)

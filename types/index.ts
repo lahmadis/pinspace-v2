@@ -124,17 +124,6 @@ export interface Workspace {
   }
 }
 
-export interface CritSession {
-  id: string
-  studioId: string
-  hostName: string
-  hostEmail: string
-  startTime: Date
-  endTime?: Date
-  participants: string[] // User IDs or emails
-  activeBoardId?: string
-}
-
 // Navigation state types
 export type ViewMode = 'landing' | 'network' | '3d-room' | 'board-detail'
 

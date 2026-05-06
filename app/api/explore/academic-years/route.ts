@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       institutionFilterId = institutionId
     } else if (institutionSlug) {
       const { data: inst } = await supabase
-        .from('institutions')
+        .from('organizations')
         .select('id')
         .eq('slug', institutionSlug)
         .single()
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       .not('academic_year', 'is', null)
 
     if (institutionFilterId) {
-      query = query.eq('institution_id', institutionFilterId)
+      query = query.eq('organization_id', institutionFilterId)
     }
 
     const { data, error } = await query

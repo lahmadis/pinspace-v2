@@ -47,11 +47,11 @@ export async function GET(
 
     // Fetch institution when workspace has institution_id
     let institution: { id: string; name: string; slug: string; network_label?: string } | undefined
-    if (workspace.institution_id) {
+    if (workspace.organization_id) {
       const { data: inst } = await supabase
-        .from('institutions')
+        .from('organizations')
         .select('id, name, slug, network_label')
-        .eq('id', workspace.institution_id)
+        .eq('id', workspace.organization_id)
         .single()
       if (inst) institution = inst
     }
@@ -115,7 +115,7 @@ export async function GET(
       publishedAt: workspace.published_at || undefined,
       networkMetadata: workspace.network_metadata || undefined,
       instructor: workspace.instructor || undefined,
-      institutionId: workspace.institution_id || undefined,
+      institutionId: workspace.organization_id || undefined,
       institution: institution || undefined,
     }
 

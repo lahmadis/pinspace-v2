@@ -36,6 +36,8 @@
 
 | Phase | Commit | Summary |
 |---|---|---|
+| P4.5 | — | Rename `institution_id` → `organization_id` FK column in all Supabase query call sites (workspaces + user_profiles); old columns dropped in migration 009 |
+| P4.4 | — | Rename `.from('institutions')` → `.from('organizations')` across all API call sites; completed as part of earlier route work, not a standalone commit |
 | P4.6 | `a59fc2c` | SQL file consolidation into migrations/, archive/, scripts/ |
 | P4.3 | `d22cae4` | Drop allowed_email_domains column, recreate institutions view, migrate 5 readers to org_domains |
 | P4.2 + P4.2.5a | `6b33920` | Org request review UI with audit trail (decided_at, decided_by) |
@@ -52,8 +54,6 @@
 
 ## Open Phases
 
-- **P4.4** — Rename `institutions` → `organizations` in ~5–6 code call sites (`.from('institutions')`, fetch paths, page routes). Code-only, mechanical. Ends with dropping the `institutions` view.
-- **P4.5** — Rename `institution_id` FK column on `workspaces` and `user_profiles` to `organization_id`. Real schema work: needs column add, data copy, constraint swap, old column drop. Requires care around RLS policies that reference the column name.
 - **Markdown consolidation** — 7+ stale guide docs at project root (`DEPLOYMENT_CHECKLIST.md`, `MIGRATION_TO_SUPABASE.md`, `PRODUCTION_READY.md`, `SETUP_INSTRUCTIONS.md`, `STORAGE_MIGRATION_GUIDE.md`, `ONBOARDING_GUIDE.md`, `SUPABASE_EMAIL_OTP_SETUP.md`) reference pre-Phase-4 SQL filenames with no path prefix. Same cleanup shape as P4.6.
 - **Context doc** — this file. ✅ Created.
 

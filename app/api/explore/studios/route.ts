@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
       institutionFilterId = institutionId
     } else if (institutionSlug) {
       const { data: inst } = await supabase
-        .from('institutions')
+        .from('organizations')
         .select('id')
         .eq('slug', institutionSlug)
         .single()
@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
       .not('published_at', 'is', null) // Only include workspaces that have been published
 
     if (institutionFilterId) {
-      query = query.eq('institution_id', institutionFilterId)
+      query = query.eq('organization_id', institutionFilterId)
     } else {
       // No institution filter → global view: only show globally-published studios
       query = query.eq('is_globally_public', true)

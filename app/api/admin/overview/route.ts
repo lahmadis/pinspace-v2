@@ -22,7 +22,7 @@ export async function GET() {
 
     const admin = supabaseServiceRole()
     const { data: institutions, error: instErr } = await admin
-      .from('institutions')
+      .from('organizations')
       .select('id, name, slug, network_label, type')
       .order('name')
 
@@ -51,12 +51,12 @@ export async function GET() {
           admin
             .from('workspaces')
             .select('id, name, type, created_at', { count: 'exact' })
-            .eq('institution_id', inst.id)
+            .eq('organization_id', inst.id)
             .order('created_at', { ascending: false }),
           admin
             .from('user_profiles')
             .select('*', { count: 'exact', head: true })
-            .eq('institution_id', inst.id),
+            .eq('organization_id', inst.id),
         ])
         return {
           ...inst,

@@ -120,7 +120,7 @@ export async function POST(req: Request) {
     let institutionId: string | null = null
     if (institutionIdFromBody) {
       const { data: inst } = await supabaseAdmin
-        .from('institutions')
+        .from('organizations')
         .select('id')
         .eq('id', institutionIdFromBody)
         .single()
@@ -128,7 +128,7 @@ export async function POST(req: Request) {
     }
     if (!institutionId && institutionSlugFromBody) {
       const { data: inst } = await supabaseAdmin
-        .from('institutions')
+        .from('organizations')
         .select('id')
         .eq('slug', institutionSlugFromBody)
         .single()
@@ -137,10 +137,10 @@ export async function POST(req: Request) {
     if (!institutionId) {
       const { data: profile } = await supabase
         .from('user_profiles')
-        .select('institution_id')
+        .select('organization_id')
         .eq('user_id', userId)
         .maybeSingle()
-      if (profile?.institution_id) institutionId = profile.institution_id
+      if (profile?.organization_id) institutionId = profile.organization_id
     }
 
     const ensureOwnerMembership = async (workspaceId: string) => {
@@ -173,7 +173,7 @@ export async function POST(req: Request) {
     // Insert workspace
     // Try with type first, if it fails (column doesn't exist), try without type
     const insertData: Record<string, unknown> = { name, description, owner_id: userId }
-    if (institutionId) insertData.institution_id = institutionId
+    if (institutionId) insertData.organization_id = institutionId
 
     // Only include type if the column exists (we'll try with it first)
     const { data, error } = await supabase

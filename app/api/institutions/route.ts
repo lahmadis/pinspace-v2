@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const supabase = supabaseServiceRole()
     const { data: institutions, error } = await supabase
-      .from('institutions')
+      .from('organizations')
       .select('id, name, slug, network_label, type, logo_url')
       .order('name')
 
@@ -34,12 +34,12 @@ export async function GET() {
           supabase
             .from('workspaces')
             .select('*', { count: 'exact', head: true })
-            .eq('institution_id', inst.id)
+            .eq('organization_id', inst.id)
             .eq('is_published', true),
           supabase
             .from('user_profiles')
             .select('*', { count: 'exact', head: true })
-            .eq('institution_id', inst.id),
+            .eq('organization_id', inst.id),
         ])
         return {
           id: inst.id,

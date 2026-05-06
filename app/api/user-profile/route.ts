@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       age_range: ageRange || null,
       year: year || null,
       major: major || null,
-      institution_id: institutionId || null,
+      organization_id: institutionId || null,
       how_heard: howHeard || null,
       full_name: fullName || null,
       role: role || null,

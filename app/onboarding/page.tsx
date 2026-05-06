@@ -113,7 +113,7 @@ function OnboardingContent() {
         year,
         major,
         how_heard: formData.how_heard || null,
-        institution_id: institutionId || null,
+        organization_id: institutionId || null,
       }),
     })
     setSubmitting(false)

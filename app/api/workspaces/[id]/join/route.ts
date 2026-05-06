@@ -37,7 +37,7 @@ export async function POST(
     const admin = supabaseServiceRole()
     const { data: workspace, error: workspaceError } = await admin
       .from('workspaces')
-      .select('id, name, institution_id')
+      .select('id, name, organization_id')
       .eq('id', workspaceId)
       .single()
 
@@ -47,11 +47,11 @@ export async function POST(
     }
 
     // If workspace has an institution, enforce domain restrictions from org_domains
-    if (workspace.institution_id) {
+    if (workspace.organization_id) {
       const { data: institution, error: instError } = await admin
-        .from('institutions')
+        .from('organizations')
         .select('id, name')
-        .eq('id', workspace.institution_id)
+        .eq('id', workspace.organization_id)
         .single()
       if (!instError && institution) {
         const { data: orgDomainRows } = await admin

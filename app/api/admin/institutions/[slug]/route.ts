@@ -35,7 +35,7 @@ export async function PATCH(
     const admin = supabaseServiceRole()
 
     const { data: institution, error: instErr } = await admin
-      .from('institutions')
+      .from('organizations')
       .select('id')
       .eq('slug', slug)
       .single()
@@ -55,7 +55,7 @@ export async function PATCH(
     }
 
     const { data: updated, error: updateErr } = await admin
-      .from('institutions')
+      .from('organizations')
       .update(updates)
       .eq('id', institution.id)
       .select('id, name, slug, network_label, type')
@@ -103,7 +103,7 @@ export async function DELETE(
     const admin = supabaseServiceRole()
 
     const { data: institution, error: instErr } = await admin
-      .from('institutions')
+      .from('organizations')
       .select('id')
       .eq('slug', slug)
       .single()
@@ -117,11 +117,11 @@ export async function DELETE(
     // Detach from workspaces first (avoid FK errors)
     await admin
       .from('workspaces')
-      .update({ institution_id: null })
-      .eq('institution_id', institutionId)
+      .update({ organization_id: null })
+      .eq('organization_id', institutionId)
 
     const { error: delErr } = await admin
-      .from('institutions')
+      .from('organizations')
       .delete()
       .eq('id', institutionId)
 

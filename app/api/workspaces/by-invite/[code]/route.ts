@@ -35,7 +35,7 @@ export async function GET(
     // Fetch workspace by invite code (include institution for sign-in context)
     let { data: workspace, error } = await supabase
       .from('workspaces')
-      .select('id, name, invite_code, institution_id')
+      .select('id, name, invite_code, organization_id')
       .eq('invite_code', inviteCode)
       .maybeSingle()
 
@@ -51,7 +51,7 @@ export async function GET(
         const upperUuid = `${prefix}-ffff-ffff-ffff-ffffffffffff`
         const { data: uuidRows, error: uuidError } = await supabase
           .from('workspaces')
-          .select('id, name, invite_code, institution_id')
+          .select('id, name, invite_code, organization_id')
           .gte('id', lowerUuid)
           .lte('id', upperUuid)
           .limit(1)
@@ -66,7 +66,7 @@ export async function GET(
       if (!workspace) {
         const { data: fallbackRows, error: fallbackError } = await supabase
           .from('workspaces')
-          .select('id, name, invite_code, institution_id')
+          .select('id, name, invite_code, organization_id')
           .ilike('id', `${prefix}%`)
           .limit(1)
         if (!fallbackError && fallbackRows && fallbackRows.length > 0) {
@@ -83,11 +83,11 @@ export async function GET(
 
     // Get institution slug if workspace has institution
     let institutionSlug: string | null = null
-    if (workspace.institution_id) {
+    if (workspace.organization_id) {
       const { data: inst } = await supabase
-        .from('institutions')
+        .from('organizations')
         .select('slug')
-        .eq('id', workspace.institution_id)
+        .eq('id', workspace.organization_id)
         .single()
       if (inst?.slug) institutionSlug = inst.slug
     }
