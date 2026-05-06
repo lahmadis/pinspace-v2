@@ -16,7 +16,7 @@ async function resolveOrg(slug: string) {
   return error || !data ? null : data
 }
 
-async function authAdmin(req: NextRequest) {
+async function authAdmin(_req: NextRequest) {
   const supabase = supabaseServer()
   const { data: { session }, error } = await supabase.auth.getSession()
   if (error || !session?.user) return null

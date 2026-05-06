@@ -64,7 +64,6 @@ function ExplorePageInner() {
     if (urlInst) {
       setActiveInstitution(urlInst)
     } else if (typeof window !== 'undefined') {
-      const stored = window.sessionStorage.getItem('pinspace_institution')
       // Don't auto-restore from sessionStorage — start global if no URL param
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
