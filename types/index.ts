@@ -122,6 +122,8 @@ export interface Workspace {
     department: 'Architecture' | 'Interior Design' | 'Industrial Design'
     year: 'Year 1' | 'Year 2' | 'Year 3' | 'Year 4' | 'Masters'
   }
+  isArchived: boolean
+  archivedAt: string | null
 }
 
 // Navigation state types

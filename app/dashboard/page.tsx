@@ -10,16 +10,17 @@ import { Workspace } from '@/types'
 import JoinClassModal from '@/components/JoinClassModal'
 
 const INSTITUTION_STORAGE_KEY = 'pinspace_institution'
-import { 
-  GraduationCap, 
-  Building2, 
-  Plus, 
-  UserPlus, 
-  MoreVertical, 
-  Settings, 
-  Trash2, 
+import {
+  GraduationCap,
+  Building2,
+  Plus,
+  UserPlus,
+  MoreVertical,
+  Settings,
+  Trash2,
   ExternalLink,
-  Pencil
+  Pencil,
+  Archive
 } from 'lucide-react'
 
 interface Studio {
@@ -35,6 +36,7 @@ type DashboardWorkspace = Workspace & {
   board_count?: number
   created_at?: string
   description?: string
+  is_archived?: boolean
 }
 
 interface WorkspaceCardProps {
@@ -69,16 +71,24 @@ function WorkspaceCard({ workspace, isOwner, onDelete, onRename, openMenuId, set
     }
   }, [isMenuOpen, setOpenMenuId])
 
+  const isArchived = Boolean(workspace.is_archived)
+
   return (
-    <div className="group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
+    <div className={`group bg-white rounded-xl border overflow-hidden transition-all duration-200 ${isArchived ? 'opacity-60 border-gray-200' : 'border-gray-200 hover:shadow-md hover:-translate-y-0.5'}`}>
       {/* Header */}
-      <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-6 border-b border-gray-100">
+      <div className={`p-6 border-b border-gray-100 ${isArchived ? 'bg-gray-50' : 'bg-gradient-to-br from-indigo-50 to-blue-50'}`}>
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-              <GraduationCap className="w-5 h-5 text-indigo-600" />
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isArchived ? 'bg-gray-100' : 'bg-indigo-100'}`}>
+              <GraduationCap className={`w-5 h-5 ${isArchived ? 'text-gray-400' : 'text-indigo-600'}`} />
             </div>
-            {isOwner && (
+            {isArchived && (
+              <span className="px-2 py-0.5 bg-gray-200 text-gray-600 rounded-md text-xs font-medium flex items-center gap-1">
+                <Archive className="w-3 h-3" />
+                Archived
+              </span>
+            )}
+            {isOwner && !isArchived && (
               <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-md text-xs font-medium">
                 Owner
               </span>
@@ -175,6 +185,7 @@ function DashboardContent() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [confirmDeleteName, setConfirmDeleteName] = useState('')
   const [fetchError, setFetchError] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
@@ -405,6 +416,15 @@ function DashboardContent() {
               </p>
             </div>
             <div className="flex gap-2.5">
+              {workspaces.some(w => w.is_archived) && (
+                <button
+                  onClick={() => setShowArchived(v => !v)}
+                  className={`px-4 py-2 border rounded-lg transition-colors font-medium text-sm flex items-center gap-2 ${showArchived ? 'border-gray-400 bg-gray-100 text-gray-700' : 'border-gray-300 text-gray-500 hover:bg-gray-50'}`}
+                >
+                  <Archive className="w-4 h-4" />
+                  {showArchived ? 'Hide Archived' : 'Show Archived'}
+                </button>
+              )}
               <button
                 onClick={() => setShowJoinModal(true)}
                 className="px-4 py-2 border border-indigo-500 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors font-medium text-sm flex items-center gap-2"
@@ -432,46 +452,49 @@ function DashboardContent() {
                 </div>
               ))}
             </div>
-          ) : workspaces.length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-50 mb-4">
-                <GraduationCap className="w-8 h-8 text-indigo-600" />
+          ) : (() => {
+            const visibleWorkspaces = showArchived ? workspaces : workspaces.filter(w => !w.is_archived)
+            return visibleWorkspaces.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-50 mb-4">
+                  <GraduationCap className="w-8 h-8 text-indigo-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No classes yet</h3>
+                <p className="text-sm text-gray-500 mb-6 max-w-sm mx-auto">Join a class with an invite code or create your own to get started</p>
+                <div className="flex gap-2.5 justify-center">
+                  <button
+                    onClick={() => setShowJoinModal(true)}
+                    className="px-4 py-2 border border-indigo-500 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors font-medium text-sm flex items-center gap-2"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    Join a Class
+                  </button>
+                  <Link
+                    href={withInstitution('/workspace/new', institutionHome)}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center gap-2 shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Create a Class
+                  </Link>
+                </div>
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">No classes yet</h3>
-              <p className="text-sm text-gray-500 mb-6 max-w-sm mx-auto">Join a class with an invite code or create your own to get started</p>
-              <div className="flex gap-2.5 justify-center">
-                <button
-                  onClick={() => setShowJoinModal(true)}
-                  className="px-4 py-2 border border-indigo-500 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors font-medium text-sm flex items-center gap-2"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  Join a Class
-                </button>
-                <Link
-                  href={withInstitution('/workspace/new', institutionHome)}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center gap-2 shadow-sm"
-                >
-                  <Plus className="w-4 h-4" />
-                  Create a Class
-                </Link>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {visibleWorkspaces.map((workspace) => (
+                  <WorkspaceCard
+                    key={workspace.id}
+                    workspace={workspace}
+                    isOwner={workspace.owner_id === user?.id}
+                    onDelete={handleDeleteWorkspace}
+                    onRename={handleRenameWorkspace}
+                    openMenuId={openMenuId}
+                    setOpenMenuId={setOpenMenuId}
+                    institutionSlug={institutionHome}
+                  />
+                ))}
               </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {workspaces.map((workspace) => (
-                <WorkspaceCard
-                  key={workspace.id}
-                  workspace={workspace}
-                  isOwner={workspace.owner_id === user?.id}
-                  onDelete={handleDeleteWorkspace}
-                  onRename={handleRenameWorkspace}
-                  openMenuId={openMenuId}
-                  setOpenMenuId={setOpenMenuId}
-                  institutionSlug={institutionHome}
-                />
-              ))}
-            </div>
-          )}
+            )
+          })()}
         </div>
 
         {/* My Personal Rooms Section */}

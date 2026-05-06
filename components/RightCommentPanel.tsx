@@ -9,6 +9,7 @@ import { Comment, Board } from '@/types'
 interface RightCommentPanelProps {
   board: Board | null
   onClose: () => void
+  isArchived?: boolean
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -38,7 +39,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function RightCommentPanel({ board, onClose }: RightCommentPanelProps) {
+export default function RightCommentPanel({ board, onClose, isArchived = false }: RightCommentPanelProps) {
   const [user, setUser] = useState<User | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(false)
@@ -185,7 +186,14 @@ export default function RightCommentPanel({ board, onClose }: RightCommentPanelP
 
         {/* Form */}
         <div className="border-t border-gray-200 p-5 bg-gray-50 flex-shrink-0">
-          {user ? (
+          {isArchived ? (
+            <textarea
+              disabled
+              placeholder="This workspace is archived"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none bg-gray-100 text-gray-400 cursor-not-allowed"
+              rows={3}
+            />
+          ) : user ? (
             <>
               <textarea
                 ref={textareaRef}

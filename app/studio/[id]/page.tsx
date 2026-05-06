@@ -110,6 +110,7 @@ export default function StudioPage() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [floorEditorOpen, setFloorEditorOpen] = useState(false)
   const [floorEditorMode, setFloorEditorMode] = useState<'tables' | 'walls'>('tables')
+  const [isArchived, setIsArchived] = useState(false)
 
   const isDemo = searchParams?.get('demo') === 'true'
 
@@ -178,6 +179,19 @@ export default function StudioPage() {
           setBoardsError(false)
         } else {
           setBoardsError(true)
+        }
+
+        // Fetch workspace metadata to get archive status
+        if (!isDemo) {
+          try {
+            const wsRes = await fetch(`/api/workspaces/${studioId}`, { signal })
+            if (wsRes.ok) {
+              const wsData = await wsRes.json()
+              setIsArchived(Boolean(wsData.workspace?.isArchived))
+            }
+          } catch {
+            // Non-fatal: archive status is best-effort
+          }
         }
 
         // Try API first
@@ -337,6 +351,12 @@ export default function StudioPage() {
         </div>
       </div>
       <DemoBanner />
+      {/* Archive banner */}
+      {isArchived && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-white text-sm font-medium text-center py-2 px-4">
+          This workspace is archived. View only.
+        </div>
+      )}
       {showWallConfig && (
         <WallConfigModal
           onConfirm={handleWallConfigConfirm}
@@ -352,7 +372,7 @@ export default function StudioPage() {
       )}
 
       {!showWallConfig && wallConfig && (
-        <div className="relative w-full h-screen overflow-hidden" style={{ background: '#B3B3FF' }}>
+        <div className={`relative w-full overflow-hidden ${isArchived ? 'h-[calc(100vh-36px)] mt-9' : 'h-screen'}`} style={{ background: '#B3B3FF' }}>
           {/* Animated gradient background effects */}
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
             <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)' }}></div>
@@ -395,27 +415,31 @@ export default function StudioPage() {
               </button>
 
               {/* Place 3D model - open floor editor to add tables and upload/position models */}
-              <button
-                onClick={() => { setFloorEditorMode('tables'); setFloorEditorOpen(true) }}
-                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
-              >
-                <Box className="w-4 h-4" />
-                Place 3D model
-              </button>
+              {!isArchived && (
+                <button
+                  onClick={() => { setFloorEditorMode('tables'); setFloorEditorOpen(true) }}
+                  className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
+                >
+                  <Box className="w-4 h-4" />
+                  Place 3D model
+                </button>
+              )}
 
               {/* Reconfigure button */}
-              <button
-                onClick={handleReconfigureWalls}
-                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
-              >
-                <Settings className="w-4 h-4" />
-                Reconfigure Walls
-              </button>
+              {!isArchived && (
+                <button
+                  onClick={handleReconfigureWalls}
+                  className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
+                >
+                  <Settings className="w-4 h-4" />
+                  Reconfigure Walls
+                </button>
+              )}
             </div>
           )}
 
-          <StudioRoom 
-            studioId={studioId} 
+          <StudioRoom
+            studioId={studioId}
             boards={boards}
             wallConfig={wallConfig}
             onBoardUpdate={handleBoardUpdate}
@@ -423,6 +447,7 @@ export default function StudioPage() {
             floorEditorOpen={floorEditorOpen}
             onFloorEditorOpenChange={setFloorEditorOpen}
             floorEditorMode={floorEditorMode}
+            isArchived={isArchived}
             onWallConfigChange={(config) => {
               setWallConfig(config)
               persistWallConfig(config)

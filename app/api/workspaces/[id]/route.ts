@@ -117,6 +117,8 @@ export async function GET(
       instructor: workspace.instructor || undefined,
       institutionId: workspace.organization_id || undefined,
       institution: institution || undefined,
+      isArchived: workspace.is_archived ?? false,
+      archivedAt: workspace.archived_at ?? null,
     }
 
     return NextResponse.json({ workspace: transformedWorkspace })

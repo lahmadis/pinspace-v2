@@ -9,19 +9,21 @@ import { toast } from '@/lib/toast'
 import { Workspace } from '@/types'
 import dynamic from 'next/dynamic'
 import PublishConfirmModal from '@/components/PublishConfirmModal'
-import { 
-  ArrowLeft, 
-  Mail, 
-  Globe, 
-  Lock, 
-  Users, 
-  Lightbulb, 
-  Copy, 
-  Check, 
+import {
+  ArrowLeft,
+  Mail,
+  Globe,
+  Lock,
+  Users,
+  Lightbulb,
+  Copy,
+  Check,
   GraduationCap,
   User,
   ExternalLink,
-  Info
+  Info,
+  Archive,
+  ArchiveRestore
 } from 'lucide-react'
 
 const QRCodeSVG = dynamic(() => import('qrcode.react').then(mod => mod.QRCodeSVG), { ssr: false })
@@ -39,6 +41,8 @@ export default function WorkspaceSettingsPage() {
   const [showPublishModal, setShowPublishModal] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [publishingGlobal, setPublishingGlobal] = useState(false)
+  const [archiving, setArchiving] = useState(false)
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
@@ -170,6 +174,27 @@ export default function WorkspaceSettingsPage() {
       toast.error(error instanceof Error ? error.message : 'Failed to update workspace')
     } finally {
       setPublishing(false)
+    }
+  }
+
+  const handleArchiveToggle = async (archive: boolean) => {
+    if (!workspace) return
+    try {
+      setArchiving(true)
+      setShowArchiveConfirm(false)
+      const response = await fetch(`/api/workspaces/${workspace.id}/archive`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_archived: archive }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to update workspace')
+      await fetchWorkspace()
+      toast.success(archive ? 'Workspace archived' : 'Workspace unarchived')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update workspace')
+    } finally {
+      setArchiving(false)
     }
   }
 
@@ -493,6 +518,81 @@ export default function WorkspaceSettingsPage() {
                 ))}
               </div>
             </div>
+            {/* Archive Section - Instructors only */}
+            {isInstructor && (
+              <div className="bg-white rounded-xl border border-gray-200 p-8">
+                <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2.5">
+                  <Archive className="w-5 h-5 text-gray-500" />
+                  Archive Workspace
+                </h2>
+
+                {workspace.isArchived ? (
+                  <div className="space-y-4 mt-4">
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-900">
+                      <p className="font-medium mb-1">This workspace is archived.</p>
+                      <p className="text-amber-700">
+                        Members can view boards but cannot upload new content or leave comments.
+                        {workspace.archivedAt && (
+                          <> Archived on {new Date(workspace.archivedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.</>
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleArchiveToggle(false)}
+                      disabled={archiving}
+                      className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {archiving ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Unarchiving...
+                        </>
+                      ) : (
+                        <>
+                          <ArchiveRestore className="w-4 h-4" />
+                          Unarchive Workspace
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4 mt-4">
+                    <p className="text-sm text-gray-500">
+                      Archiving puts the workspace in read-only mode. Students can still view boards, but no new uploads or comments are allowed. You can unarchive at any time.
+                    </p>
+                    {showArchiveConfirm ? (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-3">
+                        <p className="text-sm font-medium text-red-900">Archive &ldquo;{workspace.name}&rdquo;?</p>
+                        <p className="text-sm text-red-700">This workspace will become view-only. You can unarchive it later.</p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleArchiveToggle(true)}
+                            disabled={archiving}
+                            className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium text-sm disabled:opacity-50"
+                          >
+                            {archiving ? 'Archiving...' : 'Yes, Archive'}
+                          </button>
+                          <button
+                            onClick={() => setShowArchiveConfirm(false)}
+                            className="flex-1 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowArchiveConfirm(true)}
+                        className="w-full px-4 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+                      >
+                        <Archive className="w-4 h-4" />
+                        Archive Workspace
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Sidebar */}

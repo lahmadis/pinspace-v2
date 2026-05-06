@@ -57,6 +57,8 @@ interface StudioRoomProps {
   floorEditorMode?: 'tables' | 'walls'
   /** Called when user updates wall positions/rotations in floor editor (walls mode). */
   onWallConfigChange?: (config: WallConfig) => void
+  /** When true, upload and editing are disabled (view-only mode). */
+  isArchived?: boolean
 }
 
 function SceneContent({
@@ -599,6 +601,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     rotation: number,
     side: 'front' | 'back'
   ) => {
+    if (props.isArchived) return
     devLog('🖼️ [StudioRoom] Wall clicked:', wallIndex, 'rotation:', rotation, 'side:', side)
 
     // If we're already editing this wall and side, don't reinitialize
@@ -1422,9 +1425,10 @@ export default function StudioRoom(props: StudioRoomProps) {
       </div>
 
       {/* Right Comment Panel */}
-      <RightCommentPanel 
+      <RightCommentPanel
         board={commentPanelBoard}
         onClose={() => setCommentPanelBoard(null)}
+        isArchived={props.isArchived}
       />
 
     <LightboxModal
