@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
-
-function isAdmin(email: string | undefined): boolean {
-  if (!email) return false
-  const list = process.env.PINSPACE_ADMIN_EMAILS
-  if (!list) return false
-  const emails = list.split(',').map((e) => e.trim().toLowerCase())
-  return emails.includes(email.toLowerCase())
-}
+import { isAdmin } from '@/lib/auth/isAdmin'
 
 /** GET /api/admin/institutions/[slug]/stats – full institution stats (admin only). */
 export async function GET(

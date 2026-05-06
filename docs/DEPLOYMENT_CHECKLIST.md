@@ -1,3 +1,7 @@
+> **STALE:** This doc is from before Phase 4 and may be inaccurate. See CONTEXT.md for current state.
+>
+> The SQL file list below describes the original schema bootstrap; those files now live in `migrations/archive/`, and additional schema changes are tracked in `migrations/001_*.sql` … `010_*.sql`. For the up-to-date deployment workflow, use `docs/VERCEL_DEPLOYMENT.md`.
+
 # 🚀 Deployment Checklist for PinSpace v2
 
 ## ✅ What's Ready
@@ -44,14 +48,19 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
   - `https://your-domain.com/auth/callback`
 
 ### 3. Database Migrations
-Run all SQL files in Supabase SQL Editor (in order):
-1. `add_workspace_publish_columns.sql` (if not already run)
-2. `create_boards_table.sql` (or `FIXED_create_boards_table.sql`)
-3. `create_comments_table.sql`
-4. `setup_rls_policies.sql`
-5. `FIX_workspaces_rls_no_recursion.sql`
-6. `FIX_boards_rls_for_public.sql`
-7. `FIX_comments_rls_for_public.sql`
+Run all SQL files in Supabase SQL Editor (in order). The original
+schema-bootstrap files now live in `migrations/archive/`:
+1. `migrations/archive/add_workspace_publish_columns.sql` (if not already run)
+2. `migrations/archive/create_boards_table.sql` (or `migrations/archive/FIXED_create_boards_table.sql`)
+3. `migrations/archive/create_comments_table.sql`
+4. `migrations/archive/setup_rls_policies.sql`
+5. `migrations/archive/FIX_workspaces_rls_no_recursion.sql`
+6. `migrations/archive/FIX_boards_rls_for_public.sql`
+7. `migrations/archive/FIX_comments_rls_for_public.sql`
+
+Then run the post-Phase-4 migrations in numeric order from `migrations/`:
+`001_rename_institutions_to_organizations.sql` through
+`010_add_workspace_archive.sql`.
 
 ### 4. Test Production Build
 ```bash

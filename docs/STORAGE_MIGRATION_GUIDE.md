@@ -10,7 +10,7 @@ The image upload system has been migrated from local filesystem (`public/uploads
 
 **Option A: Using SQL (Recommended)**
 1. Go to Supabase Dashboard → SQL Editor
-2. Run the `setup_supabase_storage.sql` file
+2. Run the `migrations/archive/setup_supabase_storage.sql` file
 3. This creates the bucket and sets up RLS policies
 
 **Option B: Using Dashboard**
@@ -22,7 +22,7 @@ The image upload system has been migrated from local filesystem (`public/uploads
 
 ### 2. Set Up Storage Policies (if using Dashboard method)
 
-If you created the bucket via dashboard, you still need to run the RLS policies from `setup_supabase_storage.sql` (just the policy parts, skip the bucket creation).
+If you created the bucket via dashboard, you still need to run the RLS policies from `migrations/archive/setup_supabase_storage.sql` (just the policy parts, skip the bucket creation).
 
 Or manually create these policies in **Storage → Policies**:
 
@@ -114,7 +114,7 @@ You can adjust these in `app/api/upload/route.ts` if needed.
 - Check the bucket name matches exactly
 
 ### Error: "new row violates row-level security policy"
-- Make sure you ran the RLS policies from `setup_supabase_storage.sql`
+- Make sure you ran the RLS policies from `migrations/archive/setup_supabase_storage.sql`
 - Check that the bucket is set to **public**
 
 ### Images not loading

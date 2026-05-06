@@ -25,4 +25,4 @@ For reliable delivery (especially to school domains), configure custom SMTP in *
 
 ## Add role column (if you have existing user_profiles)
 
-Run `add_role_to_user_profiles.sql` in the Supabase SQL editor to add the `role` (student/faculty) column.
+Run `migrations/archive/add_role_to_user_profiles.sql` in the Supabase SQL editor to add the `role` (student/faculty) column.
