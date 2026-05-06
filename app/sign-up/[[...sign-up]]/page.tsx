@@ -98,7 +98,7 @@ function SignUpInner() {
     const allowed = institution?.domains ?? []
     if (allowed.length > 0 && !emailDomainAllowed(trimmedEmail, allowed)) {
       const domainList = allowed.map((d) => `@${d}`).join(' or ')
-      setError(`Please use a ${institution.name} email (${domainList})`)
+      setError(`Please use a ${institution!.name} email (${domainList})`)
       return
     }
 

@@ -51,7 +51,7 @@ function SignInInner() {
       .select('name')
       .eq('slug', institutionSlug)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data }: { data: { name: string } | null }) => {
         setOrgName(data?.name ?? null)
         setOrgFetchDone(true)
       })
