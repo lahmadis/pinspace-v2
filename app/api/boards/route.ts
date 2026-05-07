@@ -93,6 +93,7 @@ export async function GET(request: NextRequest) {
       .from('boards')
       .select('*')
       .eq('workspace_id', workspaceId)
+      .neq('upload_status', 'pending')
       .order('uploaded_at', { ascending: false })
 
     if (error) {
@@ -307,7 +308,7 @@ export async function DELETE(request: NextRequest) {
 
     const { data: boardData, error: boardFetchError } = await admin
       .from('boards')
-      .select('workspace_id, owner_id, owner_name')
+      .select('workspace_id, owner_id, owner_name, thumbnail_url, full_image_url')
       .eq('id', boardId)
       .single()
 
@@ -344,6 +345,40 @@ export async function DELETE(request: NextRequest) {
         ownerName: boardData.owner_name || undefined
       }, { status: 403 })
     }
+
+    // Cascade cleanup: comments → storage objects → board row.
+    // We log and continue on failure of comments/storage so the user isn't blocked from deleting.
+    const { error: commentsError } = await admin
+      .from('comments')
+      .delete()
+      .eq('board_id', boardId)
+    if (commentsError) {
+      console.error('Failed to cascade delete comments for board', boardId, commentsError)
+    }
+
+    // Storage path is everything after the `/board-images/` segment of the public URL.
+    const storagePathsToDelete = new Set<string>()
+    const extractStoragePath = (url: string | null | undefined): string | null => {
+      if (!url) return null
+      const marker = '/board-images/'
+      const idx = url.indexOf(marker)
+      if (idx === -1) return null
+      return decodeURIComponent(url.slice(idx + marker.length).split('?')[0])
+    }
+    const thumbPath = extractStoragePath(boardData.thumbnail_url)
+    const fullPath = extractStoragePath(boardData.full_image_url)
+    if (thumbPath) storagePathsToDelete.add(thumbPath)
+    if (fullPath) storagePathsToDelete.add(fullPath)
+    if (storagePathsToDelete.size > 0) {
+      const { error: storageError } = await admin
+        .storage
+        .from('board-images')
+        .remove(Array.from(storagePathsToDelete))
+      if (storageError) {
+        console.error('Failed to cascade delete storage objects for board', boardId, storageError)
+      }
+    }
+
     const { error } = await admin
       .from('boards')
       .delete()

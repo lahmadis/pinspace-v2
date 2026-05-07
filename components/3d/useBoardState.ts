@@ -309,19 +309,24 @@ export function useBoardState(
     })
     
     pushUndo()
-    
+
+    // Capture prior local state for rollback if the API save fails.
+    const priorPosition = boardPositionsRef.current.get(boardId)
+    const priorBoard = boardsRef.current.find(b => b.id === boardId)
+    const priorBoardPosition = priorBoard?.position ? { ...priorBoard.position } : null
+
     // Update local position immediately (normalized)
     setBoardPositions(prev => {
       const newMap = new Map(prev)
       const existing = newMap.get(boardId)
-      
+
       newMap.set(boardId, {
         x,
         y,
         width: width ?? existing?.width ?? 0.3,
         height: height ?? existing?.height ?? 0.3
       })
-      
+
       return newMap
     })
 
@@ -329,6 +334,25 @@ export function useBoardState(
     if (!board) {
       console.warn('⚠️ [useBoardState] Board not found:', boardId)
       return Promise.resolve()
+    }
+
+    const rollback = () => {
+      setBoardPositions(prev => {
+        const newMap = new Map(prev)
+        if (priorPosition) {
+          newMap.set(boardId, priorPosition)
+        } else {
+          newMap.delete(boardId)
+        }
+        return newMap
+      })
+      setBoards(prev => prev.map(b => {
+        if (b.id !== boardId) return b
+        if (priorBoardPosition) return { ...b, position: priorBoardPosition }
+        const { position: _drop, ...rest } = b
+        void _drop
+        return rest as Board
+      }))
     }
 
     // API format (0-100) for optimistic update and PUT
@@ -398,6 +422,8 @@ export function useBoardState(
       
       if (!response.ok) {
         console.error('❌ [useBoardState] API save failed', { status: response.status, statusText: response.statusText })
+        rollback()
+        toast.error('Failed to save board position. Please try again.')
         return
       }
       
@@ -422,10 +448,10 @@ export function useBoardState(
       
       devLog('✅ [useBoardState] Position saved successfully and boards array updated')
     } catch (error: unknown) {
-      // Network or API failure should NOT crash the 3D editor.
-      // We already updated local state optimistically above.
+      // Network failure: roll back the optimistic local state and notify the user.
       console.error('❌ [useBoardState] Failed to save position:', error)
-      // Optionally, you could surface a non-blocking toast here instead of throwing.
+      rollback()
+      toast.error('Failed to save board position. Please try again.')
       return
     }
   }, [normalizedToApi, decimalToApi])

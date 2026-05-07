@@ -128,34 +128,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Upload file to Supabase Storage
+    // Storage path is decided up-front so we can write the placeholder DB row first.
+    // Order: insert pending row → upload to storage → flip row to 'complete'.
+    // If storage fails, delete the pending row. If the function dies mid-flight, the
+    // orphan is a 'pending' row (filtered out of listings) instead of a leaked storage object.
     const ext = isPdf ? (uploadFile.name.split('.').pop() || 'jpg') : 'webp'
     const timestamp = Date.now()
     const filename = `${userId}/${timestamp}-${Math.random().toString(36).substring(7)}.${ext}`
     const filePath = filename
+    const boardId = `board-${timestamp}-${Math.random().toString(36).slice(2, 8)}`
 
-    const { error: uploadError } = await supabase.storage
-      .from('board-images')
-      .upload(filePath, uploadBuffer, {
-        contentType: uploadContentType,
-        upsert: false,
-      })
-
-    if (uploadError) {
-      console.error('Error uploading to Supabase Storage:', uploadError)
-      return NextResponse.json({ error: 'Failed to upload image' }, { status: 500 })
-    }
-
-    // Get public URL for the uploaded image
-    const { data: urlData } = supabase.storage
-      .from('board-images')
-      .getPublicUrl(filePath)
-
-    const imageUrl = urlData.publicUrl
-
-    // Save board to Supabase
-    const boardId = `board-${timestamp}`
-    const boardData = {
+    const placeholderData = {
       id: boardId,
       workspace_id: workspaceId,
       owner_id: userId,
@@ -165,10 +148,11 @@ export async function POST(request: NextRequest) {
       student_email: studentEmail || null,
       title,
       description: description || null,
-      thumbnail_url: imageUrl, // Use Supabase Storage URL
-      full_image_url: imageUrl, // Use Supabase Storage URL
+      thumbnail_url: '',
+      full_image_url: '',
       tags: tags ? tags.split(',').map(t => t.trim()) : [],
       uploaded_at: new Date().toISOString(),
+      upload_status: 'pending',
       position_wall_index: wallIndex ? parseInt(wallIndex as string) : null,
       position_x: positionX,
       position_y: positionY,
@@ -182,13 +166,13 @@ export async function POST(request: NextRequest) {
       physical_height: physicalHeight ? parseFloat(physicalHeight) : null,
     }
 
-    let { data: savedBoard, error: dbError } = await supabase
+    let { data: pendingBoard, error: insertError } = await supabase
       .from('boards')
-      .insert(boardData)
+      .insert(placeholderData)
       .select()
       .single()
 
-    if (dbError) {
+    if (insertError) {
       // Fallback for environments with stricter/misaligned RLS:
       // verify user access explicitly, then insert with service role.
       const admin = supabaseServiceRole()
@@ -211,9 +195,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (!workspace || (!isOwner && !isMember && !workspace.is_public)) {
-        console.error('Upload forbidden after RLS fallback check:', dbError)
-        // Use service role for cleanup — user session may lack storage DELETE permission
-        await admin.storage.from('board-images').remove([filePath])
+        console.error('Upload forbidden after RLS fallback check:', insertError)
         return NextResponse.json(
           { error: 'Not authorized to save board in this workspace' },
           { status: 403 }
@@ -222,18 +204,58 @@ export async function POST(request: NextRequest) {
 
       const fallbackInsert = await admin
         .from('boards')
-        .insert(boardData)
+        .insert(placeholderData)
         .select()
         .single()
-      savedBoard = fallbackInsert.data
-      dbError = fallbackInsert.error
+      pendingBoard = fallbackInsert.data
+      insertError = fallbackInsert.error
     }
 
-    if (dbError || !savedBoard) {
-      console.error('Error saving board to database:', dbError)
-      // Use service role for cleanup — user session may lack storage DELETE permission
+    if (insertError || !pendingBoard) {
+      console.error('Error inserting placeholder board row:', insertError)
+      return NextResponse.json({ error: 'Failed to create board record' }, { status: 500 })
+    }
+
+    // Upload file to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from('board-images')
+      .upload(filePath, uploadBuffer, {
+        contentType: uploadContentType,
+        upsert: false,
+      })
+
+    if (uploadError) {
+      console.error('Error uploading to Supabase Storage; rolling back placeholder row:', uploadError)
       const adminCleanup = supabaseServiceRole()
-      await adminCleanup.storage.from('board-images').remove([filePath])
+      await adminCleanup.from('boards').delete().eq('id', boardId)
+      return NextResponse.json({ error: 'Failed to upload image' }, { status: 500 })
+    }
+
+    // Get public URL for the uploaded image
+    const { data: urlData } = supabase.storage
+      .from('board-images')
+      .getPublicUrl(filePath)
+
+    const imageUrl = urlData.publicUrl
+
+    // Flip placeholder to complete with the real URLs.
+    const adminUpdate = supabaseServiceRole()
+    const { data: savedBoard, error: dbError } = await adminUpdate
+      .from('boards')
+      .update({
+        thumbnail_url: imageUrl,
+        full_image_url: imageUrl,
+        upload_status: 'complete',
+      })
+      .eq('id', boardId)
+      .select()
+      .single()
+
+    if (dbError || !savedBoard) {
+      console.error('Error finalizing board record after storage upload:', dbError)
+      // Storage object exists but the DB couldn't be updated. Best effort cleanup.
+      await adminUpdate.storage.from('board-images').remove([filePath])
+      await adminUpdate.from('boards').delete().eq('id', boardId)
       return NextResponse.json({ error: 'Failed to save board' }, { status: 500 })
     }
 

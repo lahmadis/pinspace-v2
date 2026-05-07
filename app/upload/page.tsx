@@ -74,9 +74,10 @@ export default function UploadPage() {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
+      const MAX_SIZE = 50 * 1024 * 1024 // 50 MB (must match API + useBoardUpload)
       if (file.size > MAX_SIZE) {
-        toast.error('File is too large. Maximum size is 10 MB.')
+        const mb = (file.size / (1024 * 1024)).toFixed(1)
+        toast.error(`${file.name} is too large (${mb} MB). Maximum size is 50 MB.`)
         e.target.value = ''
         return
       }

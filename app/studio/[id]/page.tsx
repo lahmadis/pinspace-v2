@@ -1,7 +1,7 @@
 'use client'
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { Board } from '@/types'
 import WallConfigModal from '@/components/WallConfigModal'
@@ -9,6 +9,7 @@ import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
 import { ArrowLeft, Share2, Settings, Box } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
+import { toast } from '@/lib/toast'
 
 type RealtimeBoardPayload = {
   eventType: 'INSERT' | 'UPDATE' | 'DELETE'
@@ -111,10 +112,16 @@ export default function StudioPage() {
   const [floorEditorOpen, setFloorEditorOpen] = useState(false)
   const [floorEditorMode, setFloorEditorMode] = useState<'tables' | 'walls'>('tables')
   const [isArchived, setIsArchived] = useState(false)
+  const [commentNonce, setCommentNonce] = useState(0)
 
   const isDemo = searchParams?.get('demo') === 'true'
 
-  const cacheWallConfigLocally = (config: WallConfig) => {
+  // Wall-config persistence: debounce network writes so a drag at 60fps doesn't fire 60 POSTs/sec.
+  // Local UI state still updates immediately; only the fetch is throttled.
+  const wallPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const wallPersistLatestRef = useRef<WallConfig | null>(null)
+
+  const cacheWallConfigLocally = useCallback((config: WallConfig) => {
     const savedConfigKey = `studio-${studioId}-wall-config`
     const rawTables = (config as { tables?: Array<{ modelUrl?: string }> }).tables
     const compactConfig =
@@ -148,9 +155,12 @@ export default function StudioPage() {
         // Local fallback is optional; API remains source of truth.
       }
     }
-  }
+  }, [studioId])
 
-  const persistWallConfig = async (config: WallConfig) => {
+  const flushWallConfig = useCallback(async () => {
+    const config = wallPersistLatestRef.current
+    if (!config) return
+    wallPersistLatestRef.current = null
     try {
       await fetch(`/api/studios/${studioId}/wall-config`, {
         method: 'POST',
@@ -161,7 +171,28 @@ export default function StudioPage() {
     } catch (e) {
       console.error('Failed to save wall config', e)
     }
-  }
+  }, [studioId, cacheWallConfigLocally])
+
+  const persistWallConfig = useCallback((config: WallConfig) => {
+    wallPersistLatestRef.current = config
+    if (wallPersistTimeoutRef.current) clearTimeout(wallPersistTimeoutRef.current)
+    wallPersistTimeoutRef.current = setTimeout(() => {
+      wallPersistTimeoutRef.current = null
+      flushWallConfig()
+    }, 500)
+  }, [flushWallConfig])
+
+  // Flush any pending wall-config write on unmount so the user's last drag isn't lost.
+  useEffect(() => {
+    return () => {
+      if (wallPersistTimeoutRef.current) {
+        clearTimeout(wallPersistTimeoutRef.current)
+        wallPersistTimeoutRef.current = null
+        // Fire-and-forget; we can't await during cleanup.
+        flushWallConfig()
+      }
+    }
+  }, [flushWallConfig])
 
   // Load boards and wall config (API + localStorage fallback)
   useEffect(() => {
@@ -236,7 +267,27 @@ export default function StudioPage() {
 
     loadData()
 
-    // Realtime: keep boards in sync with other users in the same studio
+    // Realtime: keep boards in sync with other users in the same studio.
+    // Status callback recovers from transient network blips with a bounded retry budget.
+    let reconnectAttempts = 0
+    const MAX_RECONNECTS = 3
+    const handleStatus = (status: string) => {
+      if (status === 'SUBSCRIBED') {
+        reconnectAttempts = 0
+        return
+      }
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        reconnectAttempts += 1
+        console.warn('Realtime channel disconnected:', status, `(attempt ${reconnectAttempts}/${MAX_RECONNECTS})`)
+        if (reconnectAttempts <= MAX_RECONNECTS) {
+          toast.warning('Connection lost — reconnecting…')
+          setRetryCount((c) => c + 1)
+        } else {
+          toast.error('Lost connection to live updates. Please refresh the page.')
+        }
+      }
+    }
+
     const channel = isDemo
       ? null
       : supabase
@@ -261,11 +312,25 @@ export default function StudioPage() {
               }
             }
           )
+          .subscribe(handleStatus)
+
+    // Comments realtime: bump a nonce on any insert/update/delete so open comment panels refetch.
+    // No filter — `comments` doesn't carry workspace_id; panels filter client-side by board.
+    const commentsChannel = isDemo
+      ? null
+      : supabase
+          .channel(`studio-comments:${studioId}`)
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'comments' },
+            () => setCommentNonce((n) => n + 1)
+          )
           .subscribe()
 
     return () => {
       controller.abort()
       if (channel) supabase.removeChannel(channel)
+      if (commentsChannel) supabase.removeChannel(commentsChannel)
     }
   }, [studioId, isDemo, retryCount])
 
@@ -448,6 +513,7 @@ export default function StudioPage() {
             onFloorEditorOpenChange={setFloorEditorOpen}
             floorEditorMode={floorEditorMode}
             isArchived={isArchived}
+            commentNonce={commentNonce}
             onWallConfigChange={(config) => {
               setWallConfig(config)
               persistWallConfig(config)

@@ -626,8 +626,14 @@ export const useBoardUpload = (options: UploadOptions) => {
       if (oversized.length > 0) {
         toast.error(`These files are too large (max 50 MB):\n${oversized.join('\n')}`)
       }
+      const totalAttempted = successCount + failCount
+      if (totalAttempted > 1 && successCount > 0 && failCount > 0) {
+        toast.warning(`Uploaded ${successCount} of ${totalAttempted}. ${failCount} failed.`)
+      } else if (failCount > 0 && successCount === 0 && oversized.length === 0) {
+        toast.error('No files could be uploaded.')
+      }
     }
-    
+
     input.click()
   }
 
@@ -681,7 +687,11 @@ export const useBoardUpload = (options: UploadOptions) => {
 
     if (oversized.length > 0) {
       toast.error(`Files too large (max 50 MB):\n${oversized.join('\n')}`)
-    } else if (failCount > 0 && successCount === 0) {
+    }
+    const totalAttempted = successCount + failCount
+    if (totalAttempted > 1 && successCount > 0 && failCount > 0) {
+      toast.warning(`Uploaded ${successCount} of ${totalAttempted}. ${failCount} failed.`)
+    } else if (failCount > 0 && successCount === 0 && oversized.length === 0) {
       toast.error('No files could be uploaded.')
     }
   }

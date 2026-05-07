@@ -10,6 +10,8 @@ interface RightCommentPanelProps {
   board: Board | null
   onClose: () => void
   isArchived?: boolean
+  /** Bump from parent on realtime comment events to trigger a refetch. */
+  commentNonce?: number
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -39,7 +41,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function RightCommentPanel({ board, onClose, isArchived = false }: RightCommentPanelProps) {
+export default function RightCommentPanel({ board, onClose, isArchived = false, commentNonce = 0 }: RightCommentPanelProps) {
   const [user, setUser] = useState<User | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(false)
@@ -69,7 +71,7 @@ export default function RightCommentPanel({ board, onClose, isArchived = false }
       return
     }
     fetchComments()
-  }, [board?.id])
+  }, [board?.id, commentNonce])
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {

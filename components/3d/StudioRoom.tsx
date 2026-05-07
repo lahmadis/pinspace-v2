@@ -59,6 +59,8 @@ interface StudioRoomProps {
   onWallConfigChange?: (config: WallConfig) => void
   /** When true, upload and editing are disabled (view-only mode). */
   isArchived?: boolean
+  /** Increments on any realtime comment change so open panels refetch. */
+  commentNonce?: number
 }
 
 function SceneContent({
@@ -1429,6 +1431,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         board={commentPanelBoard}
         onClose={() => setCommentPanelBoard(null)}
         isArchived={props.isArchived}
+        commentNonce={props.commentNonce}
       />
 
     <LightboxModal
