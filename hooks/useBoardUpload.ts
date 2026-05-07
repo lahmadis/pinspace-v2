@@ -263,14 +263,13 @@ const cleanupTempBoard = (
   })
 }
 
-const DEFAULT_PLACEHOLDER_ASPECT = 1
-const DEFAULT_PLACEHOLDER_SIZE = 0.3
 /** API position 50,50 = center of wall (0–100). useBoardState's addTempBoard converts with apiToNormalized so 50→0. */
 const CENTER_API = 50 // also used when patching real board position in replaceTempBoardInState
 
 /**
  * Upload a single file and handle optimistic updates.
- * Board appears immediately at center of wall, then upload runs in background.
+ * Image dimensions are measured client-side BEFORE the temp board is added to state, so
+ * the placeholder appears at the correct aspect ratio from frame 1 (no snap/flicker).
  */
 const uploadFile = async (
   file: File,
@@ -279,44 +278,6 @@ const uploadFile = async (
   const title = file.name.replace(/\.[^/.]+$/, '')
   let tempBoardId: string | null = null
   let blobUrl: string | null = null
-
-  // Show board on wall immediately at center (no await)
-  if (options.editingWall !== null && options.editingWallDimensions) {
-    const createdBlobUrl = URL.createObjectURL(file)
-    blobUrl = createdBlobUrl
-    tempBoardId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    const tempBoard = createTempBoard(tempBoardId, {
-      studioId: options.studioId,
-      title,
-      user: options.user,
-      blobUrl: createdBlobUrl,
-      width: 100,
-      height: 100,
-      aspectRatio: DEFAULT_PLACEHOLDER_ASPECT,
-      tags: [],
-      position: {
-        wallIndex: options.editingWall,
-        x: CENTER_API,
-        y: CENTER_API,
-        width: DEFAULT_PLACEHOLDER_SIZE * 100,
-        height: DEFAULT_PLACEHOLDER_SIZE * 100,
-        side: options.editingWallSide || 'front',
-      },
-    })
-    // Flush so the board appears on the wall before any await (image load, API)
-    flushSync(() => {
-      addTempBoardToState(
-        tempBoard,
-        { x: 0, y: 0, width: DEFAULT_PLACEHOLDER_SIZE, height: DEFAULT_PLACEHOLDER_SIZE },
-        {
-          addTempBoard: options.addTempBoard,
-          setPlacedBoards3D: options.setPlacedBoards3D,
-          placedBoards3DRef: options.placedBoards3DRef,
-          blobUrl: createdBlobUrl,
-        }
-      )
-    })
-  }
 
   const { getImageDimensions } = await import('@/lib/getImageDimensions')
   const { extractImagePhysicalDimensions } = await import('@/lib/extractPhysicalDimensions')
@@ -327,14 +288,41 @@ const uploadFile = async (
     options.editingWallDimensions
   )
 
-  // Update temp board to correct size (aspect ratio) when dimensions are ready
-  if (tempBoardId && options.editingWall !== null) {
-    options.setPlacedBoards3D((prev) => {
-      const next = new Map(prev)
-      const current = next.get(tempBoardId!)
-      if (current) next.set(tempBoardId!, { ...current, width: widthPercent, height: heightPercent })
-      options.placedBoards3DRef.current = next
-      return next
+  // Show board on wall with correct dimensions baked in (still optimistic — runs before API call).
+  if (options.editingWall !== null && options.editingWallDimensions) {
+    const createdBlobUrl = URL.createObjectURL(file)
+    blobUrl = createdBlobUrl
+    tempBoardId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const tempBoard = createTempBoard(tempBoardId, {
+      studioId: options.studioId,
+      title,
+      user: options.user,
+      blobUrl: createdBlobUrl,
+      width: dims.width,
+      height: dims.height,
+      aspectRatio: dims.aspectRatio,
+      tags: [],
+      position: {
+        wallIndex: options.editingWall,
+        x: CENTER_API,
+        y: CENTER_API,
+        width: widthPercent * 100,
+        height: heightPercent * 100,
+        side: options.editingWallSide || 'front',
+      },
+    })
+    // Flush so the board appears on the wall before the upload network call.
+    flushSync(() => {
+      addTempBoardToState(
+        tempBoard,
+        { x: 0, y: 0, width: widthPercent, height: heightPercent },
+        {
+          addTempBoard: options.addTempBoard,
+          setPlacedBoards3D: options.setPlacedBoards3D,
+          placedBoards3DRef: options.placedBoards3DRef,
+          blobUrl: createdBlobUrl,
+        }
+      )
     })
   }
 
