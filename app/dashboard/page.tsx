@@ -384,7 +384,10 @@ function DashboardContent() {
             <p className="text-sm text-gray-500 mt-0.5">3D Studio Network</p>
           </Link>
           {isAdmin && (
-            <Link href="/admin" className="text-sm text-gray-500 hover:text-indigo-600 transition-colors">
+            <Link
+              href="/admin"
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
+            >
               Admin
             </Link>
           )}
