@@ -23,7 +23,8 @@ import {
   ExternalLink,
   Info,
   Archive,
-  ArchiveRestore
+  ArchiveRestore,
+  Download
 } from 'lucide-react'
 
 const QRCodeSVG = dynamic(() => import('qrcode.react').then(mod => mod.QRCodeSVG), { ssr: false })
@@ -43,6 +44,7 @@ export default function WorkspaceSettingsPage() {
   const [publishingGlobal, setPublishingGlobal] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
@@ -195,6 +197,43 @@ export default function WorkspaceSettingsPage() {
       toast.error(error instanceof Error ? error.message : 'Failed to update workspace')
     } finally {
       setArchiving(false)
+    }
+  }
+
+  const handleExport = async () => {
+    if (!workspace) return
+    try {
+      setExporting(true)
+      const response = await fetch(`/api/workspaces/${workspace.id}/export`, {
+        credentials: 'include',
+      })
+      if (!response.ok) {
+        let message = 'Failed to export workspace'
+        try {
+          const data = await response.json()
+          if (data?.error) message = data.error
+        } catch { /* ignore — non-JSON error */ }
+        toast.error(message)
+        return
+      }
+      const blob = await response.blob()
+      const disposition = response.headers.get('content-disposition') || ''
+      const match = disposition.match(/filename="?([^"]+)"?/i)
+      const filename = match?.[1] || `${workspace.name || 'workspace'}_export.zip`
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success('Export downloaded')
+    } catch (error) {
+      console.error('Export failed:', error)
+      toast.error('Export failed. Please try again.')
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -611,6 +650,36 @@ export default function WorkspaceSettingsPage() {
                 <ExternalLink className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Export — owner only */}
+            {workspace.createdBy === user?.id && (
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <h3 className="font-semibold text-gray-900 mb-2">Export</h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  Download all boards in this room as a zip with image files and a manifest.
+                </p>
+                <button
+                  onClick={handleExport}
+                  disabled={exporting}
+                  className="w-full px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {exporting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                      <span>Preparing zip…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      <span>Download zip</span>
+                    </>
+                  )}
+                </button>
+                <p className="text-xs text-gray-400 mt-2">
+                  Large rooms may take 10-30 seconds to build.
+                </p>
+              </div>
+            )}
 
             {/* Info */}
             <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
