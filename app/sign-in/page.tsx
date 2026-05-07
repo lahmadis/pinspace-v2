@@ -291,10 +291,9 @@ function SignInInner() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@school.edu"
-              className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isPassword ? 'bg-gray-50 text-gray-500' : ''}`}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               autoComplete="email"
               autoFocus={!isPassword}
-              readOnly={isPassword}
             />
           </div>
 
