@@ -33,6 +33,7 @@ function SignUpInner() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [settingPassword, setSettingPassword] = useState(false)
   const [passwordError, setPasswordError] = useState('')
+  const [agreedToTerms, setAgreedToTerms] = useState(false)
   const hasRedirected = useRef(false)
   const pendingSetPasswordRef = useRef(false)
 
@@ -92,6 +93,10 @@ function SignUpInner() {
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       setError('Please enter a valid email address')
+      return
+    }
+    if (!agreedToTerms) {
+      setError('Please agree to the Terms of Service and Privacy Policy to continue')
       return
     }
 
@@ -363,11 +368,30 @@ function SignUpInner() {
               autoComplete="email"
             />
           </div>
+          <label className="flex items-start gap-2 text-sm text-gray-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={agreedToTerms}
+              onChange={(e) => setAgreedToTerms(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span>
+              I agree to the{' '}
+              <Link href="/terms" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
+                Terms of Service
+              </Link>{' '}
+              and{' '}
+              <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
+                Privacy Policy
+              </Link>
+              .
+            </span>
+          </label>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"
-            disabled={sendingCode}
-            className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
+            disabled={sendingCode || !agreedToTerms}
+            className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
           >
             {sendingCode ? 'Sending code…' : 'Send verification code'}
           </button>

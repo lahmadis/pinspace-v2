@@ -265,6 +265,20 @@ function HomeInner() {
         onClose={() => setShowGalleryModal(false)}
         onEnter={handleEnterGallery}
       />
+
+      <footer className="relative z-10 border-t border-border bg-white/80 backdrop-blur-sm">
+        <div className="max-w-5xl mx-auto px-4 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-text-muted">
+          <p>© {new Date().getFullYear()} PinSpace</p>
+          <nav className="flex gap-6">
+            <Link href="/terms" className="hover:text-primary transition-colors">
+              Terms of Service
+            </Link>
+            <Link href="/privacy" className="hover:text-primary transition-colors">
+              Privacy Policy
+            </Link>
+          </nav>
+        </div>
+      </footer>
     </div>
   )
 
