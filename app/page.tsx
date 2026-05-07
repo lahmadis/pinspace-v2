@@ -10,6 +10,7 @@ import GalleryAvatarModal, { AvatarFormValues } from '@/components/GalleryAvatar
 import DemoBanner from '@/components/DemoBanner'
 import { isDemoMode } from '@/lib/demoMode'
 import InstitutionCard, { Institution } from '@/components/InstitutionCard'
+import AvatarMenu from '@/components/AvatarMenu'
 
 function HomeInner() {
   const router = useRouter()
@@ -84,13 +85,10 @@ function HomeInner() {
                 Dashboard
               </button>
             </Link>
-            <button
-              onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')}
-              className="w-10 h-10 rounded-full bg-primary text-white font-semibold flex items-center justify-center hover:bg-primary-light transition-colors shadow-md"
-              title={user.user_metadata?.email || 'User'}
-            >
-              {user.user_metadata?.email?.charAt(0).toUpperCase() || 'U'}
-            </button>
+            <AvatarMenu
+              email={user.email || user.user_metadata?.email}
+              onSignOut={() => supabase.auth.signOut().then(() => { window.location.href = '/' })}
+            />
           </>
         ) : (
           <>
