@@ -1,12 +1,17 @@
 /**
  * One-time cleanup of orphaned objects in the `board-images` storage bucket.
  *
- * Lists every file in the bucket, checks whether any row in `boards` references it
- * (via thumbnail_url or full_image_url), and deletes objects with no matching row.
+ * Lists every file in the bucket, checks whether anything references it
+ * (boards.thumbnail_url, boards.full_image_url, or any tables[].modelUrl in the
+ * wall-config JSONs under wall-configs/), and deletes objects with no matching
+ * reference. Paths under wall-configs/ are themselves never treated as orphans.
  *
- * Run (Node 20.6+, which supports `--env-file` natively):
- *   node --env-file=.env.local --experimental-strip-types scripts/cleanup-orphan-storage.ts          # dry-run (default)
- *   node --env-file=.env.local --experimental-strip-types scripts/cleanup-orphan-storage.ts --apply  # actually delete
+ * Recommended invocation (works on Node 20.6+, which supports `--env-file` natively):
+ *   npx tsx --env-file=.env.local scripts/cleanup-orphan-storage.ts          # dry-run (default)
+ *   npx tsx --env-file=.env.local scripts/cleanup-orphan-storage.ts --apply  # actually delete
+ *
+ * On Node 22+, you can also use the experimental built-in TS stripper instead of tsx:
+ *   node --env-file=.env.local --experimental-strip-types scripts/cleanup-orphan-storage.ts
  *
  * Or set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY manually in your shell
  * and drop the `--env-file` flag. NEVER run with --apply unless you have a recent backup.
@@ -88,6 +93,63 @@ async function loadReferencedPaths(): Promise<Set<string>> {
   return referenced
 }
 
+/**
+ * Each wall-config JSON (`wall-configs/{studioId}.json` in this bucket) may contain
+ * `tables[].modelUrl` pointing at .glb 3D-model objects also stored in this bucket.
+ * Pull every such URL into the referenced set so the cleanup never deletes them.
+ */
+async function loadWallConfigModelRefs(): Promise<Set<string>> {
+  const referenced = new Set<string>()
+  const { data: entries, error: listErr } = await supabase
+    .storage
+    .from(BUCKET)
+    .list('wall-configs', { limit: 1000 })
+
+  if (listErr) {
+    console.warn('Failed to list wall-configs/ — skipping model-ref scan:', listErr)
+    return referenced
+  }
+
+  let scanned = 0
+  for (const entry of (entries || []) as StorageObject[]) {
+    // Skip nested folders (shouldn't exist) and non-JSON files.
+    if (!entry.name || !entry.name.endsWith('.json')) continue
+    const filePath = `wall-configs/${entry.name}`
+    const { data: blob, error: dlErr } = await supabase.storage.from(BUCKET).download(filePath)
+    if (dlErr || !blob) {
+      console.warn(`  Skipped ${filePath}: ${dlErr?.message || 'no data'}`)
+      continue
+    }
+    let text: string
+    try {
+      text = await blob.text()
+    } catch (e) {
+      console.warn(`  Skipped ${filePath}: failed to read text`, e)
+      continue
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch (e) {
+      console.warn(`  Skipped ${filePath}: invalid JSON`, e)
+      continue
+    }
+    scanned += 1
+    const tables = (parsed as { tables?: Array<{ modelUrl?: unknown }> } | null)?.tables
+    if (!Array.isArray(tables)) continue
+    for (const table of tables) {
+      const modelUrl = typeof table?.modelUrl === 'string' ? table.modelUrl : null
+      if (!modelUrl) continue
+      // Skip data: / blob: URLs — those aren't bucket objects.
+      if (modelUrl.startsWith('data:') || modelUrl.startsWith('blob:')) continue
+      const path = extractStoragePath(modelUrl)
+      if (path) referenced.add(path)
+    }
+  }
+  console.log(`Scanned ${scanned} wall-config file(s); found ${referenced.size} model reference(s).`)
+  return referenced
+}
+
 async function main() {
   console.log(`Mode: ${APPLY ? 'APPLY (will delete)' : 'DRY-RUN (will not delete)'}`)
 
@@ -98,6 +160,11 @@ async function main() {
   console.log('Loading referenced paths from boards table...')
   const referenced = await loadReferencedPaths()
   console.log(`Found ${referenced.size} referenced path(s) across boards.`)
+
+  console.log('Loading model references from wall-config files...')
+  const modelRefs = await loadWallConfigModelRefs()
+  for (const p of modelRefs) referenced.add(p)
+  console.log(`Combined referenced path(s): ${referenced.size}.`)
 
   // Skip wall-configs/* — those are stored in this bucket too and should not be touched.
   const orphans = allPaths.filter((p) => !p.startsWith('wall-configs/') && !referenced.has(p))
