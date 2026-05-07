@@ -10,8 +10,10 @@ import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import * as THREE from 'three'
 import type { Board } from '@/types'
 import { Suspense } from 'react'
-import { useTexture, Text, Html } from '@react-three/drei'
+import { Text, Html } from '@react-three/drei'
 import { PDFTextureMaterial } from './PDFTexture'
+import { useBoardTexture } from './useBoardTexture'
+import { toast } from '@/lib/toast'
 
 interface DraggableBoardProps {
   board: Board
@@ -33,24 +35,16 @@ interface DraggableBoardProps {
   isWorkspaceMember?: boolean // Whether user is a member of the workspace
 }
 
-function BoardTexture({ imageUrl }: { imageUrl: string }) {
-  // Use Suspense for texture loading - this handles the loading state properly
-  const texture = useTexture(imageUrl)
-  
-  // Configure texture for performance
-  useEffect(() => {
-    if (texture) {
-      texture.colorSpace = THREE.SRGBColorSpace
-      texture.generateMipmaps = true
-      texture.minFilter = THREE.LinearMipmapLinearFilter
-      texture.magFilter = THREE.LinearFilter
-      // Limit anisotropy to 2 for better performance on Vercel
-      texture.anisotropy = 2
-      texture.needsUpdate = true
-    }
-  }, [texture])
-  
-  return <meshStandardMaterial map={texture} side={THREE.DoubleSide} />
+function BoardTextureMaterial({ imageUrl }: { imageUrl: string }) {
+  // Hold the previous texture in state until the new URL resolves — no gray flash on URL swap.
+  const { texture, isInitialLoad } = useBoardTexture(imageUrl)
+  if (texture) {
+    return <meshStandardMaterial map={texture} side={THREE.DoubleSide} />
+  }
+  if (isInitialLoad) {
+    return <meshStandardMaterial color="#eef0f8" roughness={0.85} side={THREE.DoubleSide} />
+  }
+  return <meshStandardMaterial color="#ffffff" side={THREE.DoubleSide} />
 }
 
 export function DraggableBoard({
@@ -322,34 +316,13 @@ if (e.intersections && e.intersections.length > 0) {
     ? meshWorldCenter.clone() // use actual mesh center when available
     : rotatedBoardWorldPosition
 
-  // Get the offset from board center to click point in world space
-  const offset = new THREE.Vector3()
-  offset.copy(worldClickPoint).sub(boardCenterWorld)
-  
-  // Rotate offset to board's local space (inverse of wall rotation)
-  const cosR = Math.cos(-rotationForCoords)
-  const sinR = Math.sin(-rotationForCoords)
-  const localOffsetX = offset.x * cosR - offset.z * sinR
-  const localOffsetY = offset.y
-  const renderLocalOffsetX = isBackSide ? -localOffsetX : localOffsetX
+  // World-space basis vectors used to project the click point into the same render-space as drag updates.
   const renderRightWorld = new THREE.Vector3(renderXSign, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), wallRotation).normalize()
   const renderUpWorld = new THREE.Vector3(0, 1, 0)
 
-  // If click is near a corner and board is selected, start resize (proportional) instead of drag
-  if (isSelected && canEdit && !isLocked) {
-    const cornerMargin = 0.15 * Math.min(boardWidth, boardHeight)
-    const inCorner =
-      Math.abs(renderLocalOffsetX) > boardWidth / 2 - cornerMargin &&
-      Math.abs(localOffsetY) > boardHeight / 2 - cornerMargin
-    if (inCorner) {
-      const cornerIndex = localOffsetY > 0 ? (renderLocalOffsetX > 0 ? 0 : 1) : (renderLocalOffsetX > 0 ? 3 : 2)
-      const resizeCursor =
-        (renderLocalOffsetX > 0) === (localOffsetY > 0) ? 'nwse-resize' : 'nesw-resize'
-      handleCornerPointerDown(e, cornerIndex, resizeCursor)
-      return
-    }
-  }
-  
+  // Corner resize is now handled by dedicated invisible handle meshes (rendered below);
+  // clicks on the board body always start a drag-to-move.
+
   // Store offset in render-space so click anchor and drag use identical coordinates.
   const clickOnWall = worldClickPoint.clone().sub(wallPosition)
   const pointerRenderX = clickOnWall.dot(renderRightWorld)
@@ -493,6 +466,9 @@ if (e.intersections && e.intersections.length > 0) {
     return { x: offset.dot(wallRight), y: offset.dot(wallUp) }
   }, [wallPosition, coordRotation])
 
+  // Corner indexing: 0=TR, 1=TL, 2=BL, 3=BR. Anchor = opposite corner ((i+2) % 4).
+  // Default behaviour is free resize (independent width/height); holding Shift locks the aspect ratio.
+  // Persists via PATCH /api/boards/[id]/position on pointer-up; rolls back local state if the request fails.
   const handleCornerPointerDown = useCallback((
     e: ThreeEvent<PointerEvent>,
     cornerIndex: number,
@@ -504,50 +480,87 @@ if (e.intersections && e.intersections.length > 0) {
     if (!ptr) return
     const cx = positionRef.current.x * scaledWallWidth
     const cy = positionRef.current.y * scaledWallHeight
-    const w = positionRef.current.width ?? 0.3
-    const h = positionRef.current.height ?? 0.3
-    const halfW = (w * wallWidthInches) / 2
-    const halfH = (h * wallHeightInches) / 2
-    // Corner positions in wall-local: 0=TR, 1=TL, 2=BL, 3=BR
+    const w0 = positionRef.current.width ?? 0.3
+    const h0 = positionRef.current.height ?? 0.3
+    const halfW = (w0 * wallWidthInches) / 2
+    const halfH = (h0 * wallHeightInches) / 2
     const corners: { x: number; y: number }[] = [
-      { x: cx + halfW, y: cy + halfH },
-      { x: cx - halfW, y: cy + halfH },
-      { x: cx - halfW, y: cy - halfH },
-      { x: cx + halfW, y: cy - halfH },
+      { x: cx + halfW, y: cy + halfH }, // 0 TR
+      { x: cx - halfW, y: cy + halfH }, // 1 TL
+      { x: cx - halfW, y: cy - halfH }, // 2 BL
+      { x: cx + halfW, y: cy - halfH }, // 3 BR
     ]
     const anchorIndex = (cornerIndex + 2) % 4
     const anchor = corners[anchorIndex]
     const initialCorner = corners[cornerIndex]
     const initialDiagonal = Math.hypot(initialCorner.x - anchor.x, initialCorner.y - anchor.y)
     if (initialDiagonal < 1) return
-    const MIN_SIZE = 0.05
-    const MAX_SIZE = 1
-    resizeStartRef.current = { anchorX: anchor.x, anchorY: anchor.y, initialCornerX: initialCorner.x, initialCornerY: initialCorner.y, initialWidth: w, initialHeight: h }
+    const dirSignX = Math.sign(initialCorner.x - anchor.x) || 1
+    const dirSignY = Math.sign(initialCorner.y - anchor.y) || 1
+    const dirNormX = (initialCorner.x - anchor.x) / initialDiagonal
+    const dirNormY = (initialCorner.y - anchor.y) / initialDiagonal
+
+    const MIN_PCT = 0.05
+    const MAX_PCT = 1
+    const MIN_INCHES_W = MIN_PCT * wallWidthInches
+    const MIN_INCHES_H = MIN_PCT * wallHeightInches
+    const MAX_INCHES_W = MAX_PCT * wallWidthInches
+    const MAX_INCHES_H = MAX_PCT * wallHeightInches
+
+    // Snapshot for rollback if the API save fails.
+    const priorPosition = { x: positionRef.current.x, y: positionRef.current.y, width: w0, height: h0 }
+
+    resizeStartRef.current = { anchorX: anchor.x, anchorY: anchor.y, initialCornerX: initialCorner.x, initialCornerY: initialCorner.y, initialWidth: w0, initialHeight: h0 }
     setIsResizing(true)
-    // Keep click/drag cursor exactly aligned with hover computation for this corner.
-    gl.domElement.style.cursor = resizeCursor
+    // Spec: cursor is set on document.body so it stays consistent across the canvas and overlays.
+    document.body.style.cursor = resizeCursor
+
+    // Track shift mid-drag so the user can toggle aspect lock on/off without restarting.
+    const shiftHeldRef = { current: e.shiftKey }
+    const onKeyDown = (ev: KeyboardEvent) => { if (ev.key === 'Shift') shiftHeldRef.current = true }
+    const onKeyUp = (ev: KeyboardEvent) => { if (ev.key === 'Shift') shiftHeldRef.current = false }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+
     const onMove = (ev: PointerEvent) => {
       const p = getPointerOnWallPlane(ev.clientX, ev.clientY)
       if (!p || !resizeStartRef.current) return
-      const newCorner = worldToWallLocal(p)
+      const pointerWall = worldToWallLocal(p)
       const ax = resizeStartRef.current.anchorX
       const ay = resizeStartRef.current.anchorY
-      const dx = newCorner.x - ax
-      const dy = newCorner.y - ay
-      const dirX = (initialCorner.x - ax) / initialDiagonal
-      const dirY = (initialCorner.y - ay) / initialDiagonal
-      const projectedLength = dx * dirX + dy * dirY
-      const rawScale = Math.max(0.01, projectedLength / initialDiagonal)
-      const initialW = resizeStartRef.current.initialWidth
-      const initialH = resizeStartRef.current.initialHeight
-      // Clamp scale (not width/height independently) so aspect ratio stays locked.
-      const minScale = Math.max(MIN_SIZE / initialW, MIN_SIZE / initialH)
-      const maxScale = Math.min(MAX_SIZE / initialW, MAX_SIZE / initialH)
-      const scale = THREE.MathUtils.clamp(rawScale, minScale, maxScale)
-      const newW = initialW * scale
-      const newH = initialH * scale
-      const newCornerX = ax + dirX * initialDiagonal * scale
-      const newCornerY = ay + dirY * initialDiagonal * scale
+
+      let newW: number
+      let newH: number
+      let newCornerX: number
+      let newCornerY: number
+
+      if (shiftHeldRef.current) {
+        // Locked aspect ratio: project pointer displacement onto the diagonal, scale both axes equally.
+        const dx = pointerWall.x - ax
+        const dy = pointerWall.y - ay
+        const projectedLength = dx * dirNormX + dy * dirNormY
+        const rawScale = Math.max(0.01, projectedLength / initialDiagonal)
+        const initialW = resizeStartRef.current.initialWidth
+        const initialH = resizeStartRef.current.initialHeight
+        const minScale = Math.max(MIN_PCT / initialW, MIN_PCT / initialH)
+        const maxScale = Math.min(MAX_PCT / initialW, MAX_PCT / initialH)
+        const scale = THREE.MathUtils.clamp(rawScale, minScale, maxScale)
+        newW = initialW * scale
+        newH = initialH * scale
+        newCornerX = ax + dirNormX * initialDiagonal * scale
+        newCornerY = ay + dirNormY * initialDiagonal * scale
+      } else {
+        // Free resize: width and height move independently with the pointer.
+        const dxInches = (pointerWall.x - ax) * dirSignX
+        const dyInches = (pointerWall.y - ay) * dirSignY
+        const widthInches = THREE.MathUtils.clamp(dxInches, MIN_INCHES_W, MAX_INCHES_W)
+        const heightInches = THREE.MathUtils.clamp(dyInches, MIN_INCHES_H, MAX_INCHES_H)
+        newW = widthInches / wallWidthInches
+        newH = heightInches / wallHeightInches
+        newCornerX = ax + dirSignX * widthInches
+        newCornerY = ay + dirSignY * heightInches
+      }
+
       const newCenterX = (ax + newCornerX) / 2
       const newCenterY = (ay + newCornerY) / 2
       const newX = newCenterX / wallWidthInches
@@ -555,22 +568,61 @@ if (e.intersections && e.intersections.length > 0) {
       positionRef.current = { ...positionRef.current, x: newX, y: newY, width: newW, height: newH }
       setLocalPosition(prev => ({ ...prev, x: newX, y: newY, width: newW, height: newH }))
     }
+
     const onUp = () => {
+      document.body.style.cursor = ''
       gl.domElement.style.cursor = 'default'
       const ref = positionRef.current
       justFinishedDragging.current = true
       setLocalPosition({ x: ref.x, y: ref.y, width: ref.width, height: ref.height })
-      onDragEnd(board.id, ref.x, ref.y, ref.width, ref.height, side)
+
+      // Persist via PATCH on the dedicated position endpoint.
+      const apiX = (ref.x + 0.5) * 100
+      const apiY = (ref.y + 0.5) * 100
+      const apiWidth = (ref.width ?? 0.3) * 100
+      const apiHeight = (ref.height ?? 0.3) * 100
+      const isMockBoard =
+        board.id.startsWith('temp-') ||
+        board.id.startsWith('demo-') ||
+        board.id.startsWith('sample-')
+      if (!isMockBoard) {
+        fetch(`/api/boards/${board.id}/position`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            wallIndex: _wallIndex,
+            x: apiX,
+            y: apiY,
+            width: apiWidth,
+            height: apiHeight,
+            side,
+          }),
+        })
+          .then(res => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          })
+          .catch(err => {
+            console.error('❌ [DraggableBoard] Resize PATCH failed:', err)
+            // Roll back to the position the board had before this resize started.
+            positionRef.current = { ...positionRef.current, ...priorPosition }
+            setLocalPosition(prev => ({ ...prev, ...priorPosition }))
+            toast.error('Failed to save board size. Please try again.')
+          })
+      }
+
       resizeStartRef.current = null
       setIsResizing(false)
       resizeListenersRef.current = { move: null, up: null }
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
     }
+
     resizeListenersRef.current = { move: onMove, up: onUp }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
-  }, [board.id, getPointerOnWallPlane, gl, isLocked, onDragEnd, scaledWallHeight, scaledWallWidth, side, wallHeightInches, wallWidthInches, worldToWallLocal])
+  }, [board.id, _wallIndex, getPointerOnWallPlane, gl, isLocked, scaledWallHeight, scaledWallWidth, side, wallHeightInches, wallWidthInches, worldToWallLocal])
   
   devLog(`🧱 DraggableBoard on wall: rotation=${wallRotation.toFixed(2)}, side=${boardSide}, boardZ=${boardZ}`)
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
@@ -623,32 +675,10 @@ if (e.intersections && e.intersections.length > 0) {
           }}
           onPointerMove={(e) => {
             e.stopPropagation()
-            if (!e.intersections?.length || isDragging || isResizing) return
-            const rotationForCoords = wallBaseRotationForCoords ?? wallRotation
-            const worldPoint = e.intersections[0].point
-            const center = new THREE.Vector3()
-            meshRef.current?.getWorldPosition(center)
-            const offset = worldPoint.clone().sub(center)
-            const cosR = Math.cos(-rotationForCoords)
-            const sinR = Math.sin(-rotationForCoords)
-            const localX = offset.x * cosR - offset.z * sinR
-            const localY = offset.y
-            const renderLocalX = isBackSide ? -localX : localX
-            const cornerMargin = 0.15 * Math.min(boardWidth, boardHeight)
-            const nearCorner =
-              Math.abs(renderLocalX) > boardWidth / 2 - cornerMargin &&
-              Math.abs(localY) > boardHeight / 2 - cornerMargin
-            if (isSelected && canEdit && nearCorner) {
-              // Use different diagonal cursors so each corner matches expected direction.
-              // Right-side corners (TR/BR): TR uses ↗↙ (nesw), BR uses ↖↘ (nwse)
-              // Left-side corners (TL/BL): TL uses ↖↘ (nwse), BL uses ↗↙ (nesw)
-              const isRightSide = renderLocalX > 0
-              const isTopSide = localY > 0
-              // nwse when x/y have same sign (TL or BR), nesw when signs differ (TR or BL)
-              gl.domElement.style.cursor = isRightSide === isTopSide ? 'nwse-resize' : 'nesw-resize'
-            } else if (!isDragging) {
-              gl.domElement.style.cursor = isLocked ? 'not-allowed' : 'grab'
-            }
+            if (isDragging || isResizing) return
+            // Corner resize cursors are owned by the dedicated handle meshes; the board body
+            // shows the move cursor whenever the pointer is over it.
+            gl.domElement.style.cursor = isLocked ? 'not-allowed' : 'grab'
           }}
           onPointerOut={(e) => {
             e.stopPropagation()
@@ -663,9 +693,7 @@ if (e.intersections && e.intersections.length > 0) {
               <PDFTextureMaterial pdfUrl={imageUrl} hovered={isHovered} />
             </Suspense>
           ) : hasImage ? (
-            <Suspense fallback={<meshStandardMaterial color="#94a3b8" opacity={0.9} transparent />}>
-              <BoardTexture imageUrl={imageUrl} />
-            </Suspense>
+            <BoardTextureMaterial imageUrl={imageUrl} />
           ) : (
             <meshStandardMaterial 
               color={isHovered ? "#f8f8f8" : "#ffffff"} 
@@ -697,6 +725,50 @@ if (e.intersections && e.intersections.length > 0) {
             <lineBasicMaterial color="#4444ff" linewidth={3} />
           </lineSegments>
         )}
+
+        {/*
+         * Corner resize handles. Invisible meshes at each corner; pointer-active.
+         * Set document.body.style.cursor on hover; on pointer-down start a resize drag.
+         * Render only when this user can edit (locked boards have no handles).
+         * The board body still owns drag-to-move; these handles intercept their own pointer events.
+         */}
+        {canEdit && !isLocked && (() => {
+          const handleSize = Math.max(2, Math.min(boardWidth, boardHeight) * 0.12)
+          // 0=TR, 1=TL, 2=BL, 3=BR — must match the indexing in handleCornerPointerDown.
+          // Local-mesh X axis. On the back side the inner group is camera-mirrored, so the handle
+          // meshes need to mirror too — flip render X using the same renderXSign as the board.
+          const corners: Array<{ index: number; localX: number; y: number; cursor: 'nwse-resize' | 'nesw-resize' }> = [
+            // TR: top-right in wall-local; render flips for back side.
+            { index: 0, localX: boardWidth / 2, y: boardHeight / 2, cursor: 'nesw-resize' },
+            // TL
+            { index: 1, localX: -boardWidth / 2, y: boardHeight / 2, cursor: 'nwse-resize' },
+            // BL
+            { index: 2, localX: -boardWidth / 2, y: -boardHeight / 2, cursor: 'nesw-resize' },
+            // BR
+            { index: 3, localX: boardWidth / 2, y: -boardHeight / 2, cursor: 'nwse-resize' },
+          ]
+          return corners.map(({ index, localX, y, cursor }) => (
+            <mesh
+              key={`corner-${index}`}
+              position={[isBackSide ? -localX : localX, y, BOARD_THICKNESS / 2 + 0.01]}
+              renderOrder={2}
+              onPointerOver={(e) => {
+                e.stopPropagation()
+                document.body.style.cursor = cursor
+              }}
+              onPointerOut={(e) => {
+                e.stopPropagation()
+                if (!isResizing) document.body.style.cursor = ''
+              }}
+              onPointerDown={(e) => {
+                handleCornerPointerDown(e, index, cursor)
+              }}
+            >
+              <boxGeometry args={[handleSize, handleSize, BOARD_THICKNESS + 0.02]} />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            </mesh>
+          ))
+        })()}
 
         {/* Lock icon - Show for boards not owned by current user */}
         {isHovered && !isDragging && isLocked && (

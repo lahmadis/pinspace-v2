@@ -200,11 +200,12 @@ function SceneContent({
       
       {/* Floor is now created dynamically in WallSystem based on wall configuration */}
       
-      <WallSystem 
-        boards={localBoards} 
+      <WallSystem
+        boards={localBoards}
         wallConfig={wallConfig}
         onWallClick={onWallClick}
         editingWall={editingWall}
+        editUIActive={showEditUI}
         onBoardClick={onBoardClick || onCommentClick}
         highlightedBoardId={hoveredBoardId}
         onBoardHover={onBoardHover}

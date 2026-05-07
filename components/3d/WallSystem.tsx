@@ -23,6 +23,12 @@ interface WallSystemProps {
   wallConfig: WallConfig
   onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   editingWall: number | null
+  /**
+   * True only once the camera-into-wall transition has completed and DraggableBoards
+   * have taken over rendering. While false (during the camera animation) we keep the
+   * BoardThumbnails on the wall mounted so there's no empty-wall flicker.
+   */
+  editUIActive?: boolean
   onBoardClick?: (board: Board) => void
   highlightedBoardId?: string | null
   onBoardHover?: (boardId: string | null) => void
@@ -30,7 +36,7 @@ interface WallSystemProps {
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallClick, editingWall, onBoardClick, highlightedBoardId, onBoardHover }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallClick, editingWall, editUIActive = false, onBoardClick, highlightedBoardId, onBoardHover }: WallSystemProps) {
 
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
   const floorBounds = calculateFloorBounds(wallConfig)
@@ -55,14 +61,12 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
 
       {wallConfig.walls.map((wall, wallIndex) => {
         const transform = getTransform(wallIndex)
-        // Only show boards that are NOT being edited (or on different side)
+        // Hide thumbnails on the editing wall ONLY once the edit UI has fully taken over
+        // (i.e. DraggableBoards are mounted). During the camera transition we keep the
+        // thumbnails mounted so there's no empty-wall flicker.
         const boardsOnWall = boards.filter(b => {
           if (!b.position || b.position.wallIndex !== wallIndex) return false
-          // If this wall is being edited, only show boards on the opposite side
-          if (editingWall === wallIndex) {
-            // This will be handled by DraggableBoard in edit mode
-            return false
-          }
+          if (editUIActive && editingWall === wallIndex) return false
           return true
         })
         
