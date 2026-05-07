@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import * as THREE from 'three'
 
 /**
@@ -8,87 +8,101 @@ import * as THREE from 'three'
  * new one resolves. This avoids the double Suspense gray-flash that happens
  * when a board's URL swaps from optimistic blob → thumbnail → full image.
  *
+ * **Module-level cache:** resolved textures and in-flight loads are keyed by URL
+ * so unmount/remount of a board (e.g. switching between BoardThumbnail in 3D and
+ * DraggableBoard in 2D edit mode) reuses the same texture instantly — no skeleton
+ * flash for content that was already loaded.
+ *
  * Returns:
  *   texture        — currently displayable texture (may belong to the old URL while a new one loads)
  *   isInitialLoad  — true only when there has never been a texture yet (use this to render a skeleton)
  */
+
+// Module-level caches shared across every hook instance in the app.
+const resolvedCache = new Map<string, THREE.Texture>()
+const inFlightCache = new Map<string, Promise<THREE.Texture>>()
+
+function configureTexture(tex: THREE.Texture): THREE.Texture {
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.generateMipmaps = true
+  tex.minFilter = THREE.LinearMipmapLinearFilter
+  tex.magFilter = THREE.LinearFilter
+  tex.anisotropy = 2
+  tex.needsUpdate = true
+  return tex
+}
+
+function loadTexture(url: string): Promise<THREE.Texture> {
+  // Already resolved — return synchronously via Promise.resolve.
+  const cached = resolvedCache.get(url)
+  if (cached) return Promise.resolve(cached)
+  // Already loading — share the same promise so we don't double-fetch.
+  const inFlight = inFlightCache.get(url)
+  if (inFlight) return inFlight
+
+  const loader = new THREE.TextureLoader()
+  loader.setCrossOrigin('anonymous')
+  const promise = new Promise<THREE.Texture>((resolve, reject) => {
+    loader.load(
+      url,
+      (tex) => {
+        configureTexture(tex)
+        resolvedCache.set(url, tex)
+        inFlightCache.delete(url)
+        resolve(tex)
+      },
+      undefined,
+      (err) => {
+        inFlightCache.delete(url)
+        reject(err)
+      }
+    )
+  })
+  inFlightCache.set(url, promise)
+  return promise
+}
+
 export function useBoardTexture(url: string | null | undefined): {
   texture: THREE.Texture | null
   isInitialLoad: boolean
 } {
-  const [texture, setTexture] = useState<THREE.Texture | null>(null)
-  const settledUrlRef = useRef<string | null>(null)
-  const inFlightUrlRef = useRef<string | null>(null)
+  // Synchronously seed from the resolved cache so a remount returns the texture on the first render —
+  // no skeleton flash when the user toggles between 3D and 2D edit views for an already-loaded board.
+  const initialCached = url ? resolvedCache.get(url) ?? null : null
+  const [texture, setTexture] = useState<THREE.Texture | null>(initialCached)
 
   useEffect(() => {
     if (!url) {
-      // No URL at all — clear everything.
-      settledUrlRef.current = null
-      inFlightUrlRef.current = null
-      setTexture((prev) => {
-        if (prev) prev.dispose()
-        return null
-      })
+      setTexture(null)
+      return
+    }
+    // Cache hit: commit immediately, no network. Catches the remount case described above.
+    const cached = resolvedCache.get(url)
+    if (cached) {
+      setTexture(cached)
       return
     }
 
-    // Already showing this URL — nothing to do.
-    if (settledUrlRef.current === url) return
-    // Already loading this URL — let the previous load finish.
-    if (inFlightUrlRef.current === url) return
-
-    inFlightUrlRef.current = url
+    // Cache miss: load (or join the in-flight promise) but keep the previous texture
+    // visible in the meantime so URL swaps don't flash.
     let cancelled = false
-    const loader = new THREE.TextureLoader()
-    loader.setCrossOrigin('anonymous')
-    loader.load(
-      url,
-      (newTex) => {
-        if (cancelled) {
-          newTex.dispose()
-          return
-        }
-        newTex.colorSpace = THREE.SRGBColorSpace
-        newTex.generateMipmaps = true
-        newTex.minFilter = THREE.LinearMipmapLinearFilter
-        newTex.magFilter = THREE.LinearFilter
-        newTex.anisotropy = 2
-        newTex.needsUpdate = true
-        settledUrlRef.current = url
-        inFlightUrlRef.current = null
-        // Swap atomically; dispose the old texture only after the new one has been committed.
-        setTexture((prev) => {
-          if (prev && prev !== newTex) prev.dispose()
-          return newTex
-        })
-      },
-      undefined,
-      (err) => {
+    loadTexture(url)
+      .then((tex) => {
+        if (cancelled) return
+        setTexture(tex)
+      })
+      .catch((err) => {
         if (cancelled) return
         console.warn('Board texture load failed:', url, err)
-        inFlightUrlRef.current = null
-      }
-    )
-
+      })
     return () => {
       cancelled = true
-      // Don't clear inFlightUrlRef here — a re-render with the same url should
-      // not retrigger the load.
     }
   }, [url])
 
-  // Dispose on unmount.
-  useEffect(() => {
-    return () => {
-      setTexture((prev) => {
-        if (prev) prev.dispose()
-        return null
-      })
-    }
-  }, [])
-
   return {
     texture,
+    // Only show the skeleton when nothing has ever been displayed for this hook instance.
     isInitialLoad: texture === null,
   }
 }

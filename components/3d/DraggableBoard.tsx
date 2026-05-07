@@ -467,7 +467,8 @@ if (e.intersections && e.intersections.length > 0) {
   }, [wallPosition, coordRotation])
 
   // Corner indexing: 0=TR, 1=TL, 2=BL, 3=BR. Anchor = opposite corner ((i+2) % 4).
-  // Default behaviour is free resize (independent width/height); holding Shift locks the aspect ratio.
+  // Default behaviour is proportional resize (locks the image aspect ratio via diagonal projection);
+  // holding Shift switches to free resize (independent width/height).
   // Persists via PATCH /api/boards/[id]/position on pointer-up; rolls back local state if the request fails.
   const handleCornerPointerDown = useCallback((
     e: ThreeEvent<PointerEvent>,
@@ -512,10 +513,12 @@ if (e.intersections && e.intersections.length > 0) {
 
     resizeStartRef.current = { anchorX: anchor.x, anchorY: anchor.y, initialCornerX: initialCorner.x, initialCornerY: initialCorner.y, initialWidth: w0, initialHeight: h0 }
     setIsResizing(true)
-    // Spec: cursor is set on document.body so it stays consistent across the canvas and overlays.
-    document.body.style.cursor = resizeCursor
+    // Cursor is set on the WebGL canvas element — document.body's cursor is overridden by the canvas's own
+    // computed style, so it never shows up over the 3D scene.
+    gl.domElement.style.cursor = resizeCursor
 
-    // Track shift mid-drag so the user can toggle aspect lock on/off without restarting.
+    // Track shift mid-drag so the user can toggle the resize mode without restarting.
+    // Default = proportional (locks aspect ratio). Shift held = free resize.
     const shiftHeldRef = { current: e.shiftKey }
     const onKeyDown = (ev: KeyboardEvent) => { if (ev.key === 'Shift') shiftHeldRef.current = true }
     const onKeyUp = (ev: KeyboardEvent) => { if (ev.key === 'Shift') shiftHeldRef.current = false }
@@ -535,7 +538,17 @@ if (e.intersections && e.intersections.length > 0) {
       let newCornerY: number
 
       if (shiftHeldRef.current) {
-        // Locked aspect ratio: project pointer displacement onto the diagonal, scale both axes equally.
+        // Shift held = free resize: width and height move independently with the pointer.
+        const dxInches = (pointerWall.x - ax) * dirSignX
+        const dyInches = (pointerWall.y - ay) * dirSignY
+        const widthInches = THREE.MathUtils.clamp(dxInches, MIN_INCHES_W, MAX_INCHES_W)
+        const heightInches = THREE.MathUtils.clamp(dyInches, MIN_INCHES_H, MAX_INCHES_H)
+        newW = widthInches / wallWidthInches
+        newH = heightInches / wallHeightInches
+        newCornerX = ax + dirSignX * widthInches
+        newCornerY = ay + dirSignY * heightInches
+      } else {
+        // Default = locked aspect ratio: project pointer displacement onto the diagonal, scale both axes equally.
         const dx = pointerWall.x - ax
         const dy = pointerWall.y - ay
         const projectedLength = dx * dirNormX + dy * dirNormY
@@ -549,16 +562,6 @@ if (e.intersections && e.intersections.length > 0) {
         newH = initialH * scale
         newCornerX = ax + dirNormX * initialDiagonal * scale
         newCornerY = ay + dirNormY * initialDiagonal * scale
-      } else {
-        // Free resize: width and height move independently with the pointer.
-        const dxInches = (pointerWall.x - ax) * dirSignX
-        const dyInches = (pointerWall.y - ay) * dirSignY
-        const widthInches = THREE.MathUtils.clamp(dxInches, MIN_INCHES_W, MAX_INCHES_W)
-        const heightInches = THREE.MathUtils.clamp(dyInches, MIN_INCHES_H, MAX_INCHES_H)
-        newW = widthInches / wallWidthInches
-        newH = heightInches / wallHeightInches
-        newCornerX = ax + dirSignX * widthInches
-        newCornerY = ay + dirSignY * heightInches
       }
 
       const newCenterX = (ax + newCornerX) / 2
@@ -570,8 +573,9 @@ if (e.intersections && e.intersections.length > 0) {
     }
 
     const onUp = () => {
+      // Reset both possible cursor targets in case pointer-up fires off-handle.
       document.body.style.cursor = ''
-      gl.domElement.style.cursor = 'default'
+      gl.domElement.style.cursor = ''
       const ref = positionRef.current
       justFinishedDragging.current = true
       setLocalPosition({ x: ref.x, y: ref.y, width: ref.width, height: ref.height })
@@ -754,11 +758,17 @@ if (e.intersections && e.intersections.length > 0) {
               renderOrder={2}
               onPointerOver={(e) => {
                 e.stopPropagation()
-                document.body.style.cursor = cursor
+                gl.domElement.style.cursor = cursor
+              }}
+              // R3F dispatches pointermove to every intersected object front-to-back; without this,
+              // the board mesh's own onPointerMove fires next and overwrites the cursor with 'grab'.
+              onPointerMove={(e) => {
+                e.stopPropagation()
+                gl.domElement.style.cursor = cursor
               }}
               onPointerOut={(e) => {
                 e.stopPropagation()
-                if (!isResizing) document.body.style.cursor = ''
+                if (!isResizing) gl.domElement.style.cursor = ''
               }}
               onPointerDown={(e) => {
                 handleCornerPointerDown(e, index, cursor)
