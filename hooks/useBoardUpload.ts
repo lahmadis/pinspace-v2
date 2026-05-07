@@ -4,6 +4,7 @@ import { flushSync } from 'react-dom'
 import { Board } from '@/types'
 import { generateOwnerColor } from '@/lib/ownerColors'
 import { toast } from '@/lib/toast'
+import { loadTexture } from '@/components/3d/useBoardTexture'
 
 interface UploadOptions {
   studioId: string
@@ -282,6 +283,17 @@ const uploadFile = async (
   const { getImageDimensions } = await import('@/lib/getImageDimensions')
   const { extractImagePhysicalDimensions } = await import('@/lib/extractPhysicalDimensions')
 
+  // Create the blob URL synchronously up-front so we can start loading its texture into the
+  // module-level cache in parallel with measuring image dimensions. By the time we commit the
+  // temp board to React state, both are done — useBoardTexture will see a cache hit on its very
+  // first render and skip the skeleton entirely.
+  const earlyBlobUrl = options.editingWall !== null && options.editingWallDimensions
+    ? URL.createObjectURL(file)
+    : null
+  const texturePrewarm = earlyBlobUrl
+    ? loadTexture(earlyBlobUrl).catch(() => undefined)
+    : Promise.resolve(undefined)
+
   const dims = await getImageDimensions(file)
   const { widthPercent, heightPercent } = calculateBoardDimensions(
     dims.aspectRatio,
@@ -289,9 +301,11 @@ const uploadFile = async (
   )
 
   // Show board on wall with correct dimensions baked in (still optimistic — runs before API call).
-  if (options.editingWall !== null && options.editingWallDimensions) {
-    const createdBlobUrl = URL.createObjectURL(file)
+  if (options.editingWall !== null && options.editingWallDimensions && earlyBlobUrl) {
+    const createdBlobUrl = earlyBlobUrl
     blobUrl = createdBlobUrl
+    // Wait for the pre-warm to finish so useBoardTexture sees the resolved cache on first render.
+    await texturePrewarm
     tempBoardId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     const tempBoard = createTempBoard(tempBoardId, {
       studioId: options.studioId,
@@ -381,6 +395,15 @@ const uploadFile = async (
         ...uploadedBoard,
         position: { ...uploadedBoard.position, side: editingSide },
       }
+    }
+
+    // Pre-warm the cache for the real URLs *before* swapping the temp board out. By the time
+    // useBoardTexture re-runs with the new URL prop, the texture is already resolved → instant swap.
+    if (uploadedBoard?.thumbnailUrl) {
+      loadTexture(uploadedBoard.thumbnailUrl).catch(() => { /* non-fatal */ })
+    }
+    if (uploadedBoard?.fullImageUrl && uploadedBoard.fullImageUrl !== uploadedBoard.thumbnailUrl) {
+      loadTexture(uploadedBoard.fullImageUrl).catch(() => { /* non-fatal */ })
     }
 
     if (tempBoardId && options.editingWall !== null) {

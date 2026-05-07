@@ -32,7 +32,13 @@ function configureTexture(tex: THREE.Texture): THREE.Texture {
   return tex
 }
 
-function loadTexture(url: string): Promise<THREE.Texture> {
+/**
+ * Pre-warm the module-level texture cache for a URL. Call this as soon as a URL is known
+ * (e.g. when an upload starts and a blob URL is created, or when the upload returns the
+ * real thumbnail URL) so by the time a component renders that URL its texture is already
+ * resolved — no skeleton flash, no swap delay.
+ */
+export function loadTexture(url: string): Promise<THREE.Texture> {
   // Already resolved — return synchronously via Promise.resolve.
   const cached = resolvedCache.get(url)
   if (cached) return Promise.resolve(cached)

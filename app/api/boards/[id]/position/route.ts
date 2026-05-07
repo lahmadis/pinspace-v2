@@ -18,10 +18,13 @@ export async function PATCH(
 
     const userId = session.user.id
     const boardId = params.id
-    const { wallIndex, x, y, width, height, side } = await request.json()
+    const { wallIndex, x, y, width, height, side, rotation } = await request.json()
 
     if (wallIndex === undefined || x === undefined || y === undefined) {
       return NextResponse.json({ error: 'Missing position data' }, { status: 400 })
+    }
+    if (rotation !== undefined && (typeof rotation !== 'number' || !Number.isFinite(rotation))) {
+      return NextResponse.json({ error: 'rotation must be a finite number' }, { status: 400 })
     }
 
     const admin = supabaseServiceRole()
@@ -63,6 +66,8 @@ export async function PATCH(
     }
     if (width !== undefined) updateData.position_width = width.toString()
     if (height !== undefined) updateData.position_height = height.toString()
+    // Optional. Existing callers that don't send rotation continue to work — the column has a NOT NULL DEFAULT 0.
+    if (rotation !== undefined) updateData.position_rotation = rotation
 
     const { data: updated, error: updateError } = await admin
       .from('boards')

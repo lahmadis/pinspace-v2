@@ -39,8 +39,10 @@ function transformBoardRow(row: Record<string, unknown>): Board {
             width: row.position_width != null ? Number(row.position_width) : undefined,
             height: row.position_height != null ? Number(row.position_height) : undefined,
             side: String(row.position_side || '').trim().toLowerCase() === 'back' ? 'back' : 'front',
+            rotation: row.position_rotation != null ? Number(row.position_rotation) : 0,
           }
         : undefined,
+    position_rotation: row.position_rotation != null ? Number(row.position_rotation) : 0,
     ownerId: row.owner_id as string,
     ownerName: row.owner_name as string,
     ownerColor: row.owner_color as string | undefined,

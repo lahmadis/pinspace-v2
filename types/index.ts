@@ -56,7 +56,10 @@ export interface Board {
     width?: number  // Stored as 0-1 decimal of wall width
     height?: number // Stored as 0-1 decimal of wall height
     side?: 'front' | 'back' // Which side of the wall (defaults to 'front')
+    rotation?: number // Radians, around the board's center (Three.js rotation.z); 0 = unrotated
   }
+  /** Convenience top-level mirror of `position.rotation` — also accepts the snake_case API shape. */
+  position_rotation?: number
   // Board ownership
   ownerId?: string      // User ID who created/owns this board
   ownerName?: string    // Display name for UI

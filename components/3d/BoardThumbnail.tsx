@@ -21,26 +21,28 @@ interface BoardThumbnailProps {
 const BOARD_THICKNESS = 0.08
 
 // Skeleton material used only on the very first load (no prior texture exists).
-// A pulsing emissive keeps it visually distinct from a solid gray placeholder.
+// Transparent + low opacity so the wall shows through (reads as "loading" rather than "empty gray plate");
+// a faint pulse confirms it's still working.
 function BoardSkeletonMaterial({ hovered, isHighlighted }: { hovered: boolean; isHighlighted?: boolean }) {
   const matRef = useRef<THREE.MeshStandardMaterial>(null)
   useFrame((state) => {
     if (!matRef.current) return
-    // Subtle ~1.5s pulse so the placeholder reads as "loading" without flashing.
     const t = state.clock.getElapsedTime()
-    const pulse = 0.06 + 0.04 * Math.sin(t * 4)
-    matRef.current.emissiveIntensity = isHighlighted ? 0.3 : (hovered ? 0.12 : pulse)
+    // Faint opacity pulse: 0.18 → 0.30 over ~1.5s. The base is intentionally low.
+    matRef.current.opacity = 0.24 + 0.06 * Math.sin(t * 4)
+    matRef.current.emissiveIntensity = isHighlighted ? 0.18 : (hovered ? 0.12 : 0)
   })
   return (
     <meshStandardMaterial
       ref={matRef}
-      color="#eef0f8"
+      color="#ffffff"
+      transparent
+      opacity={0.24}
       roughness={0.85}
       metalness={0.0}
-      emissive={isHighlighted ? '#6366f1' : (hovered ? '#6366f1' : '#c8cdde')}
-      emissiveIntensity={0.08}
-      depthWrite={true}
-      depthTest={true}
+      emissive={isHighlighted || hovered ? '#6366f1' : '#000000'}
+      emissiveIntensity={0}
+      depthWrite={false}
     />
   )
 }
@@ -120,9 +122,13 @@ export default function BoardThumbnail({ board, position, width, height, onClick
     e.stopPropagation()
   }
 
+  // Apply persisted rotation around the board's center. Default 0 when undefined.
+  const rotationZ = board.position?.rotation ?? board.position_rotation ?? 0
+
   return (
     <group
       position={position}
+      rotation={[0, 0, rotationZ]}
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
       onPointerDown={handlePointerDown}
@@ -156,6 +162,17 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           )
         )}
       </mesh>
+
+      {/* Thin outline while the board is in its first-load skeleton state — gives the placeholder a discernible edge. */}
+      {isInitialLoad && hasValidImage && !texture && !isPDF && (
+        <lineSegments position={[0, 0, 0.003]}>
+          <edgesGeometry
+            attach="geometry"
+            args={[new THREE.PlaneGeometry(width, height)]}
+          />
+          <lineBasicMaterial attach="material" color="#94a3b8" transparent opacity={0.5} />
+        </lineSegments>
+      )}
 
       {/* Uploader name tooltip - visible in 3D room hover */}
       {isHovered && (

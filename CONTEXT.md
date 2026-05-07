@@ -22,9 +22,17 @@
 - **Two approve RPCs, service-role only:** `approve_org_request_as_new_org` and `approve_org_request_as_existing`. Both use `SELECT ... FOR UPDATE` for idempotency and accept `p_decided_by UUID` for audit.
 
 - **SQL file layout (P4.6):**
-  - `migrations/` — numbered applied migrations (`001`–`007`), run in order
+  - `migrations/` — numbered applied migrations (`001`–`012`), run in order
   - `migrations/archive/` — pre-Phase-4 ad-hoc scripts, historical reference only
   - `scripts/` — reusable dev utilities (seed data, delete-user helper, etc.)
+
+- **`boards` placement columns** — every wall-placed board carries the following Postgres columns (all nullable except `upload_status` and `position_rotation`):
+  - `position_wall_index INTEGER` — index into the studio's `wall-config.walls` array
+  - `position_x NUMERIC`, `position_y NUMERIC` — wall-local position, percentage 0-100 (50,50 = wall center)
+  - `position_width NUMERIC`, `position_height NUMERIC` — board size, percentage 0-100 of wall
+  - `position_side TEXT` — `'front'` (default) or `'back'`
+  - `position_rotation NUMERIC NOT NULL DEFAULT 0` — rotation in radians around the board's center, applied as `rotation.z` in Three.js (added in migration 012)
+  - `upload_status TEXT NOT NULL DEFAULT 'complete'` — `'pending'` while the upload is mid-flight; the `/api/boards` GET filters these out (added in migration 011)
 
 - **Migration method:** Supabase SQL Editor paste. Not Supabase CLI (`supabase db push`). This is the project convention for production safety. MCP not configured; user prefers manual paste.
 
