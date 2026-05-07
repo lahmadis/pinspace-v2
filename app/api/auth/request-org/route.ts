@@ -6,12 +6,19 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => null)
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
     const domain = typeof body?.domain === 'string' ? body.domain.trim().toLowerCase() : ''
+    const requestedType: 'university' | 'firm' =
+      body?.requested_type === 'firm' ? 'firm'
+      : body?.requested_type === 'university' ? 'university'
+      : 'university'
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: 'Valid email required' }, { status: 400 })
     }
     if (!domain || !domain.includes('.')) {
       return NextResponse.json({ error: 'Valid domain required' }, { status: 400 })
+    }
+    if (body?.requested_type && body.requested_type !== 'university' && body.requested_type !== 'firm') {
+      return NextResponse.json({ error: 'requested_type must be university or firm' }, { status: 400 })
     }
     // Ensure the domain the client sends matches the actual email domain.
     // Prevents spoofed requests that submit an unrelated domain for a given email.
@@ -24,7 +31,7 @@ export async function POST(req: NextRequest) {
 
     const { error } = await supabase
       .from('org_requests')
-      .insert({ email, domain })
+      .insert({ email, domain, requested_type: requestedType })
 
     if (error) {
       console.error('[request-org] insert error:', error)

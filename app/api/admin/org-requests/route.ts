@@ -23,7 +23,7 @@ export async function GET() {
     const admin = supabaseServiceRole()
     const { data, error } = await admin
       .from('org_requests')
-      .select('id, email, domain, requested_at')
+      .select('id, email, domain, requested_at, requested_type')
       .eq('status', 'pending')
       .order('requested_at', { ascending: true })
 

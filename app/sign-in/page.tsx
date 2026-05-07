@@ -35,6 +35,7 @@ function SignInInner() {
   const [orgs, setOrgs] = useState<OrgMatch[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [requestedType, setRequestedType] = useState<'university' | 'firm'>('university')
   const hasRedirected = useRef(false)
 
   const institutionSlug = searchParams?.get('institution') ?? null
@@ -238,7 +239,7 @@ function SignInInner() {
       const res = await fetch('/api/auth/request-org', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, domain }),
+        body: JSON.stringify({ email, domain, requested_type: requestedType }),
       })
       if (res.ok) {
         setStep('request-sent')
@@ -477,14 +478,42 @@ function SignInInner() {
           >
             Create a free personal account
           </Link>
-          <button
-            type="button"
-            onClick={handleRequestOrg}
-            disabled={busy}
-            className="w-full py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 font-medium"
-          >
-            {busy ? 'Submitting…' : 'Request your organization'}
-          </button>
+
+          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+            <p className="text-sm font-medium text-gray-700">What type of organization?</p>
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="requested_type"
+                  value="university"
+                  checked={requestedType === 'university'}
+                  onChange={() => setRequestedType('university')}
+                  className="mt-0.5"
+                />
+                <span className="text-sm text-gray-700">University / School</span>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="requested_type"
+                  value="firm"
+                  checked={requestedType === 'firm'}
+                  onChange={() => setRequestedType('firm')}
+                  className="mt-0.5"
+                />
+                <span className="text-sm text-gray-700">Architecture firm / studio</span>
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={handleRequestOrg}
+              disabled={busy}
+              className="w-full py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 font-medium"
+            >
+              {busy ? 'Submitting…' : 'Request your organization'}
+            </button>
+          </div>
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         <button
