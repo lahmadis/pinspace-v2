@@ -99,9 +99,13 @@ function OnboardingContent() {
       setError('First and last name are required.')
       return
     }
-    const year = formData.year || null
-    const major = formData.major === 'Other' ? (formData.major_other.trim() || null) : (formData.major || null)
     const role = ROLE_TO_VALUE[formData.role] ?? null
+    const showYearField = role === 'student'
+    const showMajorField = role === 'student' || role === 'faculty'
+    const year = showYearField ? (formData.year || null) : null
+    const major = showMajorField
+      ? (formData.major === 'Other' ? (formData.major_other.trim() || null) : (formData.major || null))
+      : null
     setSubmitting(true)
     const res = await fetch('/api/user-profile', {
       method: 'POST',
@@ -199,7 +203,7 @@ function OnboardingContent() {
               ))}
             </select>
           </div>
-          {formData.role !== 'Independent Creator' && (
+          {formData.role === 'Student' && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
             <select
@@ -214,6 +218,7 @@ function OnboardingContent() {
             </select>
           </div>
           )}
+          {(formData.role === 'Student' || formData.role === 'Faculty') && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Major / Program</label>
             <select
@@ -236,6 +241,7 @@ function OnboardingContent() {
               />
             )}
           </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">How did you hear about PinSpace?</label>
             <select

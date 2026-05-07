@@ -7,6 +7,7 @@ import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import Link from 'next/link'
 import type { Institution } from '@/types'
 import { toast } from '@/lib/toast'
+import { useAccountMode } from '@/lib/useAccountMode'
 
 export default function NewWorkspacePage() {
   const router = useRouter()
@@ -14,6 +15,15 @@ export default function NewWorkspacePage() {
   const [isLoaded, setIsLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [institutions, setInstitutions] = useState<Institution[]>([])
+  const { mode: accountMode } = useAccountMode(user?.id)
+  const headerTitle =
+    accountMode === 'firm' ? 'Create a Firm Room'
+    : accountMode === 'personal' ? 'Create a Personal Room'
+    : 'Create a Class'
+  const headerSubtitle =
+    accountMode === 'firm' ? 'Set up a shared studio for your firm'
+    : accountMode === 'personal' ? 'Set up a personal studio space'
+    : 'Set up a shared studio for your class'
   const [formData, setFormData] = useState({
     name: '',
     role: 'instructor' as 'instructor' | 'student',
@@ -130,8 +140,8 @@ export default function NewWorkspacePage() {
               </button>
             </Link>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Create Workspace</h1>
-              <p className="text-sm text-gray-600">Set up a shared studio for your class</p>
+              <h1 className="text-xl font-bold text-gray-900">{headerTitle}</h1>
+              <p className="text-sm text-gray-600">{headerSubtitle}</p>
             </div>
           </div>
         </div>
@@ -142,10 +152,14 @@ export default function NewWorkspacePage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Create a New Workspace
+              {headerTitle}
             </h2>
             <p className="text-gray-600">
-              A workspace is a shared 3D studio where you can invite students and collaborate on design work.
+              {accountMode === 'firm'
+                ? 'A firm room is a shared 3D studio where you can invite teammates and collaborate on design work.'
+                : accountMode === 'personal'
+                ? 'A personal room is your own 3D studio space for individual work.'
+                : 'A class is a shared 3D studio where you can invite students and collaborate on design work.'}
             </p>
           </div>
 

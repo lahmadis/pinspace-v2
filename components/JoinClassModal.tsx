@@ -6,9 +6,15 @@ import { toast } from '@/lib/toast'
 
 interface JoinClassModalProps {
   onClose: () => void
+  variant?: 'class' | 'room'
 }
 
-export default function JoinClassModal({ onClose }: JoinClassModalProps) {
+export default function JoinClassModal({ onClose, variant = 'class' }: JoinClassModalProps) {
+  const noun = variant === 'room' ? 'Room' : 'Class'
+  const helperText =
+    variant === 'room'
+      ? 'A teammate or admin should have shared an invite link or code with you.'
+      : 'Your instructor should have shared an invite link or code via email, Canvas, or in class.'
   const router = useRouter()
   const [inviteCode, setInviteCode] = useState('')
   const [loading, setLoading] = useState(false)
@@ -75,7 +81,7 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
         >
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Join a Class</h2>
+            <h2 className="text-2xl font-bold text-gray-900">Join a {noun}</h2>
             <button
               onClick={onClose}
               className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
@@ -113,7 +119,7 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
                 <div className="text-sm text-blue-900">
                   <p className="font-medium mb-1">Where to find the code?</p>
                   <p className="text-blue-800">
-                    Your instructor should have shared an invite link or code via email, Canvas, or in class.
+                    {helperText}
                   </p>
                 </div>
               </div>

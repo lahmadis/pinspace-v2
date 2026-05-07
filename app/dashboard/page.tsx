@@ -8,6 +8,7 @@ import { useEffect, useState, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Workspace } from '@/types'
 import JoinClassModal from '@/components/JoinClassModal'
+import { useAccountMode } from '@/lib/useAccountMode'
 
 const INSTITUTION_STORAGE_KEY = 'pinspace_institution'
 import {
@@ -310,6 +311,20 @@ function DashboardContent() {
   const searchParams = useSearchParams()
   const [institutionHome, setInstitutionHome] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const { mode: accountMode, loading: accountModeLoading } = useAccountMode(user?.id)
+  const showSharedSection = accountMode !== 'personal'
+  const sharedNoun = accountMode === 'firm' ? 'Room' : 'Class'
+  const sharedSectionTitle = accountMode === 'firm' ? 'My Firm Rooms' : 'My Classes'
+  const sharedSectionSubtitle =
+    accountMode === 'firm'
+      ? 'Shared studio spaces with your firm'
+      : 'Shared studio spaces with your instructors and classmates'
+  const sharedEmptyTitle = accountMode === 'firm' ? 'No rooms yet' : 'No classes yet'
+  const sharedEmptyHint =
+    accountMode === 'firm'
+      ? 'Join a room with an invite code or create your own to get started'
+      : 'Join a class with an invite code or create your own to get started'
+  const joinModalVariant: 'class' | 'room' = accountMode === 'firm' ? 'room' : 'class'
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const slug = window.sessionStorage.getItem(INSTITUTION_STORAGE_KEY)
@@ -406,16 +421,17 @@ function DashboardContent() {
           </p>
         </div>
 
-        {/* My Classes Section */}
+        {/* Shared (Classes / Firm Rooms) Section */}
+        {showSharedSection && !accountModeLoading && (
         <div className="mb-16">
           <div className="flex items-center justify-between mb-8">
             <div>
               <h3 className="text-xl font-semibold text-gray-900 flex items-center gap-2.5 mb-1.5">
                 <GraduationCap className="w-5 h-5 text-indigo-600" />
-                My Classes
+                {sharedSectionTitle}
               </h3>
               <p className="text-sm text-gray-500">
-                Shared studio spaces with your instructors and classmates
+                {sharedSectionSubtitle}
               </p>
             </div>
             <div className="flex gap-2.5">
@@ -433,14 +449,14 @@ function DashboardContent() {
                 className="px-4 py-2 border border-indigo-500 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors font-medium text-sm flex items-center gap-2"
               >
                 <UserPlus className="w-4 h-4" />
-                Join a Class
+                Join a {sharedNoun}
               </button>
               <Link
                 href={withInstitution('/workspace/new', institutionHome)}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center gap-2 shadow-sm"
               >
                 <Plus className="w-4 h-4" />
-                Create a Class
+                Create a {sharedNoun}
               </Link>
             </div>
           </div>
@@ -462,22 +478,22 @@ function DashboardContent() {
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-50 mb-4">
                   <GraduationCap className="w-8 h-8 text-indigo-600" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">No classes yet</h3>
-                <p className="text-sm text-gray-500 mb-6 max-w-sm mx-auto">Join a class with an invite code or create your own to get started</p>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">{sharedEmptyTitle}</h3>
+                <p className="text-sm text-gray-500 mb-6 max-w-sm mx-auto">{sharedEmptyHint}</p>
                 <div className="flex gap-2.5 justify-center">
                   <button
                     onClick={() => setShowJoinModal(true)}
                     className="px-4 py-2 border border-indigo-500 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors font-medium text-sm flex items-center gap-2"
                   >
                     <UserPlus className="w-4 h-4" />
-                    Join a Class
+                    Join a {sharedNoun}
                   </button>
                   <Link
                     href={withInstitution('/workspace/new', institutionHome)}
                     className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center gap-2 shadow-sm"
                   >
                     <Plus className="w-4 h-4" />
-                    Create a Class
+                    Create a {sharedNoun}
                   </Link>
                 </div>
               </div>
@@ -499,6 +515,7 @@ function DashboardContent() {
             )
           })()}
         </div>
+        )}
 
         {/* My Personal Rooms Section */}
         <div className="mb-16">
@@ -581,8 +598,13 @@ function DashboardContent() {
 
       </div>
 
-      {/* Join Class Modal */}
-      {showJoinModal && <JoinClassModal onClose={() => setShowJoinModal(false)} />}
+      {/* Join Class / Room Modal */}
+      {showJoinModal && (
+        <JoinClassModal
+          onClose={() => setShowJoinModal(false)}
+          variant={joinModalVariant}
+        />
+      )}
 
       {/* Rename Modal */}
       {renamingId && (
