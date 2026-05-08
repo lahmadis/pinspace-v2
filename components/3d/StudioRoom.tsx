@@ -46,16 +46,25 @@ interface WallConfig {
 
 interface StudioRoomProps {
   /**
-   * Workspace id (URL `[id]` segment). Still used for workspace-level concerns:
-   * wall-config persistence, membership checks, floor editor, settings.
+   * URL `[id]` segment. **Post-Phase-6.2b URL flip this is a room id**, not a
+   * workspace id. Kept named `studioId` because the prop is referenced in
+   * many places; rename has wider blast radius. Use `workspaceId` (below) for
+   * any workspace-scoped operation.
    */
   studioId: string
   /**
-   * Phase 6.1 room id (resolved by /api/boards from the workspace's Main Room).
-   * Forwarded to upload/duplicate code paths so new boards land on the correct
-   * room. Optional because the page may not have resolved it yet on first render.
+   * Phase 6.1 room id (resolved by /api/boards). Forwarded to upload /
+   * duplicate so new boards land on the correct room. Same value as studioId
+   * post-6.2b, but keeping both makes intent explicit at call sites.
    */
   roomId?: string | null
+  /**
+   * Workspace id resolved from /api/boards' room → workspace lookup. Used for
+   * everything that's workspace-scoped: membership check, wall-config
+   * (per-workspace), board duplicate, board upload's `workspaceId` form field,
+   * floor editor passthrough. Optional/null until the studio page resolves it.
+   */
+  workspaceId?: string | null
   boards: Board[]
   wallConfig: WallConfig
   onBoardUpdate: () => Promise<void>
@@ -421,17 +430,18 @@ export default function StudioRoom(props: StudioRoomProps) {
     return () => subscription.unsubscribe()
   }, [])
   
-  // Check if user is a member of this workspace
+  // Check if user is a member of this workspace. Keyed on workspaceId, not
+  // studioId — post-6.2b studioId is a room id, and /api/workspaces/{room_id}
+  // 404s. Stays "unknown" (false) until workspaceId resolves.
   useEffect(() => {
     const checkMembership = async () => {
-      if (!user || !props.studioId) {
+      if (!user || !props.workspaceId) {
         setIsWorkspaceMember(false)
         return
       }
-      
+
       try {
-        // Check if user is workspace owner or member
-        const response = await fetch(`/api/workspaces/${props.studioId}`)
+        const response = await fetch(`/api/workspaces/${props.workspaceId}`)
         if (response.ok) {
           // If we can fetch the workspace, user is a member (API enforces this)
           setIsWorkspaceMember(true)
@@ -443,9 +453,9 @@ export default function StudioRoom(props: StudioRoomProps) {
         setIsWorkspaceMember(false)
       }
     }
-    
+
     checkMembership()
-  }, [user, props.studioId])
+  }, [user, props.workspaceId])
   const [editingWall, setEditingWall] = useState<number | null>(null)
   const [editingWallDimensions, setEditingWallDimensions] = useState<WallDimensions | null>(null)
   const [editingWallPosition, setEditingWallPosition] = useState<THREE.Vector3 | null>(null)
@@ -532,7 +542,11 @@ export default function StudioRoom(props: StudioRoomProps) {
       return { ...t, modelUrl: isPersistable ? url : undefined }
     })
     const payload = { ...props.wallConfig, tables: tablesToSave }
-    const savedConfigKey = `studio-${props.studioId}-wall-config`
+    // Wall-config is workspace-scoped (Phase 6.2 leaves it unchanged): both the
+    // localStorage key and the API path key on workspace id, NOT room id. Fall
+    // back to studioId only as a brief safety net before workspaceId resolves.
+    const wsKey = props.workspaceId ?? props.studioId
+    const savedConfigKey = `studio-${wsKey}-wall-config`
     try {
       // Keep local fallback compact and avoid huge transient model payloads.
       localStorage.setItem(savedConfigKey, JSON.stringify(payload))
@@ -552,7 +566,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     }
     const savePayload = JSON.stringify(payload)
     const saveOnce = async () => {
-      const res = await fetch(`/api/studios/${props.studioId}/wall-config`, {
+      const res = await fetch(`/api/studios/${wsKey}/wall-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         keepalive: true,
@@ -577,7 +591,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         }
       }
     })()
-  }, [props.studioId, props.wallConfig, tables])
+  }, [props.studioId, props.workspaceId, props.wallConfig, tables])
 
   // Keep placedBoards3D in sync with boardPositions (e.g. after undo/redo)
   useEffect(() => {
@@ -1088,8 +1102,10 @@ export default function StudioRoom(props: StudioRoomProps) {
     const apiHeight = copied.position?.height ?? 30
     const tempBoard: Board = {
       id: tempId,
+      // studioId stays as the URL param (= room id post-6.2b); workspaceId
+      // is the actual workspace uuid resolved by the page.
       studioId: props.studioId,
-      workspaceId: props.studioId,
+      workspaceId: props.workspaceId ?? props.studioId,
       studentName: copied.studentName,
       title: (copied.title || 'Board').trimEnd() + ' (copy)',
       thumbnailUrl: copied.fullImageUrl ?? copied.thumbnailUrl,
@@ -1127,7 +1143,9 @@ export default function StudioRoom(props: StudioRoomProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           boardId: copied.id,
-          workspaceId: props.studioId,
+          // Duplicate API expects a workspace id; post-6.2b URL flip studioId
+          // is a room id, so use the resolved workspaceId.
+          workspaceId: props.workspaceId ?? props.studioId,
           wallIndex: editingWall,
           position_x: 50,
           position_y: 50,
@@ -1169,7 +1187,7 @@ export default function StudioRoom(props: StudioRoomProps) {
       })
       toast.error('Could not paste board. You may need to be a member of the workspace.')
     }
-  }, [editingWall, editingWallSide, editingWallDimensions, props.studioId, user, addTempBoard, replaceTempBoard, removeTempBoard, setPlacedBoards3D])
+  }, [editingWall, editingWallSide, editingWallDimensions, props.studioId, props.workspaceId, user, addTempBoard, replaceTempBoard, removeTempBoard, setPlacedBoards3D])
 
   const handleCopy = useCallback(() => {
     if (!selectedBoardId) return
@@ -1234,6 +1252,7 @@ export default function StudioRoom(props: StudioRoomProps) {
   const { handleUpload, uploadFileDirect, uploadFilesDirect } = useBoardUpload({
     studioId: props.studioId,
     roomId: props.roomId ?? null,
+    workspaceId: props.workspaceId ?? null,
     user,
     editingWall,
     editingWallDimensions,

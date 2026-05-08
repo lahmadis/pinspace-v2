@@ -7,9 +7,22 @@ import { toast } from '@/lib/toast'
 import { loadTexture } from '@/components/3d/useBoardTexture'
 
 interface UploadOptions {
+  /**
+   * URL `[id]` segment of the studio page. Post-Phase-6.2b URL flip this is a
+   * room id, NOT a workspace id — older code that conflated these two is
+   * exactly the bug fixed in this commit. Use options.workspaceId for the
+   * `workspaceId` form field; studioId here is kept for legacy fields like
+   * the temp board's `studioId` member.
+   */
   studioId: string
   /** Phase 6.1 room id; forwarded to /api/upload so the new board lands on the correct room. */
   roomId?: string | null
+  /**
+   * Workspace id for /api/upload's `workspaceId` form field. Phase 6.2b's URL
+   * flip means this is no longer the same value as studioId — it must be
+   * resolved separately by the caller (the studio page tracks both in state).
+   */
+  workspaceId?: string | null
   user: any
   editingWall: number | null
   editingWallDimensions: { width: number; height: number } | null
@@ -88,6 +101,8 @@ const createBoardFormData = (
     studioId: string
     /** Phase 6.1 room id; sent to /api/upload alongside studioId/workspaceId. */
     roomId?: string | null
+    /** Workspace id; required by /api/upload. Distinct from studioId post-6.2b. */
+    workspaceId?: string | null
     title: string
     user: any
     width: number
@@ -102,7 +117,10 @@ const createBoardFormData = (
   const formData = new FormData()
   formData.append('image', file)
   formData.append('studioId', options.studioId)
-  formData.append('workspaceId', options.studioId)
+  // Use the explicitly-resolved workspaceId for the API's workspaceId field.
+  // Falling back to studioId here would reintroduce the post-6.2b bug where a
+  // room id leaked into the workspaceId slot.
+  if (options.workspaceId) formData.append('workspaceId', options.workspaceId)
   if (options.roomId) formData.append('roomId', options.roomId)
   formData.append('title', options.title || 'Untitled Board')
   formData.append('studentName', options.user?.fullName || options.user?.firstName || 'Uploaded Board')
@@ -359,6 +377,7 @@ const uploadFile = async (
     const formData = createBoardFormData(file, {
       studioId: options.studioId,
       roomId: options.roomId,
+      workspaceId: options.workspaceId,
       title,
       user: options.user,
       width: dims.width,
@@ -515,6 +534,7 @@ const uploadPDF = async (
       const formData = createBoardFormData(page.imageFile, {
         studioId: options.studioId,
         roomId: options.roomId,
+        workspaceId: options.workspaceId,
         title: pageTitle,
         user: options.user,
         width: page.width,

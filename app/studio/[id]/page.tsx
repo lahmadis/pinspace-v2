@@ -714,6 +714,7 @@ export default function StudioPage() {
           <StudioRoom
             studioId={studioId}
             roomId={roomId}
+            workspaceId={workspaceId}
             boards={boards}
             wallConfig={wallConfig}
             onBoardUpdate={handleBoardUpdate}
