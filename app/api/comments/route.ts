@@ -25,11 +25,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields (boardId, authorName, content)' }, { status: 400 })
     }
 
-    // Resolve board/workspace and enforce access, then insert via service role to avoid fragile RLS coupling.
+    // Resolve board → room → workspace and enforce access, then insert via service role.
     const admin = supabaseServiceRole()
     const { data: board, error: boardError } = await admin
       .from('boards')
-      .select('id, workspace_id')
+      .select('id, workspace_id, room_id')
       .eq('id', boardId)
       .single()
 
@@ -37,10 +37,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
 
+    let resolvedWorkspaceId = board.workspace_id as string | null
+    if (board.room_id) {
+      const { data: room } = await admin
+        .from('rooms')
+        .select('workspace_id')
+        .eq('id', board.room_id)
+        .maybeSingle()
+      if (room?.workspace_id) resolvedWorkspaceId = room.workspace_id as string
+    }
+    if (!resolvedWorkspaceId) {
+      return NextResponse.json({ error: 'Board has no workspace' }, { status: 404 })
+    }
+
     const { data: workspace } = await admin
       .from('workspaces')
       .select('owner_id, is_public, published_at')
-      .eq('id', board.workspace_id)
+      .eq('id', resolvedWorkspaceId)
       .single()
 
     const isPublicWorkspace = workspace?.is_public && workspace?.published_at != null
@@ -49,7 +62,7 @@ export async function POST(request: NextRequest) {
       const { data: membership } = await admin
         .from('workspace_members')
         .select('user_id')
-        .eq('workspace_id', board.workspace_id)
+        .eq('workspace_id', resolvedWorkspaceId)
         .eq('user_id', userId)
         .maybeSingle()
 

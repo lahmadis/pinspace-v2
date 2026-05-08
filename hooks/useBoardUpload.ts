@@ -8,6 +8,8 @@ import { loadTexture } from '@/components/3d/useBoardTexture'
 
 interface UploadOptions {
   studioId: string
+  /** Phase 6.1 room id; forwarded to /api/upload so the new board lands on the correct room. */
+  roomId?: string | null
   user: any
   editingWall: number | null
   editingWallDimensions: { width: number; height: number } | null
@@ -84,6 +86,8 @@ const createBoardFormData = (
   file: File,
   options: {
     studioId: string
+    /** Phase 6.1 room id; sent to /api/upload alongside studioId/workspaceId. */
+    roomId?: string | null
     title: string
     user: any
     width: number
@@ -99,6 +103,7 @@ const createBoardFormData = (
   formData.append('image', file)
   formData.append('studioId', options.studioId)
   formData.append('workspaceId', options.studioId)
+  if (options.roomId) formData.append('roomId', options.roomId)
   formData.append('title', options.title || 'Untitled Board')
   formData.append('studentName', options.user?.fullName || options.user?.firstName || 'Uploaded Board')
   formData.append('description', options.isPDF ? 'PDF Document' : '')
@@ -353,6 +358,7 @@ const uploadFile = async (
   try {
     const formData = createBoardFormData(file, {
       studioId: options.studioId,
+      roomId: options.roomId,
       title,
       user: options.user,
       width: dims.width,
@@ -508,6 +514,7 @@ const uploadPDF = async (
     try {
       const formData = createBoardFormData(page.imageFile, {
         studioId: options.studioId,
+        roomId: options.roomId,
         title: pageTitle,
         user: options.user,
         width: page.width,

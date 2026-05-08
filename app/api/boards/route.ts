@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoBoards, transformDemoBoard } from '@/lib/mockData'
 import { getSampleBoards } from '@/lib/sampleData'
+import { resolveMainRoomId } from '@/lib/rooms'
 
 // No static caching — boards change frequently (uploads, position updates)
 export const dynamic = 'force-dynamic'
@@ -10,23 +11,52 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const isDemo = searchParams.get('demo') === 'true'
+    const roomIdParam = searchParams.get('roomId')
     const workspaceId = searchParams.get('workspaceId') || searchParams.get('studioId') // Support both for backward compatibility
 
-    if (!workspaceId) {
-      return NextResponse.json({ error: 'workspaceId or studioId required' }, { status: 400 })
+    if (!roomIdParam && !workspaceId) {
+      return NextResponse.json({ error: 'roomId, workspaceId, or studioId required' }, { status: 400 })
     }
 
-    // Demo mode: return mock data
+    // Demo mode: return mock data (still keyed by workspace/studio id; demo boards aren't rooms-layered)
     if (isDemo) {
-      const demoBoards = getDemoBoards(workspaceId)
+      const demoKey = workspaceId ?? roomIdParam ?? ''
+      const demoBoards = getDemoBoards(demoKey)
       const transformedBoards = demoBoards.map(transformDemoBoard)
       return NextResponse.json({ boards: transformedBoards })
     }
 
     // Check if this is a sample studio (return sample boards)
-    if (workspaceId.startsWith('sample-studio-')) {
+    if (workspaceId?.startsWith('sample-studio-')) {
       const sampleBoards = getSampleBoards(workspaceId)
       return NextResponse.json({ boards: sampleBoards })
+    }
+
+    // Resolve the (room, workspace) pair we'll filter by. Two entry shapes:
+    //   - roomId given: look up room → workspace_id, scope auth to that workspace
+    //   - workspaceId given: scope auth to that workspace, resolve its Main Room for the boards filter
+    const adminDb = supabaseServiceRole()
+    let scopedWorkspaceId: string | null = null
+    let scopedRoomId: string | null = null
+
+    if (roomIdParam) {
+      const { data: room } = await adminDb
+        .from('rooms')
+        .select('id, workspace_id')
+        .eq('id', roomIdParam)
+        .maybeSingle()
+      if (!room) {
+        return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+      }
+      scopedWorkspaceId = room.workspace_id as string
+      scopedRoomId = room.id as string
+    } else if (workspaceId) {
+      scopedWorkspaceId = workspaceId
+      scopedRoomId = await resolveMainRoomId(adminDb, workspaceId)
+    }
+
+    if (!scopedWorkspaceId) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     // Normal mode: use Supabase
@@ -37,7 +67,7 @@ export async function GET(request: NextRequest) {
     const { data: workspace, error: workspaceError } = await supabase
       .from('workspaces')
       .select('is_public')
-      .eq('id', workspaceId)
+      .eq('id', scopedWorkspaceId)
       .single()
 
     // If workspace doesn't exist, require authentication (might be a private workspace)
@@ -61,11 +91,10 @@ export async function GET(request: NextRequest) {
       }
 
       // Verify the user is the workspace owner or a member
-      const adminDb = supabaseServiceRole()
       const { data: ws } = await adminDb
         .from('workspaces')
         .select('owner_id')
-        .eq('id', workspaceId)
+        .eq('id', scopedWorkspaceId)
         .single()
 
       if (!ws) {
@@ -76,7 +105,7 @@ export async function GET(request: NextRequest) {
         const { data: membership } = await adminDb
           .from('workspace_members')
           .select('user_id')
-          .eq('workspace_id', workspaceId)
+          .eq('workspace_id', scopedWorkspaceId)
           .eq('user_id', userId)
           .maybeSingle()
 
@@ -87,14 +116,26 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch boards with service role after explicit access checks above.
-    // This avoids differences in RLS policy setups causing "saved then disappeared on refresh."
-    const adminDb = supabaseServiceRole()
-    const { data: boards, error } = await adminDb
+    // Filter by room_id when we resolved one (Phase 6.1 data path); fall back to
+    // workspace_id when this workspace has no Main Room yet (legacy/edge case).
+    let boardsQuery = adminDb
       .from('boards')
       .select('*')
-      .eq('workspace_id', workspaceId)
       .neq('upload_status', 'pending')
       .order('uploaded_at', { ascending: false })
+
+    if (scopedRoomId) {
+      boardsQuery = boardsQuery.eq('room_id', scopedRoomId)
+    } else {
+      console.warn(
+        '[/api/boards GET] No Main Room resolved for workspace',
+        scopedWorkspaceId,
+        '— falling back to workspace_id filter.'
+      )
+      boardsQuery = boardsQuery.eq('workspace_id', scopedWorkspaceId)
+    }
+
+    const { data: boards, error } = await boardsQuery
 
     if (error) {
       console.error('Error fetching boards:', error)
@@ -134,7 +175,14 @@ export async function GET(request: NextRequest) {
       physicalHeight: board.physical_height ? parseFloat(board.physical_height) : undefined,
     }))
 
-    const response = NextResponse.json({ boards: transformedBoards })
+    // Surface the resolved room so the studio page can subscribe to realtime
+    // changes scoped to room_id without making a second round-trip.
+    const response = NextResponse.json({
+      boards: transformedBoards,
+      room: scopedRoomId
+        ? { id: scopedRoomId, workspaceId: scopedWorkspaceId }
+        : null,
+    })
     response.headers.set('Cache-Control', 'no-store')
     return response
   }

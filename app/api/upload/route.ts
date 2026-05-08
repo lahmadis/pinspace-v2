@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { resolveMainRoomId } from '@/lib/rooms'
 import sharp from 'sharp'
 
 export async function POST(request: NextRequest) {
@@ -32,6 +33,8 @@ export async function POST(request: NextRequest) {
     const file = formData.get('image') as File | null
     const rawWorkspaceId = (formData.get('workspaceId') ?? formData.get('studioId')) as string | null
     const workspaceId = (rawWorkspaceId && String(rawWorkspaceId).trim() && String(rawWorkspaceId) !== 'undefined') ? String(rawWorkspaceId).trim() : null
+    const rawRoomId = formData.get('roomId') as string | null
+    const roomIdFromRequest = (rawRoomId && String(rawRoomId).trim() && String(rawRoomId) !== 'undefined') ? String(rawRoomId).trim() : null
     const rawStudentName = formData.get('studentName') as string | null
     const studentName = (rawStudentName && String(rawStudentName).trim())
       ? String(rawStudentName).trim()
@@ -150,9 +153,33 @@ export async function POST(request: NextRequest) {
     const thumbnailPath = thumbnailBuffer ? `${baseSlug}-thumb.${ext}` : null
     const boardId = `board-${timestamp}-${Math.random().toString(36).slice(2, 8)}`
 
+    // Phase 6.1 data path: every board belongs to a room. If the client passed a
+    // roomId we use it (after sanity-checking it belongs to the same workspace);
+    // otherwise we resolve the workspace's default Main Room. boards.workspace_id
+    // is still written for backward compat — both columns coexist this phase.
+    const adminForRoomLookup = supabaseServiceRole()
+    let resolvedRoomId: string | null = null
+    if (roomIdFromRequest) {
+      const { data: room } = await adminForRoomLookup
+        .from('rooms')
+        .select('id, workspace_id')
+        .eq('id', roomIdFromRequest)
+        .maybeSingle()
+      if (!room || room.workspace_id !== workspaceId) {
+        return NextResponse.json(
+          { error: 'roomId does not belong to the given workspace' },
+          { status: 400 }
+        )
+      }
+      resolvedRoomId = room.id as string
+    } else if (workspaceId) {
+      resolvedRoomId = await resolveMainRoomId(adminForRoomLookup, workspaceId)
+    }
+
     const placeholderData = {
       id: boardId,
       workspace_id: workspaceId,
+      room_id: resolvedRoomId,
       owner_id: userId,
       owner_name: ownerName,
       owner_color: ownerColor || undefined,

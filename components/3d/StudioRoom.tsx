@@ -45,7 +45,17 @@ interface WallConfig {
 }
 
 interface StudioRoomProps {
+  /**
+   * Workspace id (URL `[id]` segment). Still used for workspace-level concerns:
+   * wall-config persistence, membership checks, floor editor, settings.
+   */
   studioId: string
+  /**
+   * Phase 6.1 room id (resolved by /api/boards from the workspace's Main Room).
+   * Forwarded to upload/duplicate code paths so new boards land on the correct
+   * room. Optional because the page may not have resolved it yet on first render.
+   */
+  roomId?: string | null
   boards: Board[]
   wallConfig: WallConfig
   onBoardUpdate: () => Promise<void>
@@ -1223,6 +1233,7 @@ export default function StudioRoom(props: StudioRoomProps) {
 
   const { handleUpload, uploadFileDirect, uploadFilesDirect } = useBoardUpload({
     studioId: props.studioId,
+    roomId: props.roomId ?? null,
     user,
     editingWall,
     editingWallDimensions,

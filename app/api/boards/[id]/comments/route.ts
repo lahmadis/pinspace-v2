@@ -42,11 +42,14 @@ export async function GET(
       return NextResponse.json({ comments: [] })
     }
 
-    // Resolve board and workspace first so public studios work without requiring auth
+    // Resolve board → room → workspace so public studios work without requiring auth.
+    // Phase 6.1 walks via boards.room_id → rooms.workspace_id; falls back to
+    // boards.workspace_id when room_id is null (defensive — the migration
+    // backfilled all rows, so this shouldn't happen in practice).
     const serviceSupabase = supabaseServiceRole()
     const { data: board, error: boardErr } = await serviceSupabase
       .from('boards')
-      .select('workspace_id')
+      .select('workspace_id, room_id')
       .eq('id', boardId)
       .single()
 
@@ -54,10 +57,23 @@ export async function GET(
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
 
+    let resolvedWorkspaceId = board.workspace_id as string | null
+    if (board.room_id) {
+      const { data: room } = await serviceSupabase
+        .from('rooms')
+        .select('workspace_id')
+        .eq('id', board.room_id)
+        .maybeSingle()
+      if (room?.workspace_id) resolvedWorkspaceId = room.workspace_id as string
+    }
+    if (!resolvedWorkspaceId) {
+      return NextResponse.json({ error: 'Board has no workspace' }, { status: 404 })
+    }
+
     const { data: workspace } = await serviceSupabase
       .from('workspaces')
       .select('is_public, published_at')
-      .eq('id', board.workspace_id)
+      .eq('id', resolvedWorkspaceId)
       .single()
 
     const isPublicWorkspace = workspace?.is_public && workspace?.published_at != null
@@ -176,11 +192,11 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Resolve board/workspace with service role so we can enforce access explicitly.
+    // Resolve board → room → workspace with service role; enforce access explicitly.
     const admin = supabaseServiceRole()
     const { data: board, error: boardError } = await admin
       .from('boards')
-      .select('id, workspace_id')
+      .select('id, workspace_id, room_id')
       .eq('id', boardId)
       .single()
 
@@ -188,11 +204,24 @@ export async function POST(
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
 
+    let resolvedWorkspaceId = board.workspace_id as string | null
+    if (board.room_id) {
+      const { data: room } = await admin
+        .from('rooms')
+        .select('workspace_id')
+        .eq('id', board.room_id)
+        .maybeSingle()
+      if (room?.workspace_id) resolvedWorkspaceId = room.workspace_id as string
+    }
+    if (!resolvedWorkspaceId) {
+      return NextResponse.json({ error: 'Board has no workspace' }, { status: 404 })
+    }
+
     // For private workspaces, require membership/ownership before writing.
     const { data: workspace } = await admin
       .from('workspaces')
       .select('owner_id, is_public, published_at')
-      .eq('id', board.workspace_id)
+      .eq('id', resolvedWorkspaceId)
       .single()
 
     const isPublicWorkspace = workspace?.is_public && workspace?.published_at != null
@@ -201,7 +230,7 @@ export async function POST(
       const { data: membership } = await admin
         .from('workspace_members')
         .select('user_id')
-        .eq('workspace_id', board.workspace_id)
+        .eq('workspace_id', resolvedWorkspaceId)
         .eq('user_id', userId)
         .maybeSingle()
 

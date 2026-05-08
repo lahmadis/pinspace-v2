@@ -115,6 +115,11 @@ export default function StudioPage() {
   const [floorEditorMode, setFloorEditorMode] = useState<'tables' | 'walls'>('tables')
   const [isArchived, setIsArchived] = useState(false)
   const [commentNonce, setCommentNonce] = useState(0)
+  // Phase 6.1 data path: API resolves the workspace's Main Room and returns
+  // its id alongside the boards. We use that to scope the boards realtime
+  // subscription. URL still uses workspace id; that piece of the cutover lives
+  // in 6.1b.
+  const [roomId, setRoomId] = useState<string | null>(null)
 
   const isDemo = searchParams?.get('demo') === 'true'
 
@@ -203,12 +208,14 @@ export default function StudioPage() {
 
     const loadData = async () => {
       try {
-        // Load boards (studioId is actually workspaceId now)
+        // Load boards (studioId is actually workspaceId now). The API also
+        // returns the resolved Main Room id so realtime can filter by room_id.
         const url = isDemo ? `/api/boards?workspaceId=${studioId}&demo=true` : `/api/boards?workspaceId=${studioId}`
         const response = await fetch(url, { signal })
         if (response.ok) {
           const data = await response.json()
           setBoards(data.boards || [])
+          setRoomId(data.room?.id ?? null)
           setBoardsError(false)
         } else {
           setBoardsError(true)
@@ -290,13 +297,16 @@ export default function StudioPage() {
       }
     }
 
-    const channel = isDemo
+    // Realtime filter walks via room_id (Phase 6.1 data path). Skip the
+    // subscription entirely until we've resolved the room — without a filter
+    // we'd receive every boards-table change for every studio.
+    const channel = isDemo || !roomId
       ? null
       : supabase
-          .channel(`studio-boards:${studioId}`)
+          .channel(`studio-boards:${roomId}`)
           .on(
             'postgres_changes',
-            { event: '*', schema: 'public', table: 'boards', filter: `workspace_id=eq.${studioId}` },
+            { event: '*', schema: 'public', table: 'boards', filter: `room_id=eq.${roomId}` },
             (payload: RealtimeBoardPayload) => {
               if (payload.eventType === 'INSERT') {
                 const incoming = transformBoardRow(payload.new as Record<string, unknown>)
@@ -334,7 +344,7 @@ export default function StudioPage() {
       if (channel) supabase.removeChannel(channel)
       if (commentsChannel) supabase.removeChannel(commentsChannel)
     }
-  }, [studioId, isDemo, retryCount])
+  }, [studioId, isDemo, retryCount, roomId])
 
   const handleWallConfigConfirm = async (config: WallConfig) => {
     try {
@@ -507,6 +517,7 @@ export default function StudioPage() {
 
           <StudioRoom
             studioId={studioId}
+            roomId={roomId}
             boards={boards}
             wallConfig={wallConfig}
             onBoardUpdate={handleBoardUpdate}

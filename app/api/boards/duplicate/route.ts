@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { resolveMainRoomId } from '@/lib/rooms'
 
 /**
  * POST /api/boards/duplicate
@@ -89,9 +90,17 @@ export async function POST(request: NextRequest) {
     const newId = `board-${timestamp}`
     const ownerName = session?.user?.user_metadata?.full_name ?? session?.user?.user_metadata?.email?.split('@')[0] ?? 'User'
 
+    // Mirror Phase 6.1 boards.room_id alongside workspace_id. Reuse the source
+    // board's room_id when present (so duplicates land in the same room as the
+    // original); otherwise resolve the workspace's Main Room.
+    const adminForRoomLookup = supabaseServiceRole()
+    const sourceRoomId = (source as { room_id?: string | null }).room_id ?? null
+    const resolvedRoomId = sourceRoomId ?? (await resolveMainRoomId(adminForRoomLookup, workspaceId))
+
     const insertData = {
       id: newId,
       workspace_id: workspaceId,
+      room_id: resolvedRoomId,
       owner_id: userId,
       owner_name: ownerName,
       owner_color: source.owner_color ?? undefined,
