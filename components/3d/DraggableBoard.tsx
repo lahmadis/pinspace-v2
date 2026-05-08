@@ -34,6 +34,14 @@ interface DraggableBoardProps {
    * is the sole source of persistence and there's no fallback.
    */
   onRotationChange?: (boardId: string, rotation: number) => void
+  /**
+   * Pushed on rotate-handle / corner-resize PATCH success so the parent can
+   * mirror the server-acked rotation into useBoardState.boards. That's the
+   * array WallSystem reads from once edit mode exits — without this, the
+   * scene re-reads the pre-rotation value and visually reverts the rotation
+   * even though the DB has the new value.
+   */
+  onRotationPersisted?: (boardId: string, rotation: number) => void
   onDelete: (boardId: string) => void
   onCommentClick?: (board: Board) => void
   onSelect?: () => void
@@ -125,6 +133,7 @@ export function DraggableBoard({
   initialLocalPosition = { x: 0, y: 0 },
   onDragEnd,
   onRotationChange,
+  onRotationPersisted,
   onDelete: _onDelete,
   onCommentClick,
   onSelect,
@@ -714,6 +723,10 @@ if (e.intersections && e.intersections.length > 0) {
         })
           .then(res => {
             if (!res.ok) throw new Error(`HTTP ${res.status}`)
+            // Mirror server-acked rotation into useBoardState.boards. No-op
+            // when value hasn't changed (the setter bails out via referential
+            // equality), so this is safe to call on every resize.
+            onRotationPersisted?.(board.id, rotationRef.current)
           })
           .catch(err => {
             console.error('❌ [DraggableBoard] Resize PATCH failed:', err)
@@ -820,6 +833,10 @@ if (e.intersections && e.intersections.length > 0) {
       })
         .then(res => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          // Mirror server-acked rotation into useBoardState.boards so the
+          // post-edit-mode WallSystem render reads the new value instead of
+          // the stale pre-rotation rotation from board.position.
+          onRotationPersisted?.(board.id, finalRotation)
         })
         .catch(err => {
           console.error('❌ [DraggableBoard] Rotation PATCH failed:', err)

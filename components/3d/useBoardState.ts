@@ -375,6 +375,12 @@ export function useBoardState(
           width: apiWidth,
           height: apiHeight,
           side: positionSide,
+          // Preserve rotation: use the explicitly-passed value when given,
+          // otherwise fall back to whatever the board already has. Without
+          // this, rebuilding the position object here would silently strip
+          // rotation set earlier in the same edit session by Callsite B's
+          // /position PATCH success branch.
+          rotation: rotation ?? b.position?.rotation,
         },
       }
     }))
@@ -595,19 +601,47 @@ export function useBoardState(
     })
     
     setBoards(prev => prev.filter(b => b.id !== tempId))
-    
+
     setBoardPositions(prev => {
       const newMap = new Map(prev)
       newMap.delete(tempId)
       return newMap
     })
   }, [])
-  
+
+  /**
+   * Local-only rotation update — mirrors a successful rotate / resize PATCH
+   * back into the boards array so post-edit-mode rendering (WallSystem reads
+   * board.position.rotation) sees the new value without waiting for a refetch.
+   *
+   * Bails out via referential equality when the value hasn't changed, so
+   * callers can fire it from a per-PATCH success branch without forcing a
+   * re-render of consumers each time.
+   */
+  const applyBoardRotationLocal = useCallback((boardId: string, rotation: number) => {
+    setBoards(prev => {
+      let changed = false
+      const next = prev.map(b => {
+        if (b.id !== boardId) return b
+        const current = b.position?.rotation ?? b.position_rotation ?? 0
+        if (current === rotation) return b
+        changed = true
+        return {
+          ...b,
+          position: b.position ? { ...b.position, rotation } : b.position,
+          position_rotation: rotation,
+        }
+      })
+      return changed ? next : prev
+    })
+  }, [])
+
   return {
     boards,
     boardPositions,
     loadWallPositions,
     updateBoardPosition,
+    applyBoardRotationLocal,
     deleteBoard,
     addTempBoard,
     replaceTempBoard,
