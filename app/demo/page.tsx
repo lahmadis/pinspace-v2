@@ -15,7 +15,7 @@ export default function DemoNetworkPage() {
   return (
     <div className="relative w-full h-screen overflow-hidden">
       {/* Demo Banner */}
-      <DemoBanner message="Demo Mode - Explore Sample Architecture Studios" />
+      <DemoBanner message="Demo Mode - Explore Sample Studios" />
       
       {/* Network View */}
       <div className="pt-16 w-full h-[calc(100vh-4rem)]">
@@ -45,7 +45,7 @@ export default function DemoNetworkPage() {
           <span>Welcome to PinSpace Demo</span>
         </h3>
         <p className="text-sm text-gray-600 mb-4">
-          Explore sample architecture studios from MIT, Harvard, Cornell, and Yale. 
+          Explore sample studios from MIT, Harvard, Cornell, and Yale.
           Click through the bubbles to see 3D studio rooms with student work.
         </p>
         <div className="space-y-2 text-xs text-gray-500">

@@ -144,7 +144,7 @@ function HomeInner() {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.8, delay: 0.4 }}
           >
-            Explore architecture studios in immersive 3D
+            Explore studios in immersive 3D
           </motion.p>
 
           <motion.p 

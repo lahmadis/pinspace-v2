@@ -417,7 +417,7 @@ function DashboardContent() {
             Welcome back, {user?.user_metadata?.email?.split('@')[0] || 'there'}
           </h2>
           <p className="text-base text-gray-600">
-            Manage your architecture studios and showcase your work
+            Manage your studios and showcase your work
           </p>
         </div>
 
