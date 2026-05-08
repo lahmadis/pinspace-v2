@@ -352,15 +352,36 @@ export default function StudioPage() {
             { event: '*', schema: 'public', table: 'boards', filter: `room_id=eq.${roomId}` },
             (payload: RealtimeBoardPayload) => {
               if (payload.eventType === 'INSERT') {
-                const incoming = transformBoardRow(payload.new as Record<string, unknown>)
+                // /api/upload first INSERTs a placeholder row with empty
+                // thumbnail_url/full_image_url and upload_status='pending',
+                // then UPDATEs it with the real URLs. Picking up the INSERT
+                // here would clobber the local state that useBoardState's
+                // sync effect already populated from the upload response,
+                // forcing a Save&Exit refresh to recover. Skip placeholders;
+                // the UPDATE handler below picks up the row when it goes
+                // 'pending' → 'complete'.
+                const newRow = payload.new as Record<string, unknown>
+                if (newRow.upload_status === 'pending') return
+                const incoming = transformBoardRow(newRow)
                 setBoards((prev) => {
                   // Skip if we already have this board (optimistic upload by this user)
                   if (prev.some((b) => b.id === incoming.id)) return prev
                   return [...prev, incoming]
                 })
               } else if (payload.eventType === 'UPDATE') {
-                const updated = transformBoardRow(payload.new as Record<string, unknown>)
-                setBoards((prev) => prev.map((b) => (b.id === updated.id ? updated : b)))
+                const newRow = payload.new as Record<string, unknown>
+                // Still a placeholder — ignore until it goes complete.
+                if (newRow.upload_status === 'pending') return
+                const updated = transformBoardRow(newRow)
+                setBoards((prev) => {
+                  const exists = prev.some((b) => b.id === updated.id)
+                  if (exists) {
+                    return prev.map((b) => (b.id === updated.id ? updated : b))
+                  }
+                  // 'pending' → 'complete' transition. Other users who never
+                  // saw the placeholder get the row here for the first time.
+                  return [...prev, updated]
+                })
               } else if (payload.eventType === 'DELETE') {
                 const deletedId = (payload.old as { id?: string }).id
                 if (deletedId) setBoards((prev) => prev.filter((b) => b.id !== deletedId))
