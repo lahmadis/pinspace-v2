@@ -450,7 +450,8 @@ export function useBoardState(
                 y: apiY,
                 width: apiWidth,
                 height: apiHeight,
-                side: b.position?.side || side || 'front'
+                side: b.position?.side || side || 'front',
+                rotation: rotation ?? b.position?.rotation,
             }
           }
         }
