@@ -31,8 +31,8 @@ interface UploadOptions {
   addTempBoard: (board: Board, blobUrl: string) => void
   replaceTempBoard: (tempId: string, realBoard: Board) => void
   removeTempBoard: (tempId: string) => void
-  setPlacedBoards3D: React.Dispatch<React.SetStateAction<Map<string, { x: number; y: number; width?: number; height?: number }>>>
-  placedBoards3DRef: React.MutableRefObject<Map<string, { x: number; y: number; width?: number; height?: number }>>
+  setPlacedBoards3D: React.Dispatch<React.SetStateAction<Map<string, { x: number; y: number; width?: number; height?: number; rotation?: number }>>>
+  placedBoards3DRef: React.MutableRefObject<Map<string, { x: number; y: number; width?: number; height?: number; rotation?: number }>>
 }
 
 /**
@@ -205,8 +205,8 @@ const addTempBoardToState = (
   position: { x: number; y: number; width: number; height: number },
   options: {
     addTempBoard: (board: Board, blobUrl: string) => void
-    setPlacedBoards3D: React.Dispatch<React.SetStateAction<Map<string, { x: number; y: number; width?: number; height?: number }>>>
-    placedBoards3DRef: React.MutableRefObject<Map<string, { x: number; y: number; width?: number; height?: number }>>
+    setPlacedBoards3D: React.Dispatch<React.SetStateAction<Map<string, { x: number; y: number; width?: number; height?: number; rotation?: number }>>>
+    placedBoards3DRef: React.MutableRefObject<Map<string, { x: number; y: number; width?: number; height?: number; rotation?: number }>>
     blobUrl: string
   }
 ) => {
@@ -231,8 +231,8 @@ const replaceTempBoardInState = (
   editingWallSide: 'front' | 'back',
   options: {
     replaceTempBoard: (tempId: string, realBoard: Board) => void
-    setPlacedBoards3D: React.Dispatch<React.SetStateAction<Map<string, { x: number; y: number; width?: number; height?: number }>>>
-    placedBoards3DRef: React.MutableRefObject<Map<string, { x: number; y: number; width?: number; height?: number }>>
+    setPlacedBoards3D: React.Dispatch<React.SetStateAction<Map<string, { x: number; y: number; width?: number; height?: number; rotation?: number }>>>
+    placedBoards3DRef: React.MutableRefObject<Map<string, { x: number; y: number; width?: number; height?: number; rotation?: number }>>
   }
 ) => {
   const onCurrentWall = realBoard.position?.wallIndex === editingWall && (realBoard.position?.side || 'front') === editingWallSide
@@ -272,8 +272,8 @@ const cleanupTempBoard = (
   tempId: string,
   options: {
     removeTempBoard: (tempId: string) => void
-    setPlacedBoards3D: React.Dispatch<React.SetStateAction<Map<string, { x: number; y: number; width?: number; height?: number }>>>
-    placedBoards3DRef: React.MutableRefObject<Map<string, { x: number; y: number; width?: number; height?: number }>>
+    setPlacedBoards3D: React.Dispatch<React.SetStateAction<Map<string, { x: number; y: number; width?: number; height?: number; rotation?: number }>>>
+    placedBoards3DRef: React.MutableRefObject<Map<string, { x: number; y: number; width?: number; height?: number; rotation?: number }>>
   }
 ) => {
   options.removeTempBoard(tempId)

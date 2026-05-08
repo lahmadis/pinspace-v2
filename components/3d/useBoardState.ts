@@ -298,7 +298,8 @@ export function useBoardState(
     y: number,  // normalized -0.5 to 0.5
     width?: number,  // decimal 0.0 to 1.0
     height?: number,  // decimal 0.0 to 1.0
-    side: 'front' | 'back' = 'front'
+    side: 'front' | 'back' = 'front',
+    rotation?: number  // radians; passed through to /api/boards PUT for persistence
   ) => {
       devLog('💾 [useBoardState] updateBoardPosition:', {
       boardId,
@@ -415,7 +416,11 @@ export function useBoardState(
             y: apiY,
             width: apiWidth,
             height: apiHeight,
-            side: positionSide
+            side: positionSide,
+            // Forward rotation when known so /api/boards PUT can persist
+            // position_rotation. Caller passes undefined when it doesn't
+            // know — the route's update branch ignores undefined.
+            rotation,
           }
         })
       })

@@ -95,6 +95,7 @@ function SceneContent({
   editingWallBaseRotation,
   editingWallDimensions,
   onBoardPositionChange,
+  onBoardRotationChange,
   onBoardDelete,
   draggingFromSidebar,
   onBoardDrop,
@@ -123,6 +124,7 @@ function SceneContent({
   editingWallBaseRotation: number
   editingWallDimensions: WallDimensions | null
   onBoardPositionChange: (boardId: string, localX: number, localY: number, width?: number, height?: number) => void
+  onBoardRotationChange: (boardId: string, rotation: number) => void
   onBoardDelete: (boardId: string) => void
   draggingFromSidebar: Board | null
   onBoardDrop: (localX: number, localY: number) => void
@@ -313,6 +315,7 @@ function SceneContent({
                   side={editingWallSide}
                   initialLocalPosition={localPos}
                   onDragEnd={onBoardPositionChange}
+                  onRotationChange={onBoardRotationChange}
                   onDelete={onBoardDelete}
                   onCommentClick={onCommentClick}
                   onSelect={() => setSelectedBoardId(board.id)}
@@ -482,11 +485,12 @@ export default function StudioRoom(props: StudioRoomProps) {
     }))
   }, [])
   const [tables, setTables] = useState<FloorTable[]>(() => sanitizeTables((props.wallConfig as { tables?: FloorTable[] }).tables))
-  const [placedBoards3D, setPlacedBoards3D] = useState<Map<string, { 
-    x: number; 
-    y: number; 
-    width?: number; 
-    height?: number 
+  const [placedBoards3D, setPlacedBoards3D] = useState<Map<string, {
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+    rotation?: number;
   }>>(new Map())
   const [lightboxBoard, setLightboxBoard] = useState<Board | null>(null)
   const [compareBoardIds, setCompareBoardIds] = useState<string[]>([])
@@ -597,7 +601,7 @@ export default function StudioRoom(props: StudioRoomProps) {
   useEffect(() => {
     if (editingWall === null || editingWallSide == null) return
     const currentPlaced = placedBoards3DRef.current
-    const newMap = new Map<string, { x: number; y: number; width?: number; height?: number }>()
+    const newMap = new Map<string, { x: number; y: number; width?: number; height?: number; rotation?: number }>()
     const wallBoards = localBoards.filter(b => b.position?.wallIndex === editingWall && (b.position?.side || 'front') === editingWallSide)
     wallBoards.forEach(board => {
         const isTemp = board.id.startsWith('temp-')
@@ -654,7 +658,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     const wallPositions = loadWallPositions(wallIndex, wallDimensions, side)
 
     // Copy all boards on this wall AND this side into placedBoards3D (include fallback so boards don't disappear when pos is missing)
-    const newMap = new Map<string, { x: number; y: number; width: number; height: number }>()
+    const newMap = new Map<string, { x: number; y: number; width: number; height: number; rotation?: number }>()
     const wallBoardsForEdit = localBoards.filter(b => {
       if (b.position?.wallIndex !== wallIndex) return false
       const boardSide = b.position?.side || 'front'
@@ -725,7 +729,12 @@ export default function StudioRoom(props: StudioRoomProps) {
           position.y ?? 0,
           position.width,
           position.height,
-          sideToSave ?? 'front'
+          sideToSave ?? 'front',
+          // Forward rotation mirrored from DraggableBoard via
+          // handleBoardRotationChange. undefined when the user never rotated
+          // this board in the current edit session — useBoardState passes
+          // through, /api/boards PUT preserves the existing column value.
+          position.rotation
         ).catch(err => {
           console.error(`❌ [StudioRoom] Failed to save position for board ${boardId}:`, err)
         })
@@ -1030,6 +1039,11 @@ export default function StudioRoom(props: StudioRoomProps) {
       if (editingWall !== null) {
         const sideForSave = side ?? editingWallSide ?? 'front'
         const saveX = finalPosition.x
+        // Forward the latest known rotation (mirrored into placedBoards3D by
+        // DraggableBoard.onRotationChange). Without this, drag-end loses any
+        // pending rotation that hasn't yet been pushed by the rotate-handle's
+        // own pointer-up PATCH.
+        const rotationForSave = currentMap.get(boardId)?.rotation
         updateBoardPosition(
           boardId,
           editingWall,
@@ -1037,11 +1051,31 @@ export default function StudioRoom(props: StudioRoomProps) {
           finalPosition.y,
           finalPosition.width,
           finalPosition.height,
-          sideForSave
+          sideForSave,
+          rotationForSave
         )
       }
     },
     [editingWall, editingWallSide, updateBoardPosition]
+  )
+
+  /**
+   * Mirrors live rotation from a DraggableBoard's drag into placedBoards3D
+   * so handleEditComplete (the Save & Exit bulk-saver) and handleBoardPositionChange
+   * (drag-end) both have access to the latest rotation.
+   */
+  const handleBoardRotationChange = useCallback(
+    (boardId: string, rotation: number) => {
+      const currentMap = placedBoards3DRef.current
+      const existing = currentMap.get(boardId)
+      if (!existing) return
+      const next = { ...existing, rotation }
+      const newMap = new Map(currentMap)
+      newMap.set(boardId, next)
+      placedBoards3DRef.current = newMap
+      setPlacedBoards3D(newMap)
+    },
+    []
   )
 
 
@@ -1435,6 +1469,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             editingWallBaseRotation={editingWallBaseRotation}
             editingWallDimensions={editingWallDimensions}
             onBoardPositionChange={handleBoardPositionChange}
+            onBoardRotationChange={handleBoardRotationChange}
             onBoardDelete={handleBoardDelete}
             draggingFromSidebar={draggingFromSidebar}
             onBoardDrop={handleBoardDrop}

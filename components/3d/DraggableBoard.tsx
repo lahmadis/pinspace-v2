@@ -26,6 +26,14 @@ interface DraggableBoardProps {
   side?: 'front' | 'back'
   initialLocalPosition?: { x: number; y: number; width?: number; height?: number }
   onDragEnd: (boardId: string, localX: number, localY: number, width?: number, height?: number, side?: 'front' | 'back') => void
+  /**
+   * Pushed on every rotate-handle pointer-move so the parent can mirror the
+   * current rotation into placedBoards3D — that's where Save & Exit reads
+   * from when bulk-saving the wall (handleEditComplete in StudioRoom).
+   * Without this, the rotate-end PATCH (the only fetch that sends rotation)
+   * is the sole source of persistence and there's no fallback.
+   */
+  onRotationChange?: (boardId: string, rotation: number) => void
   onDelete: (boardId: string) => void
   onCommentClick?: (board: Board) => void
   onSelect?: () => void
@@ -116,6 +124,7 @@ export function DraggableBoard({
   side = 'front',
   initialLocalPosition = { x: 0, y: 0 },
   onDragEnd,
+  onRotationChange,
   onDelete: _onDelete,
   onCommentClick,
   onSelect,
@@ -696,6 +705,11 @@ if (e.intersections && e.intersections.length > 0) {
             width: apiWidth,
             height: apiHeight,
             side,
+            // Send the current rotation so resize doesn't drop it. Reading
+            // from the ref (not localRotation state) avoids a stale-closure
+            // capture inside this pointer-up handler — same pattern the
+            // rotate-end PATCH uses below.
+            rotation: rotationRef.current,
           }),
         })
           .then(res => {
@@ -767,6 +781,9 @@ if (e.intersections && e.intersections.length > 0) {
       }
       rotationRef.current = next
       setLocalRotation(next)
+      // Mirror to parent's placedBoards3D so handleEditComplete can read the
+      // current rotation when bulk-saving on Save & Exit.
+      onRotationChange?.(board.id, next)
     }
 
     const onUp = () => {
@@ -808,6 +825,8 @@ if (e.intersections && e.intersections.length > 0) {
           console.error('❌ [DraggableBoard] Rotation PATCH failed:', err)
           rotationRef.current = priorRotation
           setLocalRotation(priorRotation)
+          // Roll back the parent state too so placedBoards3D matches the DB.
+          onRotationChange?.(board.id, priorRotation)
           toast.error('Failed to save board rotation. Please try again.')
         })
     }

@@ -242,6 +242,13 @@ export async function PUT(request: NextRequest) {
       if (board.position.height !== undefined) updateData.position_height = board.position.height.toString()
       // Always persist side when updating position so 'back' is never lost (default 'front')
       updateData.position_side = board.position.side === 'back' ? 'back' : 'front'
+      // Persist rotation when the caller explicitly sends it. Undefined means
+      // "don't touch" — the column has NOT NULL DEFAULT 0 so omitting it
+      // keeps whatever value the row already has. This is what makes Save &
+      // Exit's bulk save preserve rotation set by the rotate-handle PATCH.
+      if (board.position.rotation !== undefined) {
+        updateData.position_rotation = board.position.rotation
+      }
     }
 
     if (board.title) updateData.title = board.title
