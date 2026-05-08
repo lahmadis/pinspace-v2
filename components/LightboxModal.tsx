@@ -617,6 +617,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                             src={compareImageUrl}
                             alt={compareBoard.title}
                             className="w-full h-full object-contain"
+                            style={{ transform: `rotate(${compareBoard.position?.rotation ?? 0}rad)`, transition: 'transform 0.3s ease' }}
                           />
                         )
                       ) : (
@@ -666,10 +667,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 </div>
               </div>
             ) : (
-              <img 
+              <img
                 src={imageUrl}
                 alt={board.title}
                 className={`max-w-full max-h-full object-contain ${isPresentMode ? 'rounded-none shadow-none w-full h-full' : 'rounded-lg shadow-2xl'}`}
+                style={{ transform: `rotate(${board.position?.rotation ?? 0}rad)`, transition: 'transform 0.3s ease' }}
                 onClick={(e) => e.stopPropagation()}
               />
             )
