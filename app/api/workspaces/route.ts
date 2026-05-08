@@ -174,15 +174,17 @@ export async function POST(req: Request) {
     // (Phase 6.1+: boards, uploads, realtime) has somewhere to attach. The Phase
     // 6.0 migration created Main Rooms for pre-existing workspaces; this keeps
     // the invariant for newly-created ones.
+    //
+    // Existence check is by row count, NOT by name = 'Main Room' — instructors
+    // are allowed to rename the default room (Phase 6.2 spec) and we shouldn't
+    // create a duplicate room just because the name no longer matches.
     const ensureDefaultRoom = async (workspaceId: string) => {
       const admin = supabaseServiceRole()
-      const { data: existing } = await admin
+      const { count } = await admin
         .from('rooms')
-        .select('id')
+        .select('id', { count: 'exact', head: true })
         .eq('workspace_id', workspaceId)
-        .eq('name', 'Main Room')
-        .maybeSingle()
-      if (existing?.id) return
+      if ((count ?? 0) > 0) return
       const { error: roomError } = await admin
         .from('rooms')
         .insert({
