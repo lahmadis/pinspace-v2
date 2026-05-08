@@ -16,7 +16,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('*')
+      .select('*, organization:organizations(id, name, slug, network_label, type)')
       .eq('user_id', session.user.id)
       .maybeSingle()
 

@@ -21,8 +21,21 @@ import {
   Trash2,
   ExternalLink,
   Pencil,
-  Archive
+  Archive,
+  Network,
+  ArrowRight
 } from 'lucide-react'
+
+type DashboardOrganization = {
+  id?: string
+  name: string
+  slug: string
+  type?: string | null
+}
+
+function shortOrgName(name: string): string {
+  return name.trim().split(/\s+/)[0] || name
+}
 
 interface Studio {
   id: string
@@ -311,6 +324,7 @@ function DashboardContent() {
   const searchParams = useSearchParams()
   const [institutionHome, setInstitutionHome] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [organization, setOrganization] = useState<DashboardOrganization | null>(null)
   const { mode: accountMode, loading: accountModeLoading } = useAccountMode(user?.id)
   const showSharedSection = accountMode !== 'personal'
   const sharedNoun = accountMode === 'firm' ? 'Room' : 'Class'
@@ -358,6 +372,12 @@ function DashboardContent() {
       if (!adminData?.isAdmin && !profile?.user_id) {
         router.replace(`/onboarding?redirect=${encodeURIComponent(redirectPath)}`)
       }
+      const org = profile?.organization
+      if (org?.slug && org?.name) {
+        setOrganization({ id: org.id, name: org.name, slug: org.slug, type: org.type ?? null })
+      } else {
+        setOrganization(null)
+      }
     }).catch(() => setIsAdmin(false))
   }, [user?.id, searchParams, router])
 
@@ -398,14 +418,25 @@ function DashboardContent() {
             <h1 className="text-2xl font-semibold text-gray-900">PinSpace</h1>
             <p className="text-sm text-gray-500 mt-0.5">3D Studio Network</p>
           </Link>
-          {isAdmin && (
-            <Link
-              href="/admin"
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
-            >
-              Admin
-            </Link>
-          )}
+          <div className="flex items-center gap-4">
+            {organization?.slug && (
+              <Link
+                href={`/explore?institution=${encodeURIComponent(organization.slug)}`}
+                className="inline-flex items-center gap-1.5 text-[13px] font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+              >
+                <Network className="w-4 h-4" />
+                {shortOrgName(organization.name)} Network
+              </Link>
+            )}
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
+              >
+                Admin
+              </Link>
+            )}
+          </div>
         </div>
       </div>
 
@@ -420,6 +451,26 @@ function DashboardContent() {
             Manage your studios and showcase your work
           </p>
         </div>
+
+        {/* Network discovery card */}
+        {organization?.slug && showSharedSection && !accountModeLoading && (
+          <div className="mb-12">
+            <Link
+              href={`/explore?institution=${encodeURIComponent(organization.slug)}`}
+              className="group flex items-center justify-between gap-4 rounded-xl border border-indigo-100 bg-indigo-50/60 px-5 py-4 transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:-translate-y-0.5"
+            >
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-gray-900">
+                  Explore the {shortOrgName(organization.name)} network
+                </h3>
+                <p className="text-sm text-gray-600 mt-0.5">
+                  Browse studios across your {accountMode === 'firm' ? 'firm' : 'school'}
+                </p>
+              </div>
+              <ArrowRight className="w-5 h-5 text-indigo-600 transition-transform group-hover:translate-x-0.5 shrink-0" />
+            </Link>
+          </div>
+        )}
 
         {/* Shared (Classes / Firm Rooms) Section */}
         {showSharedSection && !accountModeLoading && (

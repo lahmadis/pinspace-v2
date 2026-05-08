@@ -58,6 +58,19 @@ function ExplorePageInner() {
     }
   }, [activeInstitution])
 
+  // Change institution + reflect in the URL so the state is shareable
+  const updateInstitution = useCallback(
+    (slug: string | null) => {
+      setActiveInstitution(slug)
+      const params = new URLSearchParams(searchParams?.toString() ?? '')
+      if (slug) params.set('institution', slug)
+      else params.delete('institution')
+      const qs = params.toString()
+      router.replace(qs ? `/explore?${qs}` : '/explore', { scroll: false })
+    },
+    [router, searchParams]
+  )
+
   // On mount: initialize activeInstitution from URL or sessionStorage
   useEffect(() => {
     const urlInst = searchParams?.get('institution') ?? null
@@ -302,7 +315,7 @@ function ExplorePageInner() {
       {!isDemo && institutions.length > 0 && (
         <div className="fixed top-[57px] left-0 right-0 z-[31] bg-slate-900/95 border-b border-slate-700/30 px-6 py-2 flex items-center gap-2 overflow-x-auto">
           <button
-            onClick={() => setActiveInstitution(null)}
+            onClick={() => updateInstitution(null)}
             className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
               activeInstitution === null
                 ? 'bg-indigo-600 text-white'
@@ -314,7 +327,7 @@ function ExplorePageInner() {
           {institutions.map((inst) => (
             <button
               key={inst.slug}
-              onClick={() => setActiveInstitution(inst.slug)}
+              onClick={() => updateInstitution(inst.slug)}
               className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
                 activeInstitution === inst.slug
                   ? 'bg-indigo-600 text-white'
