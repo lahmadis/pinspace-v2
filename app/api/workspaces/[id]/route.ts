@@ -56,6 +56,15 @@ export async function GET(
       if (inst) institution = inst
     }
 
+    // Fetch rooms in this workspace so the settings UI can render the Rooms
+    // section without a second round-trip. Ordered by display_order so the UI
+    // matches the order owners curated.
+    const { data: roomRows } = await supabase
+      .from('rooms')
+      .select('id, name, display_order, is_published, is_globally_public, published_at, created_at')
+      .eq('workspace_id', workspaceId)
+      .order('display_order', { ascending: true })
+
     // Check if user owns the workspace or is a member
     const isOwner = workspace.owner_id === userId
 
@@ -119,6 +128,16 @@ export async function GET(
       institution: institution || undefined,
       isArchived: workspace.is_archived ?? false,
       archivedAt: workspace.archived_at ?? null,
+      activeRoomId: workspace.active_room_id ?? null,
+      rooms: (roomRows ?? []).map((r) => ({
+        id: r.id as string,
+        name: r.name as string,
+        displayOrder: Number(r.display_order ?? 0),
+        isPublished: Boolean(r.is_published),
+        isGloballyPublic: Boolean(r.is_globally_public),
+        publishedAt: (r.published_at as string | null) ?? null,
+        createdAt: (r.created_at as string | null) ?? null,
+      })),
     }
 
     return NextResponse.json({ workspace: transformedWorkspace })

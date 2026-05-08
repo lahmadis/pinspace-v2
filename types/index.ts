@@ -127,6 +127,21 @@ export interface Workspace {
   }
   isArchived: boolean
   archivedAt: string | null
+  // Phase 6.2: a workspace contains 1+ rooms. Settings/dashboard/upload UIs
+  // read these; other surfaces ignore them. Optional because not every API
+  // shape returns them yet.
+  rooms?: Room[]
+  activeRoomId?: string | null
+}
+
+export interface Room {
+  id: string
+  name: string
+  displayOrder: number
+  isPublished: boolean
+  isGloballyPublic: boolean
+  publishedAt: string | null
+  createdAt: string | null
 }
 
 // Navigation state types
