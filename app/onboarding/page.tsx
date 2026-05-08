@@ -12,7 +12,7 @@ const ROLE_TO_VALUE: Record<string, 'student' | 'faculty' | 'professional' | nul
   'Professional (working at a firm)': 'professional',
   'Independent Creator': null,
 }
-const YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Masters'] as const
+const YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Masters'] as const
 const MAJORS = ['Architecture', 'Interior Design', 'Industrial Design', 'Other'] as const
 const AGE_RANGES = ['18-22', '23-30', '31-40', '41+'] as const
 const HOW_HEARD = ['Professor or instructor', 'Classmate', 'School website', 'Social media', 'Other'] as const

@@ -6,7 +6,7 @@ import { X } from 'lucide-react'
 const COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#14b8a6', '#8b5cf6']
 const APPEARANCES = ['Explorer', 'Builder', 'Critic']
 const DEPARTMENTS = ['Architecture', 'Interior Design', 'Industrial Design']
-const YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Masters']
+const YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Masters']
 
 export interface AvatarFormValues {
   color: string

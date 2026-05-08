@@ -29,6 +29,7 @@ const YEARS = [
   'Year 2',
   'Year 3',
   'Year 4',
+  'Year 5',
   'Masters',
 ]
 

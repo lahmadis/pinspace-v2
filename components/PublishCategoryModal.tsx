@@ -15,6 +15,7 @@ const YEAR_OPTIONS: Option[] = [
   { label: 'Year 2', value: 'Year 2' },
   { label: 'Year 3', value: 'Year 3' },
   { label: 'Year 4', value: 'Year 4' },
+  { label: 'Year 5', value: 'Year 5' },
   { label: 'Masters', value: 'Masters' },
 ]
 
