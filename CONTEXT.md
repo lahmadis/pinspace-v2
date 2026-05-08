@@ -60,6 +60,12 @@
 
 ---
 
+## Incident Log
+
+- **2026-05-08 — Five missing migrations behind a "shipped" Phase 6.** Migrations 011 (board upload_status), 012 (board rotation), 013 (org_requests.requested_type), 014 (rooms table), 015 (workspaces.active_room_id) were all discovered missing from production during Phase 6.2 testing. Symptom: rotation 500'd for all boards, `/api/workspaces/{room_uuid}` 404'd in console, "rooms does not exist" relation error after Phase 6.0 was marked shipped. Root cause: migration files were committed to git when phases shipped but never applied to Supabase. Fix: applied all five via SQL Editor, verified each with `information_schema` check. Going forward, migration discipline is the **Migration Discipline** section below. Cross-reference: this is also what the new prompt-template footer is meant to prevent.
+
+---
+
 ## Open Phases
 
 - **Markdown consolidation** — 7+ stale guide docs at project root (`DEPLOYMENT_CHECKLIST.md`, `MIGRATION_TO_SUPABASE.md`, `PRODUCTION_READY.md`, `SETUP_INSTRUCTIONS.md`, `STORAGE_MIGRATION_GUIDE.md`, `ONBOARDING_GUIDE.md`, `SUPABASE_EMAIL_OTP_SETUP.md`) reference pre-Phase-4 SQL filenames with no path prefix. Same cleanup shape as P4.6.
@@ -71,6 +77,17 @@
 
 - **`/api/admin/overview` query count** — runs 2N queries (one workspaces + one user_profiles per org) inside `Promise.all`. Cosmetic; not a correctness issue. Could be collapsed to 2 aggregate queries total.
 - **`/api/admin/institutions/[slug]/stats`** — still uses a local `isAdmin()` copy instead of importing from `lib/auth/isAdmin`. Should import the shared module (P4.0 introduced the shared one but this file wasn't updated).
+
+---
+
+## Migration Discipline
+
+- Migration files in `migrations/` are committed to git but are NOT automatically applied to Supabase. They must be manually pasted into the Supabase SQL Editor and run.
+- A phase is not actually "shipped" until its migration is applied AND verified. Code-and-migration mismatch produces silent runtime failures, not type errors — `npx tsc --noEmit` passes regardless.
+- After Claude Code reports a phase shipped, the operator's next step: open the new migration file (`cat migrations/XXX_*.sql`), paste into the Supabase SQL Editor, run, then verify with an `information_schema` check.
+- **Verification queries.** For a new column: `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'X' AND column_name = 'Y')`. For a new table: same shape against `information_schema.tables`. Always returns a definitive yes/no.
+- **Idempotent by design.** Migrations should use `ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, and `IF NOT EXISTS` on indexes so re-running is safe when applied status is uncertain.
+- **Prompt template footer.** Every Claude Code prompt that may produce a migration should end with: *"If this phase contains any new files in `migrations/`, list them at the end of your output and tell me explicitly: MIGRATION REQUIRED: apply migrations/XXX_name.sql to Supabase before testing."*
 
 ---
 
