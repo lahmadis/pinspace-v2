@@ -77,13 +77,45 @@ export async function PATCH(
       .single()
 
     if (updateError || !updated) {
-      console.error('Error updating board position:', updateError)
-      return NextResponse.json({ error: 'Failed to update position' }, { status: 500 })
+      // Surface the underlying Postgres error so the next failed PATCH shows
+      // the real cause in the network tab instead of a generic "Failed to
+      // update position". Server log is structured for later grep-ability.
+      console.error('Error updating board position', {
+        boardId,
+        updateData,
+        code: updateError?.code,
+        message: updateError?.message,
+        details: updateError?.details,
+        hint: updateError?.hint,
+      })
+      return NextResponse.json(
+        {
+          error: 'Failed to update position',
+          code: updateError?.code,
+          message: updateError?.message,
+          details: updateError?.details,
+          hint: updateError?.hint,
+        },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({ success: true, board: updated })
   } catch (error) {
-    console.error('Error updating position:', error)
-    return NextResponse.json({ error: 'Failed to update position' }, { status: 500 })
+    // Uncaught throw inside the try (e.g. malformed body, unexpected null
+    // dereference, network blip). Surface the message so we can debug
+    // without server-log access.
+    console.error('Error updating position (uncaught)', {
+      boardId: params.id,
+      error,
+      stack: error instanceof Error ? error.stack : undefined,
+    })
+    return NextResponse.json(
+      {
+        error: 'Failed to update position',
+        message: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    )
   }
 }
