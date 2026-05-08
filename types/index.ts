@@ -142,6 +142,8 @@ export interface Room {
   isGloballyPublic: boolean
   publishedAt: string | null
   createdAt: string | null
+  /** Returned by /api/workspaces/[id]; absent on PATCH/POST responses for a single room. */
+  boardCount?: number
 }
 
 // Navigation state types

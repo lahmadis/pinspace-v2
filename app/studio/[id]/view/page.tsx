@@ -161,6 +161,9 @@ export default function StudioViewPage() {
   )
   const [loading, setLoading] = useState(!(initialCache?.boards && initialCache?.wallConfig))
   const [error, setError] = useState<string | null>(null)
+  // Phase 6.2: workspace id resolved from the room id in the URL. Used for
+  // wall-config + view-counter calls which remain workspace-scoped.
+  const [resolvedWorkspaceId, setResolvedWorkspaceId] = useState<string | null>(null)
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null)
   const [compareBoardIds, setCompareBoardIds] = useState<string[]>([])
   const shiftPressedRef = useRef(false)
@@ -179,11 +182,13 @@ export default function StudioViewPage() {
     }))
   })()
 
-  // Increment view counter once per page visit (fire-and-forget, never blocks rendering)
+  // Increment view counter once per page visit (fire-and-forget, never blocks
+  // rendering). Defer until we've resolved the workspace id — the view-counter
+  // endpoint is workspace-scoped, and after the URL flip studioId is a room id.
   useEffect(() => {
-    if (isDemo) return
-    fetch(`/api/studios/${studioId}/view`, { method: 'POST' }).catch(() => {})
-  }, [studioId, isDemo])
+    if (isDemo || !resolvedWorkspaceId) return
+    fetch(`/api/studios/${resolvedWorkspaceId}/view`, { method: 'POST' }).catch(() => {})
+  }, [resolvedWorkspaceId, isDemo])
 
   // Load data: use cache first for instant open when coming from bubble network prefetch
   useEffect(() => {
@@ -197,10 +202,14 @@ export default function StudioViewPage() {
 
     let cancelled = false
     const loadWallConfig = async () => {
+      // Wall-config remains workspace-scoped (Phase 6.2 leaves it intentionally
+      // unchanged). Fall back to studioId only as a safety net in demo mode or
+      // before workspaceId resolves.
+      const wsKey = resolvedWorkspaceId ?? studioId
       try {
-        const configUrl = isDemo 
-          ? `/api/studios/${studioId}/wall-config?demo=true`
-          : `/api/studios/${studioId}/wall-config`
+        const configUrl = isDemo
+          ? `/api/studios/${wsKey}/wall-config?demo=true`
+          : `/api/studios/${wsKey}/wall-config`
         const resConfig = await fetch(configUrl)
         if (cancelled) return
         if (resConfig.ok) {
@@ -215,7 +224,7 @@ export default function StudioViewPage() {
       }
 
       if (cancelled) return
-      const savedConfigKey = `studio-${studioId}-wall-config`
+      const savedConfigKey = `studio-${wsKey}-wall-config`
       const savedConfig = localStorage.getItem(savedConfigKey)
       if (savedConfig) {
         setWallConfig(JSON.parse(savedConfig))
@@ -233,7 +242,7 @@ export default function StudioViewPage() {
     }
     loadWallConfig()
     return () => { cancelled = true }
-  }, [studioId, isDemo])
+  }, [studioId, isDemo, resolvedWorkspaceId])
 
   useEffect(() => {
     compareBoardIdsRef.current = compareBoardIds
@@ -314,18 +323,28 @@ export default function StudioViewPage() {
       // Avoid flashing loading if cache was populated (e.g. prefetch completed after nav)
       if (!getCachedStudioData(studioId, isDemo)?.boards) setLoading(true)
       setError(null)
-      // Always include demo=true for demo studios, even if not in URL params
-      const url = isDemo 
-        ? `/api/boards?workspaceId=${studioId}&demo=true` 
-        : `/api/boards?workspaceId=${studioId}`
+      // Phase 6.2: studioId from URL is the room id. The API resolves it
+      // (falls back to workspace_id for legacy URLs). On mismatch, redirect
+      // to the canonical room URL.
+      const url = isDemo
+        ? `/api/boards?roomId=${studioId}&demo=true`
+        : `/api/boards?roomId=${studioId}`
       const response = await fetch(url)
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch boards')
       }
-      
+
       const data = await response.json()
       setBoards(data.boards || [])
+      const resolvedRoomId: string | null = data.room?.id ?? null
+      const wsId: string | null = data.room?.workspaceId ?? null
+      setResolvedWorkspaceId(wsId)
+
+      if (!isDemo && resolvedRoomId && resolvedRoomId !== studioId) {
+        const qs = searchParams ? searchParams.toString() : ''
+        router.replace(`/studio/${resolvedRoomId}/view${qs ? `?${qs}` : ''}`, { scroll: false })
+      }
     } catch (err) {
       console.error('Error fetching boards:', err)
       setError('Failed to load boards')

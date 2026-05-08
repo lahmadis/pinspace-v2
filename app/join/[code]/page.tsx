@@ -87,9 +87,11 @@ export default function JoinWorkspacePage() {
       }
 
       console.log('✅ Joined workspace:', workspace.id)
-      
-      // Redirect to workspace studio (use workspace.id as studioId)
-      router.push(`/studio/${workspace.id}`)
+
+      // Phase 6.2: send joiners to the rooms list so they can see all rooms
+      // in the workspace and pick which one to enter, rather than dumping
+      // them straight into the first room.
+      router.push(`/workspace/${workspace.id}`)
     } catch (error) {
       console.error('Error:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to join workspace')

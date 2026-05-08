@@ -171,13 +171,15 @@ function WorkspaceCard({ workspace, isOwner, onDelete, onRename, openMenuId, set
         )}
       </div>
 
-      {/* Content */}
+      {/* Content. Phase 6.2b: clicking opens the rooms list page (/workspace/[id])
+          rather than going straight into a 3D studio. The studio is now a room,
+          and a workspace can have multiple — let the user pick. */}
       <div className="p-6">
         <Link
-          href={withInstitution(`/studio/${workspace.id}`, institutionSlug)}
+          href={withInstitution(`/workspace/${workspace.id}`, institutionSlug)}
           className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm shadow-sm"
         >
-          <span>Open Studio</span>
+          <span>Open</span>
           <ExternalLink className="w-4 h-4" />
         </Link>
       </div>
@@ -619,7 +621,7 @@ function DashboardContent() {
               {studios.map((studio) => (
                 <Link
                   key={studio.id}
-                  href={withInstitution(`/studio/${studio.id}`, institutionHome)}
+                  href={withInstitution(`/workspace/${studio.id}`, institutionHome)}
                   className="group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                 >
                   {/* Thumbnail */}

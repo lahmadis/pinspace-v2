@@ -3,11 +3,12 @@
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import dynamic from 'next/dynamic'
+import Link from 'next/link'
 import { Board } from '@/types'
 import WallConfigModal from '@/components/WallConfigModal'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
-import { ArrowLeft, Share2, Settings, Box } from 'lucide-react'
+import { ArrowLeft, Share2, Settings, Box, ChevronDown, Upload } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 
@@ -115,11 +116,19 @@ export default function StudioPage() {
   const [floorEditorMode, setFloorEditorMode] = useState<'tables' | 'walls'>('tables')
   const [isArchived, setIsArchived] = useState(false)
   const [commentNonce, setCommentNonce] = useState(0)
-  // Phase 6.1 data path: API resolves the workspace's Main Room and returns
-  // its id alongside the boards. We use that to scope the boards realtime
-  // subscription. URL still uses workspace id; that piece of the cutover lives
-  // in 6.1b.
+  // Phase 6.2: URL `[id]` is now a room id (Phase 6.1b URL flip is folded into
+  // 6.2). Backward compat: if `[id]` is actually a workspace id (old shared
+  // links), the API resolves the workspace's first room and we router.replace.
+  // Track both ids: roomId scopes the boards filter / realtime; workspaceId
+  // scopes wall-config + workspace metadata + membership checks.
   const [roomId, setRoomId] = useState<string | null>(null)
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null)
+  const [workspaceName, setWorkspaceName] = useState<string | null>(null)
+  const [currentRoomName, setCurrentRoomName] = useState<string | null>(null)
+  const [allRooms, setAllRooms] = useState<Array<{ id: string; name: string }>>([])
+  const [showRoomSwitcher, setShowRoomSwitcher] = useState(false)
+  const [uploadingHeader, setUploadingHeader] = useState(false)
+  const headerUploadInputRef = useRef<HTMLInputElement | null>(null)
 
   const isDemo = searchParams?.get('demo') === 'true'
 
@@ -129,7 +138,11 @@ export default function StudioPage() {
   const wallPersistLatestRef = useRef<WallConfig | null>(null)
 
   const cacheWallConfigLocally = useCallback((config: WallConfig) => {
-    const savedConfigKey = `studio-${studioId}-wall-config`
+    // Wall-config remains workspace-scoped (Phase 6.2 leaves it intentionally
+    // unchanged). Fall back to studioId only as a safety net during the brief
+    // window before workspaceId resolves.
+    const wsKey = workspaceId ?? studioId
+    const savedConfigKey = `studio-${wsKey}-wall-config`
     const rawTables = (config as { tables?: Array<{ modelUrl?: string }> }).tables
     const compactConfig =
       Array.isArray(rawTables)
@@ -162,14 +175,15 @@ export default function StudioPage() {
         // Local fallback is optional; API remains source of truth.
       }
     }
-  }, [studioId])
+  }, [studioId, workspaceId])
 
   const flushWallConfig = useCallback(async () => {
     const config = wallPersistLatestRef.current
     if (!config) return
     wallPersistLatestRef.current = null
+    const wsKey = workspaceId ?? studioId
     try {
-      await fetch(`/api/studios/${studioId}/wall-config`, {
+      await fetch(`/api/studios/${wsKey}/wall-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -178,7 +192,7 @@ export default function StudioPage() {
     } catch (e) {
       console.error('Failed to save wall config', e)
     }
-  }, [studioId, cacheWallConfigLocally])
+  }, [studioId, workspaceId, cacheWallConfigLocally])
 
   const persistWallConfig = useCallback((config: WallConfig) => {
     wallPersistLatestRef.current = config
@@ -208,36 +222,65 @@ export default function StudioPage() {
 
     const loadData = async () => {
       try {
-        // Load boards (studioId is actually workspaceId now). The API also
-        // returns the resolved Main Room id so realtime can filter by room_id.
-        const url = isDemo ? `/api/boards?workspaceId=${studioId}&demo=true` : `/api/boards?workspaceId=${studioId}`
+        // Phase 6.2: studioId from URL is the room id. The API resolves it
+        // (falls back to workspace_id for legacy URLs). If the resolved
+        // room.id differs from studioId, we router.replace — the effect
+        // re-runs with the correct id.
+        const url = isDemo ? `/api/boards?roomId=${studioId}&demo=true` : `/api/boards?roomId=${studioId}`
         const response = await fetch(url, { signal })
+        let resolvedRoomId: string | null = null
+        let resolvedWorkspaceId: string | null = null
         if (response.ok) {
           const data = await response.json()
           setBoards(data.boards || [])
-          setRoomId(data.room?.id ?? null)
+          resolvedRoomId = data.room?.id ?? null
+          resolvedWorkspaceId = data.room?.workspaceId ?? null
+          setRoomId(resolvedRoomId)
+          setWorkspaceId(resolvedWorkspaceId)
           setBoardsError(false)
+
+          // Backward-compat redirect: legacy /studio/{workspace_id} URLs.
+          if (!isDemo && resolvedRoomId && resolvedRoomId !== studioId) {
+            const qs = searchParams ? searchParams.toString() : ''
+            router.replace(`/studio/${resolvedRoomId}${qs ? `?${qs}` : ''}`, { scroll: false })
+            return
+          }
         } else {
           setBoardsError(true)
+          return
         }
 
-        // Fetch workspace metadata to get archive status
-        if (!isDemo) {
+        // Fetch workspace metadata for archive status + breadcrumb + room
+        // switcher. Keyed by the resolved workspace id, not the URL param.
+        const wsIdForFetch = resolvedWorkspaceId
+        if (!isDemo && wsIdForFetch) {
           try {
-            const wsRes = await fetch(`/api/workspaces/${studioId}`, { signal })
+            const wsRes = await fetch(`/api/workspaces/${wsIdForFetch}`, { signal })
             if (wsRes.ok) {
               const wsData = await wsRes.json()
-              setIsArchived(Boolean(wsData.workspace?.isArchived))
+              const ws = wsData.workspace
+              setIsArchived(Boolean(ws?.isArchived))
+              setWorkspaceName(ws?.name ?? null)
+              const rooms: Array<{ id: string; name: string }> = (ws?.rooms ?? []).map(
+                (r: { id: string; name: string }) => ({ id: r.id, name: r.name })
+              )
+              setAllRooms(rooms)
+              const matched = rooms.find(r => r.id === resolvedRoomId)
+              setCurrentRoomName(matched?.name ?? null)
             }
           } catch {
-            // Non-fatal: archive status is best-effort
+            // Non-fatal: breadcrumb + archive status are best-effort
           }
         }
 
-        // Try API first
+        // Wall-config stays keyed by workspace id (the existing
+        // /api/studios/[id]/wall-config endpoint expects workspace_id, and
+        // localStorage entries from before the URL flip use workspace id too).
+        const wallConfigWsId = resolvedWorkspaceId ?? studioId
+
         let loadedConfig: WallConfig | null = null
         try {
-          const resConfig = await fetch(`/api/studios/${studioId}/wall-config`, { signal })
+          const resConfig = await fetch(`/api/studios/${wallConfigWsId}/wall-config`, { signal })
           if (resConfig.ok) {
             const data = await resConfig.json()
             if (data?.config) {
@@ -251,7 +294,7 @@ export default function StudioPage() {
 
         // Fallback: localStorage
         if (!loadedConfig) {
-          const savedConfigKey = `studio-${studioId}-wall-config`
+          const savedConfigKey = `studio-${wallConfigWsId}-wall-config`
           const savedConfig = localStorage.getItem(savedConfigKey)
           if (savedConfig) {
             loadedConfig = JSON.parse(savedConfig)
@@ -347,8 +390,9 @@ export default function StudioPage() {
   }, [studioId, isDemo, retryCount, roomId])
 
   const handleWallConfigConfirm = async (config: WallConfig) => {
+    const wsKey = workspaceId ?? studioId
     try {
-      await fetch(`/api/studios/${studioId}/wall-config`, {
+      await fetch(`/api/studios/${wsKey}/wall-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -368,16 +412,68 @@ export default function StudioPage() {
   }
 
   const handleBoardUpdate = async () => {
-    // Reload boards after update
+    // Reload boards after update — scoped to the room, not the workspace.
     try {
-      const response = await fetch(`/api/boards?studioId=${studioId}`)
+      const response = await fetch(`/api/boards?roomId=${studioId}`)
       if (response.ok) {
         const data = await response.json()
-        const studioBoards = data.boards.filter((b: Board) => b.studioId === studioId)
-        setBoards(studioBoards)
+        setBoards(data.boards || [])
       }
     } catch (error) {
       console.error('Error reloading boards:', error)
+    }
+  }
+
+  /**
+   * Phase 6.2 in-studio upload. Files chosen from the header button POST to
+   * /api/upload with the current room's id + workspace id. Boards are created
+   * without a wall position — the realtime channel surfaces them in the
+   * `localBoards` list, and they show up in the EditModeOverlay sidebar when
+   * the user enters wall edit mode to place them.
+   */
+  const handleHeaderUploadChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    // Reset input so re-picking the same file fires onChange again
+    e.target.value = ''
+    if (files.length === 0 || !roomId || !workspaceId) return
+
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
+    const MAX_FILE_SIZE = 50 * 1024 * 1024
+    const valid = files.filter((f) => validTypes.includes(f.type) && f.size <= MAX_FILE_SIZE)
+    const oversized = files.filter((f) => f.size > MAX_FILE_SIZE)
+
+    if (oversized.length > 0) {
+      toast.error(`Skipped ${oversized.length} file(s) over 50 MB`)
+    }
+    if (valid.length === 0) return
+
+    try {
+      setUploadingHeader(true)
+      let successCount = 0
+      for (const file of valid) {
+        const fd = new FormData()
+        fd.append('image', file)
+        fd.append('workspaceId', workspaceId)
+        fd.append('roomId', roomId)
+        fd.append('title', file.name.replace(/\.[^/.]+$/, '') || 'Untitled Board')
+        const res = await fetch('/api/upload', { method: 'POST', body: fd })
+        if (res.ok) successCount += 1
+      }
+      if (successCount > 0) {
+        toast.success(
+          successCount === valid.length
+            ? `Uploaded ${successCount} board${successCount === 1 ? '' : 's'} to this room`
+            : `Uploaded ${successCount} of ${valid.length}; ${valid.length - successCount} failed`
+        )
+        await handleBoardUpdate()
+      } else {
+        toast.error('Upload failed. Please try again.')
+      }
+    } catch (err) {
+      console.error('Header upload failed:', err)
+      toast.error('Upload failed. Please try again.')
+    } finally {
+      setUploadingHeader(false)
     }
   }
 
@@ -457,7 +553,7 @@ export default function StudioPage() {
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(102, 102, 255, 0.1)' }}></div>
           </div>
 
-          {/* Top Left - Logo and Dashboard - Hide when in edit mode */}
+          {/* Top Left - Logo and breadcrumb. Hidden in wall edit mode. */}
           {!isEditMode && (
             <div className="fixed top-4 left-4 z-40 flex items-center gap-2.5">
               {/* PinSpace Logo - links to home */}
@@ -468,20 +564,120 @@ export default function StudioPage() {
                 PinSpace
               </button>
 
-              {/* Back to Dashboard */}
-              <button
-                onClick={() => router.push('/dashboard')}
-                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Dashboard
-              </button>
+              {/* Phase 6.2: breadcrumb + room switcher. Workspace name links
+                  back to the rooms list page; room name opens a dropdown
+                  listing the other rooms in the same workspace. Falls back
+                  to a plain "← Dashboard" button while metadata is loading
+                  or in demo mode (no workspace context). */}
+              {workspaceName && workspaceId ? (
+                <div className="px-3 py-2 bg-white/10 hover:bg-white/15 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-colors flex items-center gap-2 text-sm font-medium relative">
+                  <button
+                    onClick={() => router.push(`/workspace/${workspaceId}`)}
+                    className="hover:underline"
+                    aria-label={`Back to ${workspaceName} rooms list`}
+                  >
+                    {workspaceName}
+                  </button>
+                  <span className="text-white/50">/</span>
+                  <button
+                    onClick={() => setShowRoomSwitcher((v) => !v)}
+                    disabled={allRooms.length <= 1}
+                    className="flex items-center gap-1 disabled:cursor-default"
+                    aria-label="Switch room"
+                    aria-expanded={showRoomSwitcher}
+                  >
+                    <span>{currentRoomName ?? '…'}</span>
+                    {allRooms.length > 1 && (
+                      <ChevronDown className={`w-4 h-4 transition-transform ${showRoomSwitcher ? 'rotate-180' : ''}`} />
+                    )}
+                  </button>
+
+                  {showRoomSwitcher && allRooms.length > 1 && (
+                    <div
+                      className="absolute left-0 top-full mt-2 w-56 bg-white text-gray-900 rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50"
+                      onMouseLeave={() => setShowRoomSwitcher(false)}
+                    >
+                      <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 border-b border-gray-100">
+                        Rooms in {workspaceName}
+                      </div>
+                      <ul className="py-1">
+                        {allRooms.map((r) => {
+                          const isCurrent = r.id === roomId
+                          return (
+                            <li key={r.id}>
+                              {isCurrent ? (
+                                <div className="px-3 py-2 text-sm bg-indigo-50 text-indigo-700 font-medium flex items-center justify-between">
+                                  <span>{r.name}</span>
+                                  <span className="text-xs">current</span>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setShowRoomSwitcher(false)
+                                    router.push(`/studio/${r.id}`)
+                                  }}
+                                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                                >
+                                  {r.name}
+                                </button>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                      <div className="border-t border-gray-100">
+                        <Link
+                          href={`/workspace/${workspaceId}`}
+                          onClick={() => setShowRoomSwitcher(false)}
+                          className="block px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 font-medium"
+                        >
+                          See all rooms →
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => router.push('/dashboard')}
+                  className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Dashboard
+                </button>
+              )}
             </div>
           )}
 
           {/* Top-right buttons - Hide when in edit mode */}
           {!isEditMode && (
             <div className="fixed top-4 right-4 z-40 flex items-center gap-2.5">
+              {/* Phase 6.2: Upload Board — uploads to the current room from
+                  the studio header. Posts to /api/upload with workspaceId +
+                  roomId baked in. The board enters the room without a wall
+                  position; user enters wall edit mode to place it. */}
+              {!isArchived && roomId && (
+                <>
+                  <input
+                    ref={headerUploadInputRef}
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,application/pdf"
+                    multiple
+                    className="hidden"
+                    onChange={handleHeaderUploadChange}
+                  />
+                  <button
+                    onClick={() => headerUploadInputRef.current?.click()}
+                    disabled={uploadingHeader}
+                    className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2 disabled:opacity-50"
+                    aria-label="Upload board to this room"
+                  >
+                    <Upload className="w-4 h-4" />
+                    {uploadingHeader ? 'Uploading…' : 'Upload Board'}
+                  </button>
+                </>
+              )}
+
               {/* Share button */}
               <button
                 onClick={() => setShowShareModal(true)}

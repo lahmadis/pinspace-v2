@@ -8,12 +8,10 @@ import Link from 'next/link'
 import { toast } from '@/lib/toast'
 import { Workspace, Room } from '@/types'
 import dynamic from 'next/dynamic'
-import PublishConfirmModal from '@/components/PublishConfirmModal'
 import {
   ArrowLeft,
   Mail,
   Globe,
-  Lock,
   Users,
   Lightbulb,
   Copy,
@@ -21,7 +19,6 @@ import {
   GraduationCap,
   User,
   ExternalLink,
-  Info,
   Archive,
   ArchiveRestore,
   Download,
@@ -44,9 +41,6 @@ export default function WorkspaceSettingsPage() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
-  const [showPublishModal, setShowPublishModal] = useState(false)
-  const [publishing, setPublishing] = useState(false)
-  const [publishingGlobal, setPublishingGlobal] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -115,79 +109,9 @@ export default function WorkspaceSettingsPage() {
 
   const handleGoToStudio = () => {
     if (workspace) {
-      router.push(`/studio/${workspace.studioId}`)
-    }
-  }
-
-  const handlePublish = async (networkMetadata?: { department: string; year: string; academicYear?: string; instructor?: string }) => {
-    if (!workspace) return
-
-    try {
-      setPublishing(true)
-      setShowPublishModal(false)
-
-      const response = await fetch(`/api/workspaces/${workspace.id}/publish`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          isPublic: true,
-          networkMetadata: {
-            department: networkMetadata?.department,
-            year: networkMetadata?.year,
-          },
-          academicYear: networkMetadata?.academicYear,
-          instructor: networkMetadata?.instructor,
-        })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update workspace')
-      }
-
-      console.log('🌐 Published workspace with metadata', data.workspace.networkMetadata)
-      
-      // Refresh workspace data
-      await fetchWorkspace()
-    } catch (error) {
-      console.error('Error:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to update workspace')
-    } finally {
-      setPublishing(false)
-    }
-  }
-
-  const handleUnpublish = async () => {
-    if (!workspace) return
-
-    try {
-      setPublishing(true)
-      setShowPublishModal(false)
-
-      const response = await fetch(`/api/workspaces/${workspace.id}/publish`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          isPublic: false
-        })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update workspace')
-      }
-
-      console.log('🔒 Unpublished workspace')
-      
-      // Refresh workspace data
-      await fetchWorkspace()
-    } catch (error) {
-      console.error('Error:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to update workspace')
-    } finally {
-      setPublishing(false)
+      // Phase 6.2: send to the rooms list (the new primary navigation
+      // surface) rather than dropping straight into the first room's studio.
+      router.push(`/workspace/${workspace.id}`)
     }
   }
 
@@ -361,35 +285,6 @@ export default function WorkspaceSettingsPage() {
     }
   }
 
-  const handleToggleGlobal = async () => {
-    if (!workspace) return
-
-    try {
-      setPublishingGlobal(true)
-
-      const response = await fetch(`/api/workspaces/${workspace.id}/publish`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          isGloballyPublic: !workspace.isGloballyPublic,
-        })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update workspace')
-      }
-
-      await fetchWorkspace()
-    } catch (error) {
-      console.error('Error:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to update workspace')
-    } finally {
-      setPublishingGlobal(false)
-    }
-  }
-
   if (!isLoaded || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -497,148 +392,13 @@ export default function WorkspaceSettingsPage() {
               </div>
             </div>
 
-            {/* Public Network Settings - Only for Instructors */}
-            {isInstructor && (
-              <div className="bg-white rounded-xl border border-gray-200 p-8">
-                <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2.5">
-                  {workspace.isPublic ? (
-                    <Globe className="w-5 h-5 text-indigo-600" />
-                  ) : (
-                    <Lock className="w-5 h-5 text-gray-600" />
-                  )}
-                  Public Network
-                </h2>
-                
-                <div className="space-y-6 mt-6">
-                  {/* Status Display */}
-                  <div className="flex items-start gap-3">
-                    <div className={`w-2.5 h-2.5 rounded-full mt-1.5 ${workspace.isPublic ? 'bg-green-500' : 'bg-gray-400'}`}></div>
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-900 mb-1">
-                        {workspace.isPublic
-                          ? <>
-                              Published to {workspace.institution?.network_label || workspace.institution?.name || 'Institution'} Network
-                              {workspace.isGloballyPublic && (
-                                <span className="ml-2 text-indigo-600">· 🌍 Also on Global Network</span>
-                              )}
-                            </>
-                          : 'Private'
-                        }
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {workspace.isPublic
-                          ? workspace.isGloballyPublic
-                            ? 'Visible to all institutions on PinSpace · Anyone can view (read-only)'
-                            : `Visible in the ${workspace.institution?.network_label || workspace.institution?.name || 'institution'} network · Anyone can view (read-only)`
-                          : 'Only members can access this workspace'
-                        }
-                      </p>
-                    </div>
-                  </div>
-
-                  {workspace.isPublic && workspace.publishedAt && (
-                    <p className="text-xs text-gray-400">
-                      Published {new Date(workspace.publishedAt).toLocaleDateString('en-US', {
-                        month: 'long',
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}
-                    </p>
-                  )}
-
-                  {/* Publish/Unpublish Institution Button */}
-                  <button
-                    onClick={() => setShowPublishModal(true)}
-                    disabled={publishing || publishingGlobal}
-                    className={`w-full px-4 py-2.5 rounded-lg transition-all font-medium text-sm flex items-center justify-center gap-2 ${
-                      workspace.isPublic
-                        ? 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100'
-                        : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {publishing ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin"></div>
-                        Updating...
-                      </>
-                    ) : workspace.isPublic ? (
-                      <>
-                        <Lock className="w-4 h-4" />
-                        Remove from Network
-                      </>
-                    ) : (
-                      <>
-                        <Globe className="w-4 h-4" />
-                        Publish to Network
-                      </>
-                    )}
-                  </button>
-
-                  {/* Global Network Button - only shown when institution-published */}
-                  {workspace.isPublic && (
-                    <button
-                      onClick={handleToggleGlobal}
-                      disabled={publishing || publishingGlobal}
-                      className={`w-full px-4 py-2.5 rounded-lg transition-all font-medium text-sm flex items-center justify-center gap-2 ${
-                        workspace.isGloballyPublic
-                          ? 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'
-                          : 'bg-indigo-50 text-indigo-700 border border-indigo-300 hover:bg-indigo-100'
-                      } disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      {publishingGlobal ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin"></div>
-                          Updating...
-                        </>
-                      ) : workspace.isGloballyPublic ? (
-                        <>
-                          <span>🌍</span>
-                          Remove from Global Network
-                        </>
-                      ) : (
-                        <>
-                          <span>🌍</span>
-                          Share with Global Network
-                        </>
-                      )}
-                    </button>
-                  )}
-
-                  {workspace.isPublic ? (
-                    <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-                      <div className="flex gap-3">
-                        <Info className="w-5 h-5 text-indigo-600 mt-0.5 flex-shrink-0" />
-                        <div className="text-sm text-indigo-900">
-                          <p className="font-medium mb-2">Network Details</p>
-                          <ul className="text-indigo-800 space-y-1.5">
-                            <li>• Department: <strong>{workspace.networkMetadata?.department || '—'}</strong></li>
-                            <li>• Year: <strong>{workspace.networkMetadata?.year || '—'}</strong></li>
-                            <li>• Instructor: <strong>{(workspace as Workspace & { instructor?: string }).instructor || '—'}</strong></li>
-                          </ul>
-                          <p className="mt-3 text-xs text-indigo-700">
-                            Studios with matching details will be connected in the network.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-                      <div className="flex gap-3">
-                        <Lightbulb className="w-5 h-5 text-indigo-600 mt-0.5 flex-shrink-0" />
-                        <div className="text-sm text-indigo-900">
-                          <p className="font-medium mb-2">What happens when you publish?</p>
-                          <ul className="text-indigo-800 space-y-1.5">
-                            <li>• Appears in the WIT public network</li>
-                            <li>• Anyone can view boards (read-only)</li>
-                            <li>• Only members can edit and add boards</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* Phase 6.2c: workspace-level Public Network section removed. The
+                per-room publish toggle in the Rooms section is now the only
+                way to publish content. workspaces.is_public/is_globally_public/
+                published_at columns and /api/workspaces/[id]/publish endpoint
+                are intentionally left in place for legacy compatibility — a
+                future cleanup migration will drop them once /explore has been
+                running on rooms.is_published in production for a while. */}
 
             {/* Rooms Section — instructors only. Per-room publish toggle is
                 wired but doesn't affect /explore visibility this phase;
@@ -931,17 +691,17 @@ export default function WorkspaceSettingsPage() {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Studio Link */}
+            {/* Rooms Link */}
             <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="font-semibold text-gray-900 mb-2">3D Studio</h3>
+              <h3 className="font-semibold text-gray-900 mb-2">Rooms</h3>
               <p className="text-sm text-gray-500 mb-4">
-                View and edit your shared studio room
+                View and enter rooms in this workspace
               </p>
               <button
                 onClick={handleGoToStudio}
                 className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center justify-center gap-2 shadow-sm"
               >
-                <span>Open Studio</span>
+                <span>Open Rooms</span>
                 <ExternalLink className="w-4 h-4" />
               </button>
             </div>
@@ -1051,32 +811,6 @@ export default function WorkspaceSettingsPage() {
         </div>
       )}
 
-      {/* Publish Modal - handles both publish and unpublish */}
-      {showPublishModal && workspace && (
-        <PublishConfirmModal
-          workspaceName={workspace.name}
-          isCurrentlyPublic={workspace.isPublic}
-          currentMetadata={workspace.networkMetadata ? {
-            department: workspace.networkMetadata.department || '',
-            year: workspace.networkMetadata.year || '',
-            academicYear: (workspace as Workspace & { academicYear?: string }).academicYear || '',
-            instructor: workspace.instructor || '',
-          } : undefined}
-          onConfirm={(metadata) => {
-            if (workspace.isPublic) {
-              handleUnpublish()
-            } else if (metadata) {
-              handlePublish({
-                department: metadata.department,
-                year: metadata.year,
-                academicYear: metadata.academicYear,
-                instructor: metadata.instructor,
-              })
-            }
-          }}
-          onCancel={() => setShowPublishModal(false)}
-        />
-      )}
     </div>
   )
 }

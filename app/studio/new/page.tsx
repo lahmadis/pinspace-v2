@@ -64,8 +64,10 @@ export default function NewStudioPage() {
         throw new Error(data.error || 'Failed to create room')
       }
 
-      // Redirect to the studio room
-      router.push(`/studio/${data.workspace?.id || data.id}`)
+      // Phase 6.2: redirect to the rooms list, not directly into a studio.
+      // New workspaces start with one Main Room; user can rename or add more
+      // before entering a specific room.
+      router.push(`/workspace/${data.workspace?.id || data.id}`)
     } catch (error) {
       console.error('Error:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to create room')

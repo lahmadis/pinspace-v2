@@ -45,11 +45,25 @@ export async function GET(request: NextRequest) {
         .select('id, workspace_id')
         .eq('id', roomIdParam)
         .maybeSingle()
-      if (!room) {
-        return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+      if (room) {
+        scopedWorkspaceId = room.workspace_id as string
+        scopedRoomId = room.id as string
+      } else {
+        // Phase 6.2 backward-compat: an old URL like /studio/{workspace_id}
+        // still funnels here as `roomId`. If it's actually a workspace, resolve
+        // its first room and let the studio page detect the mismatch (room.id
+        // !== requested id) to issue a router.replace and update the URL.
+        const { data: ws } = await adminDb
+          .from('workspaces')
+          .select('id')
+          .eq('id', roomIdParam)
+          .maybeSingle()
+        if (!ws) {
+          return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+        }
+        scopedWorkspaceId = ws.id as string
+        scopedRoomId = await resolveMainRoomId(adminDb, ws.id as string)
       }
-      scopedWorkspaceId = room.workspace_id as string
-      scopedRoomId = room.id as string
     } else if (workspaceId) {
       scopedWorkspaceId = workspaceId
       scopedRoomId = await resolveMainRoomId(adminDb, workspaceId)

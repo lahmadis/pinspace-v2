@@ -56,14 +56,30 @@ export async function GET(
       if (inst) institution = inst
     }
 
-    // Fetch rooms in this workspace so the settings UI can render the Rooms
-    // section without a second round-trip. Ordered by display_order so the UI
-    // matches the order owners curated.
+    // Fetch rooms in this workspace so settings + rooms-list UI can render
+    // without a second round-trip. Ordered by display_order so the UI matches
+    // the order owners curated.
     const { data: roomRows } = await supabase
       .from('rooms')
       .select('id, name, display_order, is_published, is_globally_public, published_at, created_at')
       .eq('workspace_id', workspaceId)
       .order('display_order', { ascending: true })
+
+    // Per-room board counts for the rooms list page. One query, grouped client-
+    // side. Excludes pending uploads to match what the studio actually shows.
+    const roomIds = (roomRows ?? []).map((r) => r.id as string)
+    const boardCountByRoom = new Map<string, number>()
+    if (roomIds.length > 0) {
+      const { data: boardRows } = await supabase
+        .from('boards')
+        .select('room_id')
+        .in('room_id', roomIds)
+        .neq('upload_status', 'pending')
+      for (const b of boardRows ?? []) {
+        const k = b.room_id as string
+        boardCountByRoom.set(k, (boardCountByRoom.get(k) ?? 0) + 1)
+      }
+    }
 
     // Check if user owns the workspace or is a member
     const isOwner = workspace.owner_id === userId
@@ -137,6 +153,7 @@ export async function GET(
         isGloballyPublic: Boolean(r.is_globally_public),
         publishedAt: (r.published_at as string | null) ?? null,
         createdAt: (r.created_at as string | null) ?? null,
+        boardCount: boardCountByRoom.get(r.id as string) ?? 0,
       })),
     }
 
