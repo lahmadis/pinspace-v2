@@ -63,11 +63,14 @@ export async function PATCH(
       position_x: x.toString(),
       position_y: y.toString(),
       position_side: side === 'back' ? 'back' : 'front',
+      // Always written. Callers that don't send rotation get 0 (matches the
+      // column's NOT NULL DEFAULT 0). Note: this means drag/resize PATCHes
+      // that omit rotation will reset position_rotation to 0 — see commit
+      // message for context.
+      position_rotation: rotation ?? 0,
     }
     if (width !== undefined) updateData.position_width = width.toString()
     if (height !== undefined) updateData.position_height = height.toString()
-    // Optional. Existing callers that don't send rotation continue to work — the column has a NOT NULL DEFAULT 0.
-    if (rotation !== undefined) updateData.position_rotation = rotation
 
     const { data: updated, error: updateError } = await admin
       .from('boards')
