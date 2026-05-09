@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { Board } from '@/types'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
-import { ArrowLeft, Share2, Settings, Box, ChevronDown, Upload } from 'lucide-react'
+import { ArrowLeft, Share2, Settings, Box, ChevronDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 
@@ -125,8 +125,6 @@ export default function StudioPage() {
   const [currentRoomName, setCurrentRoomName] = useState<string | null>(null)
   const [allRooms, setAllRooms] = useState<Array<{ id: string; name: string }>>([])
   const [showRoomSwitcher, setShowRoomSwitcher] = useState(false)
-  const [uploadingHeader, setUploadingHeader] = useState(false)
-  const headerUploadInputRef = useRef<HTMLInputElement | null>(null)
 
   const isDemo = searchParams?.get('demo') === 'true'
 
@@ -443,59 +441,6 @@ export default function StudioPage() {
     }
   }
 
-  /**
-   * Phase 6.2 in-studio upload. Files chosen from the header button POST to
-   * /api/upload with the current room's id + workspace id. Boards are created
-   * without a wall position — the realtime channel surfaces them in the
-   * `localBoards` list, and they show up in the EditModeOverlay sidebar when
-   * the user enters wall edit mode to place them.
-   */
-  const handleHeaderUploadChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    // Reset input so re-picking the same file fires onChange again
-    e.target.value = ''
-    if (files.length === 0 || !roomId || !workspaceId) return
-
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
-    const MAX_FILE_SIZE = 50 * 1024 * 1024
-    const valid = files.filter((f) => validTypes.includes(f.type) && f.size <= MAX_FILE_SIZE)
-    const oversized = files.filter((f) => f.size > MAX_FILE_SIZE)
-
-    if (oversized.length > 0) {
-      toast.error(`Skipped ${oversized.length} file(s) over 50 MB`)
-    }
-    if (valid.length === 0) return
-
-    try {
-      setUploadingHeader(true)
-      let successCount = 0
-      for (const file of valid) {
-        const fd = new FormData()
-        fd.append('image', file)
-        fd.append('workspaceId', workspaceId)
-        fd.append('roomId', roomId)
-        fd.append('title', file.name.replace(/\.[^/.]+$/, '') || 'Untitled Board')
-        const res = await fetch('/api/upload', { method: 'POST', body: fd })
-        if (res.ok) successCount += 1
-      }
-      if (successCount > 0) {
-        toast.success(
-          successCount === valid.length
-            ? `Uploaded ${successCount} board${successCount === 1 ? '' : 's'} to this room`
-            : `Uploaded ${successCount} of ${valid.length}; ${valid.length - successCount} failed`
-        )
-        await handleBoardUpdate()
-      } else {
-        toast.error('Upload failed. Please try again.')
-      }
-    } catch (err) {
-      console.error('Header upload failed:', err)
-      toast.error('Upload failed. Please try again.')
-    } finally {
-      setUploadingHeader(false)
-    }
-  }
-
   if (isLoading) {
     return (
       <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
@@ -664,32 +609,6 @@ export default function StudioPage() {
           {/* Top-right buttons - Hide when in edit mode */}
           {!isEditMode && (
             <div className="fixed top-4 right-4 z-40 flex items-center gap-2.5">
-              {/* Phase 6.2: Upload Board — uploads to the current room from
-                  the studio header. Posts to /api/upload with workspaceId +
-                  roomId baked in. The board enters the room without a wall
-                  position; user enters wall edit mode to place it. */}
-              {!isArchived && roomId && (
-                <>
-                  <input
-                    ref={headerUploadInputRef}
-                    type="file"
-                    accept="image/jpeg,image/jpg,image/png,application/pdf"
-                    multiple
-                    className="hidden"
-                    onChange={handleHeaderUploadChange}
-                  />
-                  <button
-                    onClick={() => headerUploadInputRef.current?.click()}
-                    disabled={uploadingHeader}
-                    className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2 disabled:opacity-50"
-                    aria-label="Upload board to this room"
-                  >
-                    <Upload className="w-4 h-4" />
-                    {uploadingHeader ? 'Uploading…' : 'Upload Board'}
-                  </button>
-                </>
-              )}
-
               {/* Share button */}
               <button
                 onClick={() => setShowShareModal(true)}

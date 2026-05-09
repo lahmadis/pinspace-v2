@@ -170,33 +170,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // Every workspace gets a default "Main Room" so the rooms-layered code path
-    // (Phase 6.1+: boards, uploads, realtime) has somewhere to attach. The Phase
-    // 6.0 migration created Main Rooms for pre-existing workspaces; this keeps
-    // the invariant for newly-created ones.
-    //
-    // Existence check is by row count, NOT by name = 'Main Room' — instructors
-    // are allowed to rename the default room (Phase 6.2 spec) and we shouldn't
-    // create a duplicate room just because the name no longer matches.
-    const ensureDefaultRoom = async (workspaceId: string) => {
-      const admin = supabaseServiceRole()
-      const { count } = await admin
-        .from('rooms')
-        .select('id', { count: 'exact', head: true })
-        .eq('workspace_id', workspaceId)
-      if ((count ?? 0) > 0) return
-      const { error: roomError } = await admin
-        .from('rooms')
-        .insert({
-          workspace_id: workspaceId,
-          name: 'Main Room',
-          display_order: 0,
-        })
-      if (roomError) {
-        console.error('Error creating default Main Room for workspace', workspaceId, roomError)
-      }
-    }
-
     // Insert workspace
     // Try with type first, if it fails (column doesn't exist), try without type
     const insertData: Record<string, unknown> = { name, description, owner_id: userId }
@@ -226,7 +199,6 @@ export async function POST(req: Request) {
         }
 
         await ensureOwnerMembership(dataWithoutType.id)
-        await ensureDefaultRoom(dataWithoutType.id)
         return NextResponse.json({ workspace: dataWithoutType }, { status: 201 })
       }
 
@@ -234,7 +206,6 @@ export async function POST(req: Request) {
     }
 
     await ensureOwnerMembership(data.id)
-    await ensureDefaultRoom(data.id)
     return NextResponse.json({ workspace: data }, { status: 201 })
   } catch (error) {
     console.error('Unexpected error in POST /api/workspaces:', error)
