@@ -60,7 +60,14 @@ export async function GET() {
       memberWorkspaces = data ?? []
     }
 
-    const allWorkspaces = [...(owned ?? []), ...memberWorkspaces]
+    // Dedupe by id: every owned workspace is also a member workspace (POST
+    // creates both rows), so the two sets always overlap. Without this the
+    // dashboard renders each owned workspace twice.
+    const allWorkspaces = Array.from(
+      new Map(
+        [...(owned ?? []), ...memberWorkspaces].map((w) => [w.id, w])
+      ).values()
+    )
 
     // Fetch board counts for all workspaces in one query
     const wsIds = allWorkspaces.map((w) => w.id)
