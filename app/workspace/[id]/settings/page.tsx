@@ -594,7 +594,7 @@ export default function WorkspaceSettingsPage() {
                           {member.role === 'instructor' ? (
                             <>
                               <GraduationCap className="w-3.5 h-3.5" />
-                              Instructor
+                              {workspace.type === 'personal' ? 'Owner' : 'Instructor'}
                             </>
                           ) : (
                             <>

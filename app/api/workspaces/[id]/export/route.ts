@@ -102,22 +102,6 @@ export async function GET(
 
     const rows = (boards ?? []) as BoardRow[]
 
-    const manifest = rows.map((b) => ({
-      id: b.id,
-      title: b.title,
-      description: b.description,
-      student_name: b.student_name,
-      student_email: b.student_email,
-      tags: b.tags ?? [],
-      uploaded_at: b.uploaded_at,
-      position_wall_index: b.position_wall_index,
-      position_x: b.position_x,
-      position_y: b.position_y,
-      position_width: b.position_width,
-      position_height: b.position_height,
-      position_rotation: b.position_rotation,
-    }))
-
     for (const board of rows) {
       const imgUrl = board.full_image_url
       if (!imgUrl) continue
@@ -144,8 +128,6 @@ export async function GET(
         console.error(`export: failed to fetch board ${board.id}:`, err)
       }
     }
-
-    zip.file('manifest.json', JSON.stringify(manifest, null, 2))
 
     const archive = await zip.generateAsync({
       type: 'nodebuffer',

@@ -2,6 +2,8 @@
 
 import { useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase/client'
+import type { Session } from '@supabase/supabase-js'
 
 /**
  * Institution handoff: /i/wit → /?institution=wit (home landing page)
@@ -18,7 +20,13 @@ export default function InstitutionHandoffPage() {
       router.replace('/')
       return
     }
-    router.replace(`/sign-in?institution=${encodeURIComponent(slug)}`)
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
+      if (session) {
+        router.replace(`/?institution=${encodeURIComponent(slug)}`)
+      } else {
+        router.replace(`/sign-in?institution=${encodeURIComponent(slug)}`)
+      }
+    })
   }, [slug, router])
 
   return (
