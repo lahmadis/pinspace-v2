@@ -3,10 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent, User as AuthUser } from '@supabase/supabase-js'
 import { toast } from '@/lib/toast'
 import { Workspace, Room } from '@/types'
+import { useAuthSession } from '@/hooks/useAuthSession'
 import {
   ArrowLeft,
   Settings,
@@ -25,8 +24,8 @@ export default function WorkspaceRoomsPage() {
   const router = useRouter()
   const workspaceId = params.id as string
 
-  const [user, setUser] = useState<AuthUser | null>(null)
-  const [isAuthLoaded, setIsAuthLoaded] = useState(false)
+  const { status: authStatus, user } = useAuthSession()
+  const isAuthLoaded = authStatus !== 'loading'
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -40,24 +39,10 @@ export default function WorkspaceRoomsPage() {
   const [roomToDelete, setRoomToDelete] = useState<Room | null>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
-      if (!session) {
-        router.push('/sign-in')
-        return
-      }
-      setUser(session.user)
-      setIsAuthLoaded(true)
-    })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      if (!session) {
-        router.push('/sign-in')
-        return
-      }
-      setUser(session.user)
-      setIsAuthLoaded(true)
-    })
-    return () => subscription.unsubscribe()
-  }, [router])
+    if (authStatus === 'unauthenticated') {
+      router.push('/sign-in')
+    }
+  }, [authStatus, router])
 
   useEffect(() => {
     if (isAuthLoaded && user) fetchWorkspace()

@@ -1,7 +1,5 @@
 'use client'
 
-import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { toast } from '@/lib/toast'
 import { useEffect, useState, useRef, Suspense } from 'react'
@@ -9,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Workspace } from '@/types'
 import JoinClassModal from '@/components/JoinClassModal'
 import { useAccountMode } from '@/lib/useAccountMode'
+import { useAuthSession } from '@/hooks/useAuthSession'
 
 const INSTITUTION_STORAGE_KEY = 'pinspace_institution'
 import {
@@ -189,8 +188,8 @@ function WorkspaceCard({ workspace, isOwner, onDelete, onRename, openMenuId, set
 
 function DashboardContent() {
   const router = useRouter()
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoaded, setIsLoaded] = useState(false)
+  const { status: authStatus, user } = useAuthSession()
+  const isLoaded = authStatus !== 'loading'
   const [studios, setStudios] = useState<Studio[]>([])
   const [workspaces, setWorkspaces] = useState<DashboardWorkspace[]>([])
   const [loading, setLoading] = useState(true)
@@ -204,28 +203,14 @@ function DashboardContent() {
   const [showArchived, setShowArchived] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
-      if (!session) {
-        router.push('/sign-in')
-        return
-      }
-      setUser(session.user)
-      setIsLoaded(true)
+    if (authStatus === 'unauthenticated') {
+      router.push('/sign-in')
+      return
+    }
+    if (authStatus === 'authenticated') {
       fetchUserStudios()
-    })
-    
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      if (!session) {
-        router.push('/sign-in')
-        return
-      }
-      setUser(session.user)
-      setIsLoaded(true)
-      fetchUserStudios()
-    })
-    
-    return () => subscription.unsubscribe()
-  }, [router])
+    }
+  }, [authStatus, router])
 
   const fetchUserStudios = async () => {
     try {

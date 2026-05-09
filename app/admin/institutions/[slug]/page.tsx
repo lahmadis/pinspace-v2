@@ -2,10 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { Building2, ExternalLink, Users, LayoutGrid, Image as ImageIcon, ChevronLeft } from 'lucide-react'
+import { useAuthSession } from '@/hooks/useAuthSession'
 
 type UserRole = 'faculty' | 'student' | 'professional'
 
@@ -42,29 +41,18 @@ export default function InstitutionStatsPage() {
   const params = useParams()
   const router = useRouter()
   const slug = params?.slug as string
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoaded, setIsLoaded] = useState(false)
+  const { status: authStatus, user } = useAuthSession()
+  const isLoaded = authStatus !== 'loading'
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
   const [stats, setStats] = useState<InstitutionStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
-      if (!session) {
-        router.push('/sign-in')
-        return
-      }
-      setUser(session.user)
-      setIsLoaded(true)
-    })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      if (!session) router.push('/sign-in')
-      else setUser(session.user)
-      setIsLoaded(true)
-    })
-    return () => subscription.unsubscribe()
-  }, [router])
+    if (authStatus === 'unauthenticated') {
+      router.push('/sign-in')
+    }
+  }, [authStatus, router])
 
   useEffect(() => {
     if (!isLoaded || !user?.id) return

@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
 import Link from 'next/link'
-import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { toast } from '@/lib/toast'
+import { useAuthSession } from '@/hooks/useAuthSession'
 
 export default function NewStudioPage() {
   const router = useRouter()
-  const [isLoaded, setIsLoaded] = useState(false)
+  const { status: authStatus } = useAuthSession()
+  const isLoaded = authStatus !== 'loading'
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
@@ -17,24 +17,10 @@ export default function NewStudioPage() {
   })
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
-      if (!session) {
-        router.push('/sign-in')
-        return
-      }
-      setIsLoaded(true)
-    })
-    
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      if (!session) {
-        router.push('/sign-in')
-        return
-      }
-      setIsLoaded(true)
-    })
-    
-    return () => subscription.unsubscribe()
-  }, [router])
+    if (authStatus === 'unauthenticated') {
+      router.push('/sign-in')
+    }
+  }, [authStatus, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

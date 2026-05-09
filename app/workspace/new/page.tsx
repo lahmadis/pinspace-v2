@@ -2,17 +2,16 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import Link from 'next/link'
 import type { Institution } from '@/types'
 import { toast } from '@/lib/toast'
 import { useAccountMode } from '@/lib/useAccountMode'
+import { useAuthSession } from '@/hooks/useAuthSession'
 
 export default function NewWorkspacePage() {
   const router = useRouter()
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoaded, setIsLoaded] = useState(false)
+  const { status: authStatus, user } = useAuthSession()
+  const isLoaded = authStatus !== 'loading'
   const [loading, setLoading] = useState(false)
   const [institutions, setInstitutions] = useState<Institution[]>([])
   const { mode: accountMode } = useAccountMode(user?.id)
@@ -31,26 +30,10 @@ export default function NewWorkspacePage() {
   })
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
-      if (!session) {
-        router.push('/sign-in')
-        return
-      }
-      setUser(session.user)
-      setIsLoaded(true)
-    })
-    
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      if (!session) {
-        router.push('/sign-in')
-        return
-      }
-      setUser(session.user)
-      setIsLoaded(true)
-    })
-    
-    return () => subscription.unsubscribe()
-  }, [router])
+    if (authStatus === 'unauthenticated') {
+      router.push('/sign-in')
+    }
+  }, [authStatus, router])
 
   useEffect(() => {
     if (!isLoaded) return

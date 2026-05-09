@@ -5,17 +5,22 @@ import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { Board } from '@/types'
 import Loading from '@/components/Loading'
-import { supabase } from '@/lib/supabase/client'
-import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
+import { useAuthSession } from '@/hooks/useAuthSession'
 
 export default function MyBoardsPage() {
   const router = useRouter()
+  const { status: authStatus } = useAuthSession()
   const [boards, setBoards] = useState<Board[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    let cancelled = false
+    if (authStatus === 'unauthenticated') {
+      router.push('/sign-in?redirect=/my-boards')
+      return
+    }
+    if (authStatus !== 'authenticated') return
 
+    let cancelled = false
     const fetchBoards = async () => {
       try {
         const response = await fetch('/api/my-boards')
@@ -32,26 +37,11 @@ export default function MyBoardsPage() {
         if (!cancelled) setLoading(false)
       }
     }
-
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
-      if (!session) {
-        router.push('/sign-in?redirect=/my-boards')
-        return
-      }
-      fetchBoards()
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      if (!session) {
-        router.push('/sign-in?redirect=/my-boards')
-      }
-    })
-
+    fetchBoards()
     return () => {
       cancelled = true
-      subscription.unsubscribe()
     }
-  }, [router])
+  }, [authStatus, router])
 
   if (loading) {
     return <Loading message="Loading your boards..." />

@@ -2,8 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
+import { useAuthSession } from '@/hooks/useAuthSession'
 
 const ROLES = ['Student', 'Faculty', 'Professional (working at a firm)', 'Independent Creator'] as const
 const ROLE_TO_VALUE: Record<string, 'student' | 'faculty' | 'professional' | null> = {
@@ -20,8 +19,8 @@ const HOW_HEARD = ['Professor or instructor', 'Classmate', 'School website', 'So
 function OnboardingContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoaded, setIsLoaded] = useState(false)
+  const { status: authStatus, user } = useAuthSession()
+  const isLoaded = authStatus !== 'loading'
   const [hasProfile, setHasProfile] = useState<boolean | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -40,21 +39,10 @@ function OnboardingContent() {
   const redirectTo = searchParams?.get('redirect') || '/dashboard'
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
-      if (!session) {
-        router.replace('/sign-in')
-        return
-      }
-      setUser(session.user)
-      setIsLoaded(true)
-    })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      if (!session) router.replace('/sign-in')
-      else setUser(session.user)
-      setIsLoaded(true)
-    })
-    return () => subscription.unsubscribe()
-  }, [router])
+    if (authStatus === 'unauthenticated') {
+      router.replace('/sign-in')
+    }
+  }, [authStatus, router])
 
   useEffect(() => {
     const stored = sessionStorage.getItem('pinspace_institution_id')
