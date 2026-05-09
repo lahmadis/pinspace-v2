@@ -1,43 +1,39 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServiceRole } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
-// GET /api/explore/academic-years?institution_slug=wit
-// Returns available academic years with studio counts
-export async function GET(request: NextRequest) {
+// GET /api/explore/academic-years
+// Returns academic-year buckets (with counts) scoped to the signed-in user's
+// own institution. Pilot pass 7: no cross-institution browsing — institution
+// is always derived from session, never from query params.
+export async function GET() {
   try {
-    const searchParams = request.nextUrl.searchParams
-    const institutionSlug = searchParams.get('institution_slug')
-    const institutionId = searchParams.get('institution_id')
-
-    const supabase = supabaseServiceRole()
-
-    // Resolve institution filter
+    // Pilot pass 7: scope to user's own org from session.
+    const userClient = supabaseServer()
+    const { data: { session } } = await userClient.auth.getSession()
     let institutionFilterId: string | null = null
-    if (institutionId) {
-      institutionFilterId = institutionId
-    } else if (institutionSlug) {
-      const { data: inst } = await supabase
-        .from('organizations')
-        .select('id')
-        .eq('slug', institutionSlug)
-        .single()
-      if (inst?.id) institutionFilterId = inst.id
+    if (session?.user?.id) {
+      const { data: profile } = await userClient
+        .from('user_profiles')
+        .select('organization_id')
+        .eq('user_id', session.user.id)
+        .maybeSingle()
+      if (profile?.organization_id) institutionFilterId = profile.organization_id
     }
 
-    let query = supabase
+    if (!institutionFilterId) {
+      return NextResponse.json({ academicYears: [] })
+    }
+
+    const supabase = supabaseServiceRole()
+    const { data, error } = await supabase
       .from('workspaces')
       .select('academic_year')
       .eq('is_public', true)
       .not('published_at', 'is', null)
       .not('academic_year', 'is', null)
-
-    if (institutionFilterId) {
-      query = query.eq('organization_id', institutionFilterId)
-    }
-
-    const { data, error } = await query
+      .eq('organization_id', institutionFilterId)
 
     if (error) {
       console.error('Error fetching academic years:', error)

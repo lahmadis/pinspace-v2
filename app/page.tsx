@@ -9,7 +9,6 @@ import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import GalleryAvatarModal, { AvatarFormValues } from '@/components/GalleryAvatarModal'
 import DemoBanner from '@/components/DemoBanner'
 import { isDemoMode } from '@/lib/demoMode'
-import InstitutionCard, { Institution } from '@/components/InstitutionCard'
 import AvatarMenu from '@/components/AvatarMenu'
 
 function HomeInner() {
@@ -19,8 +18,6 @@ function HomeInner() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [institutionSlug, setInstitutionSlug] = useState<string | null>(null)
-  const [institutions, setInstitutions] = useState<Institution[]>([])
-  const [institutionsLoading, setInstitutionsLoading] = useState(true)
 
   const isDemo = isDemoMode(searchParams)
   const institutionFromUrl = searchParams?.get('institution') ?? null
@@ -46,14 +43,6 @@ function HomeInner() {
     })
     
     return () => subscription.unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    fetch('/api/institutions')
-      .then((r) => r.json())
-      .then((data) => setInstitutions(data.institutions || []))
-      .catch(() => {})
-      .finally(() => setInstitutionsLoading(false))
   }, [])
 
   const handleEnterGallery = (values: AvatarFormValues) => {
@@ -157,36 +146,6 @@ function HomeInner() {
             experience design education like never before.
           </motion.p>
 
-          {/* CTA Buttons */}
-          <motion.div
-            className="flex flex-col sm:flex-row gap-4 justify-center items-center"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.8 }}
-          >
-            <a
-              href="#institutions"
-              className="group relative px-8 py-4 bg-primary hover:bg-primary-light text-white rounded-lg font-medium transition-all duration-300 hover:scale-105 hover:shadow-lg min-w-[200px] text-center"
-              onClick={(e) => {
-                e.preventDefault()
-                document.getElementById('institutions')?.scrollIntoView({ behavior: 'smooth' })
-              }}
-            >
-              Browse Institutions ↓
-            </a>
-          </motion.div>
-          <motion.p
-            className="mt-4 text-sm text-text-muted"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 1 }}
-          >
-            or{' '}
-            <Link href="/sign-up" className="text-primary hover:underline">
-              create a free personal account →
-            </Link>
-          </motion.p>
-
           {/* Feature Pills */}
           <motion.div 
             className="flex flex-wrap gap-3 justify-center mt-16 max-w-2xl mx-auto"
@@ -206,57 +165,6 @@ function HomeInner() {
         </motion.div>
 
       </div>
-
-      {/* Institution Directory */}
-      <section id="institutions" className="relative z-10 bg-white/80 backdrop-blur-sm border-t border-gray-100 px-4 py-16">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2 text-center">
-            Schools &amp; Firms on PinSpace
-          </h2>
-          <p className="text-gray-500 text-center mb-10 text-sm">Pick your institution to explore their studio network.</p>
-
-          {institutionsLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-4 animate-pulse">
-                  <div className="flex items-start justify-between">
-                    <div className="w-12 h-12 rounded-lg bg-gray-100" />
-                    <div className="w-16 h-5 rounded-full bg-gray-100" />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="h-4 bg-gray-100 rounded w-3/4" />
-                    <div className="h-3 bg-gray-100 rounded w-1/2" />
-                  </div>
-                  <div className="h-4 bg-gray-100 rounded w-16 mt-auto" />
-                </div>
-              ))}
-            </div>
-          ) : institutions.length === 0 ? (
-            <p className="text-center text-gray-400 py-12">Coming soon — no institutions yet.</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {institutions.map((inst, i) => (
-                <InstitutionCard key={inst.id} institution={inst} index={i} />
-              ))}
-            </div>
-          )}
-
-          <p className="mt-10 text-center text-sm text-gray-400">
-            Don&apos;t see your school?{' '}
-            <a
-              href="mailto:hello@pinspace.app?subject=Request%20Access"
-              className="text-primary hover:underline"
-            >
-              Request access →
-            </a>
-            {' · '}
-            Just want a personal archive?{' '}
-            <Link href="/sign-up" className="text-primary hover:underline">
-              Sign up free →
-            </Link>
-          </p>
-        </div>
-      </section>
 
       <GalleryAvatarModal
         isOpen={showGalleryModal}

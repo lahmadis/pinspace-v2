@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServiceRole } from '@/lib/supabase/server'
+import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoStudios, getDemoTotals } from '@/lib/mockData'
-import { getSampleStudios } from '@/lib/sampleData'
 
 // Allow short-lived caching so repeat visits and multiple clients don't all hit Supabase
 export const dynamic = 'force-dynamic'
@@ -20,46 +19,8 @@ export async function GET(request: NextRequest) {
     const department = searchParams.get('department')
     const year = searchParams.get('year')
     const academicYear = searchParams.get('academic_year')
-    const institutionSlug = searchParams.get('institution_slug')
-    const institutionId = searchParams.get('institution_id')
-
-    // Helper: filter + decorate sample studios with optional department/year filters
-    const getFilteredSampleStudios = () => {
-      const sampleStudios = getSampleStudios()
-      let filtered = sampleStudios.map(s => ({
-        ...s,
-        boundingBox: { width: 20, depth: 15 } // Default footprint for sample studios
-      }))
-
-      if (department) {
-        filtered = filtered.filter(s => {
-          const norm = (val: string | number | null | undefined) => `${val || ''}`.toLowerCase().trim()
-          return norm(s.department) === norm(department)
-        })
-      }
-
-      if (year) {
-        filtered = filtered.filter(s => {
-          const norm = (val: string | number | null | undefined) => `${val || ''}`.toLowerCase().trim()
-          const numOnly = (val: string | number | null | undefined) => {
-            const m = `${val || ''}`.match(/\d+/)
-            return m ? m[0] : `${val || ''}`
-          }
-          const studioYearStr = norm(typeof s.year === 'string' ? s.year : `${s.year}`)
-          const studioYearNum = numOnly(s.year)
-          const targetYearStr = norm(year)
-          const targetYearNum = numOnly(year)
-          return studioYearStr === targetYearStr || studioYearNum === targetYearNum
-        })
-      }
-
-      const totals = {
-        studios: filtered.length,
-        students: filtered.reduce((sum, s) => sum + (s.memberCount || 0), 0),
-      }
-
-      return { filtered, totals }
-    }
+    // Pilot pass 7: any institution_slug / institution_id query params are
+    // ignored — the user's institution is always derived from session below.
 
     if (isDemo) {
       // Return mock data for demo mode with filters applied
@@ -95,32 +56,41 @@ export async function GET(request: NextRequest) {
         { headers: { 'Cache-Control': `public, s-maxage=${CACHE_MAX_AGE}, stale-while-revalidate=${STALE_WHILE_REVALIDATE}` } }
       )
     }
-    
-    // If service role key is missing locally, fall back to sample data instead of erroring
+
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      const { filtered, totals } = getFilteredSampleStudios()
-      console.warn('⚠️ SUPABASE_SERVICE_ROLE_KEY missing; returning sample studios only')
+      console.warn('⚠️ SUPABASE_SERVICE_ROLE_KEY missing; returning empty studios')
       return NextResponse.json(
-        { studios: filtered, totals },
+        { studios: [], totals: { studios: 0, students: 0 }, hasOrg: false },
         { headers: { 'Cache-Control': `public, s-maxage=${CACHE_MAX_AGE}, stale-while-revalidate=${STALE_WHILE_REVALIDATE}` } }
       )
     }
 
-    // Use service role client to bypass RLS for public endpoint
-    const supabase = supabaseServiceRole()
-
-    // Resolve institution filter (optional): by slug or id
+    // Pilot pass 7: scope strictly to the signed-in user's own institution.
+    // Resolved server-side from user_profiles.organization_id — clients no
+    // longer choose an institution.
+    const userClient = supabaseServer()
+    const { data: { session } } = await userClient.auth.getSession()
     let institutionFilterId: string | null = null
-    if (institutionId) {
-      institutionFilterId = institutionId
-    } else if (institutionSlug) {
-      const { data: inst } = await supabase
-        .from('organizations')
-        .select('id')
-        .eq('slug', institutionSlug)
-        .single()
-      if (inst?.id) institutionFilterId = inst.id
+    if (session?.user?.id) {
+      const { data: profile } = await userClient
+        .from('user_profiles')
+        .select('organization_id')
+        .eq('user_id', session.user.id)
+        .maybeSingle()
+      if (profile?.organization_id) institutionFilterId = profile.organization_id
     }
+
+    if (!institutionFilterId) {
+      // No session, or signed-in user is not attached to an org (legacy
+      // orphaned account). Return empty so the UI can show its empty state.
+      return NextResponse.json(
+        { studios: [], totals: { studios: 0, students: 0 }, hasOrg: false },
+        { headers: { 'Cache-Control': 'private, no-store' } }
+      )
+    }
+
+    // Use service role client to bypass RLS for the actual studio query.
+    const supabase = supabaseServiceRole()
 
     // Bubble per published room. Query rooms.is_published with parent
     // workspace metadata joined for filtering/labeling. is_published is the
@@ -168,11 +138,9 @@ export async function GET(request: NextRequest) {
 
     if (primaryError) {
       console.error('Error fetching published rooms:', primaryError)
-      const { filtered, totals } = getFilteredSampleStudios()
-      console.warn('⚠️ Supabase error on rooms query; returning sample studios only')
       return NextResponse.json(
-        { studios: filtered, totals },
-        { headers: { 'Cache-Control': `public, s-maxage=${CACHE_MAX_AGE}, stale-while-revalidate=${STALE_WHILE_REVALIDATE}` } }
+        { studios: [], totals: { studios: 0, students: 0 }, hasOrg: true },
+        { headers: { 'Cache-Control': 'private, no-store' } }
       )
     }
 
@@ -197,15 +165,8 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Apply filters (institution / department / academicYear).
-    // Pilot scope: institution-only. When no institution filter, return
-    // nothing — visitors see only their own institution's published rooms.
-    let filteredEntries = entries
-    if (institutionFilterId) {
-      filteredEntries = filteredEntries.filter(e => e.organizationId === institutionFilterId)
-    } else {
-      filteredEntries = []
-    }
+    // Filter strictly to the user's own institution (resolved above).
+    let filteredEntries = entries.filter(e => e.organizationId === institutionFilterId)
     if (department) {
       filteredEntries = filteredEntries.filter(e => e.department === department)
     }
@@ -310,21 +271,15 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // When institution filter is present, return only real Supabase studios (no sample merge).
-    // When no institution param, keep backward-compatible merged behavior.
-    const { filtered: filteredSampleStudios } = getFilteredSampleStudios()
-    const allStudios = institutionFilterId
-      ? studios
-      : [...studios, ...filteredSampleStudios]
-    
     const totals = {
-      studios: allStudios.length,
-      students: allStudios.reduce((sum, s) => sum + (s.memberCount || 0), 0),
+      studios: studios.length,
+      students: studios.reduce((sum, s) => sum + (s.memberCount || 0), 0),
     }
 
     return NextResponse.json(
-      { studios: allStudios, totals },
-      { headers: { 'Cache-Control': `public, s-maxage=${CACHE_MAX_AGE}, stale-while-revalidate=${STALE_WHILE_REVALIDATE}` } }
+      { studios, totals, hasOrg: true },
+      // Per-user response now (depends on session) — don't share a CDN cache.
+      { headers: { 'Cache-Control': 'private, no-store' } }
     )
   } catch (error) {
     console.error('Error fetching studios:', error)

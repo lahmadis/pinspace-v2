@@ -11,6 +11,7 @@ import { currentAcademicYear } from '@/lib/academicYear'
 type StudioResponse = {
   studios: BubbleNode[]
   totals: { studios: number; students: number }
+  hasOrg?: boolean
 }
 
 
@@ -20,6 +21,7 @@ function ExplorePageInner() {
   const [nodes, setNodes] = useState<BubbleNode[]>([])
   const [totalStudios, setTotalStudios] = useState(0)
   const [totalStudents, setTotalStudents] = useState(0)
+  const [hasOrg, setHasOrg] = useState<boolean>(true)
 
   type ViewMode = 'flat' | 'hierarchy'
   type HierarchyLevel = 'years' | 'departments' | 'studios'
@@ -34,12 +36,6 @@ function ExplorePageInner() {
 
   const isDemo = searchParams?.get('demo') === 'true'
 
-  // Institution switcher state
-  const [activeInstitution, setActiveInstitution] = useState<string | null>(() => {
-    return searchParams?.get('institution') ?? null
-  })
-  const [institutions, setInstitutions] = useState<{ id: string; name: string; slug: string; network_label?: string }[]>([])
-
   // Filter nodes by search (studio name or professor/instructor)
   const searchFilteredNodes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
@@ -51,62 +47,12 @@ function ExplorePageInner() {
     )
   }, [nodes, searchQuery])
 
-  // Persist institution so other pages (Dashboard, etc.) can link "home" to this institution
-  useEffect(() => {
-    if (typeof window !== 'undefined' && activeInstitution) {
-      window.sessionStorage.setItem('pinspace_institution', activeInstitution)
-    }
-  }, [activeInstitution])
-
-  // Change institution + reflect in the URL so the state is shareable
-  const updateInstitution = useCallback(
-    (slug: string | null) => {
-      setActiveInstitution(slug)
-      const params = new URLSearchParams(searchParams?.toString() ?? '')
-      if (slug) params.set('institution', slug)
-      else params.delete('institution')
-      const qs = params.toString()
-      router.replace(qs ? `/explore?${qs}` : '/explore', { scroll: false })
-    },
-    [router, searchParams]
-  )
-
-  // On mount: initialize activeInstitution from URL or sessionStorage
-  useEffect(() => {
-    const urlInst = searchParams?.get('institution') ?? null
-    if (urlInst) {
-      setActiveInstitution(urlInst)
-    } else if (typeof window !== 'undefined') {
-      // Don't auto-restore from sessionStorage — start global if no URL param
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Fetch institution list for tab bar
-  useEffect(() => {
-    if (isDemo) return
-    const fetchInstitutions = async () => {
-      try {
-        const res = await fetch('/api/institutions', { cache: 'no-store' })
-        if (res.ok) {
-          const data = await res.json()
-          setInstitutions(data.institutions || [])
-        }
-      } catch (e) {
-        console.error(e)
-      }
-    }
-    fetchInstitutions()
-  }, [isDemo])
-
-  // Load available academic years for the tab bar
+  // Load available academic years for the tab bar — scoped to user's own institution server-side
   useEffect(() => {
     if (isDemo) return
     const loadAcademicYears = async () => {
       try {
-        const params = new URLSearchParams()
-        if (activeInstitution) params.set('institution_slug', activeInstitution)
-        const url = `/api/explore/academic-years${params.toString() ? `?${params.toString()}` : ''}`
-        const res = await fetch(url, { cache: 'no-store' })
+        const res = await fetch('/api/explore/academic-years', { cache: 'no-store' })
         if (res.ok) {
           const data = await res.json()
           setAvailableAcademicYears(data.academicYears || [])
@@ -123,14 +69,13 @@ function ExplorePageInner() {
       }
     }
     loadAcademicYears()
-  }, [isDemo, activeInstitution])
+  }, [isDemo])
 
   useEffect(() => {
     const load = async () => {
       try {
         const params = new URLSearchParams()
         if (isDemo) params.set('demo', 'true')
-        if (activeInstitution) params.set('institution_slug', activeInstitution)
         if (!isDemo && selectedAcademicYear) params.set('academic_year', selectedAcademicYear)
         const url = `/api/explore/studios${params.toString() ? `?${params.toString()}` : ''}`
         const res = await fetch(url, { cache: 'no-store' })
@@ -140,6 +85,7 @@ function ExplorePageInner() {
           setNodes(studios)
           setTotalStudios(data.totals?.studios ?? 0)
           setTotalStudents(data.totals?.students ?? 0)
+          setHasOrg(data.hasOrg !== false)
           // Eager-prefetch first few studios so opening them is instant even without hover
           const toPrefetch = studios.filter((n) => n.url).slice(0, 5)
           for (const node of toPrefetch) {
@@ -153,7 +99,7 @@ function ExplorePageInner() {
       }
     }
     load()
-  }, [isDemo, activeInstitution, selectedAcademicYear, router])
+  }, [isDemo, selectedAcademicYear, router])
 
   const handleNodeHover = useCallback(
     (node: BubbleNode) => {
@@ -245,7 +191,7 @@ function ExplorePageInner() {
           {/* Left: logo + title */}
           <div className="flex items-center gap-4 min-w-0 flex-1 justify-start">
             <Link
-              href={activeInstitution ? `/i/${activeInstitution}` : '/'}
+              href="/"
               className="text-xl font-bold text-white hover:text-indigo-400 transition-colors shrink-0"
             >
               PinSpace
@@ -311,38 +257,9 @@ function ExplorePageInner() {
         </div>
       </header>
 
-      {/* Institution Switcher Tab Bar */}
-      {!isDemo && institutions.length > 0 && (
-        <div className="fixed top-[57px] left-0 right-0 z-[31] bg-slate-900/95 border-b border-slate-700/30 px-6 py-2 flex items-center gap-2 overflow-x-auto">
-          <button
-            onClick={() => updateInstitution(null)}
-            className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-              activeInstitution === null
-                ? 'bg-indigo-600 text-white'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600'
-            }`}
-          >
-            🌍 All Schools
-          </button>
-          {institutions.map((inst) => (
-            <button
-              key={inst.slug}
-              onClick={() => updateInstitution(inst.slug)}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                activeInstitution === inst.slug
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600'
-              }`}
-            >
-              {inst.network_label || inst.name}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* Academic Year Tab Bar */}
       {!isDemo && availableAcademicYears.length > 0 && (
-        <div className={`fixed ${!isDemo && institutions.length > 0 ? 'top-[101px]' : 'top-[57px]'} left-0 right-0 z-30 bg-slate-900/95 border-b border-slate-700/50 px-6 py-2 flex items-center gap-2 overflow-x-auto`}>
+        <div className="fixed top-[57px] left-0 right-0 z-30 bg-slate-900/95 border-b border-slate-700/50 px-6 py-2 flex items-center gap-2 overflow-x-auto">
           <button
             onClick={() => setSelectedAcademicYear('')}
             className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
@@ -374,9 +291,8 @@ function ExplorePageInner() {
 
       {/* Full Canvas Bubble Network or empty state */}
       {(() => {
-        const hasInstBar = !isDemo && institutions.length > 0
         const hasYearBar = !isDemo && availableAcademicYears.length > 0
-        const headerHeight = 57 + (hasInstBar ? 44 : 0) + (hasYearBar ? 44 : 0)
+        const headerHeight = 57 + (hasYearBar ? 44 : 0)
         return displayedNodes.length === 0 ? (
           <div
             className="flex items-center justify-center"
@@ -385,11 +301,11 @@ function ExplorePageInner() {
             <div className="text-center">
               <p className="text-slate-400 text-xl font-medium">No studios yet</p>
               <p className="text-slate-500 text-sm mt-2">
-                {!isDemo && selectedAcademicYear
-                  ? `No published studios for ${selectedAcademicYear}`
-                  : activeInstitution
-                    ? 'No published studios found for this institution'
-                    : 'Select an institution to see its published studios'}
+                {!isDemo && !hasOrg
+                  ? "We couldn't find studios for your institution. Contact support if this seems wrong."
+                  : !isDemo && selectedAcademicYear
+                    ? `No published studios for ${selectedAcademicYear}`
+                    : 'No published studios found for your institution'}
               </p>
             </div>
           </div>
