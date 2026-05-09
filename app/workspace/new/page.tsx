@@ -77,9 +77,22 @@ export default function NewWorkspacePage() {
     try {
       setLoading(true)
 
+      let creatorName = ''
+      try {
+        const profileRes = await fetch('/api/user-profile', { cache: 'no-store' })
+        if (profileRes.ok) {
+          const profile = await profileRes.json()
+          if (typeof profile?.full_name === 'string') {
+            creatorName = profile.full_name.trim()
+          }
+        }
+      } catch {
+        // Profile fetch is best-effort; fall back to email-local below.
+      }
+
       const payload: Record<string, string> = {
         name: formData.name.trim(),
-        creatorName: user?.user_metadata?.email?.split('@')[0] || 'Instructor',
+        creatorName: creatorName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Instructor',
         role: formData.role
       }
       if (formData.institutionSlug) payload.institution_slug = formData.institutionSlug

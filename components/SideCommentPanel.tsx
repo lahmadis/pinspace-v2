@@ -59,6 +59,7 @@ function getAvatarColor(name: string): string {
 
 export default function SideCommentPanel({ board, onClose }: SideCommentPanelProps) {
   const [user, setUser] = useState<User | null>(null)
+  const [profileFullName, setProfileFullName] = useState<string | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -66,7 +67,7 @@ export default function SideCommentPanel({ board, onClose }: SideCommentPanelPro
   const [posting, setPosting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const authorName = user?.user_metadata?.full_name || user?.user_metadata?.email?.split('@')[0] || 'Anonymous'
+  const authorName = profileFullName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Anonymous'
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
@@ -77,6 +78,20 @@ export default function SideCommentPanel({ board, onClose }: SideCommentPanelPro
     })
     return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!user?.id) {
+      setProfileFullName(null)
+      return
+    }
+    fetch('/api/user-profile', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const fullName = typeof data?.full_name === 'string' ? data.full_name.trim() : ''
+        setProfileFullName(fullName || null)
+      })
+      .catch(() => setProfileFullName(null))
+  }, [user?.id])
 
   const isOpen = board !== null
 

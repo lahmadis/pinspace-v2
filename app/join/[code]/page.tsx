@@ -25,6 +25,7 @@ export default function JoinWorkspacePage() {
   const [loading, setLoading] = useState(true)
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState('')
+  const [profileFullName, setProfileFullName] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
@@ -45,6 +46,19 @@ export default function JoinWorkspacePage() {
       fetchWorkspaceInfo()
     }
   }, [inviteCode, isLoaded])
+
+  useEffect(() => {
+    if (!user?.id) return
+    fetch('/api/user-profile', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const fullName = typeof data?.full_name === 'string' ? data.full_name.trim() : ''
+        setProfileFullName(fullName || null)
+      })
+      .catch(() => setProfileFullName(null))
+  }, [user?.id])
+
+  const profileFirstName = profileFullName ? profileFullName.split(/\s+/)[0] : null
 
   const fetchWorkspaceInfo = async () => {
     try {
@@ -75,7 +89,7 @@ export default function JoinWorkspacePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userName: user.user_metadata?.full_name || user.user_metadata?.email?.split('@')[0] || 'Student'
+          userName: profileFullName || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Student'
         })
       })
 
@@ -170,7 +184,7 @@ export default function JoinWorkspacePage() {
           <div className="space-y-4">
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <p className="text-sm text-blue-900">
-                ✓ Signed in as <strong>{user?.user_metadata?.email?.split('@')[0] || 'User'}</strong>
+                ✓ Signed in as <strong>{profileFirstName || user?.email?.split('@')[0] || 'User'}</strong>
               </p>
             </div>
 

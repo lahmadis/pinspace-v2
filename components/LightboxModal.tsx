@@ -80,7 +80,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const isOpen = board !== null
-  const authorName = user?.user_metadata?.email?.split('@')[0] || 'Anonymous'
+  const [profileFullName, setProfileFullName] = useState<string | null>(null)
+  const authorName = profileFullName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Anonymous'
   const isDemoMode = searchParams.get('demo') === 'true' || (typeof window !== 'undefined' && window.location.pathname.includes('demo-studio-'))
 
   useEffect(() => {
@@ -89,15 +90,29 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         setUser(session?.user || null)
       }
     )
-    
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event: AuthChangeEvent, session: Session | null) => {
         setUser(session?.user || null)
       }
     )
-    
+
     return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!user?.id) {
+      setProfileFullName(null)
+      return
+    }
+    fetch('/api/user-profile', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const fullName = typeof data?.full_name === 'string' ? data.full_name.trim() : ''
+        setProfileFullName(fullName || null)
+      })
+      .catch(() => setProfileFullName(null))
+  }, [user?.id])
 
   // Current board index for navigation
   const currentIndex = board ? allBoards.findIndex(b => b.id === board.id) : -1

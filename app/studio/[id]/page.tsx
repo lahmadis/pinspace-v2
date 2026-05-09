@@ -5,7 +5,6 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { Board } from '@/types'
-import WallConfigModal from '@/components/WallConfigModal'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
 import { ArrowLeft, Share2, Settings, Box, ChevronDown, Upload } from 'lucide-react'
@@ -105,7 +104,6 @@ export default function StudioPage() {
   const studioId = params.id as string
   
   const [boards, setBoards] = useState<Board[]>([])
-  const [showWallConfig, setShowWallConfig] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -303,10 +301,27 @@ export default function StudioPage() {
 
         if (loadedConfig) {
           setWallConfig(loadedConfig)
-          setShowWallConfig(false)
         } else {
-          // No saved config, show modal
-          setShowWallConfig(true)
+          // First entry: silently persist defaults so subsequent loads just read them.
+          setWallConfig(DEFAULT_CONFIG)
+          try {
+            await fetch(`/api/studios/${wallConfigWsId}/wall-config`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(DEFAULT_CONFIG),
+              signal,
+            })
+          } catch (e) {
+            if (!signal.aborted) console.warn('Failed to persist default wall config', e)
+          }
+          try {
+            localStorage.setItem(
+              `studio-${wallConfigWsId}-wall-config`,
+              JSON.stringify(DEFAULT_CONFIG)
+            )
+          } catch {
+            // localStorage cache is best-effort; API is source of truth.
+          }
         }
       } catch (error) {
         if (signal.aborted) return
@@ -409,23 +424,6 @@ export default function StudioPage() {
       if (commentsChannel) supabase.removeChannel(commentsChannel)
     }
   }, [studioId, isDemo, retryCount, roomId])
-
-  const handleWallConfigConfirm = async (config: WallConfig) => {
-    const wsKey = workspaceId ?? studioId
-    try {
-      await fetch(`/api/studios/${wsKey}/wall-config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      })
-      cacheWallConfigLocally(config)
-    } catch (error) {
-      console.error('Failed to save wall config', error)
-    }
-
-    setWallConfig(config)
-    setShowWallConfig(false)
-  }
 
   const handleReconfigureWalls = () => {
     setFloorEditorMode('walls')
@@ -551,13 +549,6 @@ export default function StudioPage() {
           This workspace is archived. View only.
         </div>
       )}
-      {showWallConfig && (
-        <WallConfigModal
-          onConfirm={handleWallConfigConfirm}
-          initialConfig={wallConfig || DEFAULT_CONFIG}
-        />
-      )}
-
       {showShareModal && (
         <ShareModal
           studioId={studioId}
@@ -565,7 +556,7 @@ export default function StudioPage() {
         />
       )}
 
-      {!showWallConfig && wallConfig && (
+      {wallConfig && (
         <div className="relative w-full h-screen overflow-hidden" style={{ background: '#B3B3FF' }}>
           {/* Animated gradient background effects */}
           <div className="absolute inset-0 overflow-hidden pointer-events-none">

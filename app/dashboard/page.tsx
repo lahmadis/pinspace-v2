@@ -327,6 +327,7 @@ function DashboardContent() {
   const [institutionHome, setInstitutionHome] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [organization, setOrganization] = useState<DashboardOrganization | null>(null)
+  const [firstName, setFirstName] = useState<string | null>(null)
   const { mode: accountMode, loading: accountModeLoading } = useAccountMode(user?.id)
   const showSharedSection = accountMode !== 'personal'
   const sharedNoun = accountMode === 'firm' ? 'Room' : 'Class'
@@ -380,6 +381,8 @@ function DashboardContent() {
       } else {
         setOrganization(null)
       }
+      const fullName = typeof profile?.full_name === 'string' ? profile.full_name.trim() : ''
+      setFirstName(fullName ? fullName.split(/\s+/)[0] : null)
     }).catch(() => setIsAdmin(false))
   }, [user?.id, searchParams, router])
 
@@ -447,7 +450,7 @@ function DashboardContent() {
         {/* Welcome Section */}
         <div className="mb-16">
           <h2 className="text-3xl font-semibold text-gray-900 mb-2">
-            Welcome back, {user?.user_metadata?.email?.split('@')[0] || 'there'}
+            Welcome back, {firstName || user?.email?.split('@')[0] || 'there'}
           </h2>
           <p className="text-base text-gray-600">
             Manage your studios and showcase your work

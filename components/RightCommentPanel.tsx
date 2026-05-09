@@ -43,6 +43,7 @@ function getAvatarColor(name: string): string {
 
 export default function RightCommentPanel({ board, onClose, isArchived = false, commentNonce = 0 }: RightCommentPanelProps) {
   const [user, setUser] = useState<User | null>(null)
+  const [profileFullName, setProfileFullName] = useState<string | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(false)
   const [newComment, setNewComment] = useState('')
@@ -50,19 +51,33 @@ export default function RightCommentPanel({ board, onClose, isArchived = false, 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const isOpen = board !== null
-  const authorName = user?.user_metadata?.email?.split('@')[0] || 'Anonymous'
+  const authorName = profileFullName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Anonymous'
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       setUser(session?.user || null)
     })
-    
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       setUser(session?.user || null)
     })
-    
+
     return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!user?.id) {
+      setProfileFullName(null)
+      return
+    }
+    fetch('/api/user-profile', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const fullName = typeof data?.full_name === 'string' ? data.full_name.trim() : ''
+        setProfileFullName(fullName || null)
+      })
+      .catch(() => setProfileFullName(null))
+  }, [user?.id])
 
   useEffect(() => {
     if (!board) {
