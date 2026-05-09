@@ -11,7 +11,6 @@ import dynamic from 'next/dynamic'
 import {
   ArrowLeft,
   Mail,
-  Globe,
   Users,
   Lightbulb,
   Copy,
@@ -230,44 +229,6 @@ export default function WorkspaceSettingsPage() {
     }
   }
 
-  const handleToggleRoomPublish = async (room: Room) => {
-    try {
-      setRoomBusy(room.id)
-      const response = await fetch(`/api/rooms/${room.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isPublished: !room.isPublished }),
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data?.error || 'Failed to update room')
-      await fetchWorkspace()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to update room')
-    } finally {
-      setRoomBusy(null)
-    }
-  }
-
-  const handleSetActiveRoom = async (room: Room) => {
-    if (!workspace) return
-    const isAlreadyActive = workspace.activeRoomId === room.id
-    try {
-      setRoomBusy(room.id)
-      const response = await fetch(`/api/rooms/${room.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: !isAlreadyActive }),
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data?.error || 'Failed to update active room')
-      await fetchWorkspace()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to update active room')
-    } finally {
-      setRoomBusy(null)
-    }
-  }
-
   const handleConfirmDeleteRoom = async () => {
     if (!roomToDelete) return
     try {
@@ -392,17 +353,9 @@ export default function WorkspaceSettingsPage() {
               </div>
             </div>
 
-            {/* Phase 6.2c: workspace-level Public Network section removed. The
-                per-room publish toggle in the Rooms section is now the only
-                way to publish content. workspaces.is_public/is_globally_public/
-                published_at columns and /api/workspaces/[id]/publish endpoint
-                are intentionally left in place for legacy compatibility — a
-                future cleanup migration will drop them once /explore has been
-                running on rooms.is_published in production for a while. */}
-
-            {/* Rooms Section — instructors only. Per-room publish toggle is
-                wired but doesn't affect /explore visibility this phase;
-                /explore still reads workspace.is_public until 6.2c. */}
+            {/* Rooms Section — instructors only. Publish controls live on the
+                rooms-list page (/workspace/[id]) so they sit next to each room
+                card; settings keeps room CRUD only. */}
             {isInstructor && (
               <div className="bg-white rounded-xl border border-gray-200 p-8">
                 <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2.5">
@@ -411,20 +364,16 @@ export default function WorkspaceSettingsPage() {
                 </h2>
                 <p className="text-sm text-gray-500 mb-6">
                   Each room is its own 3D wall. Use rooms to separate pin-ups, milestones, or reviews.
-                  Mark a room as <strong>active</strong> to make it the default upload target.
                 </p>
 
                 <div className="space-y-3">
                   {(workspace.rooms ?? []).map((room) => {
-                    const isActive = workspace.activeRoomId === room.id
                     const isEditing = editingRoomId === room.id
                     const isBusy = roomBusy === room.id
                     return (
                       <div
                         key={room.id}
-                        className={`flex flex-wrap items-center gap-3 p-4 rounded-lg border transition-colors ${
-                          isActive ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-100'
-                        }`}
+                        className="flex flex-wrap items-center gap-3 p-4 rounded-lg border bg-gray-50 border-gray-100 transition-colors"
                       >
                         {/* Name (inline editable) */}
                         <div className="flex-1 min-w-[180px]">
@@ -462,17 +411,6 @@ export default function WorkspaceSettingsPage() {
                           ) : (
                             <div className="flex items-center gap-2">
                               <p className="font-semibold text-gray-900">{room.name}</p>
-                              {isActive && (
-                                <span className="px-2 py-0.5 bg-indigo-600 text-white rounded-md text-xs font-medium">
-                                  Active
-                                </span>
-                              )}
-                              {room.isPublished && (
-                                <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-md text-xs font-medium flex items-center gap-1">
-                                  <Globe className="w-3 h-3" />
-                                  Published
-                                </span>
-                              )}
                               <button
                                 onClick={() => { setEditingRoomId(room.id); setEditingRoomName(room.name) }}
                                 disabled={isBusy}
@@ -488,28 +426,6 @@ export default function WorkspaceSettingsPage() {
                         {/* Action buttons */}
                         {!isEditing && (
                           <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleSetActiveRoom(room)}
-                              disabled={isBusy}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
-                                isActive
-                                  ? 'bg-white text-indigo-700 border border-indigo-300 hover:bg-indigo-50'
-                                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                              }`}
-                            >
-                              {isActive ? 'Unset active' : 'Set as active'}
-                            </button>
-                            <button
-                              onClick={() => handleToggleRoomPublish(room)}
-                              disabled={isBusy}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
-                                room.isPublished
-                                  ? 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                                  : 'bg-indigo-600 text-white border border-indigo-600 hover:bg-indigo-700'
-                              }`}
-                            >
-                              {room.isPublished ? 'Unpublish' : 'Publish'}
-                            </button>
                             <button
                               onClick={() => setRoomToDelete(room)}
                               disabled={isBusy}
@@ -746,7 +662,7 @@ export default function WorkspaceSettingsPage() {
                 <li>• Share the invite link via email or course platform</li>
                 <li>• Students need to sign in before joining</li>
                 <li>• All members can add boards to the studio</li>
-                <li>• Only board owners can edit/delete their boards</li>
+                <li>• Any member of the studio can edit or delete any board.</li>
               </ul>
             </div>
 

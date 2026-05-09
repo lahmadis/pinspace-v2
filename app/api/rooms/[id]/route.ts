@@ -61,7 +61,6 @@ async function authorizeRoomMutation(
  * PATCH /api/rooms/[id] — update one or more of:
  *   - name (rename)
  *   - displayOrder (reorder)
- *   - isActive (when true, sets workspaces.active_room_id to this room)
  *   - isPublished (publish toggle; flips published_at to now/null to match)
  *
  * Workspace owner only. Reads the current room first so we can write back only
@@ -74,7 +73,7 @@ export async function PATCH(
   try {
     const auth = await authorizeRoomMutation(request, params.id)
     if (!auth.ok) return auth.response
-    const { room, workspaceId } = auth
+    const { room } = auth
 
     const body = await request.json().catch(() => ({}))
     const updates: Record<string, unknown> = {}
@@ -95,13 +94,8 @@ export async function PATCH(
     }
     if (typeof body?.isPublished === 'boolean') {
       updates.is_published = body.isPublished
-      // Mirror published_at so existing reads (which check both) stay coherent.
-      // Phase 6.2c switches /explore reads to is_published only, but until then
-      // anything still gating on published_at sees the right value.
+      // Mirror published_at so timestamp metadata stays coherent with the flag.
       updates.published_at = body.isPublished ? new Date().toISOString() : null
-    }
-    if (typeof body?.isGloballyPublic === 'boolean') {
-      updates.is_globally_public = body.isGloballyPublic
     }
 
     const admin = supabaseServiceRole()
@@ -114,21 +108,6 @@ export async function PATCH(
       if (updateError) {
         console.error('Error updating room:', updateError)
         return NextResponse.json({ error: 'Failed to update room' }, { status: 500 })
-      }
-    }
-
-    // isActive is a workspace-level pointer (workspaces.active_room_id), not
-    // a column on rooms. Handled separately so a single PATCH can both rename
-    // a room and mark it active.
-    if (typeof body?.isActive === 'boolean') {
-      const newActiveId = body.isActive ? params.id : null
-      const { error: wsUpdateError } = await admin
-        .from('workspaces')
-        .update({ active_room_id: newActiveId })
-        .eq('id', workspaceId)
-      if (wsUpdateError) {
-        console.error('Error updating workspace.active_room_id:', wsUpdateError)
-        return NextResponse.json({ error: 'Failed to update active room' }, { status: 500 })
       }
     }
 
@@ -149,12 +128,11 @@ export async function PATCH(
  * DELETE /api/rooms/[id] — workspace owner only.
  *
  * Boards in this room cascade-delete via the boards.room_id FK from migration
- * 014. The workspace's active_room_id gets cleared via the FK from migration
- * 015 (ON DELETE SET NULL). We do NOT clean up the orphaned storage objects
- * here this phase — the existing board-delete code path (with storage cleanup)
- * is the source of truth for that, and a Phase 6.2c follow-up can wire room
- * deletion through it. For now, instructors deleting a room understand boards
- * disappear; storage cost of orphans is a known follow-up.
+ * 014. We do NOT clean up the orphaned storage objects here this phase — the
+ * existing board-delete code path (with storage cleanup) is the source of
+ * truth for that, and a follow-up can wire room deletion through it. For now,
+ * instructors deleting a room understand boards disappear; storage cost of
+ * orphans is a known follow-up.
  */
 export async function DELETE(
   request: NextRequest,

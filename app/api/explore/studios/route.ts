@@ -122,12 +122,9 @@ export async function GET(request: NextRequest) {
       if (inst?.id) institutionFilterId = inst.id
     }
 
-    // Phase 6.2c: bubble per published room, not per published workspace.
-    // Primary path queries rooms.is_published with parent workspace metadata
-    // joined for filtering/labeling. A legacy fallback synthesizes one
-    // published-room row per workspace whose is_public=true is set but whose
-    // rooms.is_published was never flipped (e.g. workspace published before
-    // 6.2c shipped, instructor never opened settings to flip per-room).
+    // Bubble per published room. Query rooms.is_published with parent
+    // workspace metadata joined for filtering/labeling. is_published is the
+    // single source of truth for visibility on /explore.
 
     type WorkspaceLite = {
       id: string
@@ -136,7 +133,6 @@ export async function GET(request: NextRequest) {
       network_metadata: { department?: string; year?: string | number } | null
       academic_year: string | null
       instructor: string | null
-      is_globally_public: boolean | null
     }
     type PublishedEntry = {
       roomId: string
@@ -148,10 +144,8 @@ export async function GET(request: NextRequest) {
       academicYear: string | null
       instructor: string | null
       organizationId: string | null
-      isGloballyPublic: boolean
     }
 
-    // 1. Primary: explicitly published rooms with workspace metadata joined.
     // PostgREST embedded resource returns workspaces as a nested object.
     const primaryQuery = supabase
       .from('rooms')
@@ -159,15 +153,13 @@ export async function GET(request: NextRequest) {
         id,
         name,
         workspace_id,
-        is_globally_public,
         workspaces:workspace_id (
           id,
           name,
           organization_id,
           network_metadata,
           academic_year,
-          instructor,
-          is_globally_public
+          instructor
         )
       `)
       .eq('is_published', true)
@@ -185,7 +177,6 @@ export async function GET(request: NextRequest) {
     }
 
     const entries: PublishedEntry[] = []
-    const workspaceIdsAlreadyCovered = new Set<string>()
     for (const r of publishedRoomRows ?? []) {
       // Supabase embedded resources can be either a single object or an array
       // depending on FK shape; rooms.workspace_id is a one-to-one FK so it's
@@ -203,63 +194,17 @@ export async function GET(request: NextRequest) {
         academicYear: ws.academic_year,
         instructor: ws.instructor,
         organizationId: ws.organization_id,
-        isGloballyPublic: Boolean((r as { is_globally_public?: boolean }).is_globally_public ?? ws.is_globally_public),
       })
-      workspaceIdsAlreadyCovered.add(r.workspace_id as string)
     }
 
-    // 2. Legacy fallback: workspaces with the old workspace-level publish flag
-    // whose rooms haven't been individually flipped. Synthesize a published
-    // entry from each workspace's first room (display_order ASC).
-    const { data: legacyWorkspaces } = await supabase
-      .from('workspaces')
-      .select('id, name, organization_id, network_metadata, academic_year, instructor, is_globally_public')
-      .eq('is_public', true)
-      .not('published_at', 'is', null)
-
-    const legacyCandidates = (legacyWorkspaces ?? []).filter(
-      w => !workspaceIdsAlreadyCovered.has(w.id as string)
-    ) as WorkspaceLite[]
-    if (legacyCandidates.length > 0) {
-      const { data: legacyRooms } = await supabase
-        .from('rooms')
-        .select('id, name, workspace_id, display_order, created_at')
-        .in('workspace_id', legacyCandidates.map(w => w.id))
-        .order('display_order', { ascending: true })
-        .order('created_at', { ascending: true })
-
-      const firstRoomByWorkspace = new Map<string, { id: string; name: string }>()
-      for (const r of legacyRooms ?? []) {
-        const wsId = r.workspace_id as string
-        if (!firstRoomByWorkspace.has(wsId)) {
-          firstRoomByWorkspace.set(wsId, { id: r.id as string, name: r.name as string })
-        }
-      }
-      for (const w of legacyCandidates) {
-        const fr = firstRoomByWorkspace.get(w.id)
-        if (!fr) continue
-        entries.push({
-          roomId: fr.id,
-          roomName: fr.name,
-          workspaceId: w.id,
-          workspaceName: w.name,
-          department: w.network_metadata?.department ?? null,
-          year: w.network_metadata?.year ?? null,
-          academicYear: w.academic_year,
-          instructor: w.instructor,
-          organizationId: w.organization_id,
-          isGloballyPublic: Boolean(w.is_globally_public),
-        })
-      }
-    }
-
-    // Apply filters (institution / department / academicYear / globally public).
+    // Apply filters (institution / department / academicYear).
+    // Pilot scope: institution-only. When no institution filter, return
+    // nothing — visitors see only their own institution's published rooms.
     let filteredEntries = entries
     if (institutionFilterId) {
       filteredEntries = filteredEntries.filter(e => e.organizationId === institutionFilterId)
     } else {
-      // No institution filter → global view: only show globally-published rooms.
-      filteredEntries = filteredEntries.filter(e => e.isGloballyPublic)
+      filteredEntries = []
     }
     if (department) {
       filteredEntries = filteredEntries.filter(e => e.department === department)
@@ -362,7 +307,6 @@ export async function GET(request: NextRequest) {
         color: BUBBLE_COLOR,
         url: `/studio/${e.roomId}/view`,
         studioId: e.roomId,
-        isGloballyPublic: e.isGloballyPublic,
       }
     })
 

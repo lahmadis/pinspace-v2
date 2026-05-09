@@ -61,7 +61,7 @@ export async function GET(
     // the order owners curated.
     const { data: roomRows } = await supabase
       .from('rooms')
-      .select('id, name, display_order, is_published, is_globally_public, published_at, created_at')
+      .select('id, name, display_order, is_published, published_at, created_at')
       .eq('workspace_id', workspaceId)
       .order('display_order', { ascending: true })
 
@@ -136,7 +136,6 @@ export async function GET(
       inviteCode: workspace.invite_code || workspace.id.substring(0, 8).toUpperCase(), // Generate from ID if no code
       createdAt: workspace.created_at || new Date(),
       isPublic: workspace.is_public || false,
-      isGloballyPublic: workspace.is_globally_public || false,
       publishedAt: workspace.published_at || undefined,
       networkMetadata: workspace.network_metadata || undefined,
       instructor: workspace.instructor || undefined,
@@ -144,13 +143,11 @@ export async function GET(
       institution: institution || undefined,
       isArchived: workspace.is_archived ?? false,
       archivedAt: workspace.archived_at ?? null,
-      activeRoomId: workspace.active_room_id ?? null,
       rooms: (roomRows ?? []).map((r) => ({
         id: r.id as string,
         name: r.name as string,
         displayOrder: Number(r.display_order ?? 0),
         isPublished: Boolean(r.is_published),
-        isGloballyPublic: Boolean(r.is_globally_public),
         publishedAt: (r.published_at as string | null) ?? null,
         createdAt: (r.created_at as string | null) ?? null,
         boardCount: boardCountByRoom.get(r.id as string) ?? 0,

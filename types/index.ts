@@ -114,7 +114,6 @@ export interface Workspace {
   inviteCode: string // random code for joining
   createdAt: Date
   isPublic: boolean // Whether visible in public network (default: false)
-  isGloballyPublic?: boolean // Whether visible in the global PinSpace network (default: false)
   publishedAt?: Date // When it was published to network
   instructor?: string // Instructor/professor name
   semester?: string // e.g., "Fall 2024"
@@ -131,7 +130,6 @@ export interface Workspace {
   // read these; other surfaces ignore them. Optional because not every API
   // shape returns them yet.
   rooms?: Room[]
-  activeRoomId?: string | null
 }
 
 export interface Room {
@@ -139,7 +137,6 @@ export interface Room {
   name: string
   displayOrder: number
   isPublished: boolean
-  isGloballyPublic: boolean
   publishedAt: string | null
   createdAt: string | null
   /** Returned by /api/workspaces/[id]; absent on PATCH/POST responses for a single room. */

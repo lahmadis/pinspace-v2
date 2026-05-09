@@ -30,19 +30,17 @@ export async function GET(request: NextRequest) {
       if (inst?.id) institutionFilterId = inst.id
     }
     
-    // Build query for public workspaces
+    // Build query for public workspaces. Pilot scope is institution-only — if
+    // no institution filter is given, return nothing.
+    if (!institutionFilterId) {
+      return NextResponse.json({ departments: [], workspaces: [] })
+    }
     let query = supabase
       .from('workspaces')
       .select('*')
       .eq('is_public', true)
       .not('published_at', 'is', null)
-
-    if (institutionFilterId) {
-      query = query.eq('organization_id', institutionFilterId)
-    } else {
-      // No institution filter → global view: only show globally-published studios
-      query = query.eq('is_globally_public', true)
-    }
+      .eq('organization_id', institutionFilterId)
     if (department) {
       query = query.eq('network_metadata->>department', department)
     }
@@ -91,7 +89,6 @@ export async function GET(request: NextRequest) {
       studioId: w.id, // For backward compatibility
       inviteCode: w.invite_code,
       isPublic: w.is_public,
-      isGloballyPublic: w.is_globally_public || false,
       publishedAt: w.published_at,
       networkMetadata: w.network_metadata,
       academicYear: w.academic_year || undefined,

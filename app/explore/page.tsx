@@ -389,7 +389,7 @@ function ExplorePageInner() {
                   ? `No published studios for ${selectedAcademicYear}`
                   : activeInstitution
                     ? 'No published studios found for this institution'
-                    : 'No globally published studios found'}
+                    : 'Select an institution to see its published studios'}
               </p>
             </div>
           </div>

@@ -142,6 +142,43 @@ export default function WorkspaceRoomsPage() {
     }
   }
 
+  const handleTogglePublish = async (room: Room) => {
+    if (!workspace) return
+    const next = !room.isPublished
+    // Optimistic update: flip the badge immediately, revert on API error.
+    setWorkspace((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        rooms: (prev.rooms ?? []).map((r) =>
+          r.id === room.id ? { ...r, isPublished: next } : r
+        ),
+      }
+    })
+    try {
+      const res = await fetch(`/api/rooms/${room.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isPublished: next }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to update room')
+      toast.success(next ? `Published "${room.name}" to Wentworth` : `Unpublished "${room.name}"`)
+    } catch (e) {
+      // Revert optimistic flip
+      setWorkspace((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          rooms: (prev.rooms ?? []).map((r) =>
+            r.id === room.id ? { ...r, isPublished: !next } : r
+          ),
+        }
+      })
+      toast.error(e instanceof Error ? e.message : 'Failed to update room')
+    }
+  }
+
   if (!isAuthLoaded || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -287,6 +324,19 @@ export default function WorkspaceRoomsPage() {
                     crowd the card. Hover effects suppressed when editing. */}
                 {isInstructor && !isEditing && (
                   <div className="px-6 pb-4 flex items-center justify-end gap-1 -mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleTogglePublish(room) }}
+                      disabled={isBusy}
+                      className={`p-1.5 rounded-lg disabled:opacity-50 ${
+                        room.isPublished
+                          ? 'text-green-700 hover:text-gray-700 hover:bg-gray-50'
+                          : 'text-gray-500 hover:text-green-700 hover:bg-green-50'
+                      }`}
+                      aria-label={room.isPublished ? 'Unpublish room' : 'Publish to Wentworth'}
+                      title={room.isPublished ? 'Unpublish' : 'Publish to Wentworth'}
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingRoomId(room.id); setEditingRoomName(room.name) }}
                       disabled={isBusy}
