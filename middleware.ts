@@ -45,5 +45,9 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/).*)'],
+  // `monitoring` is excluded so Sentry's tunnelRoute (next.config.js) can
+  // pass events through to ingest.*.sentry.io without this auth-cookie
+  // middleware swallowing them. Sentry's docs require the tunnelRoute not
+  // match any middleware matcher.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/|monitoring).*)'],
 }
