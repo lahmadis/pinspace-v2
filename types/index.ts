@@ -38,6 +38,15 @@ export interface Studio {
 
 export interface Board {
   id: string
+  /**
+   * Client-only stable identifier used as a React key across the temp→real
+   * id swap. Set on temp-board creation and carried over to the real board
+   * in replaceTempBoardInState so the rendering component instance survives
+   * the swap (otherwise an in-flight drag/resize gesture is torn down with
+   * the unmounted temp instance). Never sent to or read from the server;
+   * fall back to `id` when absent (boards loaded from the server have none).
+   */
+  localId?: string
   studioId: string
   workspaceId?: string  // alias used by some APIs; prefer studioId when both exist
   studentName: string

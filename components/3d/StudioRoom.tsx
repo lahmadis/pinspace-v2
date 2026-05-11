@@ -308,7 +308,11 @@ function SceneContent({
               
               return (
                 <DraggableBoard
-                  key={boardId}
+                  // Key by localId (stable across temp→real id swap) so an
+                  // in-flight drag/resize gesture survives when an upload
+                  // completes mid-gesture. Falls back to board.id for boards
+                  // loaded from the server without an in-session localId.
+                  key={board.localId || boardId}
                   board={board}
                   wallIndex={editingWall}
                   wallPosition={editingWallPosition}
@@ -1141,6 +1145,10 @@ export default function StudioRoom(props: StudioRoomProps) {
     const apiHeight = copied.position?.height ?? 30
     const tempBoard: Board = {
       id: tempId,
+      // Stable client-side React key, carried onto the real board after
+      // duplicate API responds so the rendering instance survives the id
+      // swap. Matches the upload flow in useBoardUpload.createTempBoard.
+      localId: tempId,
       // studioId stays as the URL param (= room id post-6.2b); workspaceId
       // is the actual workspace uuid resolved by the page.
       studioId: props.studioId,
@@ -1200,10 +1208,15 @@ export default function StudioRoom(props: StudioRoomProps) {
       const data = await res.json()
       const newBoard = data.board as Board
       const onCurrentWall = newBoard.position?.wallIndex === editingWall && (newBoard.position?.side || 'front') === side
-      const boardToUse: Board = onCurrentWall ? newBoard : {
-        ...newBoard,
-        position: { wallIndex: editingWall, x: 50, y: 50, width: apiWidth, height: apiHeight, side },
-      }
+      // Carry the temp board's localId onto the real board so the React key
+      // stays stable across the duplicate swap.
+      const boardToUse: Board = onCurrentWall
+        ? { ...newBoard, localId: tempId }
+        : {
+            ...newBoard,
+            localId: tempId,
+            position: { wallIndex: editingWall, x: 50, y: 50, width: apiWidth, height: apiHeight, side },
+          }
       replaceTempBoard(tempId, boardToUse)
       setPlacedBoards3D(prev => {
         const m = new Map(prev)

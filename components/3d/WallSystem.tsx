@@ -224,7 +224,11 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
 
               return (
                 <BoardThumbnail
-                  key={board.id}
+                  // Key by localId (stable across temp→real id swap) when
+                  // present so the post-edit render path doesn't remount the
+                  // thumbnail purely because a temp board's id changed. Falls
+                  // back to board.id for server-loaded boards.
+                  key={board.localId || board.id}
                   board={board}
                   position={[boardX, boardY, finalBoardZ]}
                   width={boardWidth}

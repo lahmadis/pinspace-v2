@@ -179,6 +179,11 @@ const createTempBoard = (
 ): Board => {
   return {
     id: tempId,
+    // Stable client-side key for React. Carries onto the real board in
+    // replaceTempBoardInState so the DraggableBoard instance is preserved
+    // across the id swap and any in-flight gesture's window listeners stay
+    // attached. tempId is already unique per upload session, so reuse it.
+    localId: tempId,
     studioId: options.studioId,
     title: options.title,
     studentName: options.user?.fullName || options.user?.firstName || 'Uploaded Board',
@@ -236,10 +241,16 @@ const replaceTempBoardInState = (
   }
 ) => {
   const onCurrentWall = realBoard.position?.wallIndex === editingWall && (realBoard.position?.side || 'front') === editingWallSide
+  // Carry the temp board's localId onto the real board so the React key
+  // doesn't change across the id swap. Without this, <DraggableBoard
+  // key={...}> remounts and tears down any in-flight drag/resize gesture's
+  // window listeners. tempId itself is the stable identifier — it was
+  // assigned as localId in createTempBoard.
   const boardToUse: Board = onCurrentWall
-    ? realBoard
+    ? { ...realBoard, localId: tempId }
     : {
         ...realBoard,
+        localId: tempId,
         position: {
           wallIndex: editingWall,
           x: CENTER_API,
