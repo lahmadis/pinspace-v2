@@ -422,13 +422,28 @@ const uploadFile = async (
       }
     }
 
-    // Pre-warm the cache for the real URLs *before* swapping the temp board out. By the time
-    // useBoardTexture re-runs with the new URL prop, the texture is already resolved → instant swap.
-    if (uploadedBoard?.thumbnailUrl) {
-      loadTexture(uploadedBoard.thumbnailUrl).catch(() => { /* non-fatal */ })
-    }
+    // Pre-warm the cache for the real URLs *before* swapping the temp board out, and AWAIT the
+    // pre-warm so the new DraggableBoard mount (keyed by the real board id) finds the texture
+    // already in resolvedCache on first render — no skeleton flash, no grey rectangle.
+    //
+    // During this await, the temp board (keyed by tempBoardId) stays mounted in StudioRoom's
+    // render loop and keeps rendering the local blob URL, so the user sees their image the
+    // whole time — there's no flash to empty.
+    //
+    // Promise.allSettled (not .all) so a failed/slow CDN doesn't block the swap forever; a
+    // failed load falls through to the existing skeleton path, which is acceptable.
+    //
+    // Hard 3s timeout guards against pathological CDN stalls: the fallback (timeout fires, swap
+    // proceeds, brief skeleton) is still better than the previous always-skeleton behavior.
+    const prewarmUrls: string[] = []
+    if (uploadedBoard?.thumbnailUrl) prewarmUrls.push(uploadedBoard.thumbnailUrl)
     if (uploadedBoard?.fullImageUrl && uploadedBoard.fullImageUrl !== uploadedBoard.thumbnailUrl) {
-      loadTexture(uploadedBoard.fullImageUrl).catch(() => { /* non-fatal */ })
+      prewarmUrls.push(uploadedBoard.fullImageUrl)
+    }
+    if (prewarmUrls.length > 0) {
+      const prewarm = Promise.allSettled(prewarmUrls.map((u) => loadTexture(u)))
+      const timeout = new Promise<void>((resolve) => setTimeout(resolve, 3000))
+      await Promise.race([prewarm, timeout])
     }
 
     if (tempBoardId && options.editingWall !== null) {
