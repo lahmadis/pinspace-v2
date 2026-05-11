@@ -108,27 +108,40 @@ export async function GET(
       .select('*')
       .eq('workspace_id', workspaceId)
 
-    // Synthesize an owner-as-instructor entry when the owner isn't in
-    // workspace_members. Two cases this covers:
-    //   - Brand-new workspace where nothing has been written to
-    //     workspace_members yet (the original case).
-    //   - Legacy workspace with student rows from invites/joins but no
-    //     owner row, because the workspace was created before
-    //     `ensureOwnerMembership` existed in /api/workspaces POST. Without
-    //     this, the rooms-list page's `isInstructor` check (which reads
-    //     members.role) returns false even though the mutation APIs (which
-    //     check workspace.owner_id) would accept the owner's writes.
+    // Ensure the workspace owner appears as `role: 'instructor'` in the
+    // response. Three cases:
+    //   1. Brand-new workspace where nothing has been written to
+    //      workspace_members yet → append owner row.
+    //   2. Legacy workspace with student rows from invites/joins but no
+    //      owner row (created before `ensureOwnerMembership` in POST
+    //      /api/workspaces) → append owner row.
+    //   3. Legacy workspace where the owner IS in workspace_members but
+    //      with role='student' (e.g. owner joined their own workspace via
+    //      invite code in an older flow) → upgrade the response copy to
+    //      'instructor'. Response-only — we do NOT mutate the DB row,
+    //      keeping this migration-free and reversible. The mutation APIs
+    //      gate on workspace.owner_id, not on members.role, so leaving the
+    //      DB row alone is safe for auth.
     let membersList = members || []
-    if (isOwner && !membersList.some((m) => m.user_id === userId)) {
-      membersList = [
-        ...membersList,
-        {
-          user_id: userId,
-          name: session.user.user_metadata?.email?.split('@')[0] || 'Owner',
-          role: 'instructor',
-          created_at: workspace.created_at || new Date().toISOString(),
-        },
-      ]
+    if (isOwner) {
+      const ownerIndex = membersList.findIndex((m) => m.user_id === userId)
+      if (ownerIndex === -1) {
+        membersList = [
+          ...membersList,
+          {
+            user_id: userId,
+            name: session.user.user_metadata?.email?.split('@')[0] || 'Owner',
+            role: 'instructor',
+            created_at: workspace.created_at || new Date().toISOString(),
+          },
+        ]
+      } else if (membersList[ownerIndex].role !== 'instructor') {
+        membersList = [
+          ...membersList.slice(0, ownerIndex),
+          { ...membersList[ownerIndex], role: 'instructor' },
+          ...membersList.slice(ownerIndex + 1),
+        ]
+      }
     }
 
     const transformedWorkspace = {
