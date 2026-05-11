@@ -10,6 +10,12 @@ interface WallSurfaceProps {
     localPoint: THREE.Vector2
     worldPoint: THREE.Vector3
   }) => void
+  /**
+   * Fires on pointer-over. WallSystem uses this to kick off a fire-and-forget
+   * texture pre-warm for boards on this side, so the user's subsequent
+   * wall-click into edit mode doesn't show the grey skeleton placeholder.
+   */
+  onSurfaceHover?: (params: { side: 'front' | 'back' }) => void
   visibleOutline?: boolean
 }
 
@@ -21,6 +27,7 @@ export function WallSurface({
   wallDimensions,
   side,
   onSurfaceClick,
+  onSurfaceHover,
   visibleOutline = false,
 }: WallSurfaceProps) {
   // Inches
@@ -54,7 +61,10 @@ export function WallSurface({
       position={[0, 0, zOffset]}
       rotation={[0, 0, 0]}
       onClick={handleClick}
-      onPointerOver={() => setHovered(true)}
+      onPointerOver={() => {
+        setHovered(true)
+        onSurfaceHover?.({ side })
+      }}
       onPointerOut={() => setHovered(false)}
     >
       <planeGeometry args={[width, height, 1, 1]} />

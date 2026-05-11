@@ -22,6 +22,13 @@ interface WallSystemProps {
   boards: Board[]
   wallConfig: WallConfig
   onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
+  /**
+   * Fires when the pointer enters a wall surface. StudioRoom uses this to
+   * fire-and-forget pre-warm board full-image textures for the boards on
+   * that wall, so the subsequent wall-click into edit mode doesn't show the
+   * grey skeleton placeholder while 2400px JPEGs load.
+   */
+  onWallHover?: (wallIndex: number, side: 'front' | 'back') => void
   editingWall: number | null
   /**
    * True only once the camera-into-wall transition has completed and DraggableBoards
@@ -36,7 +43,7 @@ interface WallSystemProps {
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallClick, editingWall, editUIActive = false, onBoardClick, highlightedBoardId, onBoardHover }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallClick, onWallHover, editingWall, editUIActive = false, onBoardClick, highlightedBoardId, onBoardHover }: WallSystemProps) {
 
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
   const floorBounds = calculateFloorBounds(wallConfig)
@@ -85,6 +92,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
                 const rotation = transform.rotationY
                 onWallClick?.(wallIndex, wall, position, rotation, side)
               }}
+              onSurfaceHover={({ side }) => onWallHover?.(wallIndex, side)}
             />
             <WallSurface
               wallDimensions={wall}
@@ -94,6 +102,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, editingWal
                 const rotation = transform.rotationY
                 onWallClick?.(wallIndex, wall, position, rotation + Math.PI, side)
               }}
+              onSurfaceHover={({ side }) => onWallHover?.(wallIndex, side)}
             />
 
             {/* Modern off-white wall with depth and shadows */}

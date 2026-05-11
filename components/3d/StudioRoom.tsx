@@ -17,6 +17,7 @@ import { WallDropZone } from '@/components/3d/WallDropZone'
 import RightCommentPanel from '@/components/RightCommentPanel'
 import LightboxModal from '@/components/LightboxModal'
 import { useBoardState } from './useBoardState'
+import { loadTexture } from './useBoardTexture'
 import { useBoardUpload } from '@/hooks/useBoardUpload'
 import FloorEditorOverlay from './FloorEditorOverlay'
 import TableWithModel from './TableWithModel'
@@ -88,6 +89,7 @@ function SceneContent({
   wallConfig,
   onBoardUpdate: _onBoardUpdate,
   onWallClick,
+  onWallHover,
   editingWall,
   placedBoards3D,
   editingWallPosition,
@@ -118,6 +120,8 @@ function SceneContent({
   showEditUI,
 }: StudioRoomProps & {
   onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
+  /** Pointer-over on a wall surface. Used to fire-and-forget pre-warm board textures. */
+  onWallHover?: (wallIndex: number, side: 'front' | 'back') => void
   editingWall: number | null
   placedBoards3D: Map<string, { x: number; y: number; width?: number; height?: number }>
   editingWallPosition: THREE.Vector3 | null
@@ -228,6 +232,7 @@ function SceneContent({
         boards={localBoards}
         wallConfig={wallConfig}
         onWallClick={onWallClick}
+        onWallHover={onWallHover}
         editingWall={editingWall}
         editUIActive={showEditUI}
         onBoardClick={onBoardClick || onCommentClick}
@@ -634,6 +639,34 @@ export default function StudioRoom(props: StudioRoomProps) {
     setPlacedBoards3D(newMap)
   }, [boardPositions, editingWall, editingWallSide, localBoards])
 
+  /**
+   * Walls whose board full-image textures have been pre-warmed in this session.
+   * Keyed `${wallIndex}-${side}`. Lives for the StudioRoom mount lifetime — no
+   * eviction, because the underlying useBoardTexture cache is also session-long.
+   */
+  const prefetchedWallsRef = useRef<Set<string>>(new Set())
+
+  /**
+   * Pointer-over on a wall surface: fire-and-forget pre-warm of full-image
+   * textures for boards on that wall, so the click → edit-mode transition
+   * doesn't show the grey skeleton placeholder. Idempotent per (wall, side)
+   * via prefetchedWallsRef; loadTexture itself also dedups in-flight and
+   * resolved entries via its module-level caches.
+   */
+  const handleWallHover = useCallback((wallIndex: number, side: 'front' | 'back') => {
+    const key = `${wallIndex}-${side}`
+    if (prefetchedWallsRef.current.has(key)) return
+    prefetchedWallsRef.current.add(key)
+    const boardsOnWall = localBoards.filter(
+      b => b.position?.wallIndex === wallIndex && (b.position?.side || 'front') === side
+    )
+    for (const board of boardsOnWall) {
+      if (board.fullImageUrl) {
+        loadTexture(board.fullImageUrl).catch(() => {})
+      }
+    }
+  }, [localBoards])
+
   const handleWallClick = (
     wallIndex: number,
     wallDimensions: WallDimensions,
@@ -642,6 +675,10 @@ export default function StudioRoom(props: StudioRoomProps) {
     side: 'front' | 'back'
   ) => {
     if (props.isArchived) return
+    // Belt-and-suspenders prefetch for users who click without hovering
+    // (touch, fast clickers, keyboard). Idempotent — handleWallHover early-
+    // returns for already-prefetched walls.
+    handleWallHover(wallIndex, side)
     devLog('🖼️ [StudioRoom] Wall clicked:', wallIndex, 'rotation:', rotation, 'side:', side)
 
     // If we're already editing this wall and side, don't reinitialize
@@ -1480,6 +1517,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             showEditUI={showEditUI}
             localBoards={localBoards}
             onWallClick={handleWallClick}
+            onWallHover={handleWallHover}
             editingWall={editingWall}
             placedBoards3D={placedBoards3D}
             editingWallPosition={editingWallPosition}
