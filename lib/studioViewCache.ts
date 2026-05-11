@@ -65,11 +65,19 @@ export async function prefetchStudioView(
 
   try {
     const [boardsRes, configRes] = await Promise.all([
+      // studioId is a room id after the Phase 6.2 URL flip. Use ?roomId= to
+      // match the view page's own fetchBoards call — passing it as
+      // workspaceId silently 404'd/returned-empty and poisoned the cache
+      // with boards: [], which then clobbered the real fetch in the page's
+      // Effect A re-run.
       fetch(
         isDemo
-          ? `/api/boards?workspaceId=${studioId}&demo=true`
-          : `/api/boards?workspaceId=${studioId}`
+          ? `/api/boards?roomId=${studioId}&demo=true`
+          : `/api/boards?roomId=${studioId}`
       ),
+      // TODO: wall config is keyed by workspace id, not room id — prefetch
+      // currently falls back to defaults; real config fetched post-resolve
+      // in view page Effect A.
       fetch(
         isDemo
           ? `/api/studios/${studioId}/wall-config?demo=true`

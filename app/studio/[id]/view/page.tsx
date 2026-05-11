@@ -154,11 +154,24 @@ export default function StudioViewPage() {
   // Check if it's a demo studio (starts with "demo-studio-") or has demo=true param
   const isDemoStudio = studioId.startsWith('demo-studio-')
   const isDemo = searchParams?.get('demo') === 'true' || isDemoStudio
+  // Cache is consumed EXACTLY ONCE here, during lazy useState init. Do not
+  // re-read it inside any useEffect — re-reading on Effect A's re-run (when
+  // resolvedWorkspaceId arrives) used to clobber freshly-fetched boards
+  // back to whatever was cached, which was [] before the prefetch query
+  // param was corrected.
   const initialCache = getCachedStudioData(studioId, isDemo)
   const [boards, setBoards] = useState<Board[]>(initialCache?.boards ?? [])
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(
     (initialCache?.wallConfig as WallConfig) ?? null
   )
+  // NOTE: [].length === 0 but [] is truthy. After the fix in
+  // studioViewCache.ts to use roomId, cached.boards is populated correctly
+  // (non-empty when boards exist). If prefetch ever fails, the cache entry
+  // isn't created at all, so initialCache is null (not { boards: [] }) and
+  // this expression evaluates to !(false && …) = true, surfacing the
+  // spinner. The truthy-empty-array trap is therefore not a real hazard
+  // here today, but it is fragile — any change that lets prefetch cache an
+  // empty array would re-introduce the empty-walls bug.
   const [loading, setLoading] = useState(!(initialCache?.boards && initialCache?.wallConfig))
   const [error, setError] = useState<string | null>(null)
   // Phase 6.2: workspace id resolved from the room id in the URL. Used for
@@ -194,16 +207,13 @@ export default function StudioViewPage() {
     fetch(`/api/studios/${resolvedWorkspaceId}/view`, { method: 'POST' }).catch(() => {})
   }, [resolvedWorkspaceId, isDemo])
 
-  // Load data: use cache first for instant open when coming from bubble network prefetch
+  // Load wall config. The cache is NOT re-read here — that was the cause of
+  // the empty-walls-on-bubble-click race: when fetchBoards resolves and
+  // setResolvedWorkspaceId fires, this effect re-runs and a cache re-read
+  // here would overwrite the real boards with whatever the cache had.
+  // Initial-mount cache consumption happens once in the useState lazy
+  // initializer above; that's the only correct read.
   useEffect(() => {
-    const cached = getCachedStudioData(studioId, isDemo)
-    if (cached?.boards && cached?.wallConfig) {
-      setBoards(cached.boards)
-      setWallConfig(cached.wallConfig as WallConfig)
-      setLoading(false)
-      setError(null)
-    }
-
     let cancelled = false
     const loadWallConfig = async () => {
       // Wall-config remains workspace-scoped (Phase 6.2 leaves it intentionally
