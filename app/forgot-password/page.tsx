@@ -17,8 +17,14 @@ function ForgotPasswordInner() {
 
   useEffect(() => {
     if (institutionSlug) sessionStorage.setItem('pinspace_institution', institutionSlug)
+    // Pre-fill from ?email= when arriving from /sign-in's reset-hint or
+    // forgot-password link (so the user doesn't retype it). Only sets when
+    // current state is empty so a user editing the field after arrival
+    // doesn't get reset.
+    const emailParam = searchParams?.get('email')
+    if (emailParam) setEmail((prev) => prev || emailParam)
     setLoading(false)
-  }, [institutionSlug])
+  }, [institutionSlug, searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

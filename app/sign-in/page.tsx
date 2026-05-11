@@ -15,20 +15,23 @@ interface OrgMatch {
 }
 
 type Step =
-  | 'email-input'
+  // Password sign-in is the default landing. Users opt into the email-code
+  // (OTP) path via the secondary link; the OTP flow is unchanged from prior
+  // passes, only its entry point shifted.
+  | 'password'        // default — email + password fields
+  | 'otp-email'       // OTP entry — just email, sends a 6-digit code on submit
   | 'checking'        // spinner while lookup-domain runs + OTP sends
   | 'check-email'     // OTP sent, waiting for 6-digit code
   | 'verifying'       // spinner while verifyOtp runs
   | 'workspace-picker' // OTP verified, 2+ orgs — user picks one
   | 'no-match'        // 0 orgs found for domain
   | 'request-sent'    // org request submitted successfully
-  | 'password-fallback' // user chose "sign in with password instead"
 
 function SignInInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [mounted, setMounted] = useState(false)
-  const [step, setStep] = useState<Step>('email-input')
+  const [step, setStep] = useState<Step>('password')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [otp, setOtp] = useState('')
@@ -36,6 +39,13 @@ function SignInInner() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [requestedType, setRequestedType] = useState<'university' | 'firm'>('university')
+  // Inline help links rendered next to the error message. `showResetHint` is
+  // set when Supabase reports "Invalid login credentials" — likely the user
+  // signed up via OTP and never set a password. `showSignUpHint` is set when
+  // an OTP send fails because the email has no account (we now pass
+  // shouldCreateUser: false so OTP can't silently create users).
+  const [showResetHint, setShowResetHint] = useState(false)
+  const [showSignUpHint, setShowSignUpHint] = useState(false)
   const hasRedirected = useRef(false)
 
   const institutionSlug = searchParams?.get('institution') ?? null
@@ -88,6 +98,8 @@ function SignInInner() {
   const handleEmailContinue = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setShowResetHint(false)
+    setShowSignUpHint(false)
     const trimmed = email.trim().toLowerCase()
     if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
       setError('Please enter a valid email address')
@@ -105,7 +117,7 @@ function SignInInner() {
       const data = await res.json()
       if (!res.ok) {
         setError(data.error || 'Something went wrong')
-        setStep('email-input')
+        setStep('otp-email')
         return
       }
 
@@ -117,21 +129,41 @@ function SignInInner() {
         return
       }
 
-      // Domain recognized — send OTP
+      // Domain recognized — send OTP. shouldCreateUser is false here so the
+      // OTP path can only sign in existing users; new users must go through
+      // /sign-up (which gates on the domain check up-front).
       setOrgs(matched)
       const { error: otpErr } = await supabase.auth.signInWithOtp({
         email: trimmed,
-        options: { shouldCreateUser: true },
+        options: { shouldCreateUser: false },
       })
       if (otpErr) {
-        setError(otpErr.message || 'Failed to send verification code')
-        setStep('email-input')
+        const msg = otpErr.message || ''
+        const lower = msg.toLowerCase()
+        // Supabase's exact error string varies across versions for this case
+        // ("Signups not allowed for otp" is the common shape with
+        // shouldCreateUser: false; some versions return "user not found" or
+        // "Invalid login credentials"). Match defensively across known
+        // patterns; fall through to the raw message for unknown errors.
+        const userMissing =
+          lower.includes('signups not allowed') ||
+          lower.includes('user not found') ||
+          lower.includes('does not exist') ||
+          lower.includes('no user found') ||
+          lower.includes('invalid login credentials')
+        if (userMissing) {
+          setShowSignUpHint(true)
+          setError('No account found for this email.')
+        } else {
+          setError(msg || 'Failed to send verification code')
+        }
+        setStep('otp-email')
         return
       }
       setStep('check-email')
     } catch {
       setError('Something went wrong. Please try again.')
-      setStep('email-input')
+      setStep('otp-email')
     }
   }
 
@@ -178,9 +210,12 @@ function SignInInner() {
     setError('')
     setBusy(true)
     try {
+      // Same as initial send — never silently create users from the
+      // sign-in OTP path. /sign-up is the only entry point that provisions
+      // new accounts.
       const { error: otpErr } = await supabase.auth.signInWithOtp({
         email,
-        options: { shouldCreateUser: true },
+        options: { shouldCreateUser: false },
       })
       if (otpErr) setError(otpErr.message || 'Failed to resend code')
     } catch {
@@ -195,10 +230,16 @@ function SignInInner() {
     await redirectAfterSignIn(org.slug)
   }
 
-  // Password fallback sign-in
+  // Password sign-in (now the default landing path).
   const handlePasswordSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setShowResetHint(false)
+    setShowSignUpHint(false)
+    if (!email.trim()) {
+      setError('Please enter your email')
+      return
+    }
     if (!password) {
       setError('Please enter your password')
       return
@@ -207,7 +248,19 @@ function SignInInner() {
     try {
       const { error: authErr } = await supabase.auth.signInWithPassword({ email, password })
       if (authErr) {
-        setError(authErr.message || 'Invalid email or password')
+        const msg = authErr.message || ''
+        // Supabase returns "Invalid login credentials" for BOTH wrong
+        // password AND nonexistent user. Treat both as "password didn't
+        // work" and surface the reset path — covers OTP-only legacy users
+        // who never set a password.
+        if (msg.toLowerCase().includes('invalid login credentials')) {
+          setError(
+            "That password didn't work. If you signed up with an email code, you may not have set a password yet."
+          )
+          setShowResetHint(true)
+        } else {
+          setError(msg || 'Invalid email or password')
+        }
         setBusy(false)
         return
       }
@@ -260,23 +313,24 @@ function SignInInner() {
     return <Spinner />
   }
 
-  if (step === 'email-input' || step === 'password-fallback') {
-    const isPassword = step === 'password-fallback'
+  if (step === 'password' || step === 'otp-email') {
+    const isPassword = step === 'password'
     const signUpParams = new URLSearchParams()
     if (email) signUpParams.set('email', email)
     if (institutionSlug) signUpParams.set('institution', institutionSlug)
     const signUpHref = `/sign-up${signUpParams.size ? `?${signUpParams}` : ''}`
+    const forgotPasswordHref = `/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`
     const genericSubtitle = isPassword
-      ? 'Enter your password to sign in.'
-      : 'Enter your work or school email to get started.'
+      ? 'Welcome back. Sign in to PinSpace.'
+      : "We'll send a 6-digit sign-in code to your email."
     const subtitle = !institutionSlug
       ? genericSubtitle
       : !orgFetchDone
       ? ' '
       : orgName
       ? (isPassword
-          ? `Enter your password to sign in to ${orgName}.`
-          : `Sign in to ${orgName} with your institutional email.`)
+          ? `Sign in to ${orgName}.`
+          : `Sign in to ${orgName} with an email code.`)
       : genericSubtitle
     return (
       <Shell>
@@ -294,7 +348,7 @@ function SignInInner() {
               placeholder="you@school.edu"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               autoComplete="email"
-              autoFocus={!isPassword}
+              autoFocus={!email}
             />
           </div>
 
@@ -310,10 +364,10 @@ function SignInInner() {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 autoComplete="current-password"
                 // eslint-disable-next-line jsx-a11y/no-autofocus
-                autoFocus
+                autoFocus={!!email}
               />
               <div className="flex justify-end mt-1">
-                <Link href="/forgot-password" className="text-sm text-indigo-600 hover:underline">
+                <Link href={forgotPasswordHref} className="text-sm text-indigo-600 hover:underline">
                   Forgot password?
                 </Link>
               </div>
@@ -322,30 +376,61 @@ function SignInInner() {
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 
+          {isPassword && showResetHint && (
+            <Link
+              href={forgotPasswordHref}
+              className="inline-block text-sm font-medium text-indigo-600 hover:underline"
+            >
+              Reset password →
+            </Link>
+          )}
+
+          {!isPassword && showSignUpHint && (
+            <p className="text-sm text-gray-600">
+              <Link
+                href={signUpHref}
+                className="font-medium text-indigo-600 hover:underline"
+              >
+                Sign up here
+              </Link>
+              {' '}to create an account.
+            </p>
+          )}
+
           <button
             type="submit"
             disabled={busy}
             className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
           >
-            {busy ? (isPassword ? 'Signing in…' : 'Continuing…') : (isPassword ? 'Sign in' : 'Continue')}
+            {busy ? (isPassword ? 'Signing in…' : 'Sending code…') : (isPassword ? 'Sign in' : 'Continue')}
           </button>
         </form>
 
         {isPassword ? (
           <button
             type="button"
-            onClick={() => { setError(''); setPassword(''); setStep('email-input') }}
+            onClick={() => {
+              setError('')
+              setShowResetHint(false)
+              setShowSignUpHint(false)
+              setStep('otp-email')
+            }}
             className="mt-3 w-full text-center text-sm text-gray-500 hover:text-gray-700"
           >
-            ← Use email verification instead
+            Sign in with email code instead
           </button>
         ) : (
           <button
             type="button"
-            onClick={() => { setError(''); setStep('password-fallback') }}
+            onClick={() => {
+              setError('')
+              setShowResetHint(false)
+              setShowSignUpHint(false)
+              setStep('password')
+            }}
             className="mt-3 w-full text-center text-sm text-gray-500 hover:text-gray-700"
           >
-            Sign in with password instead
+            ← Sign in with password instead
           </button>
         )}
 
@@ -418,7 +503,7 @@ function SignInInner() {
           </button>
           <button
             type="button"
-            onClick={() => { setError(''); setOtp(''); setStep('email-input') }}
+            onClick={() => { setError(''); setOtp(''); setStep('otp-email') }}
             className="text-gray-500 hover:underline"
           >
             Use a different email
@@ -518,7 +603,7 @@ function SignInInner() {
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         <button
           type="button"
-          onClick={() => { setError(''); setStep('email-input') }}
+          onClick={() => { setError(''); setStep('otp-email') }}
           className="mt-5 w-full text-center text-sm text-gray-500 hover:text-gray-700"
         >
           ← Use a different email
@@ -543,7 +628,7 @@ function SignInInner() {
           </p>
           <button
             type="button"
-            onClick={() => { setError(''); setStep('email-input') }}
+            onClick={() => { setError(''); setStep('otp-email') }}
             className="text-indigo-600 hover:underline text-sm"
           >
             ← Back to sign in
