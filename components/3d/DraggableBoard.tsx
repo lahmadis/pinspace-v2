@@ -694,6 +694,15 @@ if (e.intersections && e.intersections.length > 0) {
       justFinishedDragging.current = true
       setLocalPosition({ x: ref.x, y: ref.y, width: ref.width, height: ref.height })
 
+      // Mirror the post-resize x/y/width/height back into the parent's
+      // placedBoards3D Map. Without this, Save & Exit's bulk-PUT iterates a
+      // stale map and overwrites the size the PATCH below is about to
+      // persist (corner-resize also drifts x/y via the centering math, so
+      // those are stale too). Fires regardless of PATCH outcome — Save & Exit
+      // acts as the retry path on network failure. Symmetric with the
+      // drag-end callback in handlePointerDown.handleUp above.
+      onDragEndRef.current(board.id, ref.x, ref.y, ref.width, ref.height, side)
+
       // Persist via PATCH on the dedicated position endpoint.
       const apiX = (ref.x + 0.5) * 100
       const apiY = (ref.y + 0.5) * 100
