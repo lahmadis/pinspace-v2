@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoBoards, transformDemoBoard } from '@/lib/mockData'
 import { getSampleBoards } from '@/lib/sampleData'
-import { resolveMainRoomId } from '@/lib/rooms'
 
 // No static caching — boards change frequently (uploads, position updates)
 export const dynamic = 'force-dynamic'
@@ -38,16 +37,39 @@ export async function GET(request: NextRequest) {
     const adminDb = supabaseServiceRole()
     let scopedWorkspaceId: string | null = null
     let scopedRoomId: string | null = null
+    // Surfaced on the response so view-mode can display the room name in its
+    // top bar without a separate /api/workspaces fetch. Edit-mode still uses
+    // its own workspace fetch because it also needs the rooms-list (for the
+    // switcher dropdown); single-room name is sufficient here.
+    let scopedRoomName: string | null = null
+
+    // Inline helper for the fallback paths that previously called
+    // resolveMainRoomId — we now need the name too, and one query is cheaper
+    // than two (an id-only call followed by a name-only call).
+    const fetchFirstRoomWithName = async (wsId: string) => {
+      const { data } = await adminDb
+        .from('rooms')
+        .select('id, name')
+        .eq('workspace_id', wsId)
+        .order('display_order', { ascending: true })
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      return data
+        ? { id: data.id as string, name: (data.name as string) ?? null }
+        : null
+    }
 
     if (roomIdParam) {
       const { data: room } = await adminDb
         .from('rooms')
-        .select('id, workspace_id')
+        .select('id, workspace_id, name')
         .eq('id', roomIdParam)
         .maybeSingle()
       if (room) {
         scopedWorkspaceId = room.workspace_id as string
         scopedRoomId = room.id as string
+        scopedRoomName = (room.name as string) ?? null
       } else {
         // Phase 6.2 backward-compat: an old URL like /studio/{workspace_id}
         // still funnels here as `roomId`. If it's actually a workspace, resolve
@@ -62,11 +84,15 @@ export async function GET(request: NextRequest) {
           return NextResponse.json({ error: 'Room not found' }, { status: 404 })
         }
         scopedWorkspaceId = ws.id as string
-        scopedRoomId = await resolveMainRoomId(adminDb, ws.id as string)
+        const firstRoom = await fetchFirstRoomWithName(ws.id as string)
+        scopedRoomId = firstRoom?.id ?? null
+        scopedRoomName = firstRoom?.name ?? null
       }
     } else if (workspaceId) {
       scopedWorkspaceId = workspaceId
-      scopedRoomId = await resolveMainRoomId(adminDb, workspaceId)
+      const firstRoom = await fetchFirstRoomWithName(workspaceId)
+      scopedRoomId = firstRoom?.id ?? null
+      scopedRoomName = firstRoom?.name ?? null
     }
 
     if (!scopedWorkspaceId) {
@@ -194,7 +220,7 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.json({
       boards: transformedBoards,
       room: scopedRoomId
-        ? { id: scopedRoomId, workspaceId: scopedWorkspaceId }
+        ? { id: scopedRoomId, workspaceId: scopedWorkspaceId, name: scopedRoomName }
         : null,
     })
     response.headers.set('Cache-Control', 'no-store')

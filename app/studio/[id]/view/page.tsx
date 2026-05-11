@@ -164,6 +164,10 @@ export default function StudioViewPage() {
   // Phase 6.2: workspace id resolved from the room id in the URL. Used for
   // wall-config + view-counter calls which remain workspace-scoped.
   const [resolvedWorkspaceId, setResolvedWorkspaceId] = useState<string | null>(null)
+  // Room name surfaced by /api/boards alongside id/workspaceId. Rendered in
+  // the top bar so the user knows which studio they're viewing — view mode
+  // had no room-name display previously.
+  const [roomName, setRoomName] = useState<string | null>(null)
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null)
   const [compareBoardIds, setCompareBoardIds] = useState<string[]>([])
   const shiftPressedRef = useRef(false)
@@ -339,7 +343,9 @@ export default function StudioViewPage() {
       setBoards(data.boards || [])
       const resolvedRoomId: string | null = data.room?.id ?? null
       const wsId: string | null = data.room?.workspaceId ?? null
+      const resolvedRoomName: string | null = data.room?.name ?? null
       setResolvedWorkspaceId(wsId)
+      setRoomName(resolvedRoomName)
 
       if (!isDemo && resolvedRoomId && resolvedRoomId !== studioId) {
         const qs = searchParams ? searchParams.toString() : ''
@@ -465,6 +471,19 @@ export default function StudioViewPage() {
           <ArrowLeft className="w-4 h-4" />
           {searchParams.get('returnTo') === 'gallery' ? 'Gallery' : 'Network'}
         </button>
+
+        {/* Room name pill — gives view-mode users context for which studio
+            they're looking at. Sourced from /api/boards' response (extended
+            to include room.name), no extra fetch. Truncates on narrow
+            viewports so the Network button stays reachable. */}
+        {roomName && (
+          <div
+            className="px-3 py-2 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 text-sm font-medium max-w-[40vw] sm:max-w-xs truncate"
+            title={roomName}
+          >
+            {roomName}
+          </div>
+        )}
       </div>
 
       {/* Top-right status pill (view mode + board count) */}
