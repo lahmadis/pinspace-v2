@@ -108,16 +108,27 @@ export async function GET(
       .select('*')
       .eq('workspace_id', workspaceId)
 
-    // If no members exist yet, create a default member entry for the owner
+    // Synthesize an owner-as-instructor entry when the owner isn't in
+    // workspace_members. Two cases this covers:
+    //   - Brand-new workspace where nothing has been written to
+    //     workspace_members yet (the original case).
+    //   - Legacy workspace with student rows from invites/joins but no
+    //     owner row, because the workspace was created before
+    //     `ensureOwnerMembership` existed in /api/workspaces POST. Without
+    //     this, the rooms-list page's `isInstructor` check (which reads
+    //     members.role) returns false even though the mutation APIs (which
+    //     check workspace.owner_id) would accept the owner's writes.
     let membersList = members || []
-    if (membersList.length === 0 && isOwner) {
-      // Add owner as instructor member
-      membersList = [{
-        user_id: userId,
-        name: session.user.user_metadata?.email?.split('@')[0] || 'Owner',
-        role: 'instructor',
-        created_at: workspace.created_at || new Date().toISOString(),
-      }]
+    if (isOwner && !membersList.some((m) => m.user_id === userId)) {
+      membersList = [
+        ...membersList,
+        {
+          user_id: userId,
+          name: session.user.user_metadata?.email?.split('@')[0] || 'Owner',
+          role: 'instructor',
+          created_at: workspace.created_at || new Date().toISOString(),
+        },
+      ]
     }
 
     const transformedWorkspace = {
