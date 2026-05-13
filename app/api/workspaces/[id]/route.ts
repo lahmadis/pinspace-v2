@@ -162,6 +162,7 @@ export async function GET(
       isPublic: workspace.is_public || false,
       publishedAt: workspace.published_at || undefined,
       networkMetadata: workspace.network_metadata || undefined,
+      academicYear: workspace.academic_year || undefined,
       instructor: workspace.instructor || undefined,
       institutionId: workspace.organization_id || undefined,
       institution: institution || undefined,

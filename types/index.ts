@@ -131,8 +131,9 @@ export interface Workspace {
   // Institution categorization (required when isPublic is true)
   networkMetadata?: {
     department: 'Architecture' | 'Interior Design' | 'Industrial Design'
-    year: 'Year 1' | 'Year 2' | 'Year 3' | 'Year 4' | 'Masters'
+    year: 'Year 1' | 'Year 2' | 'Year 3' | 'Year 4' | 'Year 5' | 'Masters'
   }
+  academicYear?: string
   isArchived: boolean
   archivedAt: string | null
   // Phase 6.2: a workspace contains 1+ rooms. Settings/dashboard/upload UIs

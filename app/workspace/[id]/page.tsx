@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { toast } from '@/lib/toast'
 import { Workspace, Room } from '@/types'
 import { useAuthSession } from '@/hooks/useAuthSession'
+import PublishConfirmModal, { NetworkMetadata } from '@/components/PublishConfirmModal'
 import {
   ArrowLeft,
   Settings,
@@ -17,6 +18,7 @@ import {
   Check,
   Globe,
   ChevronRight,
+  Network,
 } from 'lucide-react'
 
 export default function WorkspaceRoomsPage() {
@@ -37,6 +39,10 @@ export default function WorkspaceRoomsPage() {
   const [newRoomName, setNewRoomName] = useState('')
   const [roomBusy, setRoomBusy] = useState<string | null>(null) // room id, or 'create'
   const [roomToDelete, setRoomToDelete] = useState<Room | null>(null)
+
+  // Publish modal: null = closed; room = waiting to flip is_published after metadata; 'settings' = editing existing metadata only
+  const [publishModalRoom, setPublishModalRoom] = useState<Room | null>(null)
+  const [networkSettingsOpen, setNetworkSettingsOpen] = useState(false)
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
@@ -142,10 +148,7 @@ export default function WorkspaceRoomsPage() {
     }
   }
 
-  const handleTogglePublish = async (room: Room) => {
-    if (!workspace) return
-    const next = !room.isPublished
-    // Optimistic update: flip the badge immediately, revert on API error.
+  const flipRoomPublish = async (room: Room, next: boolean) => {
     setWorkspace((prev) => {
       if (!prev) return prev
       return {
@@ -165,7 +168,6 @@ export default function WorkspaceRoomsPage() {
       if (!res.ok) throw new Error(data?.error || 'Failed to update room')
       toast.success(next ? `Published "${room.name}" to Wentworth` : `Unpublished "${room.name}"`)
     } catch (e) {
-      // Revert optimistic flip
       setWorkspace((prev) => {
         if (!prev) return prev
         return {
@@ -177,6 +179,76 @@ export default function WorkspaceRoomsPage() {
       })
       toast.error(e instanceof Error ? e.message : 'Failed to update room')
     }
+  }
+
+  const saveNetworkMetadata = async (metadata: NetworkMetadata): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/workspaces/${workspaceId}/network-metadata`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          department: metadata.department,
+          yearLevel: metadata.year,
+          instructor: metadata.instructor,
+          academicYear: metadata.academicYear,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to save network metadata')
+      // Update local workspace state so subsequent publishes skip the modal
+      setWorkspace((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          networkMetadata: {
+            department: metadata.department as 'Architecture' | 'Interior Design' | 'Industrial Design',
+            year: metadata.year as 'Year 1' | 'Year 2' | 'Year 3' | 'Year 4' | 'Year 5' | 'Masters',
+          },
+          academicYear: metadata.academicYear,
+          instructor: metadata.instructor,
+        }
+      })
+      return true
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save network settings')
+      return false
+    }
+  }
+
+  const handleTogglePublish = async (room: Room) => {
+    if (!workspace) return
+    const next = !room.isPublished
+
+    if (!next) {
+      // Unpublishing — no metadata needed
+      await flipRoomPublish(room, false)
+      return
+    }
+
+    // Publishing ON: check if workspace already has metadata
+    const hasMetadata = !!(workspace.networkMetadata?.department && workspace.networkMetadata?.year)
+    if (hasMetadata) {
+      await flipRoomPublish(room, true)
+    } else {
+      // First publish in workspace — open modal to collect metadata
+      setPublishModalRoom(room)
+    }
+  }
+
+  const handlePublishModalConfirm = async (metadata?: NetworkMetadata) => {
+    setPublishModalRoom(null)
+    if (!publishModalRoom || !metadata) return
+    const saved = await saveNetworkMetadata(metadata)
+    if (saved) {
+      await flipRoomPublish(publishModalRoom, true)
+    }
+  }
+
+  const handleNetworkSettingsConfirm = async (metadata?: NetworkMetadata) => {
+    setNetworkSettingsOpen(false)
+    if (!metadata) return
+    await saveNetworkMetadata(metadata)
+    toast.success('Network settings saved')
   }
 
   if (!isAuthLoaded || loading) {
@@ -226,13 +298,23 @@ export default function WorkspaceRoomsPage() {
             </div>
           </div>
           {isInstructor && (
-            <Link
-              href={`/workspace/${workspaceId}/settings`}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
-            >
-              <Settings className="w-4 h-4" />
-              Settings
-            </Link>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setNetworkSettingsOpen(true)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
+                title="Edit network metadata (department, year, instructor)"
+              >
+                <Network className="w-4 h-4" />
+                Network
+              </button>
+              <Link
+                href={`/workspace/${workspaceId}/settings`}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
+              >
+                <Settings className="w-4 h-4" />
+                Settings
+              </Link>
+            </div>
           )}
         </div>
       </div>
@@ -420,6 +502,46 @@ export default function WorkspaceRoomsPage() {
           </div>
         )}
       </div>
+
+      {/* Publish confirm modal — shown when publishing first room in workspace */}
+      {publishModalRoom && workspace && (
+        <PublishConfirmModal
+          workspaceName={workspace.name}
+          isCurrentlyPublic={false}
+          currentMetadata={
+            workspace.networkMetadata
+              ? {
+                  department: workspace.networkMetadata.department,
+                  year: workspace.networkMetadata.year,
+                  instructor: workspace.instructor || '',
+                  academicYear: workspace.academicYear || '',
+                }
+              : undefined
+          }
+          onConfirm={handlePublishModalConfirm}
+          onCancel={() => setPublishModalRoom(null)}
+        />
+      )}
+
+      {/* Network settings modal — re-open from header button to edit existing metadata */}
+      {networkSettingsOpen && workspace && (
+        <PublishConfirmModal
+          workspaceName={workspace.name}
+          isCurrentlyPublic={false}
+          currentMetadata={
+            workspace.networkMetadata
+              ? {
+                  department: workspace.networkMetadata.department,
+                  year: workspace.networkMetadata.year,
+                  instructor: workspace.instructor || '',
+                  academicYear: workspace.academicYear || '',
+                }
+              : undefined
+          }
+          onConfirm={handleNetworkSettingsConfirm}
+          onCancel={() => setNetworkSettingsOpen(false)}
+        />
+      )}
 
       {/* Delete confirmation. Boards in the room cascade-delete via the
           boards.room_id FK. Spell that out so an instructor doesn't lose work

@@ -33,6 +33,7 @@ function ExplorePageInner() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(currentAcademicYear())
   const [availableAcademicYears, setAvailableAcademicYears] = useState<{ year: string; count: number }[]>([])
+  const [roomPickerNode, setRoomPickerNode] = useState<BubbleNode | null>(null)
 
   const isDemo = searchParams?.get('demo') === 'true'
 
@@ -113,8 +114,13 @@ function ExplorePageInner() {
 
   const handleClick = (node: BubbleNode) => {
     const demoParam = isDemo ? '?demo=true' : ''
-    
+
     if (viewMode === 'flat') {
+      // Multi-room workspace: show picker
+      if (node.publishedRooms && node.publishedRooms.length > 1) {
+        setRoomPickerNode(node)
+        return
+      }
       if (node.url) {
         const url = node.url.includes('?') ? `${node.url}&demo=true` : `${node.url}${demoParam}`
         router.push(url)
@@ -338,6 +344,46 @@ function ExplorePageInner() {
           </div>
         </div>
       </div>
+
+      {/* Room picker — shown when a multi-room workspace bubble is clicked */}
+      {roomPickerNode && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => setRoomPickerNode(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-bold text-gray-900 mb-1">{roomPickerNode.name}</h2>
+            {roomPickerNode.instructor && (
+              <p className="text-sm text-gray-500 mb-4">{roomPickerNode.instructor}</p>
+            )}
+            <p className="text-sm font-medium text-gray-700 mb-3">Choose a room to view:</p>
+            <div className="space-y-2">
+              {(roomPickerNode.publishedRooms ?? []).map((room) => (
+                <button
+                  key={room.id}
+                  onClick={() => {
+                    setRoomPickerNode(null)
+                    const demoParam = isDemo ? '?demo=true' : ''
+                    router.push(`/studio/${room.id}/view${demoParam}`)
+                  }}
+                  className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 transition-colors text-sm font-medium text-gray-900"
+                >
+                  {room.name}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setRoomPickerNode(null)}
+              className="mt-4 w-full px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

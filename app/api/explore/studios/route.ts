@@ -230,10 +230,18 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Transform into bubble nodes. Each bubble is a published room labeled
-    // with its workspace+room name so users can tell duplicate "Pin-up 2"
-    // entries across classes apart.
-    const studios = filteredEntries.map((e) => {
+    // Group entries by workspace. One bubble per workspace; each bubble
+    // carries the list of published rooms so the explore UI can offer a
+    // room picker when there are multiple.
+    const byWorkspace = new Map<string, typeof filteredEntries>()
+    for (const e of filteredEntries) {
+      const group = byWorkspace.get(e.workspaceId) ?? []
+      group.push(e)
+      byWorkspace.set(e.workspaceId, group)
+    }
+
+    const studios = Array.from(byWorkspace.values()).map((group) => {
+      const e = group[0]
       const wYear = e.year
       let yearNum: number | string = 1
       if (wYear === 'Masters') {
@@ -245,17 +253,17 @@ export async function GET(request: NextRequest) {
         yearNum = wYear
       }
 
-      // Bubble label: prefer "{workspace} · {room}" when there's likely more
-      // than one published room per workspace; fall back to workspace name
-      // alone for legacy entries (single-room workspaces) so the visual
-      // doesn't suddenly grow uglier for everyone.
-      const label = `${e.workspaceName} · ${e.roomName}`
+      const publishedRooms = group.map((r) => ({ id: r.roomId, name: r.roomName }))
+      // For single-room workspaces, url points directly to that room.
+      // For multi-room workspaces, url is omitted; explore page shows a picker.
+      const url = publishedRooms.length === 1 ? `/studio/${publishedRooms[0].id}/view` : undefined
+
+      const totalBoardCount = group.reduce((sum, r) => sum + (boardCountsByRoom[r.roomId] || 0), 0)
 
       return {
-        id: e.roomId,
-        name: label,
-        label,
-        roomName: e.roomName,
+        id: e.workspaceId,
+        name: e.workspaceName,
+        label: e.workspaceName,
         workspaceName: e.workspaceName,
         workspaceId: e.workspaceId,
         department: e.department || 'Architecture',
@@ -264,10 +272,11 @@ export async function GET(request: NextRequest) {
         year: yearNum,
         academicYear: e.academicYear || undefined,
         memberCount: memberCounts[e.workspaceId] || 0,
-        count: boardCountsByRoom[e.roomId] || 0,
+        count: totalBoardCount,
         color: BUBBLE_COLOR,
-        url: `/studio/${e.roomId}/view`,
-        studioId: e.roomId,
+        url,
+        studioId: e.workspaceId,
+        publishedRooms,
       }
     })
 
