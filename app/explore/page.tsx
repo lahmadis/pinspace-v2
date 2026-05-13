@@ -251,13 +251,12 @@ function ExplorePageInner() {
             </button>
           </div>
           
-          {/* Right: My Boards */}
           <div className="flex items-center justify-end min-w-0 flex-1">
-            <Link 
-              href="/dashboard" 
+            <Link
+              href="/dashboard"
               className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors shrink-0"
             >
-              My Boards
+              Dashboard
             </Link>
           </div>
         </div>
