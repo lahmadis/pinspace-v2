@@ -43,6 +43,7 @@ export default function WorkspaceRoomsPage() {
   // Publish modal: null = closed; room = waiting to flip is_published after metadata; 'settings' = editing existing metadata only
   const [publishModalRoom, setPublishModalRoom] = useState<Room | null>(null)
   const [networkSettingsOpen, setNetworkSettingsOpen] = useState(false)
+  const [bannerDismissed, setBannerDismissed] = useState(false)
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
@@ -318,6 +319,38 @@ export default function WorkspaceRoomsPage() {
           )}
         </div>
       </div>
+
+      {/* Backfill banner — shown to owners with published rooms but missing network metadata */}
+      {(() => {
+        const hasPublishedRoom = (workspace.rooms ?? []).some((r) => r.isPublished)
+        const missingMetadata = !workspace.networkMetadata?.department || !workspace.academicYear
+        if (!isInstructor || !hasPublishedRoom || !missingMetadata || bannerDismissed) return null
+        return (
+          <div className="max-w-5xl mx-auto px-6 pt-6">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start justify-between gap-4">
+              <p className="text-sm text-amber-900">
+                <strong>This class is published but missing network info.</strong>{' '}
+                Add it so students can find your studio on the Wentworth Network.
+              </p>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setNetworkSettingsOpen(true)}
+                  className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Add network settings
+                </button>
+                <button
+                  onClick={() => setBannerDismissed(true)}
+                  className="p-1.5 text-amber-700 hover:bg-amber-100 rounded-lg transition-colors"
+                  aria-label="Dismiss"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Body */}
       <div className="max-w-5xl mx-auto px-6 py-12">
