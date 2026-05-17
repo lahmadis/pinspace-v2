@@ -131,7 +131,7 @@ export default function FloorEditorOverlay({
   undoIndexRef.current = undoIndex
 
   const bounds = calculateFloorBounds(wallConfig)
-  const { minX, maxX, minZ, maxZ, floorWidth, floorDepth } = bounds
+  const { minX, maxX, minZ, maxZ } = bounds
 
   // Uniform scale (px per inch) — same factor for X and Z so grid cells are square
   const { scale: uniformScale, offsetX: floorOffsetX, offsetY: floorOffsetY, usedWidth: floorUsedWidth, usedHeight: floorUsedHeight } = getUniformScale(bounds)
