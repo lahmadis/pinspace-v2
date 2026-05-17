@@ -10,6 +10,7 @@ import DemoBanner from '@/components/DemoBanner'
 import { ArrowLeft, Share2, Settings, Box, ChevronDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
+import type { WallConfig } from '@/lib/wallLayout'
 
 type RealtimeBoardPayload = {
   eventType: 'INSERT' | 'UPDATE' | 'DELETE'
@@ -67,25 +68,6 @@ const StudioRoom = dynamic(
     </div>
   ),
 })
-
-interface WallDimensions {
-  height: number
-  width: number
-}
-
-type LayoutType = 'zigzag' | 'square' | 'linear' | 'lshape'
-
-interface WallTransformOverride {
-  x: number
-  z: number
-  rotationY: number
-}
-
-interface WallConfig {
-  walls: WallDimensions[]
-  layoutType: LayoutType
-  customTransforms?: WallTransformOverride[]
-}
 
 const DEFAULT_CONFIG: WallConfig = {
   layoutType: 'zigzag',

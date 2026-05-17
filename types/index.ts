@@ -180,10 +180,6 @@ export interface WallDimensions {
   width: number // in feet
 }
 
-export interface WallConfig {
-  walls: WallDimensions[]
-}
-
 /** Table on the studio floor for displaying a 3D model. Position in inches (same as 3D scene). */
 export interface FloorTable {
   id: string
@@ -195,15 +191,6 @@ export interface FloorTable {
   rotation?: number
   boardId?: string // optional link to a board
   modelUrl?: string // GLB/GLTF URL for model on top
-}
-
-export const DEFAULT_WALL_CONFIG: WallConfig = {
-  walls: [
-    { height: 10, width: 8 },
-    { height: 10, width: 8 },
-    { height: 10, width: 8 },
-    { height: 10, width: 8 }
-  ]
 }
 
 export interface Avatar3D {
