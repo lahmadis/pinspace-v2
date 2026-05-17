@@ -29,19 +29,32 @@ interface FloorEditorOverlayProps {
 const VIEW_WIDTH = 700
 const VIEW_HEIGHT = 500
 
+const PADDING = 40
+
+function getUniformScale(bounds: { minX: number; maxX: number; minZ: number; maxZ: number }): {
+  scale: number; offsetX: number; offsetY: number; usedWidth: number; usedHeight: number
+} {
+  const floorWidth = bounds.maxX - bounds.minX
+  const floorDepth = bounds.maxZ - bounds.minZ
+  const sx = (VIEW_WIDTH - 2 * PADDING) / floorWidth
+  const sz = (VIEW_HEIGHT - 2 * PADDING) / floorDepth
+  const scale = Math.min(sx, sz)
+  const usedWidth = floorWidth * scale
+  const usedHeight = floorDepth * scale
+  const offsetX = (VIEW_WIDTH - usedWidth) / 2
+  const offsetY = (VIEW_HEIGHT - usedHeight) / 2
+  return { scale, offsetX, offsetY, usedWidth, usedHeight }
+}
+
 function worldToScreen(
   x: number,
   z: number,
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
 ): [number, number] {
-  const { minX, maxX, minZ, maxZ } = bounds
-  const floorWidth = maxX - minX
-  const floorDepth = maxZ - minZ
-  const padding = 40
-  const w = VIEW_WIDTH - padding * 2
-  const h = VIEW_HEIGHT - padding * 2
-  const px = padding + ((x - minX) / floorWidth) * w
-  const py = padding + ((maxZ - z) / floorDepth) * h
+  const { minX, maxZ } = bounds
+  const { scale, offsetX, offsetY } = getUniformScale(bounds)
+  const px = offsetX + (x - minX) * scale
+  const py = offsetY + (maxZ - z) * scale
   return [px, py]
 }
 
@@ -120,9 +133,10 @@ export default function FloorEditorOverlay({
   const bounds = calculateFloorBounds(wallConfig)
   const { minX, maxX, minZ, maxZ, floorWidth, floorDepth } = bounds
 
-  // Screen-space scale factors (px per inch)
-  const scaleX = floorWidth / (VIEW_WIDTH - 80)
-  const scaleZ = floorDepth / (VIEW_HEIGHT - 80)
+  // Uniform scale (px per inch) — same factor for X and Z so grid cells are square
+  const { scale: uniformScale, offsetX: floorOffsetX, offsetY: floorOffsetY, usedWidth: floorUsedWidth, usedHeight: floorUsedHeight } = getUniformScale(bounds)
+  // World-per-pixel conversion used in drag handlers
+  const invScale = 1 / uniformScale
 
   // When entering walls mode with no custom transforms, freeze current layout
   useEffect(() => {
@@ -282,8 +296,8 @@ export default function FloorEditorOverlay({
       if (draggingWallIndex !== null && wallDragStart && onWallConfigChange) {
         const deltaPx = e.clientX - wallDragStart.startPx
         const deltaPy = e.clientY - wallDragStart.startPy
-        let newX = wallDragStart.x + deltaPx * scaleX
-        let newZ = wallDragStart.z - deltaPy * scaleZ
+        let newX = wallDragStart.x + deltaPx * invScale
+        let newZ = wallDragStart.z - deltaPy * invScale
 
         if (snapOn) {
           newX = snapToGrid(newX, GRID_INCHES)
@@ -307,7 +321,7 @@ export default function FloorEditorOverlay({
         const dy = e.clientY - rotateStart.centerClientY
         const currentAngle = Math.atan2(dy, dx)
         const delta = wrapAngle(currentAngle - rotateStart.initialAngleFromCenter)
-        let newRotationY = rotateStart.initialRotationY + delta
+        let newRotationY = rotateStart.initialRotationY - delta
 
         if (e.shiftKey) {
           // Shift: 90° snap regardless of snapOn
@@ -330,8 +344,8 @@ export default function FloorEditorOverlay({
       if (stretchingWallIndex !== null && stretchStart && onWallConfigChange) {
         const deltaPx = e.clientX - stretchStart.startPx
         const deltaPy = e.clientY - stretchStart.startPy
-        const deltaX = deltaPx * scaleX
-        const deltaZ = -deltaPy * scaleZ
+        const deltaX = deltaPx * invScale
+        const deltaZ = -deltaPy * invScale
         const deltaAlong = deltaX * stretchStart.axisX + deltaZ * stretchStart.axisZ
         const signedDelta = stretchStart.end === 'end' ? deltaAlong : -deltaAlong
         const MIN_WALL_INCHES = 24
@@ -392,15 +406,15 @@ export default function FloorEditorOverlay({
       if (!draggingTableId || !dragStart) return
       const deltaPx = e.clientX - dragStart.startPx
       const deltaPy = e.clientY - dragStart.startPy
-      const newX = dragStart.x + deltaPx * scaleX
-      const newZ = dragStart.z - deltaPy * scaleZ
+      const newX = dragStart.x + deltaPx * invScale
+      const newZ = dragStart.z - deltaPy * invScale
       setTables((prev) => prev.map((t) => t.id === draggingTableId ? { ...t, x: newX, z: newZ } : t))
       setDragStart((s) => (s ? { ...s, x: newX, z: newZ, startPx: e.clientX, startPy: e.clientY } : null))
     },
     [
       draggingWallIndex, wallDragStart, rotatingWallIndex, rotateStart,
       stretchingWallIndex, stretchStart, draggingTableId, dragStart,
-      scaleX, scaleZ, setTables, wallConfig, onWallConfigChange, snapOn,
+      invScale, setTables, wallConfig, onWallConfigChange, snapOn,
       ensureCustomTransforms, getWallEndpoints, bounds,
     ]
   )
@@ -583,10 +597,9 @@ export default function FloorEditorOverlay({
   })
 
   // ── Grid pattern coords ───────────────────────────────────────────────────
-  // We want world-aligned 12-inch grid. Compute grid lines clipped to floor rect.
+  // World-aligned 12-inch grid lines, clipped to the actual floor rect.
   const gridLines: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
   if (mode === 'walls') {
-    const padding = 40
     const startGridX = Math.ceil(minX / GRID_INCHES) * GRID_INCHES
     const endGridX = Math.floor(maxX / GRID_INCHES) * GRID_INCHES
     const startGridZ = Math.ceil(minZ / GRID_INCHES) * GRID_INCHES
@@ -594,11 +607,11 @@ export default function FloorEditorOverlay({
 
     for (let gx = startGridX; gx <= endGridX; gx += GRID_INCHES) {
       const [px] = worldToScreen(gx, 0, bounds)
-      gridLines.push({ x1: px, y1: padding, x2: px, y2: VIEW_HEIGHT - padding })
+      gridLines.push({ x1: px, y1: floorOffsetY, x2: px, y2: floorOffsetY + floorUsedHeight })
     }
     for (let gz = startGridZ; gz <= endGridZ; gz += GRID_INCHES) {
       const [, py] = worldToScreen(0, gz, bounds)
-      gridLines.push({ x1: padding, y1: py, x2: VIEW_WIDTH - padding, y2: py })
+      gridLines.push({ x1: floorOffsetX, y1: py, x2: floorOffsetX + floorUsedWidth, y2: py })
     }
   }
 
@@ -707,9 +720,9 @@ export default function FloorEditorOverlay({
             >
               {/* Floor background */}
               <rect
-                x={40} y={40}
-                width={VIEW_WIDTH - 80}
-                height={VIEW_HEIGHT - 80}
+                x={floorOffsetX} y={floorOffsetY}
+                width={floorUsedWidth}
+                height={floorUsedHeight}
                 fill="#faf9f6"
                 stroke="#cbd5e1"
                 strokeWidth={1}
@@ -730,8 +743,8 @@ export default function FloorEditorOverlay({
                 <g key={index}>
                   <polygon
                     points={points.join(',')}
-                    fill="#475569"
-                    stroke="#1e293b"
+                    fill="#4f46e5"
+                    stroke="#3730a3"
                     strokeWidth={0.5}
                     className={mode === 'walls' ? 'cursor-move' : ''}
                     style={{ pointerEvents: mode === 'walls' ? 'all' : 'none' }}
@@ -770,7 +783,7 @@ export default function FloorEditorOverlay({
                   <polygon
                     points={ghostPoints.join(',')}
                     fill="none"
-                    stroke="#475569"
+                    stroke="#4f46e5"
                     strokeWidth={1.5}
                     strokeDasharray="4 3"
                     opacity={0.5}
@@ -785,7 +798,7 @@ export default function FloorEditorOverlay({
                   key={`rline-${index}`}
                   x1={centerPx} y1={centerPy}
                   x2={handlePx} y2={handlePy}
-                  stroke="#94a3b8"
+                  stroke="#4f46e5"
                   strokeWidth={1}
                   style={{ pointerEvents: 'none' }}
                 />
@@ -796,7 +809,7 @@ export default function FloorEditorOverlay({
                 <circle
                   key={`rhandle-${index}`}
                   cx={handlePx} cy={handlePy} r={5}
-                  fill="#475569"
+                  fill="#4f46e5"
                   style={{ pointerEvents: 'all', cursor: 'crosshair' }}
                   onPointerDown={(e) => handleWallRotatePointerDown(index, e)}
                 />
@@ -805,8 +818,8 @@ export default function FloorEditorOverlay({
               {/* Stretch endpoint circles (visible) */}
               {mode === 'walls' && wallGeometry.map(({ index, startPx, startPy, endPx, endPy }) => (
                 <g key={`stretch-vis-${index}`} style={{ pointerEvents: 'none' }}>
-                  <circle cx={startPx} cy={startPy} r={4} fill="#ffffff" stroke="#475569" strokeWidth={1.5} />
-                  <circle cx={endPx} cy={endPy} r={4} fill="#ffffff" stroke="#475569" strokeWidth={1.5} />
+                  <circle cx={startPx} cy={startPy} r={4} fill="#ffffff" stroke="#4f46e5" strokeWidth={1.5} />
+                  <circle cx={endPx} cy={endPy} r={4} fill="#ffffff" stroke="#4f46e5" strokeWidth={1.5} />
                 </g>
               ))}
 
@@ -815,7 +828,7 @@ export default function FloorEditorOverlay({
                 <circle
                   cx={stretchSnapTarget.px} cy={stretchSnapTarget.py} r={6}
                   fill="none"
-                  stroke="#475569"
+                  stroke="#4f46e5"
                   strokeWidth={1.5}
                   style={{ pointerEvents: 'none' }}
                 />
@@ -847,10 +860,8 @@ export default function FloorEditorOverlay({
             {/* Tables (tables mode only) */}
             {mode === 'tables' && tables.map((table) => {
               const [px, py] = worldToScreen(table.x, table.z, bounds)
-              const tScaleX = (VIEW_WIDTH - 80) / floorWidth
-              const tScaleZ = (VIEW_HEIGHT - 80) / floorDepth
-              const w = table.width * tScaleX
-              const h = table.depth * tScaleZ
+              const w = table.width * uniformScale
+              const h = table.depth * uniformScale
               const isSelected = selectedTableId === table.id
               const rotationDeg = ((table.rotation ?? 0) * 180) / Math.PI
               return (
