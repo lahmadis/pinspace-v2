@@ -135,6 +135,10 @@ function ExplorePageInner() {
       setSelectedDepartment(node.department || node.label)
       setHierarchyLevel('studios')
     } else {
+      if (node.publishedRooms && node.publishedRooms.length > 1) {
+        setRoomPickerNode(node)
+        return
+      }
       if (node.url) {
         const url = node.url.includes('?') ? `${node.url}&demo=true` : `${node.url}${demoParam}`
         router.push(url)
