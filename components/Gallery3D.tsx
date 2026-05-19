@@ -1143,6 +1143,8 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
           board={selectedBoard.board}
           allBoards={selectedBoard.studio.boards || []}
           onClose={() => setSelectedBoard(null)}
+          isEditMode={false}
+          currentUserRole={null}
           onNavigate={(direction) => {
             if (!selectedBoard) return
             const currentIndex = selectedBoard.studio.boards?.findIndex(b => b.id === selectedBoard.board.id) ?? -1

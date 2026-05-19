@@ -188,7 +188,7 @@ export async function GET(request: NextRequest) {
       studioId: board.workspace_id, // Keep for backward compatibility
       workspaceId: board.workspace_id,
       studentName: board.student_name,
-      studentEmail: board.student_email,
+      studentEmail: isPublicWorkspace ? undefined : board.student_email,
       title: board.title,
       description: board.description,
       thumbnailUrl: board.thumbnail_url,

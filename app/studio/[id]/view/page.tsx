@@ -607,7 +607,7 @@ export default function StudioViewPage() {
       </Canvas>
 
       {/* Lightbox Modal */}
-      <LightboxModal 
+      <LightboxModal
         board={selectedBoard}
         allBoards={boards}
         autoEnterPresentCompare={autoEnterPresentCompare}
@@ -620,6 +620,8 @@ export default function StudioViewPage() {
           setCompareBoardIds([])
         }}
         onNavigate={handleNavigate}
+        isEditMode={false}
+        currentUserRole={null}
       />
     </div>
   )

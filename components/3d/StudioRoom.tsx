@@ -81,6 +81,8 @@ interface StudioRoomProps {
   isArchived?: boolean
   /** Increments on any realtime comment change so open panels refetch. */
   commentNonce?: number
+  /** Current authenticated user's role in this workspace. */
+  currentUserRole?: 'instructor' | 'student' | null
 }
 
 function SceneContent({
@@ -1568,6 +1570,8 @@ export default function StudioRoom(props: StudioRoomProps) {
         setCompareBoardIds([])
       }}
       onNavigate={handleLightboxNavigate}
+      isEditMode={!props.isArchived}
+      currentUserRole={props.currentUserRole ?? null}
     />
     </>
   )

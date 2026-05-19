@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { Comment, Board } from '@/types'
@@ -13,6 +13,10 @@ interface LightboxModalProps {
   autoEnterPresentCompare?: boolean
   onClose: () => void
   onNavigate: (direction: 'prev' | 'next') => void
+  /** True when rendered on the edit-mode studio page; enables inline author name editing. */
+  isEditMode?: boolean
+  /** Role of the currently authenticated user in this workspace. Instructor sees email. */
+  currentUserRole?: 'instructor' | 'student' | null
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -60,7 +64,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -78,6 +82,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const [isPresentMode, setIsPresentMode] = useState(false)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // Author name inline edit
+  const [editingAuthorName, setEditingAuthorName] = useState(false)
+  const [authorNameInput, setAuthorNameInput] = useState('')
+  const [displayedAuthorName, setDisplayedAuthorName] = useState<string | null>(null)
+  const [isSavingAuthorName, setIsSavingAuthorName] = useState(false)
+  const authorSaveInFlightRef = useRef(false)
 
   const isOpen = board !== null
   const [profileFullName, setProfileFullName] = useState<string | null>(null)
@@ -144,6 +154,9 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   }, [isOpen, autoEnterPresentCompare, compareBoards.length])
 
   useEffect(() => {
+    setEditingAuthorName(false)
+    setAuthorNameInput('')
+    setDisplayedAuthorName(null)
     if (!board) {
       setComments([])
       setNewComment('')
@@ -152,8 +165,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       setEditingContent('')
       return
     }
-
     fetchComments()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board?.id])
 
   useEffect(() => {
@@ -180,6 +193,40 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, hasPrev, hasNext, isPresentMode, isComparePresentMode, onNavigate])
+
+  const handleSaveAuthorName = useCallback(async () => {
+    if (authorSaveInFlightRef.current || !board) {
+      setEditingAuthorName(false)
+      return
+    }
+    const name = authorNameInput.trim()
+    const currentName = displayedAuthorName ?? board.studentName ?? ''
+    if (!name || name === currentName) {
+      setEditingAuthorName(false)
+      return
+    }
+    authorSaveInFlightRef.current = true
+    setIsSavingAuthorName(true)
+    try {
+      const res = await fetch('/api/boards', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: board.id,
+          workspaceId: board.workspaceId || board.studioId,
+          studentName: name,
+        }),
+        credentials: 'include',
+      })
+      if (res.ok) setDisplayedAuthorName(name)
+    } catch {
+      // silent — user sees no change, can retry
+    } finally {
+      authorSaveInFlightRef.current = false
+      setIsSavingAuthorName(false)
+      setEditingAuthorName(false)
+    }
+  }, [board, authorNameInput, displayedAuthorName])
 
   const fetchComments = async () => {
     if (!board) return
@@ -427,11 +474,54 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           <h2 className="text-slate-50 font-semibold text-sm sm:text-[15px] truncate">
             {compareBoards.length > 1 ? `Compare selection (${compareBoards.length})` : board.title}
           </h2>
-          {board.studentName && (
-            <p className="text-[11px] text-slate-300/90 truncate">
-              {board.studentName}
-            </p>
-          )}
+          {(() => {
+            const resolvedName = displayedAuthorName ?? board.studentName ?? 'Unknown'
+            const showEmail = isEditMode && currentUserRole === 'instructor' && board.studentEmail
+
+            if (isEditMode && editingAuthorName) {
+              return (
+                <div className="flex items-center gap-1.5 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="text"
+                    value={authorNameInput}
+                    onChange={(e) => setAuthorNameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); handleSaveAuthorName() }
+                      else if (e.key === 'Escape') { setEditingAuthorName(false) }
+                    }}
+                    onBlur={handleSaveAuthorName}
+                    autoFocus
+                    disabled={isSavingAuthorName}
+                    className="text-[11px] text-slate-900 bg-white/95 border border-indigo-400 rounded px-1.5 py-0.5 w-36 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+                    placeholder="Author name"
+                  />
+                  {isSavingAuthorName && (
+                    <div className="w-3 h-3 rounded-full border border-slate-400 border-t-white animate-spin flex-shrink-0" />
+                  )}
+                </div>
+              )
+            }
+
+            return (
+              <p
+                className={`text-[11px] text-slate-300/90 truncate mt-0.5 flex items-center gap-1 ${isEditMode ? 'group/author cursor-pointer hover:text-white' : ''}`}
+                onClick={isEditMode ? () => {
+                  setAuthorNameInput(resolvedName === 'Unknown' ? '' : resolvedName)
+                  setEditingAuthorName(true)
+                } : undefined}
+              >
+                <span>Author: {resolvedName}</span>
+                {isEditMode && (
+                  <svg className="w-3 h-3 opacity-0 group-hover/author:opacity-60 transition-opacity flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
+                  </svg>
+                )}
+                {showEmail && (
+                  <span className="text-slate-400 ml-0.5">· {board.studentEmail}</span>
+                )}
+              </p>
+            )
+          })()}
         </div>
 
         {/* Navigation + Close */}

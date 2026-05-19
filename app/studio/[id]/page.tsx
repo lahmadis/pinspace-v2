@@ -107,6 +107,7 @@ export default function StudioPage() {
   const [currentRoomName, setCurrentRoomName] = useState<string | null>(null)
   const [allRooms, setAllRooms] = useState<Array<{ id: string; name: string }>>([])
   const [showRoomSwitcher, setShowRoomSwitcher] = useState(false)
+  const [currentUserRole, setCurrentUserRole] = useState<'instructor' | 'student' | null>(null)
 
   const isDemo = searchParams?.get('demo') === 'true'
 
@@ -245,6 +246,15 @@ export default function StudioPage() {
               setAllRooms(rooms)
               const matched = rooms.find(r => r.id === resolvedRoomId)
               setCurrentRoomName(matched?.name ?? null)
+              // Resolve current user's role from workspace members list
+              const { data: { session: authSession } } = await supabase.auth.getSession()
+              const myUserId = authSession?.user?.id
+              if (myUserId && Array.isArray(ws?.members)) {
+                const myMember = (ws.members as Array<{ userId: string; role: string }>).find(
+                  (m) => m.userId === myUserId
+                )
+                setCurrentUserRole((myMember?.role as 'instructor' | 'student') ?? null)
+              }
             }
           } catch {
             // Non-fatal: breadcrumb + archive status are best-effort
@@ -637,6 +647,7 @@ export default function StudioPage() {
             floorEditorMode={floorEditorMode}
             isArchived={isArchived}
             commentNonce={commentNonce}
+            currentUserRole={currentUserRole}
             onWallConfigChange={(config) => {
               setWallConfig(config)
               persistWallConfig(config)
