@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     const rawStudentName = formData.get('studentName') as string | null
     const studentName = (rawStudentName && String(rawStudentName).trim())
       ? String(rawStudentName).trim()
-      : (profileName || session?.user?.user_metadata?.email?.split('@')[0] || 'Uploaded Board')
+      : (profileName || session?.user?.email?.split('@')[0] || 'Anonymous')
     const studentEmail = (formData.get('studentEmail') as string | null)?.trim() || session?.user?.email || null
     const rawTitle = formData.get('title') as string | null
     const title = (rawTitle && String(rawTitle).trim()) ? String(rawTitle).trim() : 'Untitled Board'

@@ -123,7 +123,11 @@ const createBoardFormData = (
   if (options.workspaceId) formData.append('workspaceId', options.workspaceId)
   if (options.roomId) formData.append('roomId', options.roomId)
   formData.append('title', options.title || 'Untitled Board')
-  formData.append('studentName', options.user?.fullName || options.user?.firstName || 'Uploaded Board')
+  // Only send studentName if Clerk has a real value. Omitting it lets the
+  // server fall through to user_profiles.full_name, which is populated by
+  // the PinSpace onboarding flow and is the authoritative display name.
+  const clerkName = (options.user?.fullName || options.user?.firstName || '').trim()
+  if (clerkName) formData.append('studentName', clerkName)
   formData.append('description', options.isPDF ? 'PDF Document' : '')
   formData.append('tags', options.isPDF ? 'pdf' : '')
   formData.append('originalWidth', options.width.toString())
@@ -186,7 +190,7 @@ const createTempBoard = (
     localId: tempId,
     studioId: options.studioId,
     title: options.title,
-    studentName: options.user?.fullName || options.user?.firstName || 'Uploaded Board',
+    studentName: options.user?.fullName || options.user?.firstName || '',
     ownerId: options.user?.id,
     ownerName: options.user?.fullName || options.user?.firstName || 'Anonymous',
     thumbnailUrl: options.blobUrl,
