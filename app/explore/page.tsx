@@ -197,16 +197,25 @@ function ExplorePageInner() {
       <DemoBanner />
       {/* Floating Header */}
       <header className={`fixed ${isDemo ? 'top-12' : 'top-0'} left-0 right-0 z-40 border-b border-slate-700/50 bg-slate-900/90 backdrop-blur-md`}>
-        <div className="max-w-full px-6 py-3 flex items-center justify-between gap-4">
+        <div className="max-w-full px-4 md:px-6 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
           {/* Left: logo + title */}
-          <div className="flex items-center gap-4 min-w-0 flex-1 justify-start">
-            <Link
-              href="/"
-              className="text-xl font-bold text-white hover:text-indigo-400 transition-colors shrink-0"
-            >
-              PinSpace
-            </Link>
-            <div className="h-5 w-px bg-slate-600 shrink-0" />
+          <div className="flex flex-col md:flex-row md:items-center md:gap-4 md:min-w-0 md:flex-1 md:justify-start">
+            <div className="flex items-center justify-between md:justify-start gap-4 w-full md:w-auto">
+              <Link
+                href="/"
+                className="text-xl font-bold text-white hover:text-indigo-400 transition-colors shrink-0"
+              >
+                PinSpace
+              </Link>
+              {/* Dashboard link — mobile only (sits in top row opposite logo) */}
+              <Link
+                href="/dashboard"
+                className="md:hidden text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors shrink-0"
+              >
+                Dashboard
+              </Link>
+            </div>
+            <div className="hidden md:block h-5 w-px bg-slate-600 shrink-0" />
             <div className="min-w-0">
               <h1 className="text-lg font-semibold text-white">Studio Network</h1>
               <p className="text-xs text-slate-400">{totalStudios} studios • {totalStudents} students</p>
@@ -214,48 +223,51 @@ function ExplorePageInner() {
           </div>
 
           {/* Center: search + All Studios + Drill-down */}
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full md:w-auto md:shrink-0">
             <input
               type="search"
               placeholder="Search by studio name or professor…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-80 min-w-[18rem] px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full sm:w-80 sm:min-w-[18rem] px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               aria-label="Search studios by name or professor"
             />
-            <button
-              onClick={() => {
-                setViewMode('flat')
-                setHierarchyLevel('years')
-                setSelectedYear(null)
-                setSelectedDepartment(null)
-              }}
-              className={`px-4 py-2 text-sm rounded-lg border transition-colors shrink-0 ${
-                viewMode === 'flat'
-                  ? 'bg-indigo-600 text-white border-indigo-500'
-                  : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
-              }`}
-            >
-              All Studios
-            </button>
-            <button
-              onClick={() => {
-                setViewMode('hierarchy')
-                setHierarchyLevel('years')
-                setSelectedYear(null)
-                setSelectedDepartment(null)
-              }}
-              className={`px-4 py-2 text-sm rounded-lg border transition-colors shrink-0 ${
-                viewMode === 'hierarchy'
-                  ? 'bg-indigo-600 text-white border-indigo-500'
-                  : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
-              }`}
-            >
-              Drill-down (Year → Dept → Studio)
-            </button>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button
+                onClick={() => {
+                  setViewMode('flat')
+                  setHierarchyLevel('years')
+                  setSelectedYear(null)
+                  setSelectedDepartment(null)
+                }}
+                className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
+                  viewMode === 'flat'
+                    ? 'bg-indigo-600 text-white border-indigo-500'
+                    : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
+                }`}
+              >
+                All Studios
+              </button>
+              <button
+                onClick={() => {
+                  setViewMode('hierarchy')
+                  setHierarchyLevel('years')
+                  setSelectedYear(null)
+                  setSelectedDepartment(null)
+                }}
+                className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
+                  viewMode === 'hierarchy'
+                    ? 'bg-indigo-600 text-white border-indigo-500'
+                    : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
+                }`}
+              >
+                Drill-down<span className="hidden sm:inline"> (Year → Dept → Studio)</span>
+              </button>
+            </div>
           </div>
-          
-          <div className="flex items-center justify-end min-w-0 flex-1">
+
+          {/* Right: Dashboard — desktop only (mobile version lives in the top row above) */}
+          <div className="hidden md:flex items-center justify-end min-w-0 md:flex-1">
             <Link
               href="/dashboard"
               className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors shrink-0"
