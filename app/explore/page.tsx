@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
@@ -35,7 +35,26 @@ function ExplorePageInner() {
   const [availableAcademicYears, setAvailableAcademicYears] = useState<{ year: string; count: number }[]>([])
   const [roomPickerNode, setRoomPickerNode] = useState<BubbleNode | null>(null)
 
+  const headerRef = useRef<HTMLElement>(null)
+  const [measuredHeaderHeight, setMeasuredHeaderHeight] = useState(57)
+
   const isDemo = searchParams?.get('demo') === 'true'
+
+  useEffect(() => {
+    const el = headerRef.current
+    if (!el) return
+    const update = () => setMeasuredHeaderHeight(el.offsetHeight)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    window.addEventListener('resize', update)
+    window.addEventListener('orientationchange', update)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', update)
+      window.removeEventListener('orientationchange', update)
+    }
+  }, [])
 
   // Filter nodes by search (studio name or professor/instructor)
   const searchFilteredNodes = useMemo(() => {
@@ -196,7 +215,7 @@ function ExplorePageInner() {
     <div className="min-h-screen bg-slate-900">
       <DemoBanner />
       {/* Floating Header */}
-      <header className={`fixed ${isDemo ? 'top-12' : 'top-0'} left-0 right-0 z-40 border-b border-slate-700/50 bg-slate-900/90 backdrop-blur-md`}>
+      <header ref={headerRef} className={`fixed ${isDemo ? 'top-12' : 'top-0'} left-0 right-0 z-40 border-b border-slate-700/50 bg-slate-900/90 backdrop-blur-md`}>
         <div className="max-w-full px-4 md:px-6 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
           {/* Left: logo + title */}
           <div className="flex flex-col md:flex-row md:items-center md:gap-4 md:min-w-0 md:flex-1 md:justify-start">
@@ -313,7 +332,7 @@ function ExplorePageInner() {
       {/* Full Canvas Bubble Network or empty state */}
       {(() => {
         const hasYearBar = !isDemo && availableAcademicYears.length > 0
-        const headerHeight = 57 + (hasYearBar ? 44 : 0)
+        const headerHeight = measuredHeaderHeight + (hasYearBar ? 44 : 0)
         return displayedNodes.length === 0 ? (
           <div
             className="flex items-center justify-center"
