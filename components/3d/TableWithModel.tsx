@@ -5,6 +5,11 @@ import { Suspense, useMemo, useEffect } from 'react'
 import { useGLTF, Center } from '@react-three/drei'
 import * as THREE from 'three'
 import type { FloorTable } from '@/types'
+import { useRhino3dm } from '@/components/3d/useRhino3dm'
+
+function is3dm(url: string) {
+  return url.toLowerCase().endsWith('.3dm')
+}
 
 const TABLE_HEIGHT = 18 // 1.5 feet in inches
 
@@ -38,23 +43,24 @@ function applyWallColor(scene: THREE.Object3D) {
   })
 }
 
-function ModelOnTable({ url, tableWidth, tableDepth }: { url: string; tableWidth: number; tableDepth: number }) {
-  const { scene } = useGLTF(url)
-  const { cloned, scale, size } = useMemo(() => {
+type ModelOnTableProps = { url: string; tableWidth: number; tableDepth: number }
+
+function useScaledClone(scene: THREE.Object3D, tableWidth: number, tableDepth: number) {
+  return useMemo(() => {
     const c = scene.clone(true)
     applyWallColor(c)
     const box = new THREE.Box3().setFromObject(c)
     const sizeVec = box.getSize(new THREE.Vector3())
     const fitWidth = Math.max(1, tableWidth - TABLE_TOP_MARGIN * 2)
     const fitDepth = Math.max(1, tableDepth - TABLE_TOP_MARGIN * 2)
-    // Scale so model fills the entire table surface proportionally without falling off
     const scaleX = sizeVec.x > 1e-6 ? fitWidth / sizeVec.x : 1
     const scaleZ = sizeVec.z > 1e-6 ? fitDepth / sizeVec.z : 1
     const scale = Math.min(scaleX, scaleZ)
     return { cloned: c, scale, size: sizeVec }
   }, [scene, tableWidth, tableDepth])
+}
 
-  // Dispose cloned geometries and materials when the clone is replaced or the component unmounts
+function ScaledModel({ cloned, scale, size }: { cloned: THREE.Object3D; scale: number; size: THREE.Vector3 }) {
   useEffect(() => {
     return () => {
       cloned.traverse((child) => {
@@ -67,7 +73,6 @@ function ModelOnTable({ url, tableWidth, tableDepth }: { url: string; tableWidth
     }
   }, [cloned])
 
-  // Center horizontally (XZ) but place bottom on table: offset up by half height so bottom sits at table top
   return (
     <group position={[0, TABLE_HEIGHT, 0]} scale={scale}>
       <group position={[0, size.y / 2, 0]}>
@@ -77,6 +82,24 @@ function ModelOnTable({ url, tableWidth, tableDepth }: { url: string; tableWidth
       </group>
     </group>
   )
+}
+
+function GlbModelOnTable({ url, tableWidth, tableDepth }: ModelOnTableProps) {
+  const { scene } = useGLTF(url)
+  const { cloned, scale, size } = useScaledClone(scene, tableWidth, tableDepth)
+  return <ScaledModel cloned={cloned} scale={scale} size={size} />
+}
+
+function RhinoModelOnTable({ url, tableWidth, tableDepth }: ModelOnTableProps) {
+  const { scene } = useRhino3dm(url)
+  const { cloned, scale, size } = useScaledClone(scene, tableWidth, tableDepth)
+  return <ScaledModel cloned={cloned} scale={scale} size={size} />
+}
+
+function ModelOnTable({ url, tableWidth, tableDepth }: ModelOnTableProps) {
+  return is3dm(url)
+    ? <RhinoModelOnTable url={url} tableWidth={tableWidth} tableDepth={tableDepth} />
+    : <GlbModelOnTable url={url} tableWidth={tableWidth} tableDepth={tableDepth} />
 }
 
 interface TableWithModelProps {

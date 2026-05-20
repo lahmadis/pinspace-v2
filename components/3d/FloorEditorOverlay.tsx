@@ -6,6 +6,7 @@ import type { WallConfig, WallTransformOverride } from '@/lib/wallLayout'
 import type { FloorTable } from '@/types'
 import { X, Plus, Upload, Trash2, Magnet } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { MAX_MODEL_SIZE_BYTES } from '@/lib/uploadLimits'
 
 const TABLE_HEIGHT_INCHES = 18 // 1.5 feet
 const DEFAULT_TABLE_WIDTH = 24
@@ -221,8 +222,10 @@ export default function FloorEditorOverlay({
       const file = e.target.files?.[0]
       const tableId = selectedTableId
       if (!file || !tableId) return
-      const isGlb = file.name.toLowerCase().endsWith('.glb') || file.name.toLowerCase().endsWith('.gltf')
-      if (!isGlb) { toast.error('Please select a .glb or .gltf file.'); e.target.value = ''; return }
+      const lower = file.name.toLowerCase()
+      const isSupportedExt = lower.endsWith('.glb') || lower.endsWith('.gltf') || lower.endsWith('.3dm')
+      if (!isSupportedExt) { toast.error('Please select a .glb, .gltf, or .3dm file.'); e.target.value = ''; return }
+      if (file.size > MAX_MODEL_SIZE_BYTES) { toast.error('Model must be under 10 MB.'); e.target.value = ''; return }
       try {
         setUploadingTableId(tableId)
         const formData = new FormData()
@@ -912,7 +915,7 @@ export default function FloorEditorOverlay({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".glb,.gltf"
+                accept=".glb,.gltf,.3dm"
                 className="hidden"
                 onChange={handleTableFileChange}
               />

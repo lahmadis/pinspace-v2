@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "postinstall": "node -e \"const fs=require('fs');fs.mkdirSync('public/wasm',{recursive:true});fs.copyFileSync('node_modules/rhino3dm/rhino3dm.js','public/wasm/rhino3dm.js');fs.copyFileSync('node_modules/rhino3dm/rhino3dm.wasm','public/wasm/rhino3dm.wasm')\"",
     "dev": "node scripts/dev-safe-start.js",
     "dev:raw": "next dev -p 3000",
     "build": "next build",
@@ -28,6 +29,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-markdown": "^10.1.0",
+    "rhino3dm": "^8.17.0",
     "sharp": "^0.34.5",
     "three": "^0.160.1"
   },

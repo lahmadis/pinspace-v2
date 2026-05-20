@@ -6,15 +6,26 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera, useGLTF, Center, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
+import { useRhino3dm } from '@/components/3d/useRhino3dm'
 
-function Model({ url }: { url: string }) {
+function is3dm(url: string) {
+  return url.toLowerCase().endsWith('.3dm')
+}
+
+function GlbModel({ url }: { url: string }) {
   const { scene } = useGLTF(url)
   const cloned = useMemo(() => scene.clone(true), [scene])
-  return (
-    <Center>
-      <primitive object={cloned} />
-    </Center>
-  )
+  return <Center><primitive object={cloned} /></Center>
+}
+
+function RhinoModel({ url }: { url: string }) {
+  const { scene } = useRhino3dm(url)
+  const cloned = useMemo(() => scene.clone(true), [scene])
+  return <Center><primitive object={cloned} /></Center>
+}
+
+function Model({ url }: { url: string }) {
+  return is3dm(url) ? <RhinoModel url={url} /> : <GlbModel url={url} />
 }
 
 function getControls(ref: React.RefObject<unknown>): OrbitControlsType | null {
@@ -132,7 +143,7 @@ interface ModelViewerProps {
 
 export default function ModelViewer({ modelUrl }: ModelViewerProps) {
   useEffect(() => {
-    if (modelUrl && !modelUrl.startsWith('blob:')) useGLTF.preload(modelUrl)
+    if (modelUrl && !modelUrl.startsWith('blob:') && !is3dm(modelUrl)) useGLTF.preload(modelUrl)
   }, [modelUrl])
 
   if (!modelUrl || modelUrl.startsWith('blob:')) {
