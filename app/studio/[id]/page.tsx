@@ -471,14 +471,6 @@ export default function StudioPage() {
 
   return (
     <>
-      {/* Mobile warning — 3D canvas requires a desktop browser */}
-      <div className="md:hidden fixed inset-0 z-[9999] bg-gray-900 flex items-center justify-center p-6">
-        <div className="text-center max-w-sm">
-          <p className="text-4xl mb-4">🖥️</p>
-          <h2 className="text-white text-xl font-bold mb-2">Desktop required</h2>
-          <p className="text-gray-400 text-sm">The 3D studio editor requires a desktop browser. Please visit on a laptop or desktop computer.</p>
-        </div>
-      </div>
       <DemoBanner />
       {/* Archive banner */}
       {isArchived && (
