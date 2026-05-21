@@ -21,8 +21,7 @@ import {
   ExternalLink,
   Pencil,
   Archive,
-  Network,
-  ArrowRight
+  Network
 } from 'lucide-react'
 
 type DashboardOrganization = {
@@ -447,17 +446,17 @@ function DashboardContent() {
           <div className="mb-12">
             <Link
               href={`/explore?institution=${encodeURIComponent(organization.slug)}`}
-              className="group flex items-center justify-between gap-4 rounded-xl border border-indigo-100 bg-indigo-50/60 px-5 py-4 transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:-translate-y-0.5"
+              className="group flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-gradient-to-br from-slate-900 to-slate-800 px-6 py-6 transition-all hover:border-indigo-500/40 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-500/10"
             >
               <div className="min-w-0">
-                <h3 className="text-base font-semibold text-gray-900">
+                <h3 className="text-xl font-semibold text-white">
                   Explore the {shortOrgName(organization.name)} network
                 </h3>
-                <p className="text-sm text-gray-600 mt-0.5">
+                <p className="text-sm text-slate-300 mt-1">
                   Browse studios across your {accountMode === 'firm' ? 'firm' : 'school'}
                 </p>
               </div>
-              <ArrowRight className="w-5 h-5 text-indigo-600 transition-transform group-hover:translate-x-0.5 shrink-0" />
+              <Network className="w-8 h-8 text-indigo-400 transition-transform group-hover:scale-110 shrink-0" />
             </Link>
           </div>
         )}
@@ -563,13 +562,13 @@ function DashboardContent() {
           <div className="mb-12">
             <Link
               href="/network"
-              className="group flex items-center justify-between gap-4 rounded-xl border border-indigo-100 bg-indigo-50/60 px-5 py-4 transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:-translate-y-0.5"
+              className="group flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-gradient-to-br from-slate-900 to-slate-800 px-6 py-6 transition-all hover:border-indigo-500/40 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-500/10"
             >
               <div className="min-w-0">
-                <h3 className="text-base font-semibold text-gray-900">Your personal network</h3>
-                <p className="text-sm text-gray-600 mt-0.5">See your personal rooms as a bubble network</p>
+                <h3 className="text-xl font-semibold text-white">Your personal network</h3>
+                <p className="text-sm text-slate-300 mt-1">See your personal rooms as a bubble network</p>
               </div>
-              <ArrowRight className="w-5 h-5 text-indigo-600 transition-transform group-hover:translate-x-0.5 shrink-0" />
+              <Network className="w-8 h-8 text-indigo-400 transition-transform group-hover:scale-110 shrink-0" />
             </Link>
           </div>
         )}
