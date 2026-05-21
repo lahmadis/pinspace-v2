@@ -15,17 +15,12 @@ interface OrgMatch {
 }
 
 type Step =
-  // Password sign-in is the default landing. Users opt into the email-code
-  // (OTP) path via the secondary link; the OTP flow is unchanged from prior
-  // passes, only its entry point shifted.
   | 'password'        // default — email + password fields
   | 'otp-email'       // OTP entry — just email, sends a 6-digit code on submit
   | 'checking'        // spinner while lookup-domain runs + OTP sends
   | 'check-email'     // OTP sent, waiting for 6-digit code
   | 'verifying'       // spinner while verifyOtp runs
   | 'workspace-picker' // OTP verified, 2+ orgs — user picks one
-  | 'no-match'        // 0 orgs found for domain
-  | 'request-sent'    // org request submitted successfully
 
 function SignInInner() {
   const router = useRouter()
@@ -38,7 +33,6 @@ function SignInInner() {
   const [orgs, setOrgs] = useState<OrgMatch[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [requestedType, setRequestedType] = useState<'university' | 'firm'>('university')
   // Inline help links rendered next to the error message. `showResetHint` is
   // set when Supabase reports "Invalid login credentials" — likely the user
   // signed up via OTP and never set a password. `showSignUpHint` is set when
@@ -123,15 +117,6 @@ function SignInInner() {
 
       const matched: OrgMatch[] = data.orgs ?? []
 
-      if (matched.length === 0) {
-        setOrgs([])
-        setStep('no-match')
-        return
-      }
-
-      // Domain recognized — send OTP. shouldCreateUser is false here so the
-      // OTP path can only sign in existing users; new users must go through
-      // /sign-up (which gates on the domain check up-front).
       setOrgs(matched)
       const { error: otpErr } = await supabase.auth.signInWithOtp({
         email: trimmed,
@@ -279,30 +264,6 @@ function SignInInner() {
       await redirectAfterSignIn(orgSlug)
     } catch {
       setError('Something went wrong. Please try again.')
-      setBusy(false)
-    }
-  }
-
-  // No-match: submit org request lead
-  const handleRequestOrg = async () => {
-    setError('')
-    setBusy(true)
-    const domain = email.split('@')[1] ?? ''
-    try {
-      const res = await fetch('/api/auth/request-org', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, domain, requested_type: requestedType }),
-      })
-      if (res.ok) {
-        setStep('request-sent')
-      } else {
-        const data = await res.json().catch(() => null)
-        setError(data?.error || 'Failed to submit request')
-      }
-    } catch {
-      setError('Failed to submit. Please try again.')
-    } finally {
       setBusy(false)
     }
   }
@@ -545,99 +506,6 @@ function SignInInner() {
     )
   }
 
-  if (step === 'no-match') {
-    const domain = email.split('@')[1] ?? ''
-    return (
-      <Shell>
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">
-          We don&apos;t recognize{' '}
-          <span className="text-gray-400">@{domain}</span>
-        </h1>
-        <p className="text-sm text-gray-500 mb-6">
-          No PinSpace organization is set up for this domain yet.
-        </p>
-        <div className="space-y-3">
-          <Link
-            href={`/sign-up?email=${encodeURIComponent(email)}`}
-            className="block w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium text-center"
-          >
-            Create a free personal account
-          </Link>
-
-          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
-            <p className="text-sm font-medium text-gray-700">What type of organization?</p>
-            <div className="space-y-2">
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="requested_type"
-                  value="university"
-                  checked={requestedType === 'university'}
-                  onChange={() => setRequestedType('university')}
-                  className="mt-0.5"
-                />
-                <span className="text-sm text-gray-700">University / School</span>
-              </label>
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="requested_type"
-                  value="firm"
-                  checked={requestedType === 'firm'}
-                  onChange={() => setRequestedType('firm')}
-                  className="mt-0.5"
-                />
-                <span className="text-sm text-gray-700">Architecture firm / studio</span>
-              </label>
-            </div>
-            <button
-              type="button"
-              onClick={handleRequestOrg}
-              disabled={busy}
-              className="w-full py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 font-medium"
-            >
-              {busy ? 'Submitting…' : 'Request your organization'}
-            </button>
-          </div>
-        </div>
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-        <button
-          type="button"
-          onClick={() => { setError(''); setStep('otp-email') }}
-          className="mt-5 w-full text-center text-sm text-gray-500 hover:text-gray-700"
-        >
-          ← Use a different email
-        </button>
-      </Shell>
-    )
-  }
-
-  if (step === 'request-sent') {
-    const domain = email.split('@')[1] ?? ''
-    return (
-      <Shell>
-        <div className="text-center">
-          <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
-            <CheckIcon />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Request received</h1>
-          <p className="text-sm text-gray-500 mb-6">
-            We&apos;ve noted interest in adding{' '}
-            <span className="font-medium text-gray-700">@{domain}</span> to PinSpace.
-            We&apos;ll be in touch at <span className="font-medium">{email}</span>.
-          </p>
-          <button
-            type="button"
-            onClick={() => { setError(''); setStep('otp-email') }}
-            className="text-indigo-600 hover:underline text-sm"
-          >
-            ← Back to sign in
-          </button>
-        </div>
-      </Shell>
-    )
-  }
-
   return null
 }
 
@@ -666,14 +534,6 @@ function MailIcon() {
     <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
         d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-    </svg>
-  )
-}
-
-function CheckIcon() {
-  return (
-    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
     </svg>
   )
 }

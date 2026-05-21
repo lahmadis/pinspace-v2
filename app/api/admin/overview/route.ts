@@ -33,14 +33,10 @@ export async function GET() {
 
     const allOrgIds = (institutions || []).map((i) => i.id)
 
-    // Batch domains + pending request count in parallel — no extra round trip.
     const domainsMap = new Map<string, string[]>(allOrgIds.map((id) => [id, []]))
-    const [allDomainsResult, pendingCountResult] = await Promise.all([
-      allOrgIds.length > 0
-        ? admin.from('org_domains').select('org_id, domain').in('org_id', allOrgIds).order('domain')
-        : Promise.resolve({ data: [] as { org_id: string; domain: string }[], error: null }),
-      admin.from('org_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-    ])
+    const allDomainsResult = allOrgIds.length > 0
+      ? await admin.from('org_domains').select('org_id, domain').in('org_id', allOrgIds).order('domain')
+      : { data: [] as { org_id: string; domain: string }[], error: null }
     for (const row of allDomainsResult.data ?? []) {
       domainsMap.get(row.org_id)?.push(row.domain)
     }
@@ -70,7 +66,6 @@ export async function GET() {
 
     return NextResponse.json({
       institutions: withCounts,
-      pending_request_count: pendingCountResult.count ?? 0,
     })
   } catch (error) {
     console.error('Error in GET /api/admin/overview:', error)

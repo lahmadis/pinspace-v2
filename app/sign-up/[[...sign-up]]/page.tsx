@@ -26,12 +26,6 @@ function SignUpInner() {
   const [settingPassword, setSettingPassword] = useState(false)
   const [passwordError, setPasswordError] = useState('')
   const [agreedToTerms, setAgreedToTerms] = useState(false)
-  // Pilot pass 7: hard-gate sign-up to known institutional domains.
-  // 'unknown-domain' is the friendly reject screen; 'request-sent' is the
-  // confirmation after the user submits an org-request lead.
-  const [domainState, setDomainState] = useState<'unknown-domain' | 'request-sent' | null>(null)
-  const [requestedType, setRequestedType] = useState<'university' | 'firm'>('university')
-  const [requestBusy, setRequestBusy] = useState(false)
   const hasRedirected = useRef(false)
   const pendingSetPasswordRef = useRef(false)
 
@@ -40,7 +34,6 @@ function SignUpInner() {
 
   useEffect(() => {
     setMounted(true)
-    // Pre-fill email if passed from the sign-in no-match flow
     const emailParam = searchParams?.get('email')
     if (emailParam) setEmail(emailParam)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -97,16 +90,6 @@ function SignUpInner() {
       return
     }
 
-    // Pilot pass 7: hard-gate on a known institutional domain BEFORE creating
-    // a Supabase user. Previously, unknown domains silently created orphaned
-    // accounts (organization_id never got set). Now the domain must already
-    // be registered in org_domains via /api/auth/lookup-domain.
-    //
-    // Note: signInWithOtp runs entirely client-side against Supabase, so the
-    // server-side equivalent would require a custom signup endpoint that
-    // proxies the OTP send. For pilot, this client-side gate plus the
-    // existing /api/auth/request-org back-channel is sufficient. The admin
-    // approval flow remains the back-channel for unknown-domain users.
     setSendingCode(true)
     let matchedOrg: { id: string; slug: string } | null = null
     try {
@@ -122,12 +105,7 @@ function SignUpInner() {
         return
       }
       const orgs: Array<{ id: string; slug: string }> = Array.isArray(lookupData?.orgs) ? lookupData.orgs : []
-      if (orgs.length === 0) {
-        setSendingCode(false)
-        setDomainState('unknown-domain')
-        return
-      }
-      matchedOrg = orgs[0]
+      matchedOrg = orgs[0] ?? null
     } catch {
       setSendingCode(false)
       setError('Could not verify your email domain. Please try again.')
@@ -163,35 +141,6 @@ function SignUpInner() {
       setSendingCode(false)
       setError((err as Error).message || 'Something went wrong')
     }
-  }
-
-  const handleRequestOrg = async () => {
-    setError('')
-    setRequestBusy(true)
-    const trimmedEmail = email.trim()
-    const domain = trimmedEmail.split('@')[1] ?? ''
-    try {
-      const res = await fetch('/api/auth/request-org', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: trimmedEmail, domain, requested_type: requestedType }),
-      })
-      if (res.ok) {
-        setDomainState('request-sent')
-      } else {
-        const data = await res.json().catch(() => null)
-        setError(data?.error || 'Failed to submit request')
-      }
-    } catch {
-      setError('Failed to submit. Please try again.')
-    } finally {
-      setRequestBusy(false)
-    }
-  }
-
-  const handleTryDifferentEmail = () => {
-    setError('')
-    setDomainState(null)
   }
 
   const handleVerifyCode = async (e: React.FormEvent) => {
@@ -336,97 +285,6 @@ function SignUpInner() {
               {settingPassword ? 'Setting password…' : 'Continue'}
             </button>
           </form>
-        </div>
-      </div>
-    )
-  }
-
-  if (domainState === 'request-sent') {
-    const domain = email.trim().split('@')[1] ?? ''
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
-          <div className="text-center">
-            <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
-              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Request received</h1>
-            <p className="text-sm text-gray-500 mb-6">
-              We&apos;ve noted interest in adding{' '}
-              <span className="font-medium text-gray-700">@{domain}</span> to PinSpace.
-              We&apos;ll be in touch at <span className="font-medium">{email.trim()}</span>.
-            </p>
-            <button
-              type="button"
-              onClick={handleTryDifferentEmail}
-              className="text-indigo-600 hover:underline text-sm"
-            >
-              ← Try a different email
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (domainState === 'unknown-domain') {
-    const domain = email.trim().split('@')[1] ?? ''
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">
-            PinSpace isn&apos;t available at{' '}
-            <span className="text-gray-400">@{domain}</span> yet
-          </h1>
-          <p className="text-sm text-gray-500 mb-6">
-            We only support institutional emails from schools that have been onboarded.
-            If your school should be on PinSpace, let us know and we&apos;ll be in touch.
-          </p>
-          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
-            <p className="text-sm font-medium text-gray-700">What type of organization?</p>
-            <div className="space-y-2">
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="requested_type"
-                  value="university"
-                  checked={requestedType === 'university'}
-                  onChange={() => setRequestedType('university')}
-                  className="mt-0.5"
-                />
-                <span className="text-sm text-gray-700">University / School</span>
-              </label>
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="requested_type"
-                  value="firm"
-                  checked={requestedType === 'firm'}
-                  onChange={() => setRequestedType('firm')}
-                  className="mt-0.5"
-                />
-                <span className="text-sm text-gray-700">Architecture firm / studio</span>
-              </label>
-            </div>
-            <button
-              type="button"
-              onClick={handleRequestOrg}
-              disabled={requestBusy}
-              className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
-            >
-              {requestBusy ? 'Submitting…' : 'Request your school'}
-            </button>
-          </div>
-          {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-          <button
-            type="button"
-            onClick={handleTryDifferentEmail}
-            className="mt-5 w-full text-center text-sm text-gray-500 hover:text-gray-700"
-          >
-            ← Try a different email
-          </button>
         </div>
       </div>
     )

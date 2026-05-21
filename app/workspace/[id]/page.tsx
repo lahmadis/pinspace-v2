@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { toast } from '@/lib/toast'
 import { Workspace, Room } from '@/types'
 import { useAuthSession } from '@/hooks/useAuthSession'
+import { useAccountMode } from '@/lib/useAccountMode'
 import PublishConfirmModal, { NetworkMetadata } from '@/components/PublishConfirmModal'
 import {
   ArrowLeft,
@@ -27,6 +28,7 @@ export default function WorkspaceRoomsPage() {
   const workspaceId = params.id as string
 
   const { status: authStatus, user } = useAuthSession()
+  const { mode: accountMode } = useAccountMode(user?.id, user?.email)
   const isAuthLoaded = authStatus !== 'loading'
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [loading, setLoading] = useState(true)
@@ -300,14 +302,16 @@ export default function WorkspaceRoomsPage() {
           </div>
           {isInstructor && (
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setNetworkSettingsOpen(true)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
-                title="Edit network metadata (department, year, instructor)"
-              >
-                <Network className="w-4 h-4" />
-                Network
-              </button>
+              {accountMode !== 'personal' && (
+                <button
+                  onClick={() => setNetworkSettingsOpen(true)}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
+                  title="Edit network metadata (department, year, instructor)"
+                >
+                  <Network className="w-4 h-4" />
+                  Network
+                </button>
+              )}
               <Link
                 href={`/workspace/${workspaceId}/settings`}
                 className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
@@ -439,19 +443,21 @@ export default function WorkspaceRoomsPage() {
                     crowd the card. Hover effects suppressed when editing. */}
                 {isInstructor && !isEditing && (
                   <div className="px-6 pb-4 flex items-center justify-end gap-1 -mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleTogglePublish(room) }}
-                      disabled={isBusy}
-                      className={`p-1.5 rounded-lg disabled:opacity-50 ${
-                        room.isPublished
-                          ? 'text-green-700 hover:text-gray-700 hover:bg-gray-50'
-                          : 'text-gray-500 hover:text-green-700 hover:bg-green-50'
-                      }`}
-                      aria-label={room.isPublished ? 'Unpublish room' : 'Publish to Wentworth'}
-                      title={room.isPublished ? 'Unpublish' : 'Publish to Wentworth'}
-                    >
-                      <Globe className="w-3.5 h-3.5" />
-                    </button>
+                    {accountMode !== 'personal' && (
+                      <button
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleTogglePublish(room) }}
+                        disabled={isBusy}
+                        className={`p-1.5 rounded-lg disabled:opacity-50 ${
+                          room.isPublished
+                            ? 'text-green-700 hover:text-gray-700 hover:bg-gray-50'
+                            : 'text-gray-500 hover:text-green-700 hover:bg-green-50'
+                        }`}
+                        aria-label={room.isPublished ? 'Unpublish room' : 'Publish to Wentworth'}
+                        title={room.isPublished ? 'Unpublish' : 'Publish to Wentworth'}
+                      >
+                        <Globe className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingRoomId(room.id); setEditingRoomName(room.name) }}
                       disabled={isBusy}

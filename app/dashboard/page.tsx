@@ -313,7 +313,7 @@ function DashboardContent() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [organization, setOrganization] = useState<DashboardOrganization | null>(null)
   const [firstName, setFirstName] = useState<string | null>(null)
-  const { mode: accountMode, loading: accountModeLoading } = useAccountMode(user?.id)
+  const { mode: accountMode, loading: accountModeLoading } = useAccountMode(user?.id, user?.email)
   const showSharedSection = accountMode !== 'personal'
   const sharedNoun = accountMode === 'firm' ? 'Room' : 'Class'
   const sharedSectionTitle = accountMode === 'firm' ? 'My Firm Rooms' : 'My Classes'

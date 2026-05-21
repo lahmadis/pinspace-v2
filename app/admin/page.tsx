@@ -18,7 +18,6 @@ import {
   X,
   Pencil,
   Trash2,
-  Inbox,
 } from 'lucide-react'
 
 type WorkspaceRow = { id: string; name: string; type?: string; created_at?: string }
@@ -33,14 +32,6 @@ type InstitutionWithCount = {
   user_count: number
   workspaces: WorkspaceRow[]
   domains: string[]
-}
-
-type OrgRequest = {
-  id: string
-  email: string
-  domain: string
-  requested_at: string
-  requested_type?: 'university' | 'firm'
 }
 
 function relativeTime(iso: string): string {
@@ -687,343 +678,6 @@ function EditOrgModal({
   )
 }
 
-function ApproveModal({
-  request,
-  orgs,
-  onDone,
-  onClose,
-}: {
-  request: OrgRequest
-  orgs: InstitutionWithCount[]
-  onDone: () => void
-  onClose: () => void
-}) {
-  const [mode, setMode] = useState<'new' | 'existing'>('new')
-  const [form, setForm] = useState({
-    name: '',
-    slug: '',
-    type: (request.requested_type === 'firm' ? 'firm' : 'university') as 'university' | 'firm',
-    network_label: '',
-  })
-  const [orgId, setOrgId] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  const autoSlug = () => {
-    if (form.slug) return
-    setForm((p) => ({
-      ...p,
-      slug: p.name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-    }))
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-    try {
-      const body =
-        mode === 'new'
-          ? { mode: 'new', name: form.name.trim(), slug: form.slug.trim(), type: form.type, network_label: form.network_label.trim() || null }
-          : { mode: 'existing', org_id: orgId }
-      const res = await fetch(`/api/admin/org-requests/${request.id}/approve`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (res.ok || res.status === 409) {
-        onDone()
-        return
-      }
-      const data = await res.json()
-      setError(data.error || 'Failed to approve')
-    } catch {
-      setError('Request failed')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const universities = orgs.filter((o) => (o.type || 'university') === 'university')
-  const firms = orgs.filter((o) => o.type === 'firm')
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Approve request</h3>
-          <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Read-only domain chip */}
-        <div className="mb-4 px-3 py-2.5 bg-gray-50 rounded-lg border border-gray-200">
-          <p className="text-xs text-gray-400 mb-1">Approving domain</p>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="inline-block px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-sm font-mono border border-gray-200">
-              {request.domain}
-            </span>
-            <span
-              className={`px-2 py-0.5 rounded text-xs font-medium border ${
-                request.requested_type === 'firm'
-                  ? 'bg-amber-50 text-amber-700 border-amber-200'
-                  : 'bg-indigo-50 text-indigo-700 border-indigo-200'
-              }`}
-            >
-              Requester said: {request.requested_type === 'firm' ? 'Firm' : 'University'}
-            </span>
-          </div>
-          <p className="text-xs text-gray-400 mt-1">from {request.email}</p>
-        </div>
-
-        {/* Mode toggle */}
-        <div className="flex rounded-lg border border-gray-200 overflow-hidden mb-5">
-          <button
-            type="button"
-            onClick={() => setMode('new')}
-            className={`flex-1 py-2 text-sm font-medium transition-colors ${mode === 'new' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-          >
-            Create new org
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('existing')}
-            className={`flex-1 py-2 text-sm font-medium transition-colors ${mode === 'existing' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-          >
-            Add to existing org
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'new' ? (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                <select
-                  value={form.type}
-                  onChange={(e) => setForm((p) => ({ ...p, type: e.target.value as 'university' | 'firm' }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                >
-                  <option value="university">University (school)</option>
-                  <option value="firm">Firm</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                  onBlur={autoSlug}
-                  placeholder="e.g. Wentworth Institute of Technology"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Slug</label>
-                <input
-                  type="text"
-                  value={form.slug}
-                  onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value }))}
-                  placeholder="e.g. wit"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                />
-                <p className="text-xs text-gray-500 mt-1">Handoff link: /i/{form.slug || 'slug'}</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Network label <span className="font-normal text-gray-400">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={form.network_label}
-                  onChange={(e) => setForm((p) => ({ ...p, network_label: e.target.value }))}
-                  placeholder="e.g. WIT Design Network"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                />
-              </div>
-            </>
-          ) : (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Select org</label>
-              <select
-                value={orgId}
-                onChange={(e) => setOrgId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              >
-                <option value="">— choose an org —</option>
-                {universities.length > 0 && (
-                  <optgroup label="Universities">
-                    {universities.map((o) => (
-                      <option key={o.id} value={o.id}>{o.name}</option>
-                    ))}
-                  </optgroup>
-                )}
-                {firms.length > 0 && (
-                  <optgroup label="Firms">
-                    {firms.map((o) => (
-                      <option key={o.id} value={o.id}>{o.name}</option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-            </div>
-          )}
-
-          {error && <p className="text-sm text-red-600">{error}</p>}
-
-          <div className="flex gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading || (mode === 'existing' && !orgId)}
-              className="flex-1 py-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium text-sm"
-            >
-              {loading ? 'Approving…' : 'Approve'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function PendingRequestsPanel({
-  orgs,
-  onRefresh,
-}: {
-  orgs: InstitutionWithCount[]
-  onRefresh: () => void
-}) {
-  const [requests, setRequests] = useState<OrgRequest[]>([])
-  const [fetchError, setFetchError] = useState(false)
-  const [approvingId, setApprovingId] = useState<string | null>(null)
-  const [rejectConfirmId, setRejectConfirmId] = useState<string | null>(null)
-  const [rejectingId, setRejectingId] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetch('/api/admin/org-requests', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((data: { requests?: OrgRequest[] }) => {
-        setRequests(Array.isArray(data.requests) ? data.requests : [])
-      })
-      .catch(() => setFetchError(true))
-  }, [])
-
-  const removeRequest = (id: string) => setRequests((prev) => prev.filter((r) => r.id !== id))
-
-  const handleReject = async (id: string) => {
-    setRejectingId(id)
-    try {
-      const res = await fetch(`/api/admin/org-requests/${id}/reject`, { method: 'PATCH' })
-      if (res.ok || res.status === 409) {
-        const wasLast = requests.length === 1
-        removeRequest(id)
-        if (wasLast) onRefresh()
-      }
-    } finally {
-      setRejectingId(null)
-      setRejectConfirmId(null)
-    }
-  }
-
-  if (fetchError || requests.length === 0) return null
-
-  const approvingRequest = approvingId ? requests.find((r) => r.id === approvingId) ?? null : null
-
-  return (
-    <>
-      <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden mb-6">
-        <div className="px-6 py-4 border-b border-amber-200 bg-amber-50 flex items-center gap-2">
-          <Inbox className="w-4 h-4 text-amber-600" />
-          <h2 className="text-base font-semibold text-amber-900">Pending requests</h2>
-          <span className="ml-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-medium border border-amber-200">
-            {requests.length}
-          </span>
-        </div>
-        <ul>
-          {requests.map((req) => (
-            <li key={req.id} className="border-b border-gray-100 last:border-0 px-6 py-4 flex items-center gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium text-gray-900 font-mono text-sm">{req.domain}</p>
-                  <span
-                    className={`px-2 py-0.5 rounded text-xs font-medium border ${
-                      req.requested_type === 'firm'
-                        ? 'bg-amber-50 text-amber-700 border-amber-200'
-                        : 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                    }`}
-                  >
-                    {req.requested_type === 'firm' ? 'Firm' : 'University'}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-400 mt-0.5">{req.email} · {relativeTime(req.requested_at)}</p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setApprovingId(req.id)}
-                  className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 font-medium"
-                >
-                  Approve
-                </button>
-                {rejectConfirmId === req.id ? (
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setRejectConfirmId(null)}
-                      className="px-2 py-1 text-xs border border-gray-300 text-gray-600 rounded hover:bg-gray-50"
-                    >
-                      Keep
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleReject(req.id)}
-                      disabled={rejectingId === req.id}
-                      className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
-                    >
-                      {rejectingId === req.id ? 'Rejecting…' : 'Reject'}
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setRejectConfirmId(req.id)}
-                    className="px-3 py-1.5 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 hover:text-red-600 hover:border-red-200"
-                  >
-                    Reject
-                  </button>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {approvingRequest && (
-        <ApproveModal
-          request={approvingRequest}
-          orgs={orgs}
-          onDone={() => {
-            const wasLast = requests.length === 1
-            removeRequest(approvingRequest.id)
-            setApprovingId(null)
-            if (wasLast) onRefresh()
-          }}
-          onClose={() => setApprovingId(null)}
-        />
-      )}
-    </>
-  )
-}
-
 export default function AdminDashboardPage() {
   const [user, setUser] = useState<User | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
@@ -1035,7 +689,6 @@ export default function AdminDashboardPage() {
   const [signInError, setSignInError] = useState('')
   const [signingIn, setSigningIn] = useState(false)
   const [editingInst, setEditingInst] = useState<InstitutionWithCount | null>(null)
-  const [pendingRequestCount, setPendingRequestCount] = useState(0)
   const [stats, setStats] = useState<{
     total: number
     by_year: Record<string, number>
@@ -1088,7 +741,6 @@ export default function AdminDashboardPage() {
     ])
       .then(([overviewData, statsData]) => {
         setInstitutions(Array.isArray(overviewData?.institutions) ? overviewData.institutions : [])
-        setPendingRequestCount(overviewData?.pending_request_count ?? 0)
         setStats(statsData)
       })
       .catch(() => setInstitutions([]))
@@ -1259,11 +911,6 @@ export default function AdminDashboardPage() {
               <StatBlock title="How they heard" data={stats.by_how_heard} />
             </div>
           </div>
-        )}
-
-        {/* Pending org requests */}
-        {pendingRequestCount > 0 && (
-          <PendingRequestsPanel orgs={institutions} onRefresh={loadData} />
         )}
 
         {/* Orgs */}
