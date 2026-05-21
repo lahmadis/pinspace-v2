@@ -559,15 +559,15 @@ function DashboardContent() {
         )}
 
         {/* Personal network card */}
-        {accountMode === 'personal' && !accountModeLoading && (
+        {!accountModeLoading && studios.length > 0 && (
           <div className="mb-12">
             <Link
               href="/network"
               className="group flex items-center justify-between gap-4 rounded-xl border border-indigo-100 bg-indigo-50/60 px-5 py-4 transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:-translate-y-0.5"
             >
               <div className="min-w-0">
-                <h3 className="text-base font-semibold text-gray-900">Your network</h3>
-                <p className="text-sm text-gray-600 mt-0.5">See your rooms as a bubble network</p>
+                <h3 className="text-base font-semibold text-gray-900">Your personal network</h3>
+                <p className="text-sm text-gray-600 mt-0.5">See your personal rooms as a bubble network</p>
               </div>
               <ArrowRight className="w-5 h-5 text-indigo-600 transition-transform group-hover:translate-x-0.5 shrink-0" />
             </Link>
