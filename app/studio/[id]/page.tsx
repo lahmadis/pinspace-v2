@@ -76,6 +76,12 @@ const DEFAULT_CONFIG: WallConfig = {
     { height: 10, width: 8 },
     { height: 10, width: 8 },
     { height: 10, width: 8 }
+  ],
+  customTransforms: [
+    { x: -43.90182462935905, z: -93.15280816860862,  rotationY: 0 },
+    { x: 1.5,                z: -46.5,               rotationY: 1.5707963267948966 },
+    { x: 46.83620060511996,  z: -1.2549356733049677, rotationY: 0 },
+    { x: 91.85236286631033,  z: 49.35139735216034,   rotationY: 1.5707963267948966 }
   ]
 }
 
