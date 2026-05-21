@@ -13,6 +13,8 @@ import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
 import DemoBanner from '@/components/DemoBanner'
 import { getCachedStudioData } from '@/lib/studioViewCache'
+import { useAuthSession } from '@/hooks/useAuthSession'
+import { useAccountMode } from '@/lib/useAccountMode'
 import { ArrowLeft } from 'lucide-react'
 
 interface WallDimensions {
@@ -150,6 +152,8 @@ export default function StudioViewPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const studioId = params.id as string
+  const { user } = useAuthSession()
+  const { mode: accountMode } = useAccountMode(user?.id, user?.email)
   
   // Check if it's a demo studio (starts with "demo-studio-") or has demo=true param
   const isDemoStudio = studioId.startsWith('demo-studio-')
@@ -454,7 +458,9 @@ export default function StudioViewPage() {
 
         <button
           onClick={() => {
-            const base = searchParams.get('returnTo') === 'gallery' ? '/gallery' : '/explore'
+            const base = searchParams.get('returnTo') === 'gallery'
+              ? '/gallery'
+              : accountMode === 'personal' ? '/network' : '/explore'
             if (isDemo) {
               const originalParams = typeof window !== 'undefined' ? window.location.search : ''
               if (originalParams.includes('color=') || originalParams.includes('department=')) {
