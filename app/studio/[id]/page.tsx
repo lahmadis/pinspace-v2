@@ -117,6 +117,12 @@ export default function StudioPage() {
 
   const isDemo = searchParams?.get('demo') === 'true'
 
+  // Clear stale wall config whenever the room changes so the previous room's
+  // layout is never visible while the new room's config is loading.
+  useEffect(() => {
+    setWallConfig(null)
+  }, [studioId])
+
   // Wall-config persistence: debounce network writes so a drag at 60fps doesn't fire 60 POSTs/sec.
   // Local UI state still updates immediately; only the fetch is throttled.
   const wallPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
