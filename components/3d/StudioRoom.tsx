@@ -519,7 +519,6 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [draggingFromSidebar, setDraggingFromSidebar] = useState<Board | null>(null)
   const [commentPanelBoard, setCommentPanelBoard] = useState<Board | null>(null)
   const copiedBoardRef = useRef<Board | null>(null)
-  const clearWallConfirmedRef = useRef(false)
   const {
     boards: localBoards,
     boardPositions,
@@ -1153,13 +1152,6 @@ export default function StudioRoom(props: StudioRoomProps) {
       b => b.position?.wallIndex === editingWall && (b.position?.side || 'front') === side
     )
     if (wallBoards.length === 0) return
-    if (!clearWallConfirmedRef.current) {
-      clearWallConfirmedRef.current = true
-      toast.info(`Click "Clear wall" again to remove ${wallBoards.length} board${wallBoards.length === 1 ? '' : 's'} from this wall.`)
-      setTimeout(() => { clearWallConfirmedRef.current = false }, 3000)
-      return
-    }
-    clearWallConfirmedRef.current = false
     for (const board of wallBoards) {
       const success = await deleteBoard(board.id)
       if (!success) {
@@ -1486,6 +1478,9 @@ export default function StudioRoom(props: StudioRoomProps) {
         onClose={handleEditComplete}
         onUpload={handleUpload}
         onClearWall={handleClearWall}
+        wallBoardCount={editingWall !== null && editingWallSide != null ? localBoards.filter(
+          b => b.position?.wallIndex === editingWall && (b.position?.side || 'front') === editingWallSide
+        ).length : 0}
         onCopy={handleCopy}
         onPaste={handlePaste}
         hasSelection={!!selectedBoardId}

@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Board } from '@/types'
 
@@ -9,6 +10,7 @@ interface EditModeOverlayProps {
   onClose: () => void
   onUpload: () => void
   onClearWall?: () => void
+  wallBoardCount?: number
   onCopy?: () => void
   onPaste?: () => void
   hasSelection?: boolean
@@ -24,7 +26,45 @@ export function EditModeOverlay({
   onClose,
   onUpload,
   onClearWall,
+  wallBoardCount = 0,
 }: EditModeOverlayProps) {
+  const [clearArmed, setClearArmed] = useState(false)
+  const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (clearTimerRef.current) clearTimeout(clearTimerRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isVisible) {
+      setClearArmed(false)
+      if (clearTimerRef.current) {
+        clearTimeout(clearTimerRef.current)
+        clearTimerRef.current = null
+      }
+    }
+  }, [isVisible])
+
+  const handleClearClick = () => {
+    if (!onClearWall) return
+    if (!clearArmed) {
+      setClearArmed(true)
+      clearTimerRef.current = setTimeout(() => {
+        setClearArmed(false)
+        clearTimerRef.current = null
+      }, 3000)
+    } else {
+      if (clearTimerRef.current) {
+        clearTimeout(clearTimerRef.current)
+        clearTimerRef.current = null
+      }
+      setClearArmed(false)
+      onClearWall()
+    }
+  }
+
   return (
     <AnimatePresence>
       {isVisible && (
@@ -44,11 +84,17 @@ export function EditModeOverlay({
             <div className="flex items-center gap-3">
               {onClearWall && (
                 <button
-                  onClick={onClearWall}
-                  className="px-4 py-2 bg-slate-500 text-white rounded-lg hover:bg-slate-600 transition-colors shadow-lg"
-                  title="Remove all boards from this wall"
+                  onClick={handleClearClick}
+                  className={clearArmed
+                    ? "px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-lg"
+                    : "px-4 py-2 bg-slate-500 text-white rounded-lg hover:bg-slate-600 transition-colors shadow-lg"
+                  }
+                  title={clearArmed ? "Click again to confirm clearing the wall" : "Remove all boards from this wall"}
                 >
-                  Clear wall
+                  {clearArmed
+                    ? `Click again to clear ${wallBoardCount} board${wallBoardCount === 1 ? '' : 's'}`
+                    : "Clear wall"
+                  }
                 </button>
               )}
               <button
