@@ -154,9 +154,9 @@ function NewRoomCard({ href, label }: { href: string; label: string }) {
 
 // ── Enter Network card ────────────────────────────────────────────────────────
 
-function EnterNetworkCard() {
+function EnterNetworkCard({ href }: { href: string }) {
   return (
-    <Link href="/network/wentworth" className="block h-full">
+    <Link href={href} className="block h-full">
       <div className="group h-full min-h-[168px] bg-white rounded-xl border-2 border-dashed border-gray-200 hover:border-indigo-400 hover:bg-indigo-50/30 transition-all duration-200 flex flex-col items-center justify-center gap-2.5 p-4">
         <div className="w-10 h-10 rounded-full bg-gray-100 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
           <Network className="w-5 h-5 text-gray-400 group-hover:text-indigo-600 transition-colors" />
@@ -329,7 +329,9 @@ export function DashboardMain({
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {scope === 'wentworth' && <EnterNetworkCard />}
+            {scope === 'wentworth' && <EnterNetworkCard href="/network/wentworth" />}
+            {scope === 'personal' && <EnterNetworkCard href="/network" />}
+            {scope === 'shared' && <EnterNetworkCard href="/network/shared" />}
             <NewRoomCard href={cfg.newHref} label={cfg.newLabel} />
             {visibleRooms.map((room) => (
               <RoomCard
