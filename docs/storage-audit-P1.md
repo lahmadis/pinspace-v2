@@ -1231,3 +1231,157 @@ The following are identical between old and new paths:
 - Pre-warm + `replaceTempBoardInState` + blob URL revoke (unchanged)
 
 **React hook constraint:** `uploadFile` is a module-level `async` function — it cannot call `useDirectUpload()` directly. Solution: `useDirectUpload().upload` is called inside the `useBoardUpload` hook (which IS a React hook) and passed as a third parameter `directUpload` to `uploadFile`. Three call sites inside `useBoardUpload` (lines 679, 719, 748) each receive the bound `upload` function.
+
+---
+
+## 14. CS-2 cutover plan
+
+Source: `hooks/useBoardUpload.ts` — module-level function `uploadPDF` (lines 496-632).
+
+---
+
+### a) Current uploadPDF body
+
+```ts
+const uploadPDF = async (
+  file: File,
+  options: UploadOptions
+): Promise<{ success: boolean; count: number }> => {
+  const { convertPDFToImages } = await import('@/lib/pdfToImage')
+  const pages = await convertPDFToImages(file)
+
+  const cols = Math.ceil(Math.sqrt(pages.length))
+  const rows = Math.ceil(pages.length / cols)
+  let successCount = 0
+
+  for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+    const page = pages[pageIndex]
+    const pageTitle = pages.length > 1
+      ? `${file.name.replace('.pdf', '')} - Page ${page.pageNumber}`
+      : file.name.replace('.pdf', '')
+
+    const { widthPercent, heightPercent } = calculateBoardDimensions(
+      page.aspectRatio, options.editingWallDimensions)
+    const gridPos = calculateGridPosition(pageIndex, pages.length)
+
+    // Temp board (no flushSync — different from uploadFile)
+    let tempBoardId: string | null = null
+    let pageBlobUrl: string | null = null
+    if (options.editingWall !== null && options.editingWallDimensions) {
+      pageBlobUrl = URL.createObjectURL(page.imageFile)
+      tempBoardId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      const tempBoard = createTempBoard(tempBoardId, { ..., position: { wallIndex, x: gridPos.x, y: gridPos.y, ... } })
+      addTempBoardToState(tempBoard, { x: gridPos.x, y: gridPos.y, width: widthPercent, height: heightPercent }, ...)
+    }
+
+    // Upload per page (lines 560-628)
+    try {
+      const formData = createBoardFormData(page.imageFile, {
+        ..., isPDF: true, physicalWidth: page.physicalWidth, physicalHeight: page.physicalHeight,
+        position: { wallIndex, x: gridPos.x, y: gridPos.y, width: widthPercent, height: heightPercent, side }
+      })
+      const response = await fetch('/api/upload', { method: 'POST', body: formData })
+      if (!response.ok) throw new Error(`Upload failed: ${response.status}`)
+      const data = await response.json()
+      let uploadedBoard = data.board as Board
+      if (uploadedBoard?.position && options.editingWall !== null) {
+        uploadedBoard = { ...uploadedBoard, position: { ...uploadedBoard.position, side: editingSide } }
+      }
+      if (tempBoardId && options.editingWall !== null) {
+        replaceTempBoardInState(tempBoardId, uploadedBoard, options.editingWall, editingSide, ...)
+      }
+      if (pageBlobUrl) URL.revokeObjectURL(pageBlobUrl)
+      successCount++
+    } catch (error) {
+      console.error(`[Upload PDF] Failed to upload page ${pageIndex + 1}:`, error)
+      if (pageBlobUrl) URL.revokeObjectURL(pageBlobUrl)
+      if (tempBoardId) cleanupTempBoard(tempBoardId, ...)
+      // loop continues — one-page failure does NOT abort remaining pages
+    }
+  }
+  return { success: successCount > 0, count: successCount }
+}
+```
+
+---
+
+### b) Call sites for uploadPDF inside useBoardUpload
+
+Two call sites, both passing only `(file, options)` before this patch:
+
+| Location | Line | Context |
+|---|---|---|
+| `handleUpload` → `input.onchange` loop | ~670 | `const result = await uploadPDF(file, options)` |
+| `uploadFilesDirect` loop | ~744 | `const result = await uploadPDF(file, options)` |
+
+Both updated to `uploadPDF(file, options, upload)` — `upload` is the `useDirectUpload().upload` bound at the top of `useBoardUpload` (introduced in P4b).
+
+---
+
+### c) BoardsPostBody after Part 1 extension
+
+After adding `physicalWidth`/`physicalHeight`, the full interface is:
+
+```ts
+interface BoardsPostBody {
+  workspaceId?: unknown
+  roomId?: unknown
+  storagePath?: unknown
+  thumbnailPath?: unknown
+  contentType?: unknown
+  fileSize?: unknown
+  physicalWidth?: unknown   // NEW — optional; maps to physical_width column
+  physicalHeight?: unknown  // NEW — optional; maps to physical_height column
+  position?: {
+    x?: unknown; y?: unknown; z?: unknown; rotation?: unknown; scale?: unknown
+    wallIndex?: unknown; widthPercent?: unknown; heightPercent?: unknown; side?: unknown
+  }
+  width?: unknown; height?: unknown
+  ownerColor?: unknown
+  isPdf?: unknown
+  originalFilename?: unknown
+  studentName?: unknown
+}
+```
+
+`physical_width` and `physical_height` already exist on the `boards` table (present since the original schema). The old INSERT hard-coded `null`; after Part 1 the server accepts client-supplied values.
+
+---
+
+### d) Response shape compatibility
+
+`/api/upload` response: `{ success: true, board: Board }`
+`/api/boards` response: `{ board: Board, fullUrl, thumbnailUrl }`
+
+`uploadPDF` consumes only `data.board as Board` — the extra `fullUrl`/`thumbnailUrl` fields are ignored. Both endpoints return an identical `Board` object shape (confirmed in P4b §13e). **Compatible.**
+
+---
+
+### e) Coordinate space translation for gridPos
+
+`calculateGridPosition` returns `{ x, y }` in normalized **−0.5 … +0.5** space (same as the position fields in `createTempBoard`). `createBoardFormData` converts these to percentages before sending:
+
+```ts
+const apiX = (options.position.x + 0.5) * 100  // −0.5 → 0%, 0 → 50%, +0.5 → 100%
+const apiY = (options.position.y + 0.5) * 100
+```
+
+The `/api/boards` endpoint stores `positionX`/`positionY` as supplied (percentages). So the new payload must apply the same conversion:
+
+```ts
+x: (gridPos.x + 0.5) * 100,
+y: (gridPos.y + 0.5) * 100,
+```
+
+This is the only non-obvious coordinate translation in the CS-2 cutover.
+
+---
+
+### f) Compatibility verdict
+
+**Full compatibility confirmed.** No blockers. Changes:
+- `uploadPDF` gains a third parameter `directUpload`; two call sites updated.
+- The `createBoardFormData + fetch('/api/upload')` block replaced with `directUpload(page.imageFile) + fetch('/api/boards', JSON)`.
+- `gridPos.x/y` converted from normalized to percentage before send.
+- `physicalWidth`/`physicalHeight` forwarded from `page` to the payload (previously forwarded via FormData; now via JSON).
+- `/api/boards` BoardsPostBody extended with `physicalWidth?`/`physicalHeight?`; INSERT updated to use them instead of hard-coded `null`.

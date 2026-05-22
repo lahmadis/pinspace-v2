@@ -548,6 +548,8 @@ interface BoardsPostBody {
   isPdf?: unknown
   originalFilename?: unknown
   studentName?: unknown
+  physicalWidth?: unknown   // optional, real-world mm; maps to physical_width column
+  physicalHeight?: unknown  // optional, real-world mm; maps to physical_height column
 }
 
 export async function POST(request: NextRequest) {
@@ -584,6 +586,8 @@ export async function POST(request: NextRequest) {
     const originalFilename = typeof raw.originalFilename === 'string'  ? raw.originalFilename.trim() : null
     const studentNameRaw   = typeof raw.studentName      === 'string'  ? raw.studentName.trim()      : null
     const roomIdRaw        = typeof raw.roomId           === 'string'  ? raw.roomId.trim()            : null
+    const physicalWidth    = typeof raw.physicalWidth    === 'number'  ? raw.physicalWidth            : null
+    const physicalHeight   = typeof raw.physicalHeight   === 'number'  ? raw.physicalHeight           : null
 
     const positionX           = typeof raw.position?.x           === 'number' ? raw.position.x           : null
     const positionY           = typeof raw.position?.y           === 'number' ? raw.position.y           : null
@@ -692,8 +696,8 @@ export async function POST(request: NextRequest) {
         original_width:     width,
         original_height:    height,
         aspect_ratio:       width && height && height > 0 ? width / height : null,
-        physical_width:     null,
-        physical_height:    null,
+        physical_width:     physicalWidth,
+        physical_height:    physicalHeight,
       })
       .select()
       .single()

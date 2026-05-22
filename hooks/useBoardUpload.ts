@@ -495,7 +495,8 @@ const uploadFile = async (
  */
 const uploadPDF = async (
   file: File,
-  options: UploadOptions
+  options: UploadOptions,
+  directUpload: (file: File) => Promise<DirectUploadResult>
 ): Promise<{ success: boolean; count: number }> => {
   const { convertPDFToImages } = await import('@/lib/pdfToImage')
   const pages = await convertPDFToImages(file)
@@ -558,37 +559,44 @@ const uploadPDF = async (
     
     // Upload page
     try {
-      const formData = createBoardFormData(page.imageFile, {
-        studioId: options.studioId,
-        roomId: options.roomId,
+      const { storagePath, thumbnailPath } = await directUpload(page.imageFile)
+
+      const clerkName = ((options.user?.fullName || options.user?.firstName || '') as string).trim()
+      const boardPayload = {
         workspaceId: options.workspaceId,
-        title: pageTitle,
-        user: options.user,
+        roomId: options.roomId,
+        storagePath,
+        thumbnailPath,
+        ownerColor: generateOwnerColor(options.user?.id ?? ''),
+        originalFilename: file.name,
+        studentName: clerkName || undefined,
         width: page.width,
         height: page.height,
-        aspectRatio: page.aspectRatio,
-        isPDF: true,
+        isPdf: true,
         physicalWidth: page.physicalWidth,
         physicalHeight: page.physicalHeight,
-        position: options.editingWall !== null && options.editingWallDimensions ? {
-          wallIndex: options.editingWall,
-          x: gridPos.x,
-          y: gridPos.y,
-          width: widthPercent,
-          height: heightPercent,
-          side: options.editingWallSide || 'front',
-        } : undefined,
-      })
-      
-      const response = await fetch('/api/upload', {
+        ...(options.editingWall !== null && options.editingWallDimensions ? {
+          position: {
+            wallIndex: options.editingWall,
+            x: (gridPos.x + 0.5) * 100,
+            y: (gridPos.y + 0.5) * 100,
+            widthPercent: widthPercent * 100,
+            heightPercent: heightPercent * 100,
+            side: options.editingWallSide ?? 'front',
+          },
+        } : {}),
+      }
+
+      const response = await fetch('/api/boards', {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(boardPayload),
       })
-      
+
       if (!response.ok) {
         throw new Error(`Upload failed: ${response.status}`)
       }
-      
+
       const data = await response.json()
       let uploadedBoard = data.board as Board
       const editingSide = options.editingWallSide || 'front'
@@ -667,7 +675,7 @@ export const useBoardUpload = (options: UploadOptions) => {
         
         try {
           if (file.type === 'application/pdf') {
-            const result = await uploadPDF(file, options)
+            const result = await uploadPDF(file, options, upload)
             if (result.success) {
               successCount += result.count
             } else {
@@ -741,7 +749,7 @@ export const useBoardUpload = (options: UploadOptions) => {
       }
       try {
         if (file.type === 'application/pdf') {
-          const result = await uploadPDF(file, options)
+          const result = await uploadPDF(file, options, upload)
           if (result.success) successCount += result.count; else failCount++
         } else {
           const result = await uploadFile(file, options, upload)
