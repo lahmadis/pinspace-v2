@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Board } from '@/types'
 
@@ -29,37 +29,16 @@ export function EditModeOverlay({
   wallBoardCount = 0,
 }: EditModeOverlayProps) {
   const [clearArmed, setClearArmed] = useState(false)
-  const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    return () => {
-      if (clearTimerRef.current) clearTimeout(clearTimerRef.current)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!isVisible) {
-      setClearArmed(false)
-      if (clearTimerRef.current) {
-        clearTimeout(clearTimerRef.current)
-        clearTimerRef.current = null
-      }
-    }
+    if (!isVisible) setClearArmed(false)
   }, [isVisible])
 
   const handleClearClick = () => {
     if (!onClearWall) return
     if (!clearArmed) {
       setClearArmed(true)
-      clearTimerRef.current = setTimeout(() => {
-        setClearArmed(false)
-        clearTimerRef.current = null
-      }, 3000)
     } else {
-      if (clearTimerRef.current) {
-        clearTimeout(clearTimerRef.current)
-        clearTimerRef.current = null
-      }
       setClearArmed(false)
       onClearWall()
     }
