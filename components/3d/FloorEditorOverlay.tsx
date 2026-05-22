@@ -5,6 +5,7 @@ import { calculateFloorBounds, getWallTransformResolved, getWallTransform } from
 import type { WallConfig, WallTransformOverride } from '@/lib/wallLayout'
 import type { FloorTable } from '@/types'
 import { X, Plus, Upload, Trash2, Magnet } from 'lucide-react'
+import { WallConfigPreview } from './WallConfigPreview'
 import { toast } from '@/lib/toast'
 import { MAX_MODEL_SIZE_BYTES } from '@/lib/uploadLimits'
 
@@ -838,6 +839,9 @@ export default function FloorEditorOverlay({
                 />
               )}
             </svg>
+
+            {/* 3D minimap preview — walls mode only */}
+            {mode === 'walls' && <WallConfigPreview wallConfig={wallConfig} />}
 
             {/* Stretch invisible hitbox divs (20×20, easier grab) */}
             {mode === 'walls' && wallGeometry.flatMap(({ index, startPx, startPy, endPx, endPy, centerPx, centerPy }) => {
