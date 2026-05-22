@@ -116,7 +116,7 @@ export interface Workspace {
   id: string
   name: string // "Studio 08 - Fall 2024"
   slug: string // for URL, e.g., "studio-08-fall-2024"
-  type: 'class' | 'personal' // for now just 'class'
+  type: 'class' | 'personal' | 'shared'
   createdBy: string // user ID of professor
   studioId: string // the shared 3D room ID
   members: WorkspaceMember[]
