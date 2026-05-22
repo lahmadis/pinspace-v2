@@ -461,7 +461,7 @@ export default function SettingsPage() {
                 ) : (
                   <div className="rounded-lg bg-red-50 border border-red-200 p-4">
                     <p className="text-sm text-red-700 mb-3">
-                      You'll lose access to all rooms under <strong>{organization.name}</strong>. This cannot be undone from here.
+                      You&apos;ll lose access to all rooms under <strong>{organization.name}</strong>. This cannot be undone from here.
                     </p>
                     <div className="flex gap-2">
                       <button
@@ -521,7 +521,7 @@ export default function SettingsPage() {
                     <KeyRound className="w-3.5 h-3.5 text-gray-500" />
                     Change password
                   </button>
-                  <p className="text-xs text-gray-400 mt-1 ml-0.5">We'll send a reset link to your email.</p>
+                  <p className="text-xs text-gray-400 mt-1 ml-0.5">We&apos;ll send a reset link to your email.</p>
                 </div>
 
                 <div className="h-px bg-gray-100" />
