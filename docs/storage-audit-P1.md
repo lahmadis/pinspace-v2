@@ -1420,3 +1420,128 @@ grep -rE "require\(.*WallCanvas" --include="*.ts" --include="*.tsx"
 Result: **zero matches**
 
 **Verdict:** No live imports anywhere. No co-located test, story, or stylesheet files (`Glob components/WallCanvasEditor*` returns only the single `.tsx`). Safe to delete.
+
+---
+
+## 16. P5 pre-flight checks
+
+Run date: 2026-05-22. No code was modified in this section. `npx tsc --noEmit` clean.
+
+---
+
+### Check 1 — No live calls to /api/upload remain
+
+**Grep:** `/api/upload` in all `*.ts`, `*.tsx`, `*.js`, `*.jsx`.
+
+| File | Line | Content | Classification |
+|---|---|---|---|
+| `components/3d/FloorEditorOverlay.tsx` | 235 | `fetch('/api/upload-model', ...)` | **Different endpoint** (`/api/upload-model`) — not `/api/upload` |
+| `hooks/useBoardUpload.ts` | 19 | `/** Phase 6.1 room id; forwarded to /api/upload so the new board lands... */` | JSDoc comment — stale wording, not live code |
+| `hooks/useBoardUpload.ts` | 22 | `* Workspace id for /api/upload's 'workspaceId' form field.` | JSDoc comment — stale |
+| `hooks/useBoardUpload.ts` | 103 | `/** Phase 6.1 room id; sent to /api/upload alongside studioId/workspaceId. */` | JSDoc comment — stale |
+| `hooks/useBoardUpload.ts` | 105 | `/** Workspace id; required by /api/upload.` | JSDoc comment — stale |
+| `app/studio/[id]/page.tsx` | 372 | `// /api/upload first INSERTs a placeholder row...` | `//` comment |
+| `app/api/boards/route.ts` | 500, 520, 652, 654 | Various `//` comments referencing old behavior | `//` comments |
+
+**Result: ZERO live non-comment calls to `/api/upload` remain outside the route file itself.** ✅ P6 can proceed.
+
+Note: The stale JSDoc comments in `hooks/useBoardUpload.ts` (lines 19, 22, 103, 105) reference the old `/api/upload` path. These are documentation drift — harmless but should be cleaned up in P6 alongside the route deletion.
+
+---
+
+### Check 2 — useDirectUpload is the only client-side path to board-images uploads
+
+**Grep:** `.upload(` across all `*.ts`, `*.tsx`.
+
+| File | Lines | Bucket | Client or server? | Expected? |
+|---|---|---|---|---|
+| `lib/useDirectUpload.ts` | 110, 116 | `board-images` (via `BUCKET` constant) | Client (hook) | ✅ Yes — canonical client uploader |
+| `app/settings/page.tsx` | 196 | **`avatars`** (confirmed by reading the call) | Client | ✅ Yes — profile avatar upload, unrelated to board-images |
+| `app/api/upload/route.ts` | 261, 277 | `board-images` | Server (legacy) | ✅ Yes — scheduled for deletion in P6 |
+| `app/api/upload-model/route.ts` | 65 | `board-images` | Server (model upload) | ✅ Yes — separate upload path for 3D models, out of scope |
+| `app/api/studios/[id]/wall-config/route.ts` | 26 | `board-images` (via `CONFIG_BUCKET`) | Server (service-role) | ✅ Yes — wall-config JSON write, unrelated to board uploads |
+| `app/api/boards/route.ts` | — | — | — | ✅ Correct — does NOT appear; this route is DB-only |
+
+**Result: All hits accounted for. No unexpected client-side board-images uploaders.** ✅
+
+`app/settings/page.tsx` uploads to the `avatars` bucket (verified by reading line 194-196) — not `board-images`. Not a bug.
+
+---
+
+### Check 3 — sharp is only imported in /api/upload
+
+**Grep:** `import .* from 'sharp'` and `require('sharp')` across all `*.ts`, `*.tsx`.
+
+| File | Line | Content |
+|---|---|---|
+| `app/api/upload/route.ts` | 4 | `import sharp from 'sharp'` |
+
+**Result: Only one hit — the legacy route scheduled for deletion in P6.** ✅ No other file imports `sharp`. P6 cleanup scope is exactly `app/api/upload/route.ts`.
+
+---
+
+### Check 4 — No stale calls to createBoardFormData
+
+**Grep (definition):** `createBoardFormData` → hit at `hooks/useBoardUpload.ts:99` (the function definition).
+
+**Grep (call sites):** `createBoardFormData(` → **zero matches**.
+
+`createBoardFormData` (lines 98-163 of `hooks/useBoardUpload.ts`) is defined but never called. Both `uploadFile` (P4b) and `uploadPDF` (P4c) have been migrated away from it. It is **dead code**.
+
+**Result: ⚠️ Dead helper present.** The function definition should be deleted in P6 to avoid confusion. It is safe to leave until then — it has no callers and TypeScript does not flag unused module-level `const` declarations as errors (only variables/imports trigger `noUnusedLocals`).
+
+---
+
+### Check 5 — Migration audit (008 onwards)
+
+**Full migration listing:**
+
+| File | Added by | Status |
+|---|---|---|
+| `008_add_organization_id_columns.sql` | Pre-P2 | Applied (pre-existing) |
+| `009_drop_institution_id_columns.sql` | Pre-P2 | Applied (pre-existing) |
+| `010_add_workspace_archive.sql` | Pre-P2 | Applied (pre-existing) |
+| `011_add_board_upload_status.sql` | Pre-P2 | Applied (pre-existing) |
+| `012_add_board_rotation.sql` | Pre-P2 | Applied (pre-existing) |
+| `013_add_org_request_type.sql` | Pre-P2 | Applied (pre-existing) |
+| `014_add_rooms_table.sql` | Pre-P2 | Applied (pre-existing) |
+| `015_add_workspaces_active_room_id.sql` | Pre-P2 | Applied (pre-existing) |
+| `016_drop_active_room_and_global_network.sql` | Pre-P2 | Applied (pre-existing) |
+| `017_seed_org_domains.sql` | Pre-P2 | Applied (pre-existing) |
+| `018_create_room_share_tokens.sql` | Pre-P2 | Applied (pre-existing) |
+| `008_tighten_board_images_insert_rls.sql` | **P2b** | ⚠️ **Requires confirmation** (see below) |
+| `019_add_shared_workspace_type.sql` | Outside P2-P4 scope | ⚠️ Untracked (not yet committed) |
+| `020_notification_preferences.sql` | Outside P2-P4 scope | ⚠️ Untracked (not yet committed) |
+
+**Naming collision:** Two files share the `008_` prefix — `008_add_organization_id_columns.sql` (pre-existing) and `008_tighten_board_images_insert_rls.sql` (P2b). The Supabase CLI uses file timestamps rather than numeric prefixes for ordering, so they don't conflict at the schema level, but the duplicate prefix is confusing. Noted.
+
+**`008_tighten_board_images_insert_rls.sql` (P2b):**
+
+Content:
+```sql
+DROP POLICY IF EXISTS "Authenticated users can upload board images" ON storage.objects;
+CREATE POLICY "Users can upload to own folder in board-images"
+ON storage.objects FOR INSERT TO authenticated
+WITH CHECK (
+  bucket_id = 'board-images'
+  AND (storage.foldername(name))[1] = (auth.uid())::text
+);
+```
+
+This is the **critical security migration** for the Phase 4 client-direct upload path. `useDirectUpload` writes to `{userId}/...` paths, which satisfies this policy. If this migration has NOT been applied, all client-direct uploads will be rejected by RLS with a 403.
+
+**Status: Requires human confirmation.** Cannot be verified from code alone — must be checked in Supabase SQL Editor or Dashboard → Authentication → Policies.
+
+Verification query (run in SQL Editor):
+```sql
+SELECT policyname, cmd, with_check
+FROM pg_policies
+WHERE schemaname = 'storage' AND tablename = 'objects'
+  AND policyname = 'Users can upload to own folder in board-images';
+```
+
+Expected: one row returned. If zero rows returned, apply `008_tighten_board_images_insert_rls.sql` before any user testing of P4b/P4c/P4d.
+
+**`019_add_shared_workspace_type.sql` and `020_notification_preferences.sql`:**
+
+Both are untracked files (outside P2-P4 scope). Neither affects the storage upload path. Not a blocker for P6.
