@@ -529,14 +529,18 @@ interface BoardsPostBody {
   roomId?: unknown
   storagePath?: unknown
   thumbnailPath?: unknown
-  contentType?: unknown   // accepted; no matching boards column
-  fileSize?: unknown      // accepted; no matching boards column
+  contentType?: unknown      // accepted; no matching boards column today — ignored
+  fileSize?: unknown         // accepted; no matching boards column today — ignored
   position?: {
     x?: unknown
     y?: unknown
-    z?: unknown
+    z?: unknown              // no boards column — ignored
     rotation?: unknown
-    scale?: unknown
+    scale?: unknown          // no boards column — ignored
+    wallIndex?: unknown      // maps to position_wall_index
+    widthPercent?: unknown   // maps to position_width
+    heightPercent?: unknown  // maps to position_height
+    side?: unknown           // 'front' | 'back'; null if omitted
   }
   width?: unknown
   height?: unknown
@@ -561,26 +565,38 @@ export async function POST(request: NextRequest) {
 
     const workspaceId = typeof raw.workspaceId === 'string' ? raw.workspaceId.trim() : null
     const storagePath  = typeof raw.storagePath  === 'string' ? raw.storagePath.trim()  : null
-    const contentType  = typeof raw.contentType  === 'string' ? raw.contentType.trim()  : null
-    const fileSize     = typeof raw.fileSize     === 'number' ? raw.fileSize            : null
+    // Fix 3: contentType and fileSize are optional — accepted if present, not stored (no boards column).
+    // Kept in the interface for forward-compat when the schema gains these columns.
+    // const contentType = ...  (parsed but unused)
+    // const fileSize    = ...  (parsed but unused)
 
-    if (!workspaceId)  return NextResponse.json({ error: 'Missing required field: workspaceId' },  { status: 400 })
-    if (!storagePath)  return NextResponse.json({ error: 'Missing required field: storagePath' },  { status: 400 })
-    if (!contentType)  return NextResponse.json({ error: 'Missing required field: contentType' },  { status: 400 })
-    if (fileSize === null) return NextResponse.json({ error: 'Missing required field: fileSize' }, { status: 400 })
+    if (!workspaceId) return NextResponse.json({ error: 'Missing required field: workspaceId' }, { status: 400 })
+    if (!storagePath) return NextResponse.json({ error: 'Missing required field: storagePath' }, { status: 400 })
 
     const thumbnailPath    = typeof raw.thumbnailPath    === 'string'  ? raw.thumbnailPath.trim()    : null
     const width            = typeof raw.width            === 'number'  ? raw.width                   : null
     const height           = typeof raw.height           === 'number'  ? raw.height                  : null
+    // Fix 4: ownerColor is required — generateOwnerColor runs client-side; server should not guess.
     const ownerColor       = typeof raw.ownerColor       === 'string'  ? raw.ownerColor.trim()        : null
+    if (!ownerColor) return NextResponse.json({ error: 'Missing required field: ownerColor' }, { status: 400 })
+
     const isPdf            = raw.isPdf === true
     const originalFilename = typeof raw.originalFilename === 'string'  ? raw.originalFilename.trim() : null
     const studentNameRaw   = typeof raw.studentName      === 'string'  ? raw.studentName.trim()      : null
     const roomIdRaw        = typeof raw.roomId           === 'string'  ? raw.roomId.trim()            : null
 
-    const positionX        = typeof raw.position?.x        === 'number' ? raw.position.x        : null
-    const positionY        = typeof raw.position?.y        === 'number' ? raw.position.y        : null
-    const positionRotation = typeof raw.position?.rotation === 'number' ? raw.position.rotation : 0
+    const positionX           = typeof raw.position?.x           === 'number' ? raw.position.x           : null
+    const positionY           = typeof raw.position?.y           === 'number' ? raw.position.y           : null
+    const positionRotation    = typeof raw.position?.rotation    === 'number' ? raw.position.rotation    : 0
+    // Fix 1: wall-position fields — map to existing boards columns (PUT handler already r/w these)
+    const positionWallIndex   = typeof raw.position?.wallIndex   === 'number' ? raw.position.wallIndex   : null
+    const positionWidth       = typeof raw.position?.widthPercent  === 'number' ? raw.position.widthPercent  : null
+    const positionHeight      = typeof raw.position?.heightPercent === 'number' ? raw.position.heightPercent : null
+    // side: normalize 'back' (case-insensitive) → 'back'; any other string → 'front'; omitted → null
+    const positionSide: 'front' | 'back' | null =
+      typeof raw.position?.side === 'string'
+        ? (raw.position.side.toLowerCase() === 'back' ? 'back' : 'front')
+        : null
 
     // 3. Membership check — mirrors upload/route.ts:214-242
     const admin = supabaseServiceRole()
@@ -628,11 +644,18 @@ export async function POST(request: NextRequest) {
     const studentName = studentNameRaw || profileName || session.user.email?.split('@')[0] || 'Anonymous'
     const studentEmail = session.user.email || null
 
-    // 6. Public URLs — storage already settled, just resolve paths
-    const { data: fullUrlData }  = admin.storage.from('board-images').getPublicUrl(storagePath)
-    const { data: thumbUrlData } = admin.storage.from('board-images').getPublicUrl(thumbnailPath ?? storagePath)
-    const fullUrl     = fullUrlData.publicUrl
-    const thumbnailUrl = thumbUrlData.publicUrl
+    // 6. Public URLs — storage already settled, just resolve paths.
+    // Fix 2: mirror /api/upload behavior (upload/route.ts:291-303):
+    //   thumbnailUrl = getPublicUrl(thumbnailPath) when a thumb exists,
+    //   otherwise fall back to fullUrl (same as /api/upload does for PDFs where no thumb is generated).
+    //   Never null — grid views always have something to render.
+    const { data: fullUrlData } = admin.storage.from('board-images').getPublicUrl(storagePath)
+    const fullUrl = fullUrlData.publicUrl
+    let thumbnailUrl = fullUrl
+    if (thumbnailPath) {
+      const { data: thumbUrlData } = admin.storage.from('board-images').getPublicUrl(thumbnailPath)
+      thumbnailUrl = thumbUrlData.publicUrl
+    }
 
     // 7. Single INSERT — no placeholder→update dance; upload_status is 'complete' immediately.
     //    Column list mirrors upload/route.ts placeholderData + the subsequent UPDATE, merged.
@@ -649,7 +672,7 @@ export async function POST(request: NextRequest) {
         room_id:            resolvedRoomId,
         owner_id:           userId,
         owner_name:         ownerName,
-        owner_color:        ownerColor ?? undefined,
+        owner_color:        ownerColor,  // required; validated above
         student_name:       studentName,
         student_email:      studentEmail,
         title,
@@ -659,12 +682,12 @@ export async function POST(request: NextRequest) {
         tags:               isPdf ? ['pdf'] : [],
         uploaded_at:        new Date().toISOString(),
         upload_status:      'complete',
-        position_wall_index: null,
+        position_wall_index: positionWallIndex,  // Fix 1: from request body
         position_x:         positionX,
         position_y:         positionY,
-        position_width:     null,
-        position_height:    null,
-        position_side:      null,
+        position_width:     positionWidth,       // Fix 1: from widthPercent
+        position_height:    positionHeight,      // Fix 1: from heightPercent
+        position_side:      positionSide,        // Fix 1: null if omitted
         position_rotation:  positionRotation,
         original_width:     width,
         original_height:    height,
