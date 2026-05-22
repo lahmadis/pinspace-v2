@@ -1,6 +1,7 @@
 'use client'
 
 import { Rhino3dmLoader } from 'three/examples/jsm/loaders/3DMLoader.js'
+import { fitToScene } from '@/lib/3d/fitToScene'
 import type { Object3D } from 'three'
 
 type Entry = {
@@ -20,7 +21,13 @@ function getEntry(url: string): Entry {
       loader.setLibraryPath('/wasm/')
       loader.load(
         url,
-        (object) => { e.result = object; resolve() },
+        (object) => {
+          const { scale, center } = fitToScene(object)
+          object.scale.setScalar(scale)
+          object.position.set(-center.x * scale, -center.y * scale, -center.z * scale)
+          e.result = object
+          resolve()
+        },
         undefined,
         (err: unknown) => { e.error = err ?? new Error('Rhino3dm load failed'); reject(e.error) }
       )

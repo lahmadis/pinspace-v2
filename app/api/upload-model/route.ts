@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
-import { MAX_MODEL_SIZE_BYTES } from '@/lib/uploadLimits'
+import { MAX_MODEL_SIZE_BYTES, SUPPORTED_MODEL_EXTENSIONS } from '@/lib/uploadLimits'
 
 function getSafeName(name: string): string {
   return name
@@ -34,16 +34,19 @@ export async function POST(request: NextRequest) {
     }
 
     const lowerName = file.name.toLowerCase()
-    const isSupportedExt = lowerName.endsWith('.glb') || lowerName.endsWith('.gltf') || lowerName.endsWith('.3dm')
+    const isSupportedExt = SUPPORTED_MODEL_EXTENSIONS.some(e => lowerName.endsWith(e))
     if (!isSupportedExt) {
-      return NextResponse.json({ error: 'Only .glb, .gltf, and .3dm files are supported' }, { status: 400 })
+      return NextResponse.json({ error: 'Only .glb, .gltf, .3dm, and .stl files are supported' }, { status: 400 })
     }
 
     if (file.size > MAX_MODEL_SIZE_BYTES) {
       return NextResponse.json({ error: 'Model exceeds 10 MB limit' }, { status: 400 })
     }
 
-    const ext = lowerName.endsWith('.glb') ? 'glb' : lowerName.endsWith('.3dm') ? '3dm' : 'gltf'
+    const ext = lowerName.endsWith('.glb') ? 'glb'
+      : lowerName.endsWith('.3dm') ? '3dm'
+      : lowerName.endsWith('.stl') ? 'stl'
+      : 'gltf'
     const base = getSafeName(file.name)
     const timestamp = Date.now()
     const random = Math.random().toString(36).slice(2, 8)
@@ -52,7 +55,10 @@ export async function POST(request: NextRequest) {
     const bytes = new Uint8Array(await file.arrayBuffer())
     const contentType =
       file.type ||
-      (ext === 'glb' ? 'model/gltf-binary' : ext === '3dm' ? 'application/octet-stream' : 'model/gltf+json')
+      (ext === 'glb' ? 'model/gltf-binary'
+        : ext === '3dm' ? 'application/octet-stream'
+        : ext === 'stl' ? 'model/stl'
+        : 'model/gltf+json')
 
     const { error: uploadError } = await supabase.storage
       .from('board-images')
