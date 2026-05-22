@@ -1,7 +1,7 @@
 'use client'
 
 import '@/components/3d/setupDraco'
-import { Suspense, useMemo, useEffect } from 'react'
+import { Suspense, useMemo, useEffect, useState } from 'react'
 import { useGLTF, Center } from '@react-three/drei'
 import * as THREE from 'three'
 import type { FloorTable } from '@/types'
@@ -19,6 +19,8 @@ function isModelUrlLoadable(url: string): boolean {
 
 const TABLE_TOP_MARGIN = 0.5 // inches – minimal gap so model fills table
 const MODEL_COLOR = '#ffffff' // white
+const EMISSIVE_BASE = 0.2
+const EMISSIVE_HOVER = 0.45
 
 function applyWallColor(scene: THREE.Object3D) {
   const color = new THREE.Color(MODEL_COLOR)
@@ -30,13 +32,11 @@ function applyWallColor(scene: THREE.Object3D) {
       mats.forEach((m) => {
         const standard = m as THREE.MeshStandardMaterial
         if (standard.color) standard.color.copy(color)
-        // Clear textures so the solid color shows (they often darken the model)
         if (standard.map) standard.map = null
         if (standard.emissiveMap) standard.emissiveMap = null
-        // Slight emissive so model isn't overly dark in shadow – matches walls
         if (standard.emissive) {
           standard.emissive.copy(color)
-          standard.emissiveIntensity = 0.2
+          standard.emissiveIntensity = EMISSIVE_BASE
         }
       })
     }
@@ -60,7 +60,29 @@ function useScaledClone(scene: THREE.Object3D, tableWidth: number, tableDepth: n
   }, [scene, tableWidth, tableDepth])
 }
 
-function ScaledModel({ cloned, scale, size }: { cloned: THREE.Object3D; scale: number; size: THREE.Vector3 }) {
+function ScaledModel({
+  cloned, scale, size, hovered,
+}: {
+  cloned: THREE.Object3D
+  scale: number
+  size: THREE.Vector3
+  hovered: boolean
+}) {
+  // Boost emissive on hover, revert on unhover
+  useEffect(() => {
+    const intensity = hovered ? EMISSIVE_HOVER : EMISSIVE_BASE
+    cloned.traverse((child) => {
+      const mesh = child as THREE.Mesh
+      if (!mesh.isMesh || !mesh.material) return
+      const mats = Array.isArray(mesh.material)
+        ? (mesh.material as THREE.MeshStandardMaterial[])
+        : [(mesh.material as THREE.MeshStandardMaterial)]
+      mats.forEach((m) => {
+        if (m.emissiveIntensity !== undefined) m.emissiveIntensity = intensity
+      })
+    })
+  }, [hovered, cloned])
+
   useEffect(() => {
     return () => {
       cloned.traverse((child) => {
@@ -75,6 +97,15 @@ function ScaledModel({ cloned, scale, size }: { cloned: THREE.Object3D; scale: n
 
   return (
     <group position={[0, TABLE_HEIGHT, 0]} scale={scale}>
+      {/*
+        Invisible hit-test volume — ensures clicks/pointerOver on the model mesh
+        fire on this React element rather than passing through to walls behind.
+        transparent+opacity=0 keeps it invisible while remaining raycastable.
+      */}
+      <mesh position={[0, size.y / 2, 0]}>
+        <boxGeometry args={[size.x + 1, size.y + 1, size.z + 1]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
       <group position={[0, size.y / 2, 0]}>
         <Center>
           <primitive object={cloned} />
@@ -84,22 +115,28 @@ function ScaledModel({ cloned, scale, size }: { cloned: THREE.Object3D; scale: n
   )
 }
 
-function GlbModelOnTable({ url, tableWidth, tableDepth }: ModelOnTableProps) {
+function GlbModelOnTable({
+  url, tableWidth, tableDepth, hovered,
+}: ModelOnTableProps & { hovered: boolean }) {
   const { scene } = useGLTF(url)
   const { cloned, scale, size } = useScaledClone(scene, tableWidth, tableDepth)
-  return <ScaledModel cloned={cloned} scale={scale} size={size} />
+  return <ScaledModel cloned={cloned} scale={scale} size={size} hovered={hovered} />
 }
 
-function RhinoModelOnTable({ url, tableWidth, tableDepth }: ModelOnTableProps) {
+function RhinoModelOnTable({
+  url, tableWidth, tableDepth, hovered,
+}: ModelOnTableProps & { hovered: boolean }) {
   const { scene } = useRhino3dm(url)
   const { cloned, scale, size } = useScaledClone(scene, tableWidth, tableDepth)
-  return <ScaledModel cloned={cloned} scale={scale} size={size} />
+  return <ScaledModel cloned={cloned} scale={scale} size={size} hovered={hovered} />
 }
 
-function ModelOnTable({ url, tableWidth, tableDepth }: ModelOnTableProps) {
+function ModelOnTable({
+  url, tableWidth, tableDepth, hovered,
+}: ModelOnTableProps & { hovered: boolean }) {
   return is3dm(url)
-    ? <RhinoModelOnTable url={url} tableWidth={tableWidth} tableDepth={tableDepth} />
-    : <GlbModelOnTable url={url} tableWidth={tableWidth} tableDepth={tableDepth} />
+    ? <RhinoModelOnTable url={url} tableWidth={tableWidth} tableDepth={tableDepth} hovered={hovered} />
+    : <GlbModelOnTable url={url} tableWidth={tableWidth} tableDepth={tableDepth} hovered={hovered} />
 }
 
 interface TableWithModelProps {
@@ -108,29 +145,42 @@ interface TableWithModelProps {
 }
 
 export default function TableWithModel({ table, onTableClick }: TableWithModelProps) {
+  const [hovered, setHovered] = useState(false)
+  const hasModel = Boolean(table.modelUrl && isModelUrlLoadable(table.modelUrl))
+
   const handleClick = (e: { stopPropagation: () => void }) => {
     e.stopPropagation()
-    if (table.modelUrl && isModelUrlLoadable(table.modelUrl) && onTableClick) onTableClick(table.modelUrl)
+    if (hasModel && table.modelUrl && onTableClick) onTableClick(table.modelUrl)
+  }
+
+  const handlePointerOver = (e: { stopPropagation: () => void }) => {
+    if (!hasModel) return
+    e.stopPropagation()
+    setHovered(true)
+    if (typeof document !== 'undefined') document.body.style.cursor = 'pointer'
+  }
+
+  const handlePointerOut = () => {
+    setHovered(false)
+    if (typeof document !== 'undefined') document.body.style.cursor = ''
   }
 
   const rotationY = table.rotation ?? 0
   return (
-    <group position={[table.x, 0, table.z]} rotation={[0, rotationY, 0]}>
-      {/* Table: box from y=0 to y=18, center at y=9 - clickable when it has a model */}
-      <mesh
-        castShadow
-        receiveShadow
-        position={[0, TABLE_HEIGHT / 2, 0]}
-        onClick={handleClick}
-      >
+    <group
+      position={[table.x, 0, table.z]}
+      rotation={[0, rotationY, 0]}
+      onClick={handleClick}
+      onPointerOver={handlePointerOver}
+      onPointerOut={handlePointerOut}
+    >
+      {/* Table pedestal */}
+      <mesh castShadow receiveShadow position={[0, TABLE_HEIGHT / 2, 0]}>
         <boxGeometry args={[table.width, TABLE_HEIGHT, table.depth]} />
-        <meshStandardMaterial
-          color="#D8DEFF"
-          roughness={0.9}
-          metalness={0}
-        />
+        <meshStandardMaterial color="#D8DEFF" roughness={0.9} metalness={0} />
       </mesh>
-      {table.modelUrl && isModelUrlLoadable(table.modelUrl) && (
+
+      {hasModel && (
         <Suspense
           fallback={
             <mesh position={[0, TABLE_HEIGHT + 2, 0]}>
@@ -139,7 +189,12 @@ export default function TableWithModel({ table, onTableClick }: TableWithModelPr
             </mesh>
           }
         >
-          <ModelOnTable url={table.modelUrl} tableWidth={table.width} tableDepth={table.depth} />
+          <ModelOnTable
+            url={table.modelUrl!}
+            tableWidth={table.width}
+            tableDepth={table.depth}
+            hovered={hovered}
+          />
         </Suspense>
       )}
     </group>
