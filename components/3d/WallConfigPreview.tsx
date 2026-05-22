@@ -6,8 +6,8 @@ import { getWallTransformResolved, calculateFloorBounds } from '@/lib/wallLayout
 import type { WallConfig } from '@/lib/wallLayout'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 
-const CANVAS_W = 200
-const CANVAS_H = 150
+const CANVAS_W = 240
+const CANVAS_H = 180
 
 interface WallConfigPreviewProps {
   wallConfig: WallConfig
@@ -36,7 +36,7 @@ export function WallConfigPreview({ wallConfig }: WallConfigPreviewProps) {
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x1a1a2e)
 
-    const camera = new THREE.PerspectiveCamera(45, CANVAS_W / CANVAS_H, 1, 10000)
+    const camera = new THREE.PerspectiveCamera(38, CANVAS_W / CANVAS_H, 1, 10000)
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.65)
     scene.add(ambient)
@@ -101,14 +101,13 @@ export function WallConfigPreview({ wallConfig }: WallConfigPreviewProps) {
     floorMesh.position.set(bounds.floorCenterX, -3, bounds.floorCenterZ)
     roomGroup.add(floorMesh)
 
-    // Fit camera: 30° elevation, 45° azimuth, framed to bounding sphere
+    // Fit camera: true isometric angle — 30° elevation, 45° azimuth
     const box = new THREE.Box3().setFromObject(roomGroup)
     if (!box.isEmpty()) {
       const sphere = new THREE.Sphere()
       box.getBoundingSphere(sphere)
       const { center, radius } = sphere
-      const fovRad = (camera.fov * Math.PI) / 180
-      const dist = (radius / Math.sin(fovRad / 2)) * 1.2
+      const dist = radius * 2.5
       const elev = Math.PI / 6   // 30°
       const azi  = Math.PI / 4   // 45°
       camera.position.set(
@@ -127,7 +126,7 @@ export function WallConfigPreview({ wallConfig }: WallConfigPreviewProps) {
 
   return (
     <div
-      className="absolute top-4 right-4 z-10 hidden md:flex flex-col rounded-xl overflow-hidden shadow-xl"
+      className="absolute bottom-4 right-4 z-10 hidden md:flex flex-col rounded-xl overflow-hidden shadow-xl"
       style={{ background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(255,255,255,0.15)' }}
     >
       <div className="flex items-center justify-between px-3 py-1.5">
