@@ -5,6 +5,7 @@ import { Board } from '@/types'
 import { generateOwnerColor } from '@/lib/ownerColors'
 import { toast } from '@/lib/toast'
 import { loadTexture } from '@/components/3d/useBoardTexture'
+import { useDirectUpload, type DirectUploadResult } from '@/lib/useDirectUpload'
 
 interface UploadOptions {
   /**
@@ -312,14 +313,14 @@ const CENTER_API = 50 // also used when patching real board position in replaceT
  */
 const uploadFile = async (
   file: File,
-  options: UploadOptions
+  options: UploadOptions,
+  directUpload: (file: File) => Promise<DirectUploadResult>
 ): Promise<{ success: boolean; uploadedBoard?: Board }> => {
   const title = file.name.replace(/\.[^/.]+$/, '')
   let tempBoardId: string | null = null
   let blobUrl: string | null = null
 
   const { getImageDimensions } = await import('@/lib/getImageDimensions')
-  const { extractImagePhysicalDimensions } = await import('@/lib/extractPhysicalDimensions')
 
   // Create the blob URL synchronously up-front so we can start loading its texture into the
   // module-level cache in parallel with measuring image dimensions. By the time we commit the
@@ -378,40 +379,37 @@ const uploadFile = async (
     })
   }
 
-  let physicalWidth: number | undefined
-  let physicalHeight: number | undefined
   try {
-    const physicalDims = await extractImagePhysicalDimensions(file)
-    physicalWidth = physicalDims.physicalWidth
-    physicalHeight = physicalDims.physicalHeight
-  } catch {
-    // optional
-  }
+    const { storagePath, thumbnailPath } = await directUpload(file)
 
-  try {
-    const formData = createBoardFormData(file, {
-      studioId: options.studioId,
-      roomId: options.roomId,
+    const clerkName = ((options.user?.fullName || options.user?.firstName || '') as string).trim()
+    const boardPayload = {
       workspaceId: options.workspaceId,
-      title,
-      user: options.user,
+      roomId: options.roomId,
+      storagePath,
+      thumbnailPath,
+      ownerColor: generateOwnerColor(options.user?.id ?? ''),
+      originalFilename: file.name,
+      studentName: clerkName || undefined,
       width: dims.width,
       height: dims.height,
-      aspectRatio: dims.aspectRatio,
-      isPDF: false,
-      physicalWidth,
-      physicalHeight,
-      position: options.editingWall !== null && options.editingWallDimensions ? {
-        wallIndex: options.editingWall,
-        x: 0,
-        y: 0,
-        width: widthPercent,
-        height: heightPercent,
-        side: options.editingWallSide || 'front',
-      } : undefined,
-    })
+      ...(options.editingWall !== null && options.editingWallDimensions ? {
+        position: {
+          wallIndex: options.editingWall,
+          x: CENTER_API,
+          y: CENTER_API,
+          widthPercent: widthPercent * 100,
+          heightPercent: heightPercent * 100,
+          side: options.editingWallSide ?? 'front',
+        },
+      } : {}),
+    }
 
-    const response = await fetch('/api/upload', { method: 'POST', body: formData })
+    const response = await fetch('/api/boards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(boardPayload),
+    })
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -419,7 +417,6 @@ const uploadFile = async (
       try {
         const parsed = JSON.parse(errorText)
         if (parsed.error) errMsg = parsed.error
-        if (parsed.missing?.length) errMsg += ` - missing: ${parsed.missing.join(', ')}`
       } catch {
         // use errMsg as-is
       }
@@ -638,6 +635,8 @@ const uploadPDF = async (
  * Hook for handling board uploads with optimistic updates
  */
 export const useBoardUpload = (options: UploadOptions) => {
+  const { upload } = useDirectUpload()
+
   const handleUpload = () => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -675,7 +674,7 @@ export const useBoardUpload = (options: UploadOptions) => {
               failCount++
             }
           } else {
-            const result = await uploadFile(file, options)
+            const result = await uploadFile(file, options, upload)
             if (result.success) {
               successCount++
             } else {
@@ -716,7 +715,7 @@ export const useBoardUpload = (options: UploadOptions) => {
       return false
     }
     try {
-      const result = await uploadFile(file, options)
+      const result = await uploadFile(file, options, upload)
       if (result.success) await options.onBoardUpdate()
       return result.success
     } catch {
@@ -745,7 +744,7 @@ export const useBoardUpload = (options: UploadOptions) => {
           const result = await uploadPDF(file, options)
           if (result.success) successCount += result.count; else failCount++
         } else {
-          const result = await uploadFile(file, options)
+          const result = await uploadFile(file, options, upload)
           if (result.success) successCount++; else failCount++
         }
       } catch { failCount++ }
