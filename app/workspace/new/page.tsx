@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import type { Institution } from '@/types'
 import { toast } from '@/lib/toast'
@@ -10,17 +10,21 @@ import { useAuthSession } from '@/hooks/useAuthSession'
 
 export default function NewWorkspacePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const typeParam = searchParams?.get('type') === 'shared' ? 'shared' : null
   const { status: authStatus, user } = useAuthSession()
   const isLoaded = authStatus !== 'loading'
   const [loading, setLoading] = useState(false)
   const [institutions, setInstitutions] = useState<Institution[]>([])
   const { mode: accountMode } = useAccountMode(user?.id)
   const headerTitle =
-    accountMode === 'firm' ? 'Create a Firm Room'
+    typeParam === 'shared' ? 'Create Shared Room'
+    : accountMode === 'firm' ? 'Create a Firm Room'
     : accountMode === 'personal' ? 'Create a Personal Room'
     : 'Create a Class'
   const headerSubtitle =
-    accountMode === 'firm' ? 'Set up a shared studio for your firm'
+    typeParam === 'shared' ? 'Set up a shared studio space for collaboration'
+    : accountMode === 'firm' ? 'Set up a shared studio for your firm'
     : accountMode === 'personal' ? 'Set up a personal studio space'
     : 'Set up a shared studio for your class'
   const [formData, setFormData] = useState({
@@ -79,6 +83,7 @@ export default function NewWorkspacePage() {
         role: formData.role
       }
       if (formData.institutionSlug) payload.institution_slug = formData.institutionSlug
+      if (typeParam === 'shared') payload.type = 'shared'
 
       const response = await fetch('/api/workspaces', {
         method: 'POST',
@@ -151,7 +156,9 @@ export default function NewWorkspacePage() {
               {headerTitle}
             </h2>
             <p className="text-gray-600">
-              {accountMode === 'firm'
+              {typeParam === 'shared'
+                ? 'A shared room is a 3D studio where anyone with an invite code can join and collaborate.'
+                : accountMode === 'firm'
                 ? 'A firm room is a shared 3D studio where you can invite teammates and collaborate on design work.'
                 : accountMode === 'personal'
                 ? 'A personal room is your own 3D studio space for individual work.'

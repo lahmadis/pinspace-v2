@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { generateInviteCode } from '@/lib/workspaceUtils'
 
 // GET: list workspaces owned by or shared with the current user
 export async function GET() {
@@ -181,6 +182,7 @@ export async function POST(req: Request) {
     // Try with type first, if it fails (column doesn't exist), try without type
     const insertData: Record<string, unknown> = { name, description, owner_id: userId }
     if (institutionId) insertData.organization_id = institutionId
+    if (type === 'shared') insertData.invite_code = generateInviteCode()
 
     // Only include type if the column exists (we'll try with it first)
     const { data, error } = await supabase

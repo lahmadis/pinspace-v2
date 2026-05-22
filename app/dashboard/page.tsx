@@ -21,7 +21,8 @@ import {
   ExternalLink,
   Pencil,
   Archive,
-  Network
+  Network,
+  Users
 } from 'lucide-react'
 
 type DashboardOrganization = {
@@ -191,6 +192,7 @@ function DashboardContent() {
   const isLoaded = authStatus !== 'loading'
   const [studios, setStudios] = useState<Studio[]>([])
   const [workspaces, setWorkspaces] = useState<DashboardWorkspace[]>([])
+  const [sharedRooms, setSharedRooms] = useState<DashboardWorkspace[]>([])
   const [loading, setLoading] = useState(true)
   const [showJoinModal, setShowJoinModal] = useState(false)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
@@ -222,12 +224,13 @@ function DashboardContent() {
         // API returns array directly, not {workspaces: []}
         const workspacesArray = Array.isArray(data) ? data : (data.workspaces || [])
 
-        // Separate classes from personal rooms
-        // Personal rooms: type === 'personal' OR (no type field and owned by user with no members)
-        const classes = workspacesArray.filter((w: { type?: string }) => w.type !== 'personal')
+        // Separate workspaces by type
+        const classWorkspaces = workspacesArray.filter((w: { type?: string }) => w.type === 'class')
+        const sharedWorkspaces = workspacesArray.filter((w: { type?: string }) => w.type === 'shared')
         const personalRooms = workspacesArray.filter((w: { type?: string }) => w.type === 'personal')
 
-        setWorkspaces(classes)
+        setWorkspaces(classWorkspaces)
+        setSharedRooms(sharedWorkspaces)
 
         // Convert personal rooms to studios format
         const personalStudios = personalRooms.map((w: { id: string; name: string; board_count?: number; created_at?: string }) => ({
@@ -557,6 +560,90 @@ function DashboardContent() {
         </div>
         )}
 
+        {/* Shared Rooms Section — visible to all users */}
+        <div className="mb-16">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h3 className="text-xl font-semibold text-gray-900 flex items-center gap-2.5 mb-1.5">
+                <Users className="w-5 h-5 text-indigo-600" />
+                Shared Rooms
+              </h3>
+              <p className="text-sm text-gray-500">
+                Collaborate with others on shared studio spaces
+              </p>
+            </div>
+            <div className="flex gap-2.5">
+              <button
+                onClick={() => setShowJoinModal(true)}
+                className="px-4 py-2 border border-indigo-500 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors font-medium text-sm flex items-center gap-2"
+              >
+                <UserPlus className="w-4 h-4" />
+                Join with code
+              </button>
+              <Link
+                href="/workspace/new?type=shared"
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center gap-2 shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Create Shared Room
+              </Link>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="bg-white rounded-xl p-8 border border-gray-200 animate-pulse">
+                  <div className="h-32 bg-gray-100 rounded-lg mb-4"></div>
+                  <div className="h-5 bg-gray-100 rounded mb-2"></div>
+                  <div className="h-4 bg-gray-100 rounded w-2/3"></div>
+                </div>
+              ))}
+            </div>
+          ) : sharedRooms.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-50 mb-4">
+                <Users className="w-8 h-8 text-indigo-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No shared rooms yet</h3>
+              <p className="text-sm text-gray-500 mb-6 max-w-sm mx-auto">
+                Create a shared room to collaborate with others, or join one with an invite code.
+              </p>
+              <div className="flex gap-2.5 justify-center">
+                <button
+                  onClick={() => setShowJoinModal(true)}
+                  className="px-4 py-2 border border-indigo-500 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors font-medium text-sm flex items-center gap-2"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Join with code
+                </button>
+                <Link
+                  href="/workspace/new?type=shared"
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center gap-2 shadow-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create Shared Room
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {sharedRooms.map((workspace) => (
+                <WorkspaceCard
+                  key={workspace.id}
+                  workspace={workspace}
+                  isOwner={workspace.owner_id === user?.id}
+                  onDelete={handleDeleteWorkspace}
+                  onRename={handleRenameWorkspace}
+                  openMenuId={openMenuId}
+                  setOpenMenuId={setOpenMenuId}
+                  institutionSlug={institutionHome}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Personal network card */}
         {!accountModeLoading && studios.length > 0 && (
           <div className="mb-12">
@@ -567,6 +654,22 @@ function DashboardContent() {
               <div className="min-w-0">
                 <h3 className="text-xl font-semibold text-white">Your personal network</h3>
                 <p className="text-sm text-slate-300 mt-1">See your personal rooms as a bubble network</p>
+              </div>
+              <Network className="w-8 h-8 text-indigo-400 transition-transform group-hover:scale-110 shrink-0" />
+            </Link>
+          </div>
+        )}
+
+        {/* Shared network card */}
+        {!accountModeLoading && sharedRooms.length > 0 && (
+          <div className="mb-12">
+            <Link
+              href="/network/shared"
+              className="group flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-gradient-to-br from-slate-900 to-slate-800 px-6 py-6 transition-all hover:border-indigo-500/40 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-500/10"
+            >
+              <div className="min-w-0">
+                <h3 className="text-xl font-semibold text-white">Your shared network</h3>
+                <p className="text-sm text-slate-300 mt-1">See your shared rooms as a bubble network</p>
               </div>
               <Network className="w-8 h-8 text-indigo-400 transition-transform group-hover:scale-110 shrink-0" />
             </Link>
