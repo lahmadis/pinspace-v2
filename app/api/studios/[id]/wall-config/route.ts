@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServiceRole } from '@/lib/supabase/server'
+import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 
 const CONFIG_BUCKET = 'board-images'
 const CONFIG_PREFIX = 'wall-configs'
@@ -57,6 +57,19 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const { id } = params
+
+  const { data: { session } } = await supabaseServer().auth.getSession()
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = session.user.id
+  const admin = supabaseServiceRole()
+  const { data: ws } = await admin.from('workspaces').select('owner_id').eq('id', id).maybeSingle()
+  if (!ws) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (ws.owner_id !== userId) {
+    const { data: m } = await admin.from('workspace_members').select('user_id')
+      .eq('workspace_id', id).eq('user_id', userId).maybeSingle()
+    if (!m) return NextResponse.json({ error: 'Not a member of this workspace' }, { status: 403 })
+  }
+
   try {
     const body = await request.json()
     await writeConfigToStorage(id, body)
