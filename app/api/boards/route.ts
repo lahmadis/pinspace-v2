@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoBoards, transformDemoBoard } from '@/lib/mockData'
 import { getSampleBoards } from '@/lib/sampleData'
+import { resolveMainRoomId } from '@/lib/rooms'
 
 // No static caching — boards change frequently (uploads, position updates)
 export const dynamic = 'force-dynamic'
@@ -490,5 +491,237 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     console.error('Unexpected error deleting board:', error)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/boards — metadata-only board creation after client-direct storage upload.
+//
+// Source fidelity notes (patterns ported 1:1 from app/api/upload/route.ts):
+//
+// Auth pattern (upload/route.ts:8-22):
+//   const { data: { session } } = await supabase.auth.getSession()
+//   if (!session?.user?.id) return 401
+//
+// Membership check (upload/route.ts:214-242 — RLS fallback gate):
+//   check workspaces.owner_id first via service role;
+//   if not owner, check workspace_members; otherwise 403.
+//
+// roomId cross-check (upload/route.ts:162-177):
+//   if roomId provided: verify room.workspace_id === workspaceId, else 404.
+//   if no roomId: resolveMainRoomId(admin, workspaceId).
+//
+// boards INSERT columns (upload/route.ts:179-206 + 307-316, collapsed into one):
+//   id, workspace_id, room_id, owner_id, owner_name, owner_color,
+//   student_name, student_email, title, description, thumbnail_url,
+//   full_image_url, tags, uploaded_at, upload_status ('complete' — no placeholder
+//   dance needed since storage is already settled), position_wall_index,
+//   position_x, position_y, position_width, position_height, position_side,
+//   position_rotation (NOT NULL DEFAULT 0, omitted by /api/upload but written here),
+//   original_width, original_height, aspect_ratio, physical_width, physical_height.
+//
+// NOTE: request body fields `contentType` and `fileSize` are accepted for
+// forward-compatibility but have no matching boards column today — they are not stored.
+// ---------------------------------------------------------------------------
+
+interface BoardsPostBody {
+  workspaceId?: unknown
+  roomId?: unknown
+  storagePath?: unknown
+  thumbnailPath?: unknown
+  contentType?: unknown   // accepted; no matching boards column
+  fileSize?: unknown      // accepted; no matching boards column
+  position?: {
+    x?: unknown
+    y?: unknown
+    z?: unknown
+    rotation?: unknown
+    scale?: unknown
+  }
+  width?: unknown
+  height?: unknown
+  ownerColor?: unknown
+  isPdf?: unknown
+  originalFilename?: unknown
+  studentName?: unknown
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    // 1. Auth — mirrors upload/route.ts:8-22
+    const supabase = supabaseServer()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const userId = session.user.id
+
+    // 2. Parse + validate required fields
+    const raw = await request.json() as BoardsPostBody
+
+    const workspaceId = typeof raw.workspaceId === 'string' ? raw.workspaceId.trim() : null
+    const storagePath  = typeof raw.storagePath  === 'string' ? raw.storagePath.trim()  : null
+    const contentType  = typeof raw.contentType  === 'string' ? raw.contentType.trim()  : null
+    const fileSize     = typeof raw.fileSize     === 'number' ? raw.fileSize            : null
+
+    if (!workspaceId)  return NextResponse.json({ error: 'Missing required field: workspaceId' },  { status: 400 })
+    if (!storagePath)  return NextResponse.json({ error: 'Missing required field: storagePath' },  { status: 400 })
+    if (!contentType)  return NextResponse.json({ error: 'Missing required field: contentType' },  { status: 400 })
+    if (fileSize === null) return NextResponse.json({ error: 'Missing required field: fileSize' }, { status: 400 })
+
+    const thumbnailPath    = typeof raw.thumbnailPath    === 'string'  ? raw.thumbnailPath.trim()    : null
+    const width            = typeof raw.width            === 'number'  ? raw.width                   : null
+    const height           = typeof raw.height           === 'number'  ? raw.height                  : null
+    const ownerColor       = typeof raw.ownerColor       === 'string'  ? raw.ownerColor.trim()        : null
+    const isPdf            = raw.isPdf === true
+    const originalFilename = typeof raw.originalFilename === 'string'  ? raw.originalFilename.trim() : null
+    const studentNameRaw   = typeof raw.studentName      === 'string'  ? raw.studentName.trim()      : null
+    const roomIdRaw        = typeof raw.roomId           === 'string'  ? raw.roomId.trim()            : null
+
+    const positionX        = typeof raw.position?.x        === 'number' ? raw.position.x        : null
+    const positionY        = typeof raw.position?.y        === 'number' ? raw.position.y        : null
+    const positionRotation = typeof raw.position?.rotation === 'number' ? raw.position.rotation : 0
+
+    // 3. Membership check — mirrors upload/route.ts:214-242
+    const admin = supabaseServiceRole()
+    const { data: ws } = await admin
+      .from('workspaces')
+      .select('owner_id')
+      .eq('id', workspaceId)
+      .maybeSingle()
+    if (!ws) return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    if (ws.owner_id !== userId) {
+      const { data: m } = await admin
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (!m) return NextResponse.json({ error: 'Not a member of this workspace' }, { status: 403 })
+    }
+
+    // 4. Room resolution — mirrors upload/route.ts:162-177
+    let resolvedRoomId: string | null = null
+    if (roomIdRaw) {
+      const { data: room } = await admin
+        .from('rooms')
+        .select('id, workspace_id')
+        .eq('id', roomIdRaw)
+        .maybeSingle()
+      if (!room || room.workspace_id !== workspaceId) {
+        return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+      }
+      resolvedRoomId = room.id as string
+    } else {
+      resolvedRoomId = await resolveMainRoomId(admin, workspaceId)
+    }
+
+    // 5. Owner/student metadata — mirrors upload/route.ts:24-41
+    const { data: userProfile } = await supabase
+      .from('user_profiles')
+      .select('full_name')
+      .eq('user_id', userId)
+      .single()
+    const profileName = userProfile?.full_name?.trim() || null
+
+    const ownerName   = profileName || session.user.user_metadata?.email?.split('@')[0] || 'User'
+    const studentName = studentNameRaw || profileName || session.user.email?.split('@')[0] || 'Anonymous'
+    const studentEmail = session.user.email || null
+
+    // 6. Public URLs — storage already settled, just resolve paths
+    const { data: fullUrlData }  = admin.storage.from('board-images').getPublicUrl(storagePath)
+    const { data: thumbUrlData } = admin.storage.from('board-images').getPublicUrl(thumbnailPath ?? storagePath)
+    const fullUrl     = fullUrlData.publicUrl
+    const thumbnailUrl = thumbUrlData.publicUrl
+
+    // 7. Single INSERT — no placeholder→update dance; upload_status is 'complete' immediately.
+    //    Column list mirrors upload/route.ts placeholderData + the subsequent UPDATE, merged.
+    const ts    = Date.now()
+    const rand  = Math.random().toString(36).slice(2, 8)
+    const boardId = `board-${ts}-${rand}`
+    const title = originalFilename ? originalFilename.replace(/\.[^.]+$/, '') : 'Untitled Board'
+
+    const { data: savedBoard, error: insertError } = await admin
+      .from('boards')
+      .insert({
+        id:                 boardId,
+        workspace_id:       workspaceId,
+        room_id:            resolvedRoomId,
+        owner_id:           userId,
+        owner_name:         ownerName,
+        owner_color:        ownerColor ?? undefined,
+        student_name:       studentName,
+        student_email:      studentEmail,
+        title,
+        description:        null,
+        thumbnail_url:      thumbnailUrl,
+        full_image_url:     fullUrl,
+        tags:               isPdf ? ['pdf'] : [],
+        uploaded_at:        new Date().toISOString(),
+        upload_status:      'complete',
+        position_wall_index: null,
+        position_x:         positionX,
+        position_y:         positionY,
+        position_width:     null,
+        position_height:    null,
+        position_side:      null,
+        position_rotation:  positionRotation,
+        original_width:     width,
+        original_height:    height,
+        aspect_ratio:       width && height && height > 0 ? width / height : null,
+        physical_width:     null,
+        physical_height:    null,
+      })
+      .select()
+      .single()
+
+    if (insertError || !savedBoard) {
+      console.error('POST /api/boards INSERT failed:', insertError)
+      return NextResponse.json(
+        { error: 'Internal error', detail: insertError?.message },
+        { status: 500 }
+      )
+    }
+
+    // 8. Transform to frontend Board shape — mirrors upload/route.ts:328-356
+    const board = {
+      id:           savedBoard.id,
+      studioId:     savedBoard.workspace_id,
+      workspaceId:  savedBoard.workspace_id,
+      studentName:  savedBoard.student_name,
+      studentEmail: savedBoard.student_email,
+      title:        savedBoard.title,
+      description:  savedBoard.description,
+      thumbnailUrl: savedBoard.thumbnail_url,
+      fullImageUrl: savedBoard.full_image_url,
+      tags:         savedBoard.tags || [],
+      uploadedAt:   savedBoard.uploaded_at,
+      position: (
+        savedBoard.position_wall_index !== null &&
+        savedBoard.position_x         !== null &&
+        savedBoard.position_y         !== null
+      ) ? {
+        wallIndex: Number(savedBoard.position_wall_index),
+        x:         parseFloat(savedBoard.position_x),
+        y:         parseFloat(savedBoard.position_y),
+        width:     savedBoard.position_width  != null ? parseFloat(savedBoard.position_width)  : undefined,
+        height:    savedBoard.position_height != null ? parseFloat(savedBoard.position_height) : undefined,
+        side:      (String(savedBoard.position_side || '').toLowerCase() === 'back' ? 'back' : 'front') as 'front' | 'back',
+        rotation:  savedBoard.position_rotation != null ? Number(savedBoard.position_rotation) : 0,
+      } : undefined,
+      ownerId:       savedBoard.owner_id,
+      ownerName:     savedBoard.owner_name,
+      ownerColor:    savedBoard.owner_color,
+      originalWidth:  savedBoard.original_width,
+      originalHeight: savedBoard.original_height,
+      aspectRatio:    savedBoard.aspect_ratio    ? parseFloat(savedBoard.aspect_ratio)    : undefined,
+      physicalWidth:  savedBoard.physical_width  ? parseFloat(savedBoard.physical_width)  : undefined,
+      physicalHeight: savedBoard.physical_height ? parseFloat(savedBoard.physical_height) : undefined,
+    }
+
+    return NextResponse.json({ board, fullUrl, thumbnailUrl })
+  } catch (error) {
+    console.error('POST /api/boards unexpected error:', error)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }
