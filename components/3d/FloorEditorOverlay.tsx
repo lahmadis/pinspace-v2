@@ -324,7 +324,7 @@ export default function FloorEditorOverlay({
         const dy = e.clientY - rotateStart.centerClientY
         const currentAngle = Math.atan2(dy, dx)
         const delta = wrapAngle(currentAngle - rotateStart.initialAngleFromCenter)
-        let newRotationY = rotateStart.initialRotationY - delta
+        let newRotationY = rotateStart.initialRotationY + delta
 
         if (e.shiftKey) {
           // Shift: 90° snap regardless of snapOn
@@ -548,12 +548,13 @@ export default function FloorEditorOverlay({
     const cos = Math.cos(transform.rotationY)
     const sin = Math.sin(transform.rotationY)
 
-    // 4 corners of the wall rectangle in world space
+    // 4 corners of the wall rectangle in world space.
+    // Depth direction uses Three.js Ry(θ) convention: local +Z → (+sinθ, +cosθ) in world XZ.
     const worldCorners = [
-      [transform.x - halfW * cos + halfD * sin, transform.z - halfW * sin - halfD * cos], // 0: start-back
-      [transform.x + halfW * cos + halfD * sin, transform.z + halfW * sin - halfD * cos], // 1: end-back
-      [transform.x + halfW * cos - halfD * sin, transform.z + halfW * sin + halfD * cos], // 2: end-front
-      [transform.x - halfW * cos - halfD * sin, transform.z - halfW * sin + halfD * cos], // 3: start-front
+      [transform.x - halfW * cos - halfD * sin, transform.z - halfW * sin - halfD * cos], // 0: start-back
+      [transform.x + halfW * cos - halfD * sin, transform.z + halfW * sin - halfD * cos], // 1: end-back
+      [transform.x + halfW * cos + halfD * sin, transform.z + halfW * sin + halfD * cos], // 2: end-front
+      [transform.x - halfW * cos + halfD * sin, transform.z - halfW * sin + halfD * cos], // 3: start-front
     ]
     const screenCorners = worldCorners.map(([x, z]) => worldToScreen(x, z, bounds))
     const points = screenCorners.flat()
@@ -573,9 +574,9 @@ export default function FloorEditorOverlay({
     const [endPx, endPy] = worldToScreen(endX, endZ, bounds)
 
     // Rotate handle: midpoint of front edge offset 24px outward in screen space
-    // Front edge midpoint in world = center offset by +halfD in local Z (the +sin/-cos direction)
-    const frontMidWorldX = transform.x + halfD * sin  // local +Z = (sin, -cos) in world XZ
-    const frontMidWorldZ = transform.z - halfD * cos
+    // Front edge midpoint in world = center offset by +halfD in local Z: Three.js Ry(θ) → (+sinθ, +cosθ)
+    const frontMidWorldX = transform.x + halfD * sin
+    const frontMidWorldZ = transform.z + halfD * cos
     const [frontMidPx, frontMidPy] = worldToScreen(frontMidWorldX, frontMidWorldZ, bounds)
 
     // Offset 24px outward from wall center direction
@@ -776,10 +777,10 @@ export default function FloorEditorOverlay({
                 const cos = Math.cos(transform.rotationY)
                 const sin = Math.sin(transform.rotationY)
                 const snappedCorners = [
-                  [ghostWallPos.x - halfW * cos + halfD * sin, ghostWallPos.z - halfW * sin - halfD * cos],
-                  [ghostWallPos.x + halfW * cos + halfD * sin, ghostWallPos.z + halfW * sin - halfD * cos],
-                  [ghostWallPos.x + halfW * cos - halfD * sin, ghostWallPos.z + halfW * sin + halfD * cos],
-                  [ghostWallPos.x - halfW * cos - halfD * sin, ghostWallPos.z - halfW * sin + halfD * cos],
+                  [ghostWallPos.x - halfW * cos - halfD * sin, ghostWallPos.z - halfW * sin - halfD * cos],
+                  [ghostWallPos.x + halfW * cos - halfD * sin, ghostWallPos.z + halfW * sin - halfD * cos],
+                  [ghostWallPos.x + halfW * cos + halfD * sin, ghostWallPos.z + halfW * sin + halfD * cos],
+                  [ghostWallPos.x - halfW * cos + halfD * sin, ghostWallPos.z - halfW * sin + halfD * cos],
                 ]
                 const ghostPoints = snappedCorners.map(([x, z]) => worldToScreen(x, z, bounds)).flat()
                 return (
