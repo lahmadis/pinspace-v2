@@ -1,3 +1,4 @@
+// TODO: unused, can be deleted. Wentworth network is served by /explore.
 'use client'
 
 import { Suspense, useEffect, useRef, useState } from 'react'

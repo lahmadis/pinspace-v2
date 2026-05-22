@@ -329,7 +329,9 @@ export function DashboardMain({
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {scope === 'wentworth' && <EnterNetworkCard href="/network/wentworth" />}
+            {scope === 'wentworth' && (
+              <EnterNetworkCard href={organization?.slug ? `/explore?institution=${encodeURIComponent(organization.slug)}` : '/explore'} />
+            )}
             {scope === 'personal' && <EnterNetworkCard href="/network" />}
             {scope === 'shared' && <EnterNetworkCard href="/network/shared" />}
             <NewRoomCard href={cfg.newHref} label={cfg.newLabel} />

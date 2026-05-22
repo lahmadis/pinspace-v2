@@ -1,3 +1,4 @@
+// TODO: unused, can be deleted. Wentworth network is served by /explore.
 import { NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 
