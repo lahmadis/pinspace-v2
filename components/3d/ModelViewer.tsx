@@ -59,7 +59,7 @@ function FrameCamera({
 
     const fov = (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180)
     const distance = radius / Math.sin(fov / 2)
-    const paddingMultiplier = 1.5
+    const paddingMultiplier = 0.4
     const offset = new THREE.Vector3(1, 0.7, 1).normalize().multiplyScalar(distance * paddingMultiplier)
     camera.position.copy(center).add(offset)
     camera.lookAt(center)
