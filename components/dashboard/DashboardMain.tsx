@@ -157,11 +157,11 @@ function NewRoomCard({ href, label }: { href: string; label: string }) {
 function EnterNetworkCard({ href }: { href: string }) {
   return (
     <Link href={href} className="block h-full">
-      <div className="group h-full min-h-[168px] bg-white rounded-xl border-2 border-dashed border-gray-200 hover:border-indigo-400 hover:bg-indigo-50/30 transition-all duration-200 flex flex-col items-center justify-center gap-2.5 p-4">
-        <div className="w-10 h-10 rounded-full bg-gray-100 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
-          <Network className="w-5 h-5 text-gray-400 group-hover:text-indigo-600 transition-colors" />
+      <div className="group h-full min-h-[168px] bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all duration-200 flex flex-col items-center justify-center gap-2.5 p-4 cursor-pointer shadow-sm hover:shadow-md hover:-translate-y-0.5">
+        <div className="w-10 h-10 rounded-full bg-white/20 group-hover:bg-white/30 flex items-center justify-center transition-colors">
+          <Network className="w-5 h-5 text-white" />
         </div>
-        <span className="text-sm font-medium text-gray-500 group-hover:text-indigo-600 transition-colors text-center">Enter Network</span>
+        <span className="text-sm font-medium text-white text-center">Enter Network</span>
       </div>
     </Link>
   )
