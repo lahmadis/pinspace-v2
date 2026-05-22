@@ -325,7 +325,7 @@ export default function FloorEditorOverlay({
         const dy = e.clientY - rotateStart.centerClientY
         const currentAngle = Math.atan2(dy, dx)
         const delta = wrapAngle(currentAngle - rotateStart.initialAngleFromCenter)
-        let newRotationY = rotateStart.initialRotationY + delta
+        let newRotationY = rotateStart.initialRotationY - delta
 
         if (e.shiftKey) {
           // Shift: 90° snap regardless of snapOn
