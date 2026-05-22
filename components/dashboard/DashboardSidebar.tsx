@@ -119,7 +119,7 @@ export function DashboardSidebar({
             </Link>
           )}
           <Link
-            href="/onboarding"
+            href="/settings"
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-white hover:shadow-sm transition-colors"
           >
             <Settings className="w-4 h-4 text-gray-400 shrink-0" />
