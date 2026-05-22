@@ -6,6 +6,7 @@ import { toast } from '@/lib/toast'
 import JoinClassModal from '@/components/JoinClassModal'
 import { useAccountMode } from '@/lib/useAccountMode'
 import { useAuthSession } from '@/hooks/useAuthSession'
+import { useProfile } from '@/lib/ProfileContext'
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
 import { DashboardMain } from '@/components/dashboard/DashboardMain'
 import type { DashboardWorkspace } from '@/components/dashboard/DashboardMain'
@@ -26,6 +27,7 @@ function DashboardContent() {
   const searchParams = useSearchParams()
   const { status: authStatus, user } = useAuthSession()
   const isLoaded = authStatus !== 'loading'
+  const { setProfile } = useProfile()
 
   // Data
   const [allWorkspaces, setAllWorkspaces] = useState<DashboardWorkspace[]>([])
@@ -140,11 +142,9 @@ function DashboardContent() {
       setOrganization(org?.slug && org?.name
         ? { id: org.id, name: org.name, slug: org.slug, type: org.type ?? null }
         : null)
-      setFirstName(
-        typeof profile?.full_name === 'string'
-          ? (profile.full_name.trim().split(/\s+/)[0] || null)
-          : null
-      )
+      const fullName = typeof profile?.full_name === 'string' ? profile.full_name : null
+      setFirstName(fullName ? (fullName.trim().split(/\s+/)[0] || null) : null)
+      setProfile({ avatarUrl: profile?.avatar_url ?? null, fullName })
     }).catch(() => setIsAdmin(false))
   }, [user?.id, searchParams, router])
 

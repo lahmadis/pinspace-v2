@@ -5,6 +5,7 @@ import { Network, Users, User, Settings, LogOut, Menu, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { resetAccountModeCache } from '@/lib/useAccountMode'
+import { useProfile } from '@/lib/ProfileContext'
 
 export type Scope = 'wentworth' | 'shared' | 'personal'
 
@@ -26,8 +27,10 @@ export function DashboardSidebar({
   firstName, userEmail, isAdmin, isOpen, onToggle,
 }: DashboardSidebarProps) {
   const router = useRouter()
-  const displayName = firstName || userEmail?.split('@')[0] || 'You'
+  const { profile } = useProfile()
+  const displayName = (profile.fullName ? profile.fullName.trim().split(/\s+/)[0] : null) || firstName || userEmail?.split('@')[0] || 'You'
   const initials = displayName.slice(0, 2).toUpperCase()
+  const avatarUrl = profile.avatarUrl
   const orgLabel = accountMode === 'firm' ? (orgName?.split(' ')[0] || 'Firm') : (orgName?.split(' ')[0] || 'Network')
 
   const handleSignOut = async () => {
@@ -128,9 +131,18 @@ export function DashboardSidebar({
 
           {/* Profile row */}
           <div className="flex items-center gap-3 px-3 py-2 mt-1">
-            <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0 select-none">
-              {initials}
-            </div>
+            {avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarUrl}
+                alt="Avatar"
+                className="w-7 h-7 rounded-full object-cover shrink-0 border border-gray-200"
+              />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0 select-none">
+                {initials}
+              </div>
+            )}
             <span className="flex-1 min-w-0 text-sm font-medium text-gray-800 truncate">{displayName}</span>
             <button
               type="button"

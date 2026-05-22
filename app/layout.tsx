@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import * as Sentry from '@sentry/nextjs'
 import './globals.css'
 import Toaster from '@/components/Toaster'
+import { ProfileProviderWrapper } from '@/components/ProfileProviderWrapper'
 
 export function generateMetadata(): Metadata {
   return {
@@ -32,7 +33,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
-        {children}
+        <ProfileProviderWrapper>
+          {children}
+        </ProfileProviderWrapper>
         <Toaster />
       </body>
     </html>

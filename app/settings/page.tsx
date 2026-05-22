@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { useAuthSession } from '@/hooks/useAuthSession'
 import { useAccountMode, resetAccountModeCache } from '@/lib/useAccountMode'
+import { useProfile } from '@/lib/ProfileContext'
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
 import type { Scope } from '@/components/dashboard/DashboardSidebar'
 import { toast } from '@/lib/toast'
@@ -86,6 +87,7 @@ export default function SettingsPage() {
   const { status: authStatus, user } = useAuthSession()
   const isLoaded = authStatus !== 'loading'
   const { mode: accountMode } = useAccountMode(user?.id, user?.email)
+  const { setProfile } = useProfile()
 
   // Profile
   const [fullName, setFullName] = useState('')
@@ -143,6 +145,7 @@ export default function SettingsPage() {
       setUserRole(profile.role ?? null)
       setJoinedAt(profile.created_at ?? null)
       setFirstName(name.trim().split(/\s+/)[0] || null)
+      setProfile({ avatarUrl: profile.avatar_url ?? null, fullName: name || null })
 
       const org = profile.organization
       setOrganization(org?.slug && org?.name
@@ -169,6 +172,7 @@ export default function SettingsPage() {
       if (res.ok) {
         setSavedName(fullName)
         setFirstName(fullName.trim().split(/\s+/)[0] || null)
+        setProfile({ fullName })
         toast.success('Profile saved')
       } else {
         toast.error('Failed to save profile')
@@ -201,7 +205,9 @@ export default function SettingsPage() {
         body: JSON.stringify({ avatar_url: publicUrl }),
       })
       if (res.ok) {
-        setAvatarUrl(`${publicUrl}?t=${Date.now()}`)
+        const bustedUrl = `${publicUrl}?t=${Date.now()}`
+        setAvatarUrl(bustedUrl)
+        setProfile({ avatarUrl: bustedUrl })
         toast.success('Avatar updated')
       } else {
         toast.error('Failed to save avatar')
