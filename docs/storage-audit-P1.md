@@ -1385,3 +1385,38 @@ This is the only non-obvious coordinate translation in the CS-2 cutover.
 - `gridPos.x/y` converted from normalized to percentage before send.
 - `physicalWidth`/`physicalHeight` forwarded from `page` to the payload (previously forwarded via FormData; now via JSON).
 - `/api/boards` BoardsPostBody extended with `physicalWidth?`/`physicalHeight?`; INSERT updated to use them instead of hard-coded `null`.
+
+---
+
+## 15. P4d pre-delete grep
+
+Grep run on 2026-05-22 before deleting `components/WallCanvasEditor.tsx`.
+
+**Command 1 — all text references:**
+```
+grep -rE "WallCanvasEditor|wall-canvas-editor" \
+  --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" \
+  --include="*.json" --include="*.md"
+```
+
+**Results (all hits):**
+
+| File | Notes |
+|---|---|
+| `audits/codebase-audit-2026-05-12.md:107` | Text reference in a prior audit doc — not an import |
+| `components/WallCanvasEditor.tsx` (5 lines) | The file being deleted — self-references only |
+| `docs/storage-audit-P1.md` (many lines) | This audit document — not an import |
+
+**Command 2 — dynamic imports:**
+```
+grep -rE "import\(.*WallCanvas" --include="*.ts" --include="*.tsx"
+```
+Result: **zero matches**
+
+**Command 3 — require:**
+```
+grep -rE "require\(.*WallCanvas" --include="*.ts" --include="*.tsx"
+```
+Result: **zero matches**
+
+**Verdict:** No live imports anywhere. No co-located test, story, or stylesheet files (`Glob components/WallCanvasEditor*` returns only the single `.tsx`). Safe to delete.
