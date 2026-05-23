@@ -1159,6 +1159,310 @@ Removed together with the physicalDims extraction block below — removing eithe
       throw new Error(errMsg)
     }
 
+---
+
+## 17. PDF upload bugs — diagnosis
+
+_Date: 2026-05-23. Diagnosis only — no code modified. `npx tsc --noEmit` exit 0 (no type errors)._
+
+---
+
+### Bug 1: PDF page renders at ~1% size on the wall
+
+#### 1. `calculateBoardDimensions` return values — units
+
+`hooks/useBoardUpload.ts:65-94`
+
+```typescript
+const baseHeightPercent = 0.30   // 30 % of wall height
+const maxWidthPercent   = 0.50   // 50 % cap
+const maxHeightPercent  = 0.50   // 50 % cap
+// ...
+return { widthPercent, heightPercent }
+// e.g. → { widthPercent: 0.30, heightPercent: 0.22 }
+```
+
+**Unit: 0.0–1.0 decimal** (0.30 = 30 % of wall dimension).
+
+---
+
+#### 2. `calculateGridPosition` return values — units
+
+`hooks/useBoardUpload.ts:43-60` (JSDoc comment at lines 41–42 confirms):
+
+```typescript
+const gridX = spacingX + col * (boardWidth + spacingX) + boardWidth / 2 - 0.5
+const gridY = spacingY + row * (boardHeight + spacingY) + boardHeight / 2 - 0.5
+return { x: gridX, y: gridY, width: boardWidth, height: boardHeight }
+```
+
+**Unit: x/y are −0.5 to +0.5 normalized (wall center = 0, 0).  
+width/height are 0.0–1.0 decimal (fraction of wall).**
+
+---
+
+#### 3. `uploadPDF` → `createTempBoard` call — position.width/height NOT × 100
+
+`hooks/useBoardUpload.ts:531-550`:
+
+```typescript
+const tempBoard = createTempBoard(tempBoardId, {
+  ...
+  position: {
+    wallIndex: options.editingWall,
+    x: gridPos.x,          // −0.5..+0.5 normalized
+    y: gridPos.y,          // −0.5..+0.5 normalized
+    width: widthPercent,   // 0.30 decimal  ← BUG: not × 100
+    height: heightPercent, // 0.22 decimal  ← BUG: not × 100
+    side: options.editingWallSide || 'front',
+  }
+})
+```
+
+`widthPercent` and `heightPercent` are passed **without × 100**.
+
+---
+
+#### 4. `uploadPDF` → `addTempBoardToState` call — no × 100 (correct for `placedBoards3D`)
+
+`hooks/useBoardUpload.ts:552-557`:
+
+```typescript
+addTempBoardToState(
+  tempBoard,
+  { x: gridPos.x, y: gridPos.y, width: widthPercent, height: heightPercent },
+  { ... }
+)
+```
+
+The second argument populates the `placedBoards3D` map, which uses normalized 0.0–1.0 for width/height. No × 100 here is **intentional and correct** — `uploadFile` also passes `width: widthPercent` (no × 100) to `addTempBoardToState`.
+
+---
+
+#### 5. `uploadPDF` → JSON payload to `/api/boards` — × 100 IS applied
+
+`hooks/useBoardUpload.ts:578-586`:
+
+```typescript
+position: {
+  wallIndex: options.editingWall,
+  x: (gridPos.x + 0.5) * 100,        // −0.5..+0.5 → 0..100  ✓
+  y: (gridPos.y + 0.5) * 100,        // −0.5..+0.5 → 0..100  ✓
+  widthPercent:  widthPercent * 100,  // 0.30 → 30             ✓
+  heightPercent: heightPercent * 100, // 0.22 → 22             ✓
+  side: options.editingWallSide ?? 'front',
+},
+```
+
+The API payload is **correct**. The unit mismatch only affects the optimistic temp board.
+
+---
+
+#### 6. `uploadFile` (working path) — comparison
+
+**`createTempBoard` call** (`hooks/useBoardUpload.ts:349-366`):
+
+```typescript
+position: {
+  wallIndex: options.editingWall,
+  x: CENTER_API,             // 50  (0–100 API units)     ✓
+  y: CENTER_API,             // 50  (0–100 API units)     ✓
+  width: widthPercent * 100, // 0.30 → 30                 ✓  ← × 100 present
+  height: heightPercent * 100,                            // ✓  ← × 100 present
+  side: options.editingWallSide || 'front',
+}
+```
+
+**`addTempBoardToState` call** (`hooks/useBoardUpload.ts:368-379`):
+
+```typescript
+addTempBoardToState(
+  tempBoard,
+  { x: 0, y: 0, width: widthPercent, height: heightPercent }, // 0.0–1.0 for placedBoards3D ✓
+  ...
+)
+```
+
+**JSON payload to `/api/boards`** (`hooks/useBoardUpload.ts:396-405`):
+
+```typescript
+position: {
+  x: CENTER_API,                     // 50 (already 0–100)  ✓
+  y: CENTER_API,
+  widthPercent: widthPercent * 100,  // × 100               ✓
+  heightPercent: heightPercent * 100,
+  side: options.editingWallSide ?? 'front',
+}
+```
+
+**Side-by-side:**
+
+| | `createTempBoard.position.width` | `addTempBoardToState.width` | `/api/boards` widthPercent |
+|---|---|---|---|
+| `uploadFile` | `widthPercent * 100` = **30** ✓ | `widthPercent` = 0.30 ✓ | `widthPercent * 100` = 30 ✓ |
+| `uploadPDF` | `widthPercent` = **0.30** ✗ | `widthPercent` = 0.30 ✓ | `widthPercent * 100` = 30 ✓ |
+
+---
+
+#### 7. Database units — expected convention
+
+**POST `/api/boards`** (`app/api/boards/route.ts:597-598`):
+```typescript
+const positionWidth  = typeof raw.position?.widthPercent  === 'number' ? raw.position.widthPercent  : null
+const positionHeight = typeof raw.position?.heightPercent === 'number' ? raw.position.heightPercent : null
+```
+Client sends `widthPercent * 100` (e.g., 30). DB stores **0–100 percentage**.
+
+**GET `/api/boards`** (`app/api/boards/route.ts:203-204`):
+```typescript
+width:  board.position_width  != null ? Number(board.position_width)  : undefined,
+height: board.position_height != null ? Number(board.position_height) : undefined,
+```
+Returns raw numeric from DB → `Board.position.width` on client is **0–100 percentage**.
+
+**PUT `/api/boards`** (`app/api/boards/route.ts:268-269`):
+```typescript
+if (board.position.width  !== undefined) updateData.position_width  = board.position.width.toString()
+if (board.position.height !== undefined) updateData.position_height = board.position.height.toString()
+```
+Accepts caller's value as-is — caller must already supply **0–100 percentage**.
+
+**→ DB convention: `position_width` / `position_height` store 0–100 percentage  
+(e.g., 30 = 30 % of wall width). `Board.position.width/height` on the client must match.**
+
+Expected rows for a recent PDF board: `position_width ≈ 30`, `position_height ≈ 22` (not 0.30 / 0.22).  
+Expected rows for a recent image board: same range — `position_width` 20–50, `position_height` 20–50.
+
+---
+
+#### 8. Unit mismatch — exact location and lines needing the fix
+
+Primary: `hooks/useBoardUpload.ts:547-548` inside `uploadPDF`'s `createTempBoard` call:
+
+```typescript
+// Current (wrong):
+width: widthPercent,   // 0.30 — factor-of-100 short of Board.position.width convention
+height: heightPercent, // 0.22
+
+// Must be:
+width: widthPercent * 100,   // 30
+height: heightPercent * 100, // 22
+```
+
+Secondary (x/y also wrong in same call): `hooks/useBoardUpload.ts:545-546`:
+
+```typescript
+// Current (wrong):
+x: gridPos.x,   // −0.13 normalized — Board.position.x expects 0–100 (37)
+y: gridPos.y,   // −0.08 normalized — Board.position.y expects 0–100 (42)
+
+// Must be:
+x: (gridPos.x + 0.5) * 100,
+y: (gridPos.y + 0.5) * 100,
+```
+
+The `/api/boards` payload at lines 580-584 already applies these conversions correctly. Only the `createTempBoard` call is missing them.
+
+**Impact scope:** DB record is correct. After `replaceTempBoardInState` swaps in the real board (which has correct 0–100 values from the API response), the final board renders at the right size. Only the optimistic temp board (visible during upload) is tiny and misplaced.
+
+---
+
+### Bug 2: Second PDF upload showed brief flicker then disappeared
+
+#### 1. Per-page error handlers that swallow exceptions and call `cleanupTempBoard`
+
+`hooks/useBoardUpload.ts:626-636`:
+
+```typescript
+} catch (error) {
+  console.error(`[Upload PDF] Failed to upload page ${pageIndex + 1}:`, error)
+  if (pageBlobUrl) URL.revokeObjectURL(pageBlobUrl)
+  if (tempBoardId) {
+    cleanupTempBoard(tempBoardId, {
+      removeTempBoard: options.removeTempBoard,
+      setPlacedBoards3D: options.setPlacedBoards3D,
+      placedBoards3DRef: options.placedBoards3DRef,
+    })
+  }
+}
+```
+
+**Yes.** The per-page catch calls `cleanupTempBoard` (removes the temp board from wall and `placedBoards3D`) and logs to `console.error` only. There is **no `toast.error` call**. The loop does not `break` — it continues to the next page. If every page fails, all temp boards disappear silently. This perfectly matches "boards appear, flicker, disappear, no error visible."
+
+---
+
+#### 2. Rate limiting, cooldown, or session refresh
+
+No explicit rate limit or cooldown in `useBoardUpload.ts`. `useDirectUpload` calls `supabase.auth.getUser()` fresh on every `upload()` invocation (`lib/useDirectUpload.ts:53`). If the Supabase JWT rotates between the two PDF uploads, `getUser()` returns `null`, throws `"Not authenticated"` — caught silently by the per-page catch.
+
+---
+
+#### 3. Duplicate temp-board-id collision
+
+`hooks/useBoardUpload.ts:529`:
+
+```typescript
+tempBoardId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+```
+
+The 9-character base-36 suffix gives 36⁹ ≈ 1.6 trillion combinations. Collision probability is negligible.
+
+---
+
+#### 4. `upsert: false` storage path collision between rapid uploads
+
+`lib/useDirectUpload.ts:57-58`:
+
+```typescript
+const ts   = Date.now()
+const rand = Math.random().toString(36).substring(7)
+```
+
+`substring(7)` extracts from position 7 of a base-36 string like `"0.4fzyo82vzxi"` — roughly 4–5 characters of entropy (lower than the 9-char temp-board-id suffix). Storage path (`lib/useDirectUpload.ts:92`):
+
+```typescript
+storagePath = `${userId}/${ts}-${rand}.jpg`
+```
+
+Upload uses `upsert: false` (`lib/useDirectUpload.ts:110`):
+
+```typescript
+const { error: uploadError } = await supabase.storage
+  .from(BUCKET)
+  .upload(storagePath, uploadBlob, { contentType, upsert: false })
+if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`)
+```
+
+A same-millisecond collision (same `ts` + same `rand`) yields a 409 from Supabase Storage. The thrown error propagates to the per-page catch, `cleanupTempBoard` runs, board disappears silently. Probability is low but non-zero for back-to-back PDF uploads on fast devices where PDF-to-image conversion is sub-millisecond.
+
+---
+
+#### 5. Console logs emitted by `uploadPDF`
+
+The per-page catch emits: `` console.error(`[Upload PDF] Failed to upload page ${pageIndex + 1}:`, error) ``
+
+No `console.warn` anywhere in `uploadPDF`. Error message from `useDirectUpload` would be one of:
+- `"Not authenticated"` — auth failure
+- `"Storage upload failed: <Supabase message>"` — e.g., storage 409 or network error
+- `"Upload failed: <HTTP status>"` — if `/api/boards` POST returns non-2xx
+
+All visible in browser DevTools → Console; none surface as user-visible toasts.
+
+---
+
+#### Top 3 most likely causes
+
+**Cause A — Silent per-page throw with no user toast (high confidence, structural)**  
+Any throw in the per-page try block lands in the catch, which calls `cleanupTempBoard` and logs to console only. "Temp boards appear → disappear → no visible error" is guaranteed by this code path whenever any upload step fails. The root cause of _why_ the second PDF's pages throw is unknown without console output, but the silence is inherent to the current implementation.
+
+**Cause B — `upsert: false` storage path collision (medium confidence)**  
+`rand = Math.random().toString(36).substring(7)` produces ~4–5 chars of entropy. Two uploads at the same millisecond have a small chance of generating identical `${userId}/${ts}-${rand}.jpg` paths. The resulting 409 throws silently through the per-page catch. Most likely trigger if the second PDF was uploaded immediately after the first completed.
+
+**Cause C — Supabase auth session rotation between uploads (lower confidence)**  
+Supabase auto-refreshes JWTs near expiry. If the session rotated between the two uploads and the client `supabase` instance held a momentarily invalid token, `getUser()` returns `null`, throwing `"Not authenticated"`. All pages fail silently.
+
+**To confirm:** Open browser DevTools → Console, reproduce the failing second upload, and check for `[Upload PDF] Failed to upload page` entries and the error message that follows.
+
     const data = await response.json()
     let uploadedBoard = data.board as Board
 ```
@@ -1545,3 +1849,224 @@ Expected: one row returned. If zero rows returned, apply `008_tighten_board_imag
 **`019_add_shared_workspace_type.sql` and `020_notification_preferences.sql`:**
 
 Both are untracked files (outside P2-P4 scope). Neither affects the storage upload path. Not a blocker for P6.
+
+---
+
+## 18. PDF gray-flash diagnosis
+
+_Date: 2026-05-23. Diagnosis only — no code modified. `npx tsc --noEmit` exit 0._
+
+P4c.2 ported the CDN texture pre-warm block from `uploadFile` into `uploadPDF`. Smoke testing shows `uploadPDF` still exhibits a ~2 s gray-skeleton flash per page while `uploadFile` shows none. This section traces why.
+
+---
+
+### 1. `uploadFile` — `thumbnailUrl`/`fullImageUrl` in `createTempBoard`
+
+`hooks/useBoardUpload.ts:349-366` — `createTempBoard` is called with:
+
+```typescript
+createTempBoard(tempBoardId, {
+  ...
+  blobUrl: createdBlobUrl,  // ← URL.createObjectURL(file)
+  ...
+})
+```
+
+`createTempBoard` sets (`hooks/useBoardUpload.ts:197-198`):
+
+```typescript
+thumbnailUrl: options.blobUrl,  // ← blob URL
+fullImageUrl: options.blobUrl,  // ← blob URL
+```
+
+So the temp board's image URLs are the local blob URL (`blob:http://…`).
+
+---
+
+### 2. `uploadPDF` — `thumbnailUrl`/`fullImageUrl` in `createTempBoard`
+
+`hooks/useBoardUpload.ts:531-550` — `createTempBoard` is called with:
+
+```typescript
+createTempBoard(tempBoardId, {
+  ...
+  blobUrl,  // ← URL.createObjectURL(page.imageFile)
+  ...
+})
+```
+
+Identical assignment — `thumbnailUrl = blobUrl`, `fullImageUrl = blobUrl`. Both point to the local blob URL for the JPEG-rendered PDF page. The URLs are structurally identical to `uploadFile`'s temp board.
+
+---
+
+### 3. `createTempBoard` function body
+
+`hooks/useBoardUpload.ts:169-208` — full relevant body:
+
+```typescript
+const createTempBoard = (tempId, options): Board => {
+  return {
+    id: tempId,
+    localId: tempId,
+    studioId: options.studioId,
+    title: options.title,
+    studentName: options.user?.fullName || options.user?.firstName || '',
+    ownerId: options.user?.id,
+    ownerName: options.user?.fullName || options.user?.firstName || 'Anonymous',
+    thumbnailUrl: options.blobUrl,   // ← always the blob URL passed in
+    fullImageUrl: options.blobUrl,   // ← same
+    uploadedAt: new Date(),
+    tags: options.tags,
+    originalWidth: options.width,
+    originalHeight: options.height,
+    aspectRatio: options.aspectRatio,
+    physicalWidth: options.physicalWidth,
+    physicalHeight: options.physicalHeight,
+    position: options.position,
+  }
+}
+```
+
+**Both paths are identical here.** The divergence is not inside `createTempBoard`.
+
+---
+
+### 4. `DraggableBoard` — rendering path for PDF vs image temp boards
+
+`components/3d/DraggableBoard.tsx:866-937`:
+
+```typescript
+const imageUrl = board.fullImageUrl || board.thumbnailUrl || ''
+const isPDF = imageUrl.toLowerCase().endsWith('.pdf')
+
+// ...
+{isPDF ? (
+  <Suspense fallback={<meshStandardMaterial color="#f3f4f6" />}>
+    <PDFTextureMaterial pdfUrl={imageUrl} hovered={isHovered} />
+  </Suspense>
+) : hasImage ? (
+  <BoardTextureMaterial imageUrl={imageUrl} />   // ← both temp boards land here
+) : (
+  <meshStandardMaterial ... />
+)}
+```
+
+For the **temp board** in both cases, `imageUrl = blob:http://…` — a blob URL never ends in `.pdf`, so `isPDF = false`. Both the image temp board and the PDF page temp board render via `BoardTextureMaterial → useBoardTexture(blobUrl)`. The rendering path is **identical**.
+
+`PDFTextureMaterial` is never involved for temp boards.
+
+---
+
+### 5. Is the blob URL correctly threaded into the display path?
+
+Yes. `page.imageFile` is a JPEG `File` object (`new File([blob], '…page1.jpg', { type: 'image/jpeg' })`). `URL.createObjectURL(page.imageFile)` produces a valid `blob:` URL. The `THREE.TextureLoader` used by `loadTexture` / `useBoardTexture` can load blob URLs via XHR exactly like it loads regular image URLs — same codepath as `uploadFile`'s `URL.createObjectURL(file)`.
+
+---
+
+### Root cause
+
+**`uploadPDF` never pre-warms the blob URL texture before calling `addTempBoardToState`. `uploadFile` does.**
+
+`uploadFile` (`hooks/useBoardUpload.ts:329-347`):
+
+```typescript
+// Created up-front, BEFORE measuring dimensions:
+const earlyBlobUrl = URL.createObjectURL(file)
+
+// Pre-warm starts immediately (concurrent with getImageDimensions):
+const texturePrewarm = loadTexture(earlyBlobUrl).catch(() => undefined)
+
+const dims = await getImageDimensions(file)
+// ...
+
+// ← AWAITED before addTempBoardToState:
+await texturePrewarm
+
+// By here, resolvedCache.has(earlyBlobUrl) === true.
+// DraggableBoard's first render: useState(resolvedCache.get(blobUrl)) → texture ≠ null → no skeleton.
+flushSync(() => {
+  addTempBoardToState(tempBoard, ...)
+})
+```
+
+`uploadPDF` (`hooks/useBoardUpload.ts:527-557`):
+
+```typescript
+pageBlobUrl = URL.createObjectURL(page.imageFile)
+const blobUrl = pageBlobUrl
+
+// ← NO loadTexture(blobUrl) call here.
+
+const tempBoard = createTempBoard(tempBoardId, { blobUrl, ... })
+
+// addTempBoardToState called immediately — resolvedCache has no entry for blobUrl yet.
+addTempBoardToState(tempBoard, ...)
+```
+
+**The consequence, step by step:**
+
+1. `addTempBoardToState` commits the temp board to React state with an un-warmed blob URL.
+2. `DraggableBoard` renders → `BoardTextureMaterial` → `useBoardTexture(blobUrl)`.
+3. `useBoardTexture` initialises: `useState(resolvedCache.get(blobUrl) ?? null)` → `null` (cache miss).
+4. `isInitialLoad = true` → skeleton rendered (0.22-opacity white material, `components/3d/DraggableBoard.tsx:112-120`).
+5. `useEffect([blobUrl])` fires → `loadTexture(blobUrl)` starts: `THREE.TextureLoader` fetches the blob via XHR, decodes the JPEG, uploads the WebGL texture. For a large PDF page (e.g., 1 500 × 2 000 px JPEG at 1.5× scale), this takes **~1–2 seconds** even though the data is local — the WebGL texture upload is the bottleneck.
+6. After ~1–2 s the blob texture resolves → `setTexture(tex)` → image appears.
+7. Upload + API call + CDN pre-warm (P4c.2) complete → `replaceTempBoardInState` swaps to real board.
+8. `useBoardTexture` URL prop changes blob → CDN URL → effect hits cache → instant.
+
+Steps 4–6 produce the **~2 s gray-skeleton flash**. P4c.2 eliminated a SECOND flash at step 8, but step 4 was never addressed.
+
+**Exact divergence line:** `hooks/useBoardUpload.ts:552` — `addTempBoardToState(...)` is called without any prior `await loadTexture(pageBlobUrl)`. The fix is to insert `await loadTexture(pageBlobUrl).catch(() => undefined)` between line 529 (`URL.createObjectURL`) and line 552 (`addTempBoardToState`), mirroring `uploadFile`'s lines 332-347.
+
+---
+
+## 19. P6 cleanup
+
+_Date: 2026-05-23. Upload migration finalized. `npx tsc --noEmit` exit 0._
+
+---
+
+### Deletions
+
+**`app/api/upload/route.ts` — deleted**  
+The legacy multipart-upload route. Handled server-side `sharp` compression and Supabase storage proxying. All client upload paths migrated to `useDirectUpload + /api/boards POST` in P4b/P4c (confirmed in §16). Zero callers remained.
+
+**`sharp` npm dependency — uninstalled**  
+`npm uninstall sharp` removed `sharp` and its 3 transitive packages (`@img/sharp-libvips-win32-x64`, `@img/sharp-win32-x64`, `color`). Was the sole consumer inside the now-deleted `/api/upload/route.ts`. `package.json` and `package-lock.json` updated.
+
+**`createBoardFormData` function in `hooks/useBoardUpload.ts` — deleted**  
+Dead helper (~70 lines, former lines 96-164) that assembled `multipart/form-data` for `/api/upload`. Zero call sites remained after P4b/P4c switched to JSON payloads for `/api/boards POST`.
+
+---
+
+### Discovery grep results
+
+**sharp imports** (`grep -rE "from ['\"]sharp['\"]|require\(['\"]sharp['\"]\)" --include="*.ts" --include="*.tsx" --include="*.js"`):
+```
+(no output — zero hits)
+```
+
+**`createBoardFormData` call sites** (`grep -rE "createBoardFormData" --include="*.ts" --include="*.tsx"`):
+```
+(no output — zero hits outside definition)
+```
+
+Both greps confirmed safe before any deletion.
+
+---
+
+### Migration complete
+
+The upload architecture after P6:
+
+| Concern | Before (P1 baseline) | After (P6) |
+|---|---|---|
+| File bytes path | Browser → Vercel `/api/upload` → Supabase Storage | Browser → Supabase Storage direct (`useDirectUpload`) |
+| Image compression | Server-side `sharp` (2400 px / q85 full, 800 px / q75 thumb) | Client-side `browser-image-compression` (same size targets) |
+| DB record creation | `INSERT` inside `/api/upload` handler | `POST /api/boards` (metadata only, no file bytes) |
+| Vercel payload cap | 4.5 MB hard limit (blocked large images) | Bypassed — storage upload never touches Vercel |
+| Auth gate for storage | Supabase RLS `"Users can upload to own folder in board-images"` | Same RLS policy (unchanged) |
+| Wall-config writes | `/api/studios/[id]/wall-config` via service role + workspace-member check | Unchanged |
+| 3D model uploads | `/api/upload-model` (separate route, still active) | Unchanged — not in scope for P6 |
+
+The `/api/upload` route, `sharp` dependency, and `createBoardFormData` helper are permanently removed. No migrations required.
