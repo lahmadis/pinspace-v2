@@ -526,7 +526,7 @@ const uploadPDF = async (
     if (options.editingWall !== null && options.editingWallDimensions) {
       pageBlobUrl = URL.createObjectURL(page.imageFile)
       const blobUrl = pageBlobUrl
-      tempBoardId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      tempBoardId = `temp-${Date.now()}-${pageIndex}-${Math.random().toString(36).substr(2, 9)}`
       
       const tempBoard = createTempBoard(tempBoardId, {
         studioId: options.studioId,
@@ -541,10 +541,10 @@ const uploadPDF = async (
         tags: ['pdf'],
         position: {
           wallIndex: options.editingWall,
-          x: gridPos.x,
-          y: gridPos.y,
-          width: widthPercent,
-          height: heightPercent,
+          x: (gridPos.x + 0.5) * 100,
+          y: (gridPos.y + 0.5) * 100,
+          width: widthPercent * 100,
+          height: heightPercent * 100,
           side: options.editingWallSide || 'front',
         }
       })
@@ -625,6 +625,8 @@ const uploadPDF = async (
       successCount++
     } catch (error) {
       console.error(`[Upload PDF] Failed to upload page ${pageIndex + 1}:`, error)
+      const errMsg = error instanceof Error ? error.message : 'Upload failed'
+      toast.error(`Page ${pageIndex + 1} of ${file.name}: ${errMsg}`)
       if (pageBlobUrl) URL.revokeObjectURL(pageBlobUrl)
       if (tempBoardId) {
         cleanupTempBoard(tempBoardId, {
