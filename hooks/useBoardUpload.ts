@@ -528,6 +528,11 @@ const uploadPDF = async (
       const blobUrl = pageBlobUrl
       tempBoardId = `temp-${Date.now()}-${pageIndex}-${Math.random().toString(36).substr(2, 9)}`
       
+      // Pre-warm the blob texture so useBoardTexture finds it in resolvedCache on first render.
+      // Without this, the JPEG decode + WebGL upload happens asynchronously after mount,
+      // causing a ~1-2s skeleton. Mirrors uploadFile lines 332-347.
+      await loadTexture(pageBlobUrl).catch(() => undefined)
+
       const tempBoard = createTempBoard(tempBoardId, {
         studioId: options.studioId,
         title: pageTitle,
