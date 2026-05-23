@@ -603,7 +603,20 @@ const uploadPDF = async (
       if (uploadedBoard?.position && options.editingWall !== null) {
         uploadedBoard = { ...uploadedBoard, position: { ...uploadedBoard.position, side: editingSide } }
       }
-      
+
+      // Pre-warm CDN textures before swapping so the real board mount finds them in resolvedCache
+      // and skips the gray skeleton. Same pattern as uploadFile — see comments there for rationale.
+      const prewarmUrls: string[] = []
+      if (uploadedBoard?.thumbnailUrl) prewarmUrls.push(uploadedBoard.thumbnailUrl)
+      if (uploadedBoard?.fullImageUrl && uploadedBoard.fullImageUrl !== uploadedBoard.thumbnailUrl) {
+        prewarmUrls.push(uploadedBoard.fullImageUrl)
+      }
+      if (prewarmUrls.length > 0) {
+        const prewarm = Promise.allSettled(prewarmUrls.map((u) => loadTexture(u)))
+        const timeout = new Promise<void>((resolve) => setTimeout(resolve, 3000))
+        await Promise.race([prewarm, timeout])
+      }
+
       // Replace temp board (always replace; position patched to current wall if API omitted it)
       if (tempBoardId && options.editingWall !== null) {
         replaceTempBoardInState(
