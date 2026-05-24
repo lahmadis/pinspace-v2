@@ -475,11 +475,17 @@ const uploadPDF = async (
 
   let successCount = 0
 
-  for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+  // Each page is self-contained — no cross-page dependency — so process them
+  // concurrently instead of awaiting each in turn. See section 23 of
+  // docs/storage-audit-P1.md for the data-race analysis: setPlacedBoards3D's
+  // functional-updater pattern + distinct tempBoardId per task = safe.
+  // flushSync is deliberately NOT used here (it can deadlock React when
+  // called from inside a parallel async chain).
+  const processPage = async (pageIndex: number): Promise<void> => {
     const page = pages[pageIndex]
     const pageTitle = pages.length > 1
-      ? `${file.name.replace('.pdf', '')} - Page ${page.pageNumber}`
-      : file.name.replace('.pdf', '')
+      ? `${baseName} - Page ${page.pageNumber}`
+      : baseName
 
     const { widthPercent, heightPercent } = calculateBoardDimensions(
       page.aspectRatio,
@@ -488,14 +494,13 @@ const uploadPDF = async (
 
     const gridPos = calculateGridPosition(pageIndex, pages.length)
 
-    // Create temp board
     let tempBoardId: string | null = null
     let pageBlobUrl: string | null = null
     if (options.editingWall !== null && options.editingWallDimensions) {
       pageBlobUrl = URL.createObjectURL(page.imageFile)
       const blobUrl = pageBlobUrl
       tempBoardId = `temp-${Date.now()}-${pageIndex}-${Math.random().toString(36).substr(2, 9)}`
-      
+
       // Pre-warm the blob texture so useBoardTexture finds it in resolvedCache on first render.
       // Without this, the JPEG decode + WebGL upload happens asynchronously after mount,
       // causing a ~1-2s skeleton. Mirrors uploadFile lines 332-347.
@@ -521,7 +526,7 @@ const uploadPDF = async (
           side: options.editingWallSide || 'front',
         }
       })
-      
+
       addTempBoardToState(tempBoard, { x: gridPos.x, y: gridPos.y, width: widthPercent, height: heightPercent }, {
         addTempBoard: options.addTempBoard,
         setPlacedBoards3D: options.setPlacedBoards3D,
@@ -529,7 +534,7 @@ const uploadPDF = async (
         blobUrl,
       })
     }
-    
+
     // Upload page. skipMainCompression: the page is already a controlled-
     // quality JPEG out of canvas.toBlob('image/jpeg', 0.85) capped at 2400px
     // (see lib/pdfToImage.ts) — running it through imageCompression again
@@ -611,10 +616,11 @@ const uploadPDF = async (
       // Blob URL no longer needed once the real board has a permanent URL
       if (pageBlobUrl) URL.revokeObjectURL(pageBlobUrl)
 
+      // ++ on a shared counter is atomic in single-threaded JS; tasks may
+      // finish in any order so the toast may briefly read out of sequence
+      // (e.g. "3 of 3" before "2 of 3"), but the post-loop summary toast
+      // reuses the same id and replaces whatever was last shown.
       successCount++
-
-      // Per-page progress update — replaces the loading toast in place via
-      // shared id. Skipped for single-page PDFs (toast already dismissed).
       if (pages.length > 1) {
         toast.loading(`Uploading "${baseName}" — ${successCount} of ${pages.length} pages`, {
           id: progressToastId,
@@ -637,6 +643,11 @@ const uploadPDF = async (
       }
     }
   }
+
+  // allSettled (not Promise.all) so a single page rejecting can't abort the
+  // others. processPage already catches its own errors, so this is belt-and-
+  // suspenders against any future uncaught throw above the try block.
+  await Promise.allSettled(pages.map((_, i) => processPage(i)))
 
   // Roll-up toast for multi-page PDFs. Reuses progressToastId so the sticky
   // loading toast is replaced in place by the success/warning summary

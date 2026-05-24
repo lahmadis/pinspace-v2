@@ -2253,3 +2253,101 @@ For a 17 MB 3-page architecture PDF (36"×55" pages):
 | Per-page thumb | 800 px `imageCompression` | unchanged |
 
 End-to-end target: ~8–12 s instead of ~30 s. The dominant remaining cost is still main-thread PDF.js rasterization (section 21 known limitation — worker move is a separate project).
+
+---
+
+## 23. Parallel PDF upload plan (P7.3)
+
+### Current page-loop structure (`uploadPDF`)
+
+Stripped of details, the per-page work today is:
+
+```typescript
+for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+  const page = pages[pageIndex]
+  const { widthPercent, heightPercent } = calculateBoardDimensions(...)
+  const gridPos = calculateGridPosition(pageIndex, pages.length)
+
+  let tempBoardId: string | null = null
+  let pageBlobUrl: string | null = null
+  if (options.editingWall !== null && options.editingWallDimensions) {
+    pageBlobUrl = URL.createObjectURL(page.imageFile)
+    tempBoardId = `temp-${Date.now()}-${pageIndex}-${Math.random()...}`
+    await loadTexture(pageBlobUrl).catch(() => undefined)        // ← await #1
+    const tempBoard = createTempBoard(tempBoardId, { ... })
+    addTempBoardToState(tempBoard, { ... }, { ... })
+  }
+
+  try {
+    const { storagePath, thumbnailPath } =
+      await directUpload(page.imageFile, { skipMainCompression: true })  // ← await #2
+    const boardPayload = { ... }
+    const response = await fetch('/api/boards', { ... })                 // ← await #3
+    const data = await response.json()                                   // ← await #4
+    let uploadedBoard = data.board as Board
+    // CDN texture pre-warm with 3s timeout
+    await Promise.race([prewarm, timeout])                               // ← await #5
+    if (tempBoardId && options.editingWall !== null) {
+      replaceTempBoardInState(tempBoardId, uploadedBoard, ...)
+    }
+    if (pageBlobUrl) URL.revokeObjectURL(pageBlobUrl)
+    successCount++
+    if (pages.length > 1) toast.loading(`… ${successCount} of ${pages.length} pages`, { id })
+  } catch (error) {
+    toast.error(`Page ${pageIndex + 1} of ${file.name}: …`)
+    if (pageBlobUrl) URL.revokeObjectURL(pageBlobUrl)
+    if (tempBoardId) cleanupTempBoard(tempBoardId, { ... })
+  }
+}
+```
+
+Five sequential awaits per page × N pages = strict serial execution. A 3-page PDF where each page takes ~8 s gives ~24 s end-to-end even though no page depends on another's output.
+
+### Shared state touched per iteration
+
+| Mutation | Function | Pattern |
+|---|---|---|
+| `addTempBoard(tempBoard, blobUrl)` | `addTempBoardToState` | direct call into hook's state setter |
+| `setPlacedBoards3D(prev => …)` | `addTempBoardToState`, `replaceTempBoardInState`, `cleanupTempBoard` | **functional updater**, mutates `placedBoards3DRef.current` inside |
+| `replaceTempBoard(tempId, real)` | `replaceTempBoardInState` | direct call |
+| `removeTempBoard(tempId)` | `cleanupTempBoard` | direct call |
+| `successCount++` | loop body | shared counter |
+| `toast.loading(msg, { id: progressToastId })` | loop body | same-id replace-in-place |
+
+### Proposed task structure (pseudo-code)
+
+```typescript
+let successCount = 0
+const processPage = async (pageIndex: number) => {
+  // … all the per-iteration work above …
+  // catches its own errors, never rejects
+}
+await Promise.allSettled(pages.map((_, i) => processPage(i)))
+```
+
+Each task is a self-contained closure with its own `tempBoardId`, `pageBlobUrl`, and `try/catch`. The loop variable `pageIndex` is captured fresh per closure (no `var` aliasing trap). `Promise.allSettled` so a single task throw — even an uncaught one — can't abort the rest.
+
+### Concern: parallel `setPlacedBoards3D` / `placedBoards3DRef.current`
+
+Walked through it. **Safe under concurrency** for these specific reasons:
+
+- All three helpers (`addTempBoardToState`, `replaceTempBoardInState`, `cleanupTempBoard`) use **functional updaters** (`setPlacedBoards3D(prev => …)`). React queues these and runs each against the latest committed state, so concurrent dispatches from N tasks compose correctly — there's no last-write-wins on the Map itself.
+- Each task operates on a **distinct `tempBoardId` key**. No two tasks ever touch the same Map entry, so there's no key-level conflict even if updaters interleave.
+- The `placedBoards3DRef.current = newMap` mutation **inside** the functional updater is a side effect React docs warn against (updaters can replay in StrictMode / concurrent renders). It's a pre-existing pattern that both `uploadFile` and the current sequential `uploadPDF` already use. The merge into `prev` is deterministic, so every replay yields the same `newMap` — the ref converges to the final committed value regardless of replay count. Parallelization doesn't introduce a new failure mode here.
+- `flushSync` is deliberately NOT added to the parallel tasks. `flushSync` from inside a parallel async chain can deadlock React when the scheduler is mid-render. Async `setState` (the existing pattern in `uploadPDF`, distinct from `uploadFile`'s `flushSync`-wrapped first paint) is correct for this code path.
+
+**No data race that could lose a temp board.** Proceeding with the patch.
+
+### Concern: concurrent `toast.loading` updates with the same id
+
+`lib/toast.ts`'s `emit` (per P7.1) is fire-and-forget for the network side and last-write-wins on the consumer side — `components/Toaster.tsx` resolves same-id updates with `prev.findIndex(t => t.id === item.id)` → replace in place. JS is single-threaded, so `successCount++` followed by `toast.loading(..., { id })` is atomic per task: the counter and the message reflect the same value. Tasks may finish out of registration order — the toast could read `1 of 3 → 3 of 3 → 2 of 3` if the second page finishes last — but by the time the post-loop summary fires, the counter is final and the summary toast (same id) replaces whatever was last shown. Acceptable for pilot.
+
+### Storage path collisions
+
+`useDirectUpload` uses `${Date.now()}-${Math.random()...}.jpg`. Concurrent calls in the same millisecond have ~1/billion collision probability. Acceptable for pilot; if it ever matters, switch to a UUID.
+
+### Out of scope for P7.3 (deferred)
+
+- Worker-thread PDF rasterization (section 21, ~15-30 s for large decks on the main thread).
+- Streaming uploads (start page 1 upload before page 2 rasterizes) — `convertPDFToImages` currently awaits all pages before returning.
+- TUS resumable upload for per-chunk progress.
