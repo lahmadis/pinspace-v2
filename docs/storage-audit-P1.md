@@ -2110,3 +2110,74 @@ Adding an update-by-id API to `lib/toast.ts` would touch a shared helper and the
 
 ### Scope
 Only `uploadPDF` in `hooks/useBoardUpload.ts` changes. `uploadFile` (images), `lib/useDirectUpload.ts`, `app/api/boards/route.ts`, and `lib/toast.ts` itself are untouched.
+
+---
+
+## 21. Toast lib capabilities (P7.1 prep)
+
+### Underlying implementation
+**Custom in-house pub/sub**, not sonner / react-hot-toast / react-toastify. Lives in `lib/toast.ts` (~33 lines) with a single React consumer in `components/Toaster.tsx`. No third-party toast library is installed (verified via `package.json` — only the in-house module + `Toaster.tsx`).
+
+### Exported surface (post-P7, pre-P7.1)
+
+```typescript
+export type ToastType = 'success' | 'error' | 'info' | 'warning'
+
+export interface ToastItem {
+  id: string
+  message: string
+  type: ToastType
+  duration: number
+}
+
+export const toast = {
+  success: (message: string, duration = 3000) => emit(message, 'success', duration),
+  error: (message: string, duration = 4500) => emit(message, 'error', duration),
+  info: (message: string, duration = 3000) => emit(message, 'info', duration),
+  warning: (message: string, duration = 3500) => emit(message, 'warning', duration),
+}
+
+export function subscribeToToasts(listener: Listener): () => void { … }
+```
+
+`emit` is private and generates ids internally via `Math.random().toString(36).slice(2, 9)`.
+
+### Capability check
+| Feature P7.1 needs | Built-in? |
+|---|---|
+| `toast.loading(msg, opts)` with infinite duration | No — no `loading` variant |
+| Per-call position option (`bottom-center` etc.) | No — `Toaster.tsx` hardcodes `fixed top-4 right-4` |
+| Update existing toast by id | No — caller can't pass an id; helper always mints a fresh random one |
+| `toast.dismiss(id)` | No |
+
+**None of the three fixes work without modifying `lib/toast.ts`.** All three are doable; the brief explicitly authorized this ("If lib/toast.ts needs updating to support position, do that as part of this phase").
+
+### What P7.1 changes outside `useBoardUpload.ts`
+
+- `lib/toast.ts` — additive surface, no breakage for existing callers:
+  - `ToastItem` gains `position: 'top-right' | 'bottom-center'` (defaults to `top-right`).
+  - Each `toast.success/error/info/warning` accepts a second arg that is either `number` (legacy duration) **or** `{ id?, duration?, position? }`. Existing call sites pass nothing or a number; both continue to work.
+  - New `toast.loading(message, { id?, position? })` — sticky (`duration: Infinity`).
+  - New `toast.dismiss(id)` — emits on a parallel listener channel.
+  - New `subscribeToToastDismiss` export.
+  - When `emit` is called with an `id` that's already on screen, the consumer is expected to replace-in-place (state/duration), which is what gives us the `loading → success` transition.
+
+- `components/Toaster.tsx` — required because position and replace-in-place are render-side concerns:
+  - Tracks per-id `setTimeout` handles in a ref so id-replacement can cancel the old timer.
+  - Renders two fixed containers — `top-4 right-4` (existing) and `bottom-6 left-1/2 -translate-x-1/2` (new). Each container only mounts if it has items.
+  - Skips the auto-dismiss `setTimeout` when `duration === Infinity` (the sticky-loading case). Without this guard the HTML spec would clamp `setTimeout(fn, Infinity)` to ~1 ms and immediately remove the toast.
+  - Loading toasts render a CSS-spinner div in the icon slot (`animate-spin` ring), neutral slate styling.
+  - Subscribes to the new dismiss channel and removes by id.
+
+All other 22 call sites of `@/lib/toast` (Settings, Dashboard, ShareModal, comment panels, etc.) call the helpers with zero or one extra argument — verified by grep — so the overloaded-second-arg signature is backwards compatible.
+
+### Known limitation deferred to a later project
+
+The apparent "freeze" in P7 isn't only "no toast" — `convertPDFToImages` in `lib/pdfToImage.ts` runs PDF.js page-by-page on the main thread, rasterizing every page to a canvas before any network call. For a 30-page PDF on a mid-spec laptop this is 15–30 s of CPU. P7.1 hides the perception problem (the toast appears immediately), but the actual work is unchanged.
+
+Real fixes (out of scope for the pilot — too risky pre-demo):
+- Move PDF rasterization to a Web Worker (PDF.js ships a worker build; current code uses the main-thread `pdfjs-dist/build/pdf.mjs`).
+- Stream pages: start uploading page 1 as soon as it rasterizes, while page 2 renders in parallel. The current code awaits all pages before the upload loop begins.
+- Render pages at a lower scale for thumbnails-only uploads; only re-rasterize at full scale on demand.
+
+Tracked as a post-pilot performance project — not addressed in this phase.

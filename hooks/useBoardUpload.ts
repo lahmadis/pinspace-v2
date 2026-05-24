@@ -428,22 +428,49 @@ const uploadPDF = async (
   options: UploadOptions,
   directUpload: (file: File) => Promise<DirectUploadResult>
 ): Promise<{ success: boolean; count: number }> => {
+  // Fire the progress toast BEFORE convertPDFToImages — that step runs PDF.js
+  // page rasterization on the main thread and can take 15-30s for a large
+  // deck. Without an immediate signal the user thinks the click did nothing.
+  // P7 fired the toast after rasterization which is exactly the gap we're
+  // closing in P7.1. Toast lives at bottom-center so it doesn't overlap
+  // boards on the wall (top-right is the default for other toasts).
+  const baseName = file.name.replace('.pdf', '')
+  const progressToastId = `pdf-upload-${file.name}-${Date.now()}`
+  toast.loading(`Preparing "${baseName}"…`, {
+    id: progressToastId,
+    position: 'bottom-center',
+  })
+
   const { convertPDFToImages } = await import('@/lib/pdfToImage')
-  const pages = await convertPDFToImages(file)
+  let pages
+  try {
+    pages = await convertPDFToImages(file)
+  } catch (err) {
+    // Convert the stuck "Preparing…" loading toast into an error in place,
+    // otherwise it stays sticky forever (loading has Infinity duration).
+    const errMsg = err instanceof Error ? err.message : 'Failed to read PDF'
+    toast.error(`"${baseName}" — ${errMsg}`, {
+      id: progressToastId,
+      position: 'bottom-center',
+    })
+    throw err
+  }
 
   // Calculate grid layout
   const cols = Math.ceil(Math.sqrt(pages.length))
   const rows = Math.ceil(pages.length / cols)
 
-  // Multi-page PDFs render every page to JPEG before the first network call;
-  // for large decks that gap can read as "nothing is happening". Fire a single
-  // info toast so the user knows the upload started. lib/toast.ts is
-  // fire-and-forget (no id-based updates), so we pair this with a summary
-  // toast at the end rather than mutating in place. Single-page PDFs skip
-  // this — the temp-board → swap UX already gives instant feedback.
-  const baseName = file.name.replace('.pdf', '')
-  if (pages.length > 1) {
-    toast.info(`Uploading "${baseName}" — ${pages.length} pages`, 8000)
+  if (pages.length === 1) {
+    // Single-page PDFs upload fast and the temp-board → swap UX already
+    // gives instant feedback. Drop the progress toast now that we know N=1.
+    toast.dismiss(progressToastId)
+  } else {
+    // Now that we know the page count, transition the toast in place to the
+    // proper progress message. Per-page updates happen inside the loop.
+    toast.loading(`Uploading "${baseName}" — 0 of ${pages.length} pages`, {
+      id: progressToastId,
+      position: 'bottom-center',
+    })
   }
 
   let successCount = 0
@@ -582,10 +609,21 @@ const uploadPDF = async (
       if (pageBlobUrl) URL.revokeObjectURL(pageBlobUrl)
 
       successCount++
+
+      // Per-page progress update — replaces the loading toast in place via
+      // shared id. Skipped for single-page PDFs (toast already dismissed).
+      if (pages.length > 1) {
+        toast.loading(`Uploading "${baseName}" — ${successCount} of ${pages.length} pages`, {
+          id: progressToastId,
+          position: 'bottom-center',
+        })
+      }
     } catch (error) {
       console.error(`[Upload PDF] Failed to upload page ${pageIndex + 1}:`, error)
       const errMsg = error instanceof Error ? error.message : 'Upload failed'
-      toast.error(`Page ${pageIndex + 1} of ${file.name}: ${errMsg}`)
+      toast.error(`Page ${pageIndex + 1} of ${file.name}: ${errMsg}`, {
+        position: 'bottom-center',
+      })
       if (pageBlobUrl) URL.revokeObjectURL(pageBlobUrl)
       if (tempBoardId) {
         cleanupTempBoard(tempBoardId, {
@@ -597,15 +635,17 @@ const uploadPDF = async (
     }
   }
 
-  // Roll-up toast for multi-page PDFs. Per-page error toasts (from the catch
-  // above) still fire alongside this — the user gets a per-page reason AND a
-  // summary. Single-page PDFs are intentionally skipped, same as the start toast.
+  // Roll-up toast for multi-page PDFs. Reuses progressToastId so the sticky
+  // loading toast is replaced in place by the success/warning summary
+  // (instead of stacking a second toast). Per-page error toasts from the
+  // catch above still fire as separate toasts — the user gets per-page
+  // reasons AND a roll-up. Single-page PDFs are skipped (dismissed earlier).
   if (pages.length > 1) {
     const summary = `"${baseName}" — ${successCount} of ${pages.length} pages uploaded`
     if (successCount < pages.length) {
-      toast.warning(summary)
+      toast.warning(summary, { id: progressToastId, position: 'bottom-center' })
     } else {
-      toast.success(summary)
+      toast.success(summary, { id: progressToastId, position: 'bottom-center' })
     }
   }
 
