@@ -5,7 +5,7 @@ import { Board } from '@/types'
 import { generateOwnerColor } from '@/lib/ownerColors'
 import { toast } from '@/lib/toast'
 import { loadTexture } from '@/components/3d/useBoardTexture'
-import { useDirectUpload, type DirectUploadResult } from '@/lib/useDirectUpload'
+import { useDirectUpload, type DirectUploadResult, type DirectUploadOptions } from '@/lib/useDirectUpload'
 
 interface UploadOptions {
   /**
@@ -244,7 +244,7 @@ const CENTER_API = 50 // also used when patching real board position in replaceT
 const uploadFile = async (
   file: File,
   options: UploadOptions,
-  directUpload: (file: File) => Promise<DirectUploadResult>
+  directUpload: (file: File, opts?: DirectUploadOptions) => Promise<DirectUploadResult>
 ): Promise<{ success: boolean; uploadedBoard?: Board }> => {
   const title = file.name.replace(/\.[^/.]+$/, '')
   let tempBoardId: string | null = null
@@ -426,7 +426,7 @@ const uploadFile = async (
 const uploadPDF = async (
   file: File,
   options: UploadOptions,
-  directUpload: (file: File) => Promise<DirectUploadResult>
+  directUpload: (file: File, opts?: DirectUploadOptions) => Promise<DirectUploadResult>
 ): Promise<{ success: boolean; count: number }> => {
   // Fire the progress toast BEFORE convertPDFToImages — that step runs PDF.js
   // page rasterization on the main thread and can take 15-30s for a large
@@ -530,9 +530,12 @@ const uploadPDF = async (
       })
     }
     
-    // Upload page
+    // Upload page. skipMainCompression: the page is already a controlled-
+    // quality JPEG out of canvas.toBlob('image/jpeg', 0.85) capped at 2400px
+    // (see lib/pdfToImage.ts) — running it through imageCompression again
+    // would be a decode+re-encode no-op. Thumb still generates.
     try {
-      const { storagePath, thumbnailPath } = await directUpload(page.imageFile)
+      const { storagePath, thumbnailPath } = await directUpload(page.imageFile, { skipMainCompression: true })
 
       const clerkName = ((options.user?.fullName || options.user?.firstName || '') as string).trim()
       const boardPayload = {

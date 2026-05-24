@@ -102,19 +102,16 @@ export async function convertPDFToImages(pdfFile: File): Promise<Array<{
       
       console.log(`📐 [PDF] Page ${pageNum} dimensions: ${widthInPoints.toFixed(2)}pt x ${heightInPoints.toFixed(2)}pt = ${physicalWidth.toFixed(2)}" x ${physicalHeight.toFixed(2)}"`)
       
-      // Render at optimized quality (reduced from 2.5x to 1.5x for better performance)
-      // Calculate optimal scale: target max 2000px on longest side for reasonable file sizes
-      const baseScale = 1.5
-      const maxDimension = 2000
-      const baseWidth = widthInPoints * baseScale
-      const baseHeight = heightInPoints * baseScale
-      const longestSide = Math.max(baseWidth, baseHeight)
-      
-      // If image would be too large, reduce scale
-      const scale = longestSide > maxDimension 
-        ? (maxDimension / Math.max(widthInPoints, heightInPoints))
-        : baseScale
-      
+      // Cap rasterization at 2400px on the longest dimension — the same
+      // ceiling browser-image-compression uses for the main upload, so
+      // rendering bigger is throwaway work. Small PDFs render at 1:1 (no
+      // upsampling); large architecture sheets get scaled down once here
+      // instead of being downsampled again downstream. See section 22 of
+      // docs/storage-audit-P1.md.
+      const MAX_DIMENSION = 2400
+      const viewport1x = page.getViewport({ scale: 1 })
+      const naturalMax = Math.max(viewport1x.width, viewport1x.height)
+      const scale = naturalMax > MAX_DIMENSION ? MAX_DIMENSION / naturalMax : 1
       const viewport = page.getViewport({ scale })
       
       const canvas = document.createElement('canvas')

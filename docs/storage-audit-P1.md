@@ -2181,3 +2181,75 @@ Real fixes (out of scope for the pilot — too risky pre-demo):
 - Render pages at a lower scale for thumbnails-only uploads; only re-rasterize at full scale on demand.
 
 Tracked as a post-pilot performance project — not addressed in this phase.
+
+---
+
+## 22. PDF rasterization performance (P7.2)
+
+### Current render pipeline (`lib/pdfToImage.ts`, pre-P7.2)
+
+```typescript
+const baseScale = 1.5
+const maxDimension = 2000
+const baseWidth = widthInPoints * baseScale
+const baseHeight = heightInPoints * baseScale
+const longestSide = Math.max(baseWidth, baseHeight)
+
+// If image would be too large, reduce scale
+const scale = longestSide > maxDimension
+  ? (maxDimension / Math.max(widthInPoints, heightInPoints))
+  : baseScale
+
+const viewport = page.getViewport({ scale })
+const canvas = document.createElement('canvas')
+const context = canvas.getContext('2d', { alpha: false })
+canvas.width = Math.floor(viewport.width)
+canvas.height = Math.floor(viewport.height)
+context.fillStyle = '#ffffff'
+context.fillRect(0, 0, canvas.width, canvas.height)
+await page.render({ canvasContext: context, viewport }).promise
+
+const blob = await new Promise<Blob>((resolve, reject) => {
+  canvas.toBlob((b) => {
+    if (b) resolve(b)
+    else reject(new Error('Failed to create blob'))
+  }, 'image/jpeg', 0.85)
+})
+```
+
+JPEG quality is already `0.85` — the brief's "drop from 0.92/1.0 to 0.85" is a no-op for us. Noting this here so future readers don't re-litigate.
+
+### Current image-compression pipeline (`lib/useDirectUpload.ts`, image branch)
+
+```typescript
+const [mainBlob, tbBlob] = await Promise.all([
+  imageCompression(file, { maxWidthOrHeight: 2400, initialQuality: 0.85, useWebWorker: true }),
+  imageCompression(file, { maxWidthOrHeight: 800, initialQuality: 0.75, useWebWorker: true, fileType: 'image/jpeg' }),
+])
+```
+
+Every uploaded image — including PDF-rasterized JPEGs that just came out of `canvas.toBlob('image/jpeg', 0.85)` two milliseconds earlier — runs through `imageCompression` with the same 2400 px / q0.85 target. For PDF pages this is a pure round-trip: decode the JPEG, downsample (or not), re-encode at the same quality, in a Web Worker round-trip. Zero quality benefit, real CPU cost.
+
+### Two speedup opportunities
+
+**A. Cap rasterization at 2400 px max dimension (replaces current 1.5x + 2000 px cap).** The current formula is doubly wasteful for small PDFs (renders an 8.5×11" page at 918×1188 px when 612×792 would do) and *under*-renders large architecture PDFs (1309×2000 instead of the 2400 px ceiling that `imageCompression` will downsample to anyway). Aligning the rasterizer's cap with the downstream compressor's cap means each pixel rendered is a pixel the user might see.
+
+**B. Skip the main-image `imageCompression` pass for PDF pages.** A page that just came out of `canvas.toBlob('image/jpeg', 0.85)` is already a controlled-quality JPEG at the right dimensions (after opportunity A). Round-tripping it through `imageCompression` only costs CPU. Thumbnail generation still runs because the 800 px thumb is a real downsample, not a no-op.
+
+### Implementation notes
+
+- **Three files actually change**, not two: the brief's Fix 2 spans `lib/useDirectUpload.ts` (add `skipMainCompression` to `DirectUploadOptions`) **and** `hooks/useBoardUpload.ts` (pass the flag in `uploadPDF`'s `directUpload` call, plus widen the `directUpload` parameter type to accept options).
+- `uploadFile` is untouched — phone-camera images are huge and still need the main compression pass.
+- Storage path/contentType logic in the image branch stays as-is. The rasterized page is already a JPEG (`new File([blob], …, { type: 'image/jpeg' })` in `pdfToImage.ts`), so `.jpg` extension and `image/jpeg` contentType remain correct when skipping main compression.
+
+### Expected impact
+
+For a 17 MB 3-page architecture PDF (36"×55" pages):
+
+| Stage | Before P7.2 | After P7.2 |
+|---|---|---|
+| Per-page render | 1.5x base → cap to 2000 px → 1309×2000 canvas | scale=2400/3960=0.606 → 1571×2400 canvas |
+| Per-page main compression | `imageCompression` round-trip (Web Worker decode+encode) | **skipped** |
+| Per-page thumb | 800 px `imageCompression` | unchanged |
+
+End-to-end target: ~8–12 s instead of ~30 s. The dominant remaining cost is still main-thread PDF.js rasterization (section 21 known limitation — worker move is a separate project).
