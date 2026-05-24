@@ -430,10 +430,21 @@ const uploadPDF = async (
 ): Promise<{ success: boolean; count: number }> => {
   const { convertPDFToImages } = await import('@/lib/pdfToImage')
   const pages = await convertPDFToImages(file)
-  
+
   // Calculate grid layout
   const cols = Math.ceil(Math.sqrt(pages.length))
   const rows = Math.ceil(pages.length / cols)
+
+  // Multi-page PDFs render every page to JPEG before the first network call;
+  // for large decks that gap can read as "nothing is happening". Fire a single
+  // info toast so the user knows the upload started. lib/toast.ts is
+  // fire-and-forget (no id-based updates), so we pair this with a summary
+  // toast at the end rather than mutating in place. Single-page PDFs skip
+  // this — the temp-board → swap UX already gives instant feedback.
+  const baseName = file.name.replace('.pdf', '')
+  if (pages.length > 1) {
+    toast.info(`Uploading "${baseName}" — ${pages.length} pages`, 8000)
+  }
 
   let successCount = 0
 
@@ -585,7 +596,19 @@ const uploadPDF = async (
       }
     }
   }
-  
+
+  // Roll-up toast for multi-page PDFs. Per-page error toasts (from the catch
+  // above) still fire alongside this — the user gets a per-page reason AND a
+  // summary. Single-page PDFs are intentionally skipped, same as the start toast.
+  if (pages.length > 1) {
+    const summary = `"${baseName}" — ${successCount} of ${pages.length} pages uploaded`
+    if (successCount < pages.length) {
+      toast.warning(summary)
+    } else {
+      toast.success(summary)
+    }
+  }
+
   return { success: successCount > 0, count: successCount }
 }
 

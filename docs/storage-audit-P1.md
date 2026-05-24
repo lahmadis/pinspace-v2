@@ -2070,3 +2070,43 @@ The upload architecture after P6:
 | 3D model uploads | `/api/upload-model` (separate route, still active) | Unchanged — not in scope for P6 |
 
 The `/api/upload` route, `sharp` dependency, and `createBoardFormData` helper are permanently removed. No migrations required.
+
+---
+
+## 20. Progress toast plan
+
+### Problem
+Multi-page PDF uploads currently show no UI feedback between file pick and first page appearing on the wall. The pipeline does `convertPDFToImages` (PDF.js render of every page to canvas → JPEG) before the first network call, which for a 10+ page PDF can take several seconds with zero visible signal. Users assume the upload failed and click upload again, queueing a duplicate run.
+
+### Toast helper surface (`lib/toast.ts`)
+
+```typescript
+export type ToastType = 'success' | 'error' | 'info' | 'warning'
+
+export const toast = {
+  success: (message: string, duration = 3000) => emit(message, 'success', duration),
+  error: (message: string, duration = 4500) => emit(message, 'error', duration),
+  info: (message: string, duration = 3000) => emit(message, 'info', duration),
+  warning: (message: string, duration = 3500) => emit(message, 'warning', duration),
+}
+
+function emit(message: string, type: ToastType, duration: number) {
+  const id = Math.random().toString(36).slice(2, 9)
+  const item: ToastItem = { id, message, type, duration }
+  listeners.forEach((l) => l(item))
+}
+```
+
+The id is generated **inside** `emit` from `Math.random()` — callers cannot pass one in, and there is no `dismiss(id)` or `update(id, …)` exported. The helper is strictly fire-and-forget. No `loading` variant either.
+
+### Pattern chosen: fire-and-forget pair
+
+Adding an update-by-id API to `lib/toast.ts` would touch a shared helper and the `ToastViewport` consumer for a single-call feature. Not worth the blast radius. Falling back to the simpler pair pattern the brief explicitly accepts:
+
+1. **Start toast** (multi-page only, `pages.length > 1`): one `toast.info(…)` immediately after `convertPDFToImages` resolves with `"Uploading \"<name>\" — <N> pages"`. Bumped duration to ~8000 ms so it stays visible across the upload of a typical small deck. Dropped the literal `0 of N pages` wording from the brief since without updates it would look like a stuck progress meter.
+2. **No mid-loop updates** — fire-and-forget can't reach the existing toast.
+3. **End toast**: after the loop, before `return`. `toast.success` if all pages uploaded, `toast.warning` if some failed (uses existing `successCount < pages.length` signal). Per-page error toasts from P4c.1 stay as-is — they fire alongside the warning summary, which is the desired behavior (user gets a per-page reason AND a roll-up).
+4. **Single-page PDFs** (`pages.length === 1`): no progress toast. The temp-board → swap UX already covers them; a toast would be noise.
+
+### Scope
+Only `uploadPDF` in `hooks/useBoardUpload.ts` changes. `uploadFile` (images), `lib/useDirectUpload.ts`, `app/api/boards/route.ts`, and `lib/toast.ts` itself are untouched.
