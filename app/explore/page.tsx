@@ -33,7 +33,7 @@ function ExplorePageInner() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(currentAcademicYear())
   const [availableAcademicYears, setAvailableAcademicYears] = useState<{ year: string; count: number }[]>([])
-  const [roomPickerNode, setRoomPickerNode] = useState<BubbleNode | null>(null)
+  const [roomDrillWorkspace, setRoomDrillWorkspace] = useState<BubbleNode | null>(null)
 
   const headerRef = useRef<HTMLElement>(null)
   const [measuredHeaderHeight, setMeasuredHeaderHeight] = useState(57)
@@ -134,10 +134,19 @@ function ExplorePageInner() {
   const handleClick = (node: BubbleNode) => {
     const demoParam = isDemo ? '?demo=true' : ''
 
+    // Already drilled into a workspace: bubbles here are its rooms — open one.
+    if (roomDrillWorkspace) {
+      if (node.url) {
+        const url = node.url.includes('?') ? `${node.url}&demo=true` : `${node.url}${demoParam}`
+        router.push(url)
+      }
+      return
+    }
+
     if (viewMode === 'flat') {
-      // Multi-room workspace: show picker
+      // Multi-room workspace: drill into its rooms in-place. Single-room: open directly.
       if (node.publishedRooms && node.publishedRooms.length > 1) {
-        setRoomPickerNode(node)
+        setRoomDrillWorkspace(node)
         return
       }
       if (node.url) {
@@ -154,8 +163,9 @@ function ExplorePageInner() {
       setSelectedDepartment(node.department || node.label)
       setHierarchyLevel('studios')
     } else {
+      // Studios level: multi-room drills in-place; single-room opens directly.
       if (node.publishedRooms && node.publishedRooms.length > 1) {
-        setRoomPickerNode(node)
+        setRoomDrillWorkspace(node)
         return
       }
       if (node.url) {
@@ -166,6 +176,20 @@ function ExplorePageInner() {
   }
 
   const displayedNodes = useMemo(() => {
+    // Drilled into a workspace: render its published rooms as child bubbles.
+    // boardCount maps to `count` so rooms get the same visual treatment (size +
+    // tooltip) as the parent studio bubbles.
+    if (roomDrillWorkspace) {
+      return (roomDrillWorkspace.publishedRooms ?? []).map((room) => ({
+        id: room.id,
+        name: room.name,
+        label: room.name,
+        count: room.boardCount,
+        url: `/studio/${room.id}/view`,
+        color: '#6366f1',
+      })) as BubbleNode[]
+    }
+
     const source = searchFilteredNodes
     if (viewMode === 'flat') return source
 
@@ -209,7 +233,7 @@ function ExplorePageInner() {
     }
 
     return source
-  }, [viewMode, hierarchyLevel, searchFilteredNodes, selectedYear, selectedDepartment])
+  }, [roomDrillWorkspace, viewMode, hierarchyLevel, searchFilteredNodes, selectedYear, selectedDepartment])
 
   return (
     <div className="min-h-screen bg-slate-900">
@@ -247,7 +271,7 @@ function ExplorePageInner() {
               type="search"
               placeholder="Search by studio name or professor…"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setRoomDrillWorkspace(null) }}
               className="w-full sm:w-80 sm:min-w-[18rem] px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               aria-label="Search studios by name or professor"
             />
@@ -258,6 +282,7 @@ function ExplorePageInner() {
                   setHierarchyLevel('years')
                   setSelectedYear(null)
                   setSelectedDepartment(null)
+                  setRoomDrillWorkspace(null)
                 }}
                 className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
                   viewMode === 'flat'
@@ -273,6 +298,7 @@ function ExplorePageInner() {
                   setHierarchyLevel('years')
                   setSelectedYear(null)
                   setSelectedDepartment(null)
+                  setRoomDrillWorkspace(null)
                 }}
                 className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
                   viewMode === 'hierarchy'
@@ -301,7 +327,7 @@ function ExplorePageInner() {
       {!isDemo && availableAcademicYears.length > 0 && (
         <div className="fixed top-[57px] left-0 right-0 z-30 bg-slate-900/95 border-b border-slate-700/50 px-6 py-2 flex items-center gap-2 overflow-x-auto">
           <button
-            onClick={() => setSelectedAcademicYear('')}
+            onClick={() => { setSelectedAcademicYear(''); setRoomDrillWorkspace(null) }}
             className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
               selectedAcademicYear === ''
                 ? 'bg-indigo-600 text-white'
@@ -313,7 +339,7 @@ function ExplorePageInner() {
           {availableAcademicYears.map(({ year, count }) => (
             <button
               key={year}
-              onClick={() => setSelectedAcademicYear(year)}
+              onClick={() => { setSelectedAcademicYear(year); setRoomDrillWorkspace(null) }}
               className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
                 selectedAcademicYear === year
                   ? 'bg-indigo-600 text-white'
@@ -379,44 +405,20 @@ function ExplorePageInner() {
         </div>
       </div>
 
-      {/* Room picker — shown when a multi-room workspace bubble is clicked */}
-      {roomPickerNode && (
-        <div
-          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-          onClick={() => setRoomPickerNode(null)}
+      {/* Floating back pill — shown while drilled into a workspace's rooms.
+          Clearing roomDrillWorkspace lands back one level (studios list in
+          either flat or hierarchy mode, since no other view state changed). */}
+      {roomDrillWorkspace && (
+        <button
+          type="button"
+          onClick={() => setRoomDrillWorkspace(null)}
+          aria-label="Back to studios"
+          className="fixed left-4 z-30 flex items-center gap-2 max-w-[70vw] px-4 py-2 rounded-full bg-slate-800/90 hover:bg-slate-700 text-white text-sm font-medium border border-slate-600/50 backdrop-blur-sm shadow-lg transition-colors"
+          style={{ top: measuredHeaderHeight + (!isDemo && availableAcademicYears.length > 0 ? 44 : 0) + 12 }}
         >
-          <div
-            className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-lg font-bold text-gray-900 mb-1">{roomPickerNode.name}</h2>
-            {roomPickerNode.instructor && (
-              <p className="text-sm text-gray-500 mb-4">{roomPickerNode.instructor}</p>
-            )}
-            <p className="text-sm font-medium text-gray-700 mb-3">Choose a room to view:</p>
-            <div className="space-y-2">
-              {(roomPickerNode.publishedRooms ?? []).map((room) => (
-                <button
-                  key={room.id}
-                  onClick={() => {
-                    setRoomPickerNode(null)
-                    const demoParam = isDemo ? '?demo=true' : ''
-                    router.push(`/studio/${room.id}/view${demoParam}`)
-                  }}
-                  className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 transition-colors text-sm font-medium text-gray-900"
-                >
-                  {room.name}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setRoomPickerNode(null)}
-              className="mt-4 w-full px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+          <span aria-hidden className="text-base leading-none">←</span>
+          <span className="truncate">{roomDrillWorkspace.name}</span>
+        </button>
       )}
     </div>
   )

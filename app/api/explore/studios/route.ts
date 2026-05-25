@@ -253,7 +253,11 @@ export async function GET(request: NextRequest) {
         yearNum = wYear
       }
 
-      const publishedRooms = group.map((r) => ({ id: r.roomId, name: r.roomName }))
+      const publishedRooms = group.map((r) => ({
+        id: r.roomId,
+        name: r.roomName,
+        boardCount: boardCountsByRoom[r.roomId] || 0,
+      }))
       // For single-room workspaces, url points directly to that room.
       // For multi-room workspaces, url is omitted; explore page shows a picker.
       const url = publishedRooms.length === 1 ? `/studio/${publishedRooms[0].id}/view` : undefined
