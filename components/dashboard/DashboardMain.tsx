@@ -262,7 +262,7 @@ export function DashboardMain({
         <span className="text-base font-semibold text-gray-900 pl-10 md:pl-0">{cfg.title}</span>
 
         <div className="flex items-center gap-2">
-          {hasArchived && (
+          {hasArchived && profile.accountRole === 'instructor' && (
             <button
               type="button"
               onClick={() => setShowArchived((v) => !v)}
