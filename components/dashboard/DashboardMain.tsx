@@ -242,10 +242,11 @@ export function DashboardMain({
   const [showArchived, setShowArchived] = useState(false)
   const { profile } = useProfile()
 
-  // Only instructors may create institution-facing rooms (classes + shared).
-  // Personal rooms stay open to everyone. This mirrors the server gate in
-  // POST /api/workspaces — hiding here is UX only; the API is the real boundary.
-  const requiresInstructor = scope === 'wentworth' || scope === 'shared'
+  // Only instructors may create org-facing classes (the Wentworth tab). Shared
+  // rooms are peer-to-peer collab and Personal rooms are the user's own space —
+  // both stay open to everyone. Mirrors the server gate in POST /api/workspaces
+  // (type === 'class'); hiding here is UX only, the API is the real boundary.
+  const requiresInstructor = scope === 'wentworth'
   const canCreate = !requiresInstructor || profile.accountRole === 'instructor'
 
   const cfg = scopeConfig(scope, accountMode, organization, institutionHome)

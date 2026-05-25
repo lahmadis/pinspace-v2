@@ -124,11 +124,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Name required' }, { status: 400 })
     }
 
-    // Security gate: only instructors may create institution-facing rooms
-    // (classes + shared rooms). Personal rooms remain open to every user — they
-    // are the creator's own space and never reach the network. This is the real
-    // server-side boundary; the dashboard merely hides the buttons.
-    if (type !== 'personal' && !(await isInstructorAccount(userId))) {
+    // Validate the workspace type before the instructor gate so an unknown
+    // value can't slip past it.
+    if (type !== 'class' && type !== 'shared' && type !== 'personal') {
+      return NextResponse.json({ error: 'Invalid workspace type' }, { status: 400 })
+    }
+
+    // Security gate: only instructors may create org-facing classes. Shared
+    // rooms (peer-to-peer collab) and personal rooms (the creator's own space)
+    // stay open to every account — neither reaches the org network. This is the
+    // real server-side boundary; the dashboard merely hides the buttons.
+    if (type === 'class' && !(await isInstructorAccount(userId))) {
       return NextResponse.json(
         { error: 'Only instructors can create classes. Ask an admin to grant you instructor access.' },
         { status: 403 }
