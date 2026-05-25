@@ -23,8 +23,13 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Service role for read; access is scoped in app code via owner_id/membership
+    // filters. RLS would otherwise drop joined-but-not-owned workspaces (there is
+    // no membership-based SELECT policy on workspaces).
+    const admin = supabaseServiceRole()
+
     // Fetch owned workspaces
-    const { data: owned, error: ownedErr } = await supabase
+    const { data: owned, error: ownedErr } = await admin
       .from('workspaces')
       .select('*')
       .eq('owner_id', userId)
@@ -35,7 +40,7 @@ export async function GET() {
     }
 
     // Fetch workspace memberships
-    const { data: memberRows, error: memErr } = await supabase
+    const { data: memberRows, error: memErr } = await admin
       .from('workspace_members')
       .select('workspace_id')
       .eq('user_id', userId)
@@ -50,7 +55,7 @@ export async function GET() {
     let memberWorkspaces: Record<string, unknown>[] = []
 
     if (memberIds.length > 0) {
-      const { data, error: memberWsErr } = await supabase
+      const { data, error: memberWsErr } = await admin
         .from('workspaces')
         .select('*')
         .in('id', memberIds)
@@ -76,7 +81,7 @@ export async function GET() {
     const wsIds = allWorkspaces.map((w) => w.id)
     const boardCountMap: Record<string, number> = {}
     if (wsIds.length > 0) {
-      const { data: boardRows } = await supabase
+      const { data: boardRows } = await admin
         .from('boards')
         .select('workspace_id')
         .in('workspace_id', wsIds)
