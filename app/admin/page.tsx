@@ -875,6 +875,13 @@ export default function AdminDashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              href="/admin/users"
+              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-white/80 transition-colors font-medium text-sm"
+            >
+              <Users className="w-4 h-4" />
+              Users &amp; roles
+            </Link>
             <CreateOrgForm onCreated={loadData} />
             <button
               onClick={() => supabase.auth.signOut().then(() => window.location.reload())}

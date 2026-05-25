@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { isInstructorAccount } from '@/lib/auth/getAccountRole'
 
 export const dynamic = 'force-dynamic'
 
@@ -93,6 +94,14 @@ export async function PATCH(
       updates.display_order = n
     }
     if (typeof body?.isPublished === 'boolean') {
+      // Publishing to the network is an instructor-only action. Unpublishing is
+      // always allowed (retracting content is never a privilege escalation).
+      if (body.isPublished === true && !(await isInstructorAccount(auth.userId))) {
+        return NextResponse.json(
+          { error: 'Only instructors can publish rooms to the network.' },
+          { status: 403 }
+        )
+      }
       updates.is_published = body.isPublished
       // Mirror published_at so timestamp metadata stays coherent with the flag.
       updates.published_at = body.isPublished ? new Date().toISOString() : null

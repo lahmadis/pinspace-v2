@@ -29,7 +29,6 @@ function NewWorkspaceForm() {
     : 'Set up a shared studio for your class'
   const [formData, setFormData] = useState({
     name: '',
-    role: 'instructor' as 'instructor' | 'student',
     institutionSlug: ''
   })
 
@@ -80,7 +79,6 @@ function NewWorkspaceForm() {
       const payload: Record<string, string> = {
         name: formData.name.trim(),
         creatorName: creatorName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Instructor',
-        role: formData.role
       }
       if (formData.institutionSlug) payload.institution_slug = formData.institutionSlug
       if (typeParam === 'shared') payload.type = 'shared'
@@ -209,22 +207,6 @@ function NewWorkspaceForm() {
                 </p>
               </div>
             )}
-
-            {/* Role */}
-            <div>
-              <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-2">
-                Your Role
-              </label>
-              <select
-                id="role"
-                value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value as 'instructor' | 'student' })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4444ff] focus:border-transparent"
-              >
-                <option value="instructor">Instructor / Professor</option>
-                <option value="student">Organizer / Student Lead</option>
-              </select>
-            </div>
 
             {/* Info Box - Hidden for demo video */}
             {/* <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

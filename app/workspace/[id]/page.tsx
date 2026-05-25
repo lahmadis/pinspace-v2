@@ -7,6 +7,7 @@ import { toast } from '@/lib/toast'
 import { Workspace, Room } from '@/types'
 import { useAuthSession } from '@/hooks/useAuthSession'
 import { useAccountMode } from '@/lib/useAccountMode'
+import { useProfile } from '@/lib/ProfileContext'
 import PublishConfirmModal, { NetworkMetadata } from '@/components/PublishConfirmModal'
 import {
   ArrowLeft,
@@ -29,6 +30,7 @@ export default function WorkspaceRoomsPage() {
 
   const { status: authStatus, user } = useAuthSession()
   const { mode: accountMode } = useAccountMode(user?.id, user?.email)
+  const { profile } = useProfile()
   const isAuthLoaded = authStatus !== 'loading'
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [loading, setLoading] = useState(true)
@@ -77,6 +79,10 @@ export default function WorkspaceRoomsPage() {
   }
 
   const isInstructor = !!workspace && workspace.members.some(m => m.userId === user?.id && m.role === 'instructor')
+  // Publishing to the network is an instructor-only ACCOUNT power, layered on top
+  // of workspace ownership. Mirrors the server gate in PATCH /api/rooms/[id].
+  const isAccountInstructor = profile.accountRole === 'instructor'
+  const canPublish = isInstructor && isAccountInstructor
 
   const handleCreateRoom = async () => {
     const trimmed = newRoomName.trim()
@@ -302,7 +308,7 @@ export default function WorkspaceRoomsPage() {
           </div>
           {isInstructor && (
             <div className="flex items-center gap-2">
-              {accountMode !== 'personal' && (
+              {accountMode !== 'personal' && canPublish && (
                 <button
                   onClick={() => setNetworkSettingsOpen(true)}
                   className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
@@ -443,7 +449,7 @@ export default function WorkspaceRoomsPage() {
                     crowd the card. Hover effects suppressed when editing. */}
                 {isInstructor && !isEditing && (
                   <div className="px-6 pb-4 flex items-center justify-end gap-1 -mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {accountMode !== 'personal' && (
+                    {accountMode !== 'personal' && canPublish && (
                       <button
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleTogglePublish(room) }}
                         disabled={isBusy}

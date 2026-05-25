@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import type { Workspace } from '@/types'
 import type { Scope } from './DashboardSidebar'
+import { useProfile } from '@/lib/ProfileContext'
 
 // ── Shared type ───────────────────────────────────────────────────────────────
 
@@ -239,6 +240,13 @@ export function DashboardMain({
 }: DashboardMainProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
+  const { profile } = useProfile()
+
+  // Only instructors may create institution-facing rooms (classes + shared).
+  // Personal rooms stay open to everyone. This mirrors the server gate in
+  // POST /api/workspaces — hiding here is UX only; the API is the real boundary.
+  const requiresInstructor = scope === 'wentworth' || scope === 'shared'
+  const canCreate = !requiresInstructor || profile.accountRole === 'instructor'
 
   const cfg = scopeConfig(scope, accountMode, organization, institutionHome)
   const hasArchived = rooms.some((r) => r.is_archived)
@@ -278,13 +286,15 @@ export function DashboardMain({
               Join with code
             </button>
           )}
-          <Link
-            href={cfg.newHref}
-            className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700 transition-colors flex items-center gap-1.5 shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            {cfg.newLabel}
-          </Link>
+          {canCreate && (
+            <Link
+              href={cfg.newHref}
+              className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700 transition-colors flex items-center gap-1.5 shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {cfg.newLabel}
+            </Link>
+          )}
         </div>
       </div>
 
@@ -319,12 +329,14 @@ export function DashboardMain({
                   <UserPlus className="w-4 h-4" /> Join with code
                 </button>
               )}
-              <Link
-                href={cfg.newHref}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center gap-1.5 shadow-sm"
-              >
-                <Plus className="w-4 h-4" /> {cfg.newLabel}
-              </Link>
+              {canCreate && (
+                <Link
+                  href={cfg.newHref}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center gap-1.5 shadow-sm"
+                >
+                  <Plus className="w-4 h-4" /> {cfg.newLabel}
+                </Link>
+              )}
             </div>
           </div>
         ) : (
@@ -334,7 +346,7 @@ export function DashboardMain({
             )}
             {scope === 'personal' && <EnterNetworkCard href="/network" />}
             {scope === 'shared' && <EnterNetworkCard href="/network/shared" />}
-            <NewRoomCard href={cfg.newHref} label={cfg.newLabel} />
+            {canCreate && <NewRoomCard href={cfg.newHref} label={cfg.newLabel} />}
             {visibleRooms.map((room) => (
               <RoomCard
                 key={room.id}

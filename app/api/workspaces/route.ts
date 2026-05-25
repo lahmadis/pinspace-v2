@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { generateInviteCode } from '@/lib/workspaceUtils'
+import { isInstructorAccount } from '@/lib/auth/getAccountRole'
 
 // GET: list workspaces owned by or shared with the current user
 export async function GET() {
@@ -121,6 +122,17 @@ export async function POST(req: Request) {
 
     if (!name) {
       return NextResponse.json({ error: 'Name required' }, { status: 400 })
+    }
+
+    // Security gate: only instructors may create institution-facing rooms
+    // (classes + shared rooms). Personal rooms remain open to every user — they
+    // are the creator's own space and never reach the network. This is the real
+    // server-side boundary; the dashboard merely hides the buttons.
+    if (type !== 'personal' && !(await isInstructorAccount(userId))) {
+      return NextResponse.json(
+        { error: 'Only instructors can create classes. Ask an admin to grant you instructor access.' },
+        { status: 403 }
+      )
     }
 
     // Resolve institution_id: from body or default to Wentworth (slug "wit")
