@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { validateName } from '@/lib/validation/safeName'
 
 
 // JOIN workspace - Add user to workspace_members table. Enforces institution email domain when set.
@@ -26,12 +27,12 @@ export async function POST(
     }
 
     const body = await request.json()
-    const { userName } = body
-    const workspaceId = params.id
-
-    if (!userName) {
-      return NextResponse.json({ error: 'User name required' }, { status: 400 })
+    const nameResult = validateName(body?.userName, { maxLength: 80, fieldLabel: 'Display name' })
+    if (!nameResult.ok) {
+      return NextResponse.json({ error: nameResult.error }, { status: 400 })
     }
+    const userName = nameResult.value
+    const workspaceId = params.id
 
     // Fetch workspace and its institution (use service role so we can read institution for non-members)
     const admin = supabaseServiceRole()

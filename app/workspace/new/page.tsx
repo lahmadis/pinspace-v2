@@ -175,6 +175,7 @@ function NewWorkspaceForm() {
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                maxLength={100}
                 placeholder="e.g., Studio 08 - Fall 2024"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4444ff] focus:border-transparent"
                 required

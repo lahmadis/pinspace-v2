@@ -117,6 +117,7 @@ export default function NewStudioPage() {
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                maxLength={100}
                 placeholder="e.g., Thesis Experiments, Summer Portfolio"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
                 required

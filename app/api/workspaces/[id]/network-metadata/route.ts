@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { validateName } from '@/lib/validation/safeName'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,11 +34,15 @@ export async function PATCH(
     const body = await request.json().catch(() => ({}))
     const { department, yearLevel, instructor, academicYear } = body
 
-    if (!department || !yearLevel || !instructor?.trim() || !academicYear) {
+    if (!department || !yearLevel || !academicYear) {
       return NextResponse.json(
         { error: 'department, yearLevel, instructor, and academicYear are all required' },
         { status: 400 }
       )
+    }
+    const instructorResult = validateName(instructor, { maxLength: 80, fieldLabel: 'Instructor name' })
+    if (!instructorResult.ok) {
+      return NextResponse.json({ error: instructorResult.error }, { status: 400 })
     }
 
     const admin = supabaseServiceRole()
@@ -63,7 +68,7 @@ export async function PATCH(
       .update({
         network_metadata: { department, year: yearLevel },
         academic_year: academicYear,
-        instructor: instructor.trim(),
+        instructor: instructorResult.value,
       })
       .eq('id', workspaceId)
 

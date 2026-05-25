@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
+import { validateName } from '@/lib/validation/safeName'
 
 /** GET /api/user-profile – get current user's profile. Returns null if none. */
 export async function GET() {
@@ -52,7 +53,15 @@ export async function POST(req: NextRequest) {
     const major = body?.major?.trim() || null
     const institutionId = body?.institution_id || null
     const howHeard = body?.how_heard?.trim() || null
-    const fullName = body?.full_name?.trim() || null
+    // full_name is optional; validate only when a non-empty value is supplied.
+    let fullName: string | null = null
+    if (body?.full_name != null && String(body.full_name).trim() !== '') {
+      const nameResult = validateName(body.full_name, { maxLength: 80, fieldLabel: 'Display name' })
+      if (!nameResult.ok) {
+        return NextResponse.json({ error: nameResult.error }, { status: 400 })
+      }
+      fullName = nameResult.value
+    }
     const role =
       body?.role === 'faculty' ? 'faculty'
       : body?.role === 'student' ? 'student'

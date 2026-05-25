@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { validateName } from '@/lib/validation/safeName'
 
 // GET specific workspace
 export async function GET(
@@ -258,7 +259,13 @@ export async function PATCH(
     }
 
     const updateData: { name?: string; description?: string } = {}
-    if (typeof name === 'string' && name.trim()) updateData.name = name.trim()
+    if (name !== undefined) {
+      const nameResult = validateName(name, { maxLength: 100, fieldLabel: 'Workspace name' })
+      if (!nameResult.ok) {
+        return NextResponse.json({ error: nameResult.error }, { status: 400 })
+      }
+      updateData.name = nameResult.value
+    }
     if (typeof description === 'string') updateData.description = description
 
     if (Object.keys(updateData).length === 0) {

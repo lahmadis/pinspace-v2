@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { isInstructorAccount } from '@/lib/auth/getAccountRole'
+import { validateName } from '@/lib/validation/safeName'
 
 export const dynamic = 'force-dynamic'
 
@@ -80,11 +81,11 @@ export async function PATCH(
     const updates: Record<string, unknown> = {}
 
     if (typeof body?.name === 'string') {
-      const trimmed = body.name.trim()
-      if (!trimmed) {
-        return NextResponse.json({ error: 'name cannot be empty' }, { status: 400 })
+      const nameResult = validateName(body.name, { maxLength: 100, fieldLabel: 'Room name' })
+      if (!nameResult.ok) {
+        return NextResponse.json({ error: nameResult.error }, { status: 400 })
       }
-      updates.name = trimmed
+      updates.name = nameResult.value
     }
     if (body?.displayOrder != null) {
       const n = Number(body.displayOrder)

@@ -398,6 +398,7 @@ export default function WorkspaceRoomsPage() {
                       <input
                         type="text"
                         value={editingRoomName}
+                        maxLength={100}
                         onChange={(e) => setEditingRoomName(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') handleRenameRoom(room)
@@ -502,6 +503,7 @@ export default function WorkspaceRoomsPage() {
                 <input
                   type="text"
                   value={newRoomName}
+                  maxLength={100}
                   onChange={(e) => setNewRoomName(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleCreateRoom()

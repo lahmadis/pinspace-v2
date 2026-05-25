@@ -387,6 +387,7 @@ export default function SettingsPage() {
                 <input
                   type="text"
                   value={fullName}
+                  maxLength={80}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Your name"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"

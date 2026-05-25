@@ -382,6 +382,7 @@ export default function WorkspaceSettingsPage() {
                               <input
                                 type="text"
                                 value={editingRoomName}
+                                maxLength={100}
                                 onChange={(e) => setEditingRoomName(e.target.value)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') handleRenameRoom(room)

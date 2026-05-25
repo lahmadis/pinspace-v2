@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
+import { validateName } from '@/lib/validation/safeName'
 
 /** PATCH /api/settings/profile — update display name and/or avatar_url */
 export async function PATCH(req: NextRequest) {
@@ -14,7 +15,16 @@ export async function PATCH(req: NextRequest) {
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
 
     if (typeof body?.full_name === 'string') {
-      updates.full_name = body.full_name.trim() || null
+      // Empty string clears the name; otherwise validate.
+      if (body.full_name.trim() === '') {
+        updates.full_name = null
+      } else {
+        const nameResult = validateName(body.full_name, { maxLength: 80, fieldLabel: 'Display name' })
+        if (!nameResult.ok) {
+          return NextResponse.json({ error: nameResult.error }, { status: 400 })
+        }
+        updates.full_name = nameResult.value
+      }
     }
     if (typeof body?.avatar_url === 'string') {
       updates.avatar_url = body.avatar_url || null

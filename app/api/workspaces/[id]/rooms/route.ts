@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { validateName } from '@/lib/validation/safeName'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,10 +32,11 @@ export async function POST(
 
     const workspaceId = params.id
     const body = await request.json().catch(() => ({}))
-    const rawName = typeof body?.name === 'string' ? body.name.trim() : ''
-    if (!rawName) {
-      return NextResponse.json({ error: 'name required' }, { status: 400 })
+    const nameResult = validateName(body?.name, { maxLength: 100, fieldLabel: 'Room name' })
+    if (!nameResult.ok) {
+      return NextResponse.json({ error: nameResult.error }, { status: 400 })
     }
+    const rawName = nameResult.value
 
     const admin = supabaseServiceRole()
     const { data: workspace, error: wsError } = await admin

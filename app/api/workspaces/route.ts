@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { generateInviteCode } from '@/lib/workspaceUtils'
 import { isInstructorAccount } from '@/lib/auth/getAccountRole'
+import { validateName } from '@/lib/validation/safeName'
 
 // GET: list workspaces owned by or shared with the current user
 export async function GET() {
@@ -114,15 +115,15 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => null)
-    const name = body?.name?.trim()
+    const nameResult = validateName(body?.name, { maxLength: 100, fieldLabel: 'Workspace name' })
+    if (!nameResult.ok) {
+      return NextResponse.json({ error: nameResult.error }, { status: 400 })
+    }
+    const name = nameResult.value
     const description = body?.description?.trim() ?? null
     const type = body?.type || 'class' // 'class' or 'personal'
     const institutionIdFromBody = body?.institution_id ?? null
     const institutionSlugFromBody = body?.institution_slug?.trim() ?? null
-
-    if (!name) {
-      return NextResponse.json({ error: 'Name required' }, { status: 400 })
-    }
 
     // Validate the workspace type before the instructor gate so an unknown
     // value can't slip past it.

@@ -233,6 +233,7 @@ export default function PublishConfirmModal({
             <input
               type="text"
               value={instructor}
+              maxLength={80}
               onChange={(e) => {
                 setInstructor(e.target.value)
                 setErrors(prev => ({ ...prev, instructor: undefined }))

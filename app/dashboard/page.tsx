@@ -287,6 +287,7 @@ function DashboardContent() {
             <input
               type="text"
               value={renamingValue}
+              maxLength={100}
               onChange={(e) => setRenamingValue(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') submitRename()
