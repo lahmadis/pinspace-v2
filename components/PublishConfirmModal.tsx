@@ -19,9 +19,14 @@ interface PublishConfirmModalProps {
 }
 
 const DEPARTMENTS = [
+  'Aerospace Engineering',
   'Architecture',
-  'Interior Design', 
+  'Civil Engineering',
+  'Electrical Engineering',
   'Industrial Design',
+  'Interior Design',
+  'Mechanical Engineering',
+  'Robotics Engineering',
 ]
 
 const YEARS = [

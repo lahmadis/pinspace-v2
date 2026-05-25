@@ -210,7 +210,7 @@ export default function WorkspaceRoomsPage() {
         return {
           ...prev,
           networkMetadata: {
-            department: metadata.department as 'Architecture' | 'Interior Design' | 'Industrial Design',
+            department: metadata.department as 'Aerospace Engineering' | 'Architecture' | 'Civil Engineering' | 'Electrical Engineering' | 'Industrial Design' | 'Interior Design' | 'Mechanical Engineering' | 'Robotics Engineering',
             year: metadata.year as 'Year 1' | 'Year 2' | 'Year 3' | 'Year 4' | 'Year 5' | 'Masters',
           },
           academicYear: metadata.academicYear,

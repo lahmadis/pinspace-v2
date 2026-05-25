@@ -130,7 +130,7 @@ export interface Workspace {
   institution?: Institution
   // Institution categorization (required when isPublic is true)
   networkMetadata?: {
-    department: 'Architecture' | 'Interior Design' | 'Industrial Design'
+    department: 'Aerospace Engineering' | 'Architecture' | 'Civil Engineering' | 'Electrical Engineering' | 'Industrial Design' | 'Interior Design' | 'Mechanical Engineering' | 'Robotics Engineering'
     year: 'Year 1' | 'Year 2' | 'Year 3' | 'Year 4' | 'Year 5' | 'Masters'
   }
   academicYear?: string

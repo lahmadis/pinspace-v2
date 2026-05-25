@@ -2,9 +2,14 @@ import { NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/server'
 
 const DEPARTMENTS = [
+  { name: 'Aerospace Engineering', slug: 'aerospace-engineering' },
   { name: 'Architecture', slug: 'architecture' },
-  { name: 'Interior Design', slug: 'interior-design' },
+  { name: 'Civil Engineering', slug: 'civil-engineering' },
+  { name: 'Electrical Engineering', slug: 'electrical-engineering' },
   { name: 'Industrial Design', slug: 'industrial-design' },
+  { name: 'Interior Design', slug: 'interior-design' },
+  { name: 'Mechanical Engineering', slug: 'mechanical-engineering' },
+  { name: 'Robotics Engineering', slug: 'robotics-engineering' },
 ]
 
 export async function GET() {

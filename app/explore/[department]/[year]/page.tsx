@@ -6,9 +6,14 @@ import { notFound } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
 
 const DEPT_MAP: Record<string, { name: string; color: string; accent: string }> = {
+  'aerospace-engineering': { name: 'Aerospace Engineering', color: '#0ea5e9', accent: 'text-sky-600' },
   'architecture': { name: 'Architecture', color: '#6366f1', accent: 'text-indigo-600' },
-  'interior-design': { name: 'Interior Design', color: '#10b981', accent: 'text-emerald-600' },
+  'civil-engineering': { name: 'Civil Engineering', color: '#14b8a6', accent: 'text-teal-600' },
+  'electrical-engineering': { name: 'Electrical Engineering', color: '#eab308', accent: 'text-yellow-600' },
   'industrial-design': { name: 'Industrial Design', color: '#f59e0b', accent: 'text-orange-600' },
+  'interior-design': { name: 'Interior Design', color: '#10b981', accent: 'text-emerald-600' },
+  'mechanical-engineering': { name: 'Mechanical Engineering', color: '#ef4444', accent: 'text-red-600' },
+  'robotics-engineering': { name: 'Robotics Engineering', color: '#8b5cf6', accent: 'text-violet-600' },
 }
 
 const YEAR_MAP: Record<string, { label: string; num: number }> = {

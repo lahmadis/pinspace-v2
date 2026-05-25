@@ -10,9 +10,14 @@ const YEARS = [
 ]
 
 function slugToDept(slug: string) {
+  if (slug === 'aerospace-engineering') return 'Aerospace Engineering'
   if (slug === 'architecture') return 'Architecture'
-  if (slug === 'interior-design') return 'Interior Design'
+  if (slug === 'civil-engineering') return 'Civil Engineering'
+  if (slug === 'electrical-engineering') return 'Electrical Engineering'
   if (slug === 'industrial-design') return 'Industrial Design'
+  if (slug === 'interior-design') return 'Interior Design'
+  if (slug === 'mechanical-engineering') return 'Mechanical Engineering'
+  if (slug === 'robotics-engineering') return 'Robotics Engineering'
   return null
 }
 
