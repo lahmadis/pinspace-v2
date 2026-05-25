@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase/server'
+import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 
 // GET specific workspace
 export async function GET(
@@ -25,19 +25,20 @@ export async function GET(
 
     const workspaceId = params.id
 
-    // Fetch workspace from Supabase
-    const { data: workspace, error } = await supabase
+    // Read via service role and enforce access in application code. The
+    // workspaces RLS has no membership-based SELECT policy, so a member —
+    // especially one outside the workspace's org (peer-to-peer shared rooms) —
+    // cannot read their own workspace under the user session. Service-role read
+    // plus the explicit owner/member/public/org checks below are the boundary.
+    const admin = supabaseServiceRole()
+    const { data: workspace, error } = await admin
       .from('workspaces')
       .select('*')
       .eq('id', workspaceId)
-      .single()
+      .maybeSingle()
 
     if (error) {
       console.error('Error fetching workspace:', error)
-      if (error.code === 'PGRST116') {
-        // No rows returned
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
-      }
       return NextResponse.json({ error: 'Failed to fetch workspace' }, { status: 500 })
     }
 
@@ -48,7 +49,7 @@ export async function GET(
     // Fetch institution when workspace has institution_id
     let institution: { id: string; name: string; slug: string; network_label?: string } | undefined
     if (workspace.organization_id) {
-      const { data: inst } = await supabase
+      const { data: inst } = await admin
         .from('organizations')
         .select('id, name, slug, network_label')
         .eq('id', workspace.organization_id)
@@ -59,7 +60,7 @@ export async function GET(
     // Fetch rooms in this workspace so settings + rooms-list UI can render
     // without a second round-trip. Ordered by display_order so the UI matches
     // the order owners curated.
-    const { data: roomRows } = await supabase
+    const { data: roomRows } = await admin
       .from('rooms')
       .select('id, name, display_order, is_published, published_at, created_at')
       .eq('workspace_id', workspaceId)
@@ -70,7 +71,7 @@ export async function GET(
     const roomIds = (roomRows ?? []).map((r) => r.id as string)
     const boardCountByRoom = new Map<string, number>()
     if (roomIds.length > 0) {
-      const { data: boardRows } = await supabase
+      const { data: boardRows } = await admin
         .from('boards')
         .select('room_id')
         .in('room_id', roomIds)
@@ -85,7 +86,7 @@ export async function GET(
     const isOwner = workspace.owner_id === userId
 
     // Check membership
-    const { data: membership, error: membershipError } = await supabase
+    const { data: membership, error: membershipError } = await admin
       .from('workspace_members')
       .select('user_id')
       .eq('workspace_id', workspaceId)
@@ -97,13 +98,43 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to verify access' }, { status: 500 })
     }
 
-    if (!isOwner && membership === null) {
+    const isMember = membership !== null
+    const isPublicPublished = workspace.is_public === true && workspace.published_at != null
+
+    // Org members may view their own org's classes (mirrors the old RLS policy).
+    let orgMatchClass = false
+    if (!isOwner && !isMember && !isPublicPublished && workspace.type === 'class' && workspace.organization_id) {
+      const { data: viewerProfile } = await admin
+        .from('user_profiles')
+        .select('organization_id')
+        .eq('user_id', userId)
+        .maybeSingle()
+      orgMatchClass = viewerProfile?.organization_id === workspace.organization_id
+    }
+
+    if (!isOwner && !isMember && !isPublicPublished && !orgMatchClass) {
+      // Shared rooms are joinable by link: tell the client to route the visitor
+      // into the join/prompt flow (the /join/{code} page) instead of erroring.
+      if (workspace.type === 'shared') {
+        if (workspace.invite_code) {
+          return NextResponse.json({
+            canJoin: true,
+            id: workspace.id,
+            name: workspace.name,
+            inviteCode: workspace.invite_code,
+          })
+        }
+        return NextResponse.json(
+          { error: 'This workspace doesn’t have an invite link yet. Ask the owner to share one.' },
+          { status: 403 }
+        )
+      }
       return NextResponse.json({ error: 'Not a member of this workspace' }, { status: 403 })
     }
 
     // Transform to frontend format
     // Fetch all members
-    const { data: members } = await supabase
+    const { data: members } = await admin
       .from('workspace_members')
       .select('*')
       .eq('workspace_id', workspaceId)
