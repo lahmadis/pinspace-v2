@@ -70,6 +70,17 @@ interface StudioRoomProps {
   wallConfig: WallConfig
   onBoardUpdate: () => Promise<void>
   onEditModeChange?: (isEditing: boolean) => void
+  /**
+   * Fires with the wall index the local user is editing (0-based) or null when
+   * they exit. Lets the studio page broadcast the active wall over presence.
+   * Additive to onEditModeChange — both fire on enter/exit.
+   */
+  onEditingWallChange?: (wallIndex: number | null) => void
+  /**
+   * Wall indices currently being edited by OTHER users (from presence). Walls in
+   * this set get a faint highlight in the 3D view. Excludes the local user.
+   */
+  othersEditingWalls?: Set<number>
   /** When provided, floor editor open state is controlled by the parent (e.g. header button). */
   floorEditorOpen?: boolean
   onFloorEditorOpenChange?: (open: boolean) => void
@@ -102,6 +113,7 @@ function SceneContent({
   studioId,
   boards: _boards,
   wallConfig,
+  othersEditingWalls,
   onBoardUpdate: _onBoardUpdate,
   onWallClick,
   onWallHover,
@@ -250,6 +262,7 @@ function SceneContent({
         onWallHover={onWallHover}
         editingWall={editingWall}
         editUIActive={showEditUI}
+        othersEditingWalls={othersEditingWalls}
         onBoardClick={onBoardClick || onCommentClick}
         highlightedBoardId={hoveredBoardId}
         onBoardHover={onBoardHover}
@@ -663,6 +676,12 @@ export default function StudioRoom(props: StudioRoomProps) {
       })
     setPlacedBoards3D(newMap)
   }, [boardPositions, editingWall, editingWallSide, localBoards])
+
+  // Surface the wall the local user is editing (or null on exit) so the studio
+  // page can broadcast it via presence. Additive — onEditModeChange is unchanged.
+  useEffect(() => {
+    props.onEditingWallChange?.(editingWall)
+  }, [editingWall, props.onEditingWallChange])
 
   /**
    * Walls whose board full-image textures have been pre-warmed in this session.

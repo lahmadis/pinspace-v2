@@ -36,6 +36,12 @@ interface WallSystemProps {
    * BoardThumbnails on the wall mounted so there's no empty-wall flicker.
    */
   editUIActive?: boolean
+  /**
+   * Wall indices currently being edited by OTHER users (from presence). Each such
+   * wall gets a faint emissive glow so collaborators can see where others are
+   * working. Excludes the local user's own wall.
+   */
+  othersEditingWalls?: Set<number>
   onBoardClick?: (board: Board) => void
   highlightedBoardId?: string | null
   onBoardHover?: (boardId: string | null) => void
@@ -43,7 +49,7 @@ interface WallSystemProps {
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallClick, onWallHover, editingWall, editUIActive = false, onBoardClick, highlightedBoardId, onBoardHover }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover }: WallSystemProps) {
 
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
   const floorBounds = calculateFloorBounds(wallConfig)
@@ -68,6 +74,8 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
 
       {wallConfig.walls.map((wall, wallIndex) => {
         const transform = getTransform(wallIndex)
+        // Faint glow when another user is editing this wall (presence).
+        const isOthersEditing = othersEditingWalls?.has(wallIndex) ?? false
         // Hide thumbnails on the editing wall ONLY once the edit UI has fully taken over
         // (i.e. DraggableBoards are mounted). During the camera transition we keep the
         // thumbnails mounted so there's no empty-wall flicker.
@@ -110,12 +118,16 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
             {/* Increased thickness for more visible depth */}
             <mesh castShadow receiveShadow renderOrder={0}>
               <boxGeometry args={[transform.width, transform.height, 6]} />
-              <meshStandardMaterial 
+              <meshStandardMaterial
                 color="#D8DEFF" // very light, white-leaning blue for walls
                 roughness={0.85} // Slight sheen for subtle depth
                 metalness={0.0}
                 depthWrite={true}
                 depthTest={true}
+                // Presence highlight: soft brand-violet glow on walls another
+                // user is editing. Black/0 = no glow (default). Tunable.
+                emissive={isOthersEditing ? '#6366f1' : '#000000'}
+                emissiveIntensity={isOthersEditing ? 0.45 : 0}
               />
             </mesh>
 

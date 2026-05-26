@@ -10,6 +10,8 @@
 export interface PresentUser {
   userId: string
   fullName: string
+  /** Wall index this user is currently editing (0-based), or null when not in a wall. */
+  wallIndex?: number | null
 }
 
 /** Deterministic avatar color from a user id, so a given user is always the same hue. */

@@ -1,7 +1,7 @@
 'use client'
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { Board } from '@/types'
@@ -118,6 +118,17 @@ export default function StudioPage() {
   // Tier 1 presence: other members currently in this room (self excluded in the bar).
   const [presentUsers, setPresentUsers] = useState<PresentUser[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  // Wall the local user is editing (0-based) or null. Broadcast via presence so
+  // others' walls can be highlighted. Ref mirror so the presence subscribe/track
+  // callbacks read the latest value without re-subscribing.
+  const [currentWallIndex, setCurrentWallIndex] = useState<number | null>(null)
+  const currentWallIndexRef = useRef<number | null>(null)
+  currentWallIndexRef.current = currentWallIndex
+  // Presence channel + identity, hoisted so the re-track effect can update the
+  // user's wall meta without tearing down and re-subscribing the channel.
+  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const presenceMetaRef = useRef<{ userId: string; fullName: string } | null>(null)
+  const presenceSubscribedRef = useRef(false)
 
   const isDemo = searchParams?.get('demo') === 'true'
 
@@ -483,8 +494,8 @@ export default function StudioPage() {
   // boards reconnect/retry budget. Keyed by roomId so each room has its own set.
   useEffect(() => {
     if (isDemo || !roomId) return
-    let channel: ReturnType<typeof supabase.channel> | null = null
     let cancelled = false
+    presenceSubscribedRef.current = false
 
     ;(async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -496,32 +507,73 @@ export default function StudioPage() {
         user.email ||
         'Someone'
       setCurrentUserId(user.id)
+      presenceMetaRef.current = { userId: user.id, fullName }
 
-      channel = supabase.channel(`studio-presence:${roomId}`, {
+      const channel = supabase.channel(`studio-presence:${roomId}`, {
         config: { presence: { key: user.id } },
       })
+      presenceChannelRef.current = channel
       channel
         .on('presence', { event: 'sync' }, () => {
-          if (!channel) return
-          const state = channel.presenceState() as Record<string, Array<{ userId?: string; fullName?: string }>>
+          const state = channel.presenceState() as Record<
+            string,
+            Array<{ userId?: string; fullName?: string; currentWallIndex?: number | null }>
+          >
           const flat: PresentUser[] = Object.values(state)
             .flat()
-            .map((m) => ({ userId: m.userId ?? '', fullName: m.fullName ?? 'Someone' }))
+            .map((m) => ({
+              userId: m.userId ?? '',
+              fullName: m.fullName ?? 'Someone',
+              wallIndex: m.currentWallIndex ?? null,
+            }))
           setPresentUsers(flat)
         })
         .subscribe(async (status: string) => {
-          if (status === 'SUBSCRIBED' && channel) {
-            await channel.track({ userId: user.id, fullName, joinedAt: Date.now() })
+          if (status === 'SUBSCRIBED') {
+            presenceSubscribedRef.current = true
+            // Track with the latest wall (read from ref to avoid a stale closure).
+            await channel.track({
+              userId: user.id,
+              fullName,
+              joinedAt: Date.now(),
+              currentWallIndex: currentWallIndexRef.current,
+            })
           }
         })
     })()
 
     return () => {
       cancelled = true
-      if (channel) supabase.removeChannel(channel)
+      presenceSubscribedRef.current = false
+      const ch = presenceChannelRef.current
+      if (ch) supabase.removeChannel(ch)
+      presenceChannelRef.current = null
+      presenceMetaRef.current = null
       setPresentUsers([])
     }
   }, [roomId, isDemo])
+
+  // Re-broadcast the local user's active wall when it changes — updates presence
+  // meta in place (no re-subscribe). Guarded on SUBSCRIBED; the subscribe handler
+  // sends the initial value.
+  useEffect(() => {
+    if (isDemo) return
+    const ch = presenceChannelRef.current
+    const meta = presenceMetaRef.current
+    if (!ch || !meta || !presenceSubscribedRef.current) return
+    ch.track({ ...meta, joinedAt: Date.now(), currentWallIndex })
+  }, [currentWallIndex, isDemo])
+
+  // Walls currently occupied by OTHER users (exclude self) — drives the 3D highlight.
+  const othersEditingWalls = useMemo(() => {
+    const s = new Set<number>()
+    for (const u of presentUsers) {
+      if (u.userId && u.userId !== currentUserId && typeof u.wallIndex === 'number') {
+        s.add(u.wallIndex)
+      }
+    }
+    return s
+  }, [presentUsers, currentUserId])
 
   const handleReconfigureWalls = () => {
     setFloorEditorMode('walls')
@@ -751,6 +803,8 @@ export default function StudioPage() {
             currentUserRole={currentUserRole}
             wallVersionRef={wallVersionRef}
             onWallConfigConflict={handleWallConfigConflict}
+            onEditingWallChange={setCurrentWallIndex}
+            othersEditingWalls={othersEditingWalls}
             onWallConfigChange={(config) => {
               setWallConfig(config)
               persistWallConfig(config)
