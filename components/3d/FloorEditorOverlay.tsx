@@ -326,7 +326,12 @@ export default function FloorEditorOverlay({
         const dy = e.clientY - rotateStart.centerClientY
         const currentAngle = Math.atan2(dy, dx)
         const delta = wrapAngle(currentAngle - rotateStart.initialAngleFromCenter)
-        let newRotationY = rotateStart.initialRotationY - delta
+        // +delta (not −delta): under the corrected width-axis convention the
+        // visible wall long-axis rotates with screen-angle = +rotationY, so an
+        // increasing cursor angle (clockwise drag, screen y-down) must increase
+        // rotationY for the wall to follow the cursor. The old −delta was tuned
+        // to the pre-fix mirrored rendering and inverted rotation after the flip.
+        let newRotationY = rotateStart.initialRotationY + delta
 
         if (e.shiftKey) {
           // Shift: 90° snap regardless of snapOn
