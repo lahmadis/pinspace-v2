@@ -1,0 +1,12 @@
+-- 024: Restore Realtime postgres_changes for the comments table.
+--
+-- Same publication drift as 023 (boards): the supabase_realtime publication had
+-- drifted to zero user tables, so postgres_changes emitted no events for
+-- comments. Effect: the studio comment panel (studio-comments channel, which
+-- bumps a refetch nonce on any comment insert/update/delete) never updated live
+-- for other users in the room. Re-add comments to the publication.
+--
+-- No REPLICA IDENTITY FULL: the studio-comments subscription is unfiltered
+-- (no room_id/workspace_id filter), so the filtered-DELETE issue that motivated
+-- FULL on boards (023) does not apply here.
+ALTER PUBLICATION supabase_realtime ADD TABLE public.comments;
