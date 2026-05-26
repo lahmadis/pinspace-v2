@@ -283,9 +283,10 @@ export default function FloorEditorOverlay({
         const cos = Math.cos(t.rotationY)
         const sin = Math.sin(t.rotationY)
         const halfW = t.width / 2
+        // Width axis matches Three.js Ry(θ): (+cosθ, −sinθ).
         return [
-          { wallIndex: i, end: 'start' as const, x: t.x - halfW * cos, z: t.z - halfW * sin },
-          { wallIndex: i, end: 'end' as const, x: t.x + halfW * cos, z: t.z + halfW * sin },
+          { wallIndex: i, end: 'start' as const, x: t.x - halfW * cos, z: t.z + halfW * sin },
+          { wallIndex: i, end: 'end' as const, x: t.x + halfW * cos, z: t.z - halfW * sin },
         ]
       })
     },
@@ -499,8 +500,9 @@ export default function FloorEditorOverlay({
       e.stopPropagation()
       if (!onWallConfigChange) return
       const transform = getWallTransformResolved(wallConfig, index)
+      // Width axis matches Three.js Ry(θ): (+cosθ, −sinθ).
       const axisX = Math.cos(transform.rotationY)
-      const axisZ = Math.sin(transform.rotationY)
+      const axisZ = -Math.sin(transform.rotationY)
       setStretchingWallIndex(index)
       setStretchStart({
         end,
@@ -550,12 +552,15 @@ export default function FloorEditorOverlay({
     const sin = Math.sin(transform.rotationY)
 
     // 4 corners of the wall rectangle in world space.
-    // Depth direction uses Three.js Ry(θ) convention: local +Z → (+sinθ, +cosθ) in world XZ.
+    // Both axes follow Three.js Ry(θ): width (local +X) → (+cosθ, −sinθ),
+    // depth (local +Z) → (+sinθ, +cosθ). The width z-term is −sinθ so the 2D
+    // plan matches the 3D mesh exactly (previously +sinθ, which mirrored and
+    // skewed rotated walls).
     const worldCorners = [
-      [transform.x - halfW * cos - halfD * sin, transform.z - halfW * sin - halfD * cos], // 0: start-back
-      [transform.x + halfW * cos - halfD * sin, transform.z + halfW * sin - halfD * cos], // 1: end-back
-      [transform.x + halfW * cos + halfD * sin, transform.z + halfW * sin + halfD * cos], // 2: end-front
-      [transform.x - halfW * cos + halfD * sin, transform.z - halfW * sin + halfD * cos], // 3: start-front
+      [transform.x - halfW * cos - halfD * sin, transform.z + halfW * sin - halfD * cos], // 0: start-back
+      [transform.x + halfW * cos - halfD * sin, transform.z - halfW * sin - halfD * cos], // 1: end-back
+      [transform.x + halfW * cos + halfD * sin, transform.z - halfW * sin + halfD * cos], // 2: end-front
+      [transform.x - halfW * cos + halfD * sin, transform.z + halfW * sin + halfD * cos], // 3: start-front
     ]
     const screenCorners = worldCorners.map(([x, z]) => worldToScreen(x, z, bounds))
     const points = screenCorners.flat()
@@ -567,10 +572,11 @@ export default function FloorEditorOverlay({
     ]
 
     // Endpoints (midpoints of short ends): start = midpoint(0,3), end = midpoint(1,2)
+    // Width axis matches Three.js: (+cosθ, −sinθ).
     const startX = transform.x - halfW * cos
-    const startZ = transform.z - halfW * sin
+    const startZ = transform.z + halfW * sin
     const endX = transform.x + halfW * cos
-    const endZ = transform.z + halfW * sin
+    const endZ = transform.z - halfW * sin
     const [startPx, startPy] = worldToScreen(startX, startZ, bounds)
     const [endPx, endPy] = worldToScreen(endX, endZ, bounds)
 
@@ -777,11 +783,12 @@ export default function FloorEditorOverlay({
                 const halfD = 3
                 const cos = Math.cos(transform.rotationY)
                 const sin = Math.sin(transform.rotationY)
+                // Width axis matches Three.js Ry(θ): (+cosθ, −sinθ) — same as the live corner math.
                 const snappedCorners = [
-                  [ghostWallPos.x - halfW * cos - halfD * sin, ghostWallPos.z - halfW * sin - halfD * cos],
-                  [ghostWallPos.x + halfW * cos - halfD * sin, ghostWallPos.z + halfW * sin - halfD * cos],
-                  [ghostWallPos.x + halfW * cos + halfD * sin, ghostWallPos.z + halfW * sin + halfD * cos],
-                  [ghostWallPos.x - halfW * cos + halfD * sin, ghostWallPos.z - halfW * sin + halfD * cos],
+                  [ghostWallPos.x - halfW * cos - halfD * sin, ghostWallPos.z + halfW * sin - halfD * cos],
+                  [ghostWallPos.x + halfW * cos - halfD * sin, ghostWallPos.z - halfW * sin - halfD * cos],
+                  [ghostWallPos.x + halfW * cos + halfD * sin, ghostWallPos.z - halfW * sin + halfD * cos],
+                  [ghostWallPos.x - halfW * cos + halfD * sin, ghostWallPos.z + halfW * sin + halfD * cos],
                 ]
                 const ghostPoints = snappedCorners.map(([x, z]) => worldToScreen(x, z, bounds)).flat()
                 return (
