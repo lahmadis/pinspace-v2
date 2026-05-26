@@ -4,7 +4,17 @@ import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 const CONFIG_BUCKET = 'board-images'
 const CONFIG_PREFIX = 'wall-configs'
 
-async function readConfigFromStorage(id: string): Promise<unknown> {
+/**
+ * The stored blob is `{ version, ...config }`. `version` is an integer bumped
+ * on every successful write so concurrent editors can detect a stale save
+ * (optimistic concurrency). Blobs written before versioning have no `version`
+ * field — we read them as version 0 and the next save bumps to 1. The version
+ * lives inside the same JSON object (Tier 2 decision: embed in blob, no DB
+ * table, accept the tiny read-then-write TOCTOU race for the pilot).
+ */
+type StoredConfig = { version: number; config: Record<string, unknown> }
+
+async function readConfigFromStorage(id: string): Promise<StoredConfig | null> {
   try {
     const db = supabaseServiceRole()
     const filePath = `${CONFIG_PREFIX}/${id}.json`
@@ -12,17 +22,28 @@ async function readConfigFromStorage(id: string): Promise<unknown> {
     if (error || !data) return null
     const raw = await data.text()
     if (!raw) return null
-    return JSON.parse(raw)
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      // Strip `version` back out so it never leaks into the config the client
+      // renders / re-sends. Missing or non-numeric → version 0 (legacy blob).
+      const { version, ...config } = parsed as Record<string, unknown>
+      const v = typeof version === 'number' && Number.isFinite(version) ? version : 0
+      return { version: v, config }
+    }
+    return { version: 0, config: {} }
   } catch (err) {
     console.warn('Storage wall-config read skipped:', err)
     return null
   }
 }
 
-async function writeConfigToStorage(id: string, config: unknown): Promise<void> {
+async function writeConfigToStorage(id: string, config: unknown, version: number): Promise<void> {
   const db = supabaseServiceRole()
   const filePath = `${CONFIG_PREFIX}/${id}.json`
-  const payload = Buffer.from(JSON.stringify(config), 'utf-8')
+  // Spread config first so the authoritative `version` always wins, even if a
+  // stale `version` rode in on the client's config payload.
+  const blob = { ...(config as Record<string, unknown>), version }
+  const payload = Buffer.from(JSON.stringify(blob), 'utf-8')
   const { error } = await db.storage.from(CONFIG_BUCKET).upload(filePath, payload, {
     upsert: true,
     contentType: 'application/json',
@@ -33,7 +54,7 @@ async function writeConfigToStorage(id: string, config: unknown): Promise<void> 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const { id } = params
 
-  // Sample studios get a static default zigzag config.
+  // Sample studios get a static default zigzag config (read-only, never POSTed).
   if (id.startsWith('sample-studio-')) {
     const defaultConfig = {
       layoutType: 'zigzag',
@@ -45,14 +66,14 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
         { height: 10, width: 20 },
       ]
     }
-    return NextResponse.json({ exists: true, config: defaultConfig }, { status: 200 })
+    return NextResponse.json({ exists: true, config: defaultConfig, version: 0 }, { status: 200 })
   }
 
-  const storageConfig = await readConfigFromStorage(id)
-  if (storageConfig) {
-    return NextResponse.json({ exists: true, config: storageConfig }, { status: 200 })
+  const stored = await readConfigFromStorage(id)
+  if (stored) {
+    return NextResponse.json({ exists: true, config: stored.config, version: stored.version }, { status: 200 })
   }
-  return NextResponse.json({ exists: false, config: null }, { status: 200 })
+  return NextResponse.json({ exists: false, config: null, version: 0 }, { status: 200 })
 }
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
@@ -72,8 +93,32 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   try {
     const body = await request.json()
-    await writeConfigToStorage(id, body)
-    return NextResponse.json({ success: true })
+    // Envelope is `{ baseVersion, config }`. A bare config body (no envelope)
+    // is treated as baseVersion 0 for backward compatibility.
+    const hasEnvelope =
+      body && typeof body === 'object' && !Array.isArray(body) && 'config' in body && 'baseVersion' in body
+    const incomingConfig = hasEnvelope ? body.config : body
+    const baseVersion =
+      hasEnvelope && typeof body.baseVersion === 'number' && Number.isFinite(body.baseVersion)
+        ? body.baseVersion
+        : 0
+
+    const current = await readConfigFromStorage(id)
+    const currentVersion = current?.version ?? 0
+
+    // Stale write: the client's base is behind what's stored. Reject with 409
+    // and hand back the latest (config + version) so the client can reload in a
+    // single roundtrip instead of silently clobbering another user's changes.
+    if (current && baseVersion !== currentVersion) {
+      return NextResponse.json(
+        { error: 'stale', latest: { ...current.config, version: currentVersion } },
+        { status: 409 }
+      )
+    }
+
+    const nextVersion = currentVersion + 1
+    await writeConfigToStorage(id, incomingConfig, nextVersion)
+    return NextResponse.json({ success: true, version: nextVersion })
   } catch (err) {
     console.error('Failed to save wall config:', err)
     return NextResponse.json({ success: false, error: 'Failed to save wall config' }, { status: 500 })

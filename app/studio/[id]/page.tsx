@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { Board } from '@/types'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
+import PresenceBar, { type PresentUser } from '@/components/3d/PresenceBar'
 import { ArrowLeft, Share2, Settings, Box, ChevronDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
@@ -114,8 +115,17 @@ export default function StudioPage() {
   const [allRooms, setAllRooms] = useState<Array<{ id: string; name: string }>>([])
   const [showRoomSwitcher, setShowRoomSwitcher] = useState(false)
   const [currentUserRole, setCurrentUserRole] = useState<'instructor' | 'student' | null>(null)
+  // Tier 1 presence: other members currently in this room (self excluded in the bar).
+  const [presentUsers, setPresentUsers] = useState<PresentUser[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   const isDemo = searchParams?.get('demo') === 'true'
+
+  // Tier 2 optimistic-concurrency: the version the local wallConfig is based on.
+  // A ref (not state) so save callbacks always read the freshest value without
+  // re-creating and without stale-closure risk. Bumped on every successful save;
+  // adopted from the server on load and on a 409 reload.
+  const wallVersionRef = useRef<number>(0)
 
   // Clear stale wall config whenever the room changes so the previous room's
   // layout is never visible while the new room's config is loading.
@@ -168,22 +178,46 @@ export default function StudioPage() {
     }
   }, [studioId, workspaceId])
 
+  // 409 handler: a save was rejected as stale. Adopt the server's latest config
+  // (strip the embedded version back out so wallConfig stays clean), update the
+  // base version, and tell the user their unsaved changes were discarded.
+  const handleWallConfigConflict = useCallback(
+    (latest: Record<string, unknown> & { version?: number }) => {
+      const { version, ...config } = latest
+      if (typeof version === 'number') wallVersionRef.current = version
+      const nextConfig = config as unknown as WallConfig
+      setWallConfig(nextConfig)
+      cacheWallConfigLocally(nextConfig)
+      toast.error("Room layout was updated by another user. Reloaded latest — your changes weren't saved.")
+    },
+    [cacheWallConfigLocally]
+  )
+
   const flushWallConfig = useCallback(async () => {
     const config = wallPersistLatestRef.current
     if (!config) return
     wallPersistLatestRef.current = null
     const wsKey = workspaceId ?? studioId
     try {
-      await fetch(`/api/studios/${wsKey}/wall-config`, {
+      const res = await fetch(`/api/studios/${wsKey}/wall-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+        body: JSON.stringify({ baseVersion: wallVersionRef.current, config }),
       })
-      cacheWallConfigLocally(config)
+      if (res.status === 409) {
+        const data = await res.json().catch(() => ({} as { latest?: Record<string, unknown> & { version?: number } }))
+        if (data.latest) handleWallConfigConflict(data.latest)
+        return
+      }
+      if (res.ok) {
+        const data = await res.json().catch(() => ({} as { version?: number }))
+        if (typeof data.version === 'number') wallVersionRef.current = data.version
+        cacheWallConfigLocally(config)
+      }
     } catch (e) {
       console.error('Failed to save wall config', e)
     }
-  }, [studioId, workspaceId, cacheWallConfigLocally])
+  }, [studioId, workspaceId, cacheWallConfigLocally, handleWallConfigConflict])
 
   const persistWallConfig = useCallback((config: WallConfig) => {
     wallPersistLatestRef.current = config
@@ -283,6 +317,9 @@ export default function StudioPage() {
           const resConfig = await fetch(`/api/studios/${wallConfigWsId}/wall-config`, { signal })
           if (resConfig.ok) {
             const data = await resConfig.json()
+            // Capture the base version so the first save sends the right
+            // baseVersion. Falls back to 0 (legacy blob / localStorage path).
+            if (typeof data?.version === 'number') wallVersionRef.current = data.version
             if (data?.config) {
               loadedConfig = data.config
             }
@@ -307,12 +344,26 @@ export default function StudioPage() {
           // First entry: silently persist defaults so subsequent loads just read them.
           setWallConfig(DEFAULT_CONFIG)
           try {
-            await fetch(`/api/studios/${wallConfigWsId}/wall-config`, {
+            const res = await fetch(`/api/studios/${wallConfigWsId}/wall-config`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(DEFAULT_CONFIG),
+              body: JSON.stringify({ baseVersion: 0, config: DEFAULT_CONFIG }),
               signal,
             })
+            if (res.status === 409) {
+              // Another user created this room's config first (simultaneous
+              // first-entry). Silently adopt theirs — no toast: nobody made a
+              // real edit yet, and both wrote identical defaults anyway.
+              const data = await res.json().catch(() => ({} as { latest?: Record<string, unknown> & { version?: number } }))
+              if (data.latest) {
+                const { version, ...cfg } = data.latest
+                if (typeof version === 'number') wallVersionRef.current = version
+                setWallConfig(cfg as unknown as WallConfig)
+              }
+            } else if (res.ok) {
+              const data = await res.json().catch(() => ({} as { version?: number }))
+              if (typeof data.version === 'number') wallVersionRef.current = data.version
+            }
           } catch (e) {
             if (!signal.aborted) console.warn('Failed to persist default wall config', e)
           }
@@ -427,6 +478,51 @@ export default function StudioPage() {
     }
   }, [studioId, isDemo, retryCount, roomId])
 
+  // Tier 1 presence: track this user on a per-room channel and read who else is
+  // here. Separate from the boards channel so the userlist isn't coupled to the
+  // boards reconnect/retry budget. Keyed by roomId so each room has its own set.
+  useEffect(() => {
+    if (isDemo || !roomId) return
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    let cancelled = false
+
+    ;(async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      const user = session?.user
+      if (!user || cancelled) return
+      const fullName =
+        (user.user_metadata?.full_name as string | undefined) ||
+        (user.user_metadata?.name as string | undefined) ||
+        user.email ||
+        'Someone'
+      setCurrentUserId(user.id)
+
+      channel = supabase.channel(`studio-presence:${roomId}`, {
+        config: { presence: { key: user.id } },
+      })
+      channel
+        .on('presence', { event: 'sync' }, () => {
+          if (!channel) return
+          const state = channel.presenceState() as Record<string, Array<{ userId?: string; fullName?: string }>>
+          const flat: PresentUser[] = Object.values(state)
+            .flat()
+            .map((m) => ({ userId: m.userId ?? '', fullName: m.fullName ?? 'Someone' }))
+          setPresentUsers(flat)
+        })
+        .subscribe(async (status: string) => {
+          if (status === 'SUBSCRIBED' && channel) {
+            await channel.track({ userId: user.id, fullName, joinedAt: Date.now() })
+          }
+        })
+    })()
+
+    return () => {
+      cancelled = true
+      if (channel) supabase.removeChannel(channel)
+      setPresentUsers([])
+    }
+  }, [roomId, isDemo])
+
   const handleReconfigureWalls = () => {
     setFloorEditorMode('walls')
     setFloorEditorOpen(true)
@@ -484,6 +580,7 @@ export default function StudioPage() {
   return (
     <>
       <DemoBanner />
+      {!isDemo && <PresenceBar users={presentUsers} currentUserId={currentUserId} />}
       {/* Archive banner */}
       {isArchived && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-indigo-600 text-white text-sm font-medium text-center py-2 px-4">
@@ -652,6 +749,8 @@ export default function StudioPage() {
             isArchived={isArchived}
             commentNonce={commentNonce}
             currentUserRole={currentUserRole}
+            wallVersionRef={wallVersionRef}
+            onWallConfigConflict={handleWallConfigConflict}
             onWallConfigChange={(config) => {
               setWallConfig(config)
               persistWallConfig(config)

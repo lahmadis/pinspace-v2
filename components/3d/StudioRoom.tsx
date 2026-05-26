@@ -83,6 +83,19 @@ interface StudioRoomProps {
   commentNonce?: number
   /** Current authenticated user's role in this workspace. */
   currentUserRole?: 'instructor' | 'student' | null
+  /**
+   * Tier 2 optimistic-concurrency: shared mutable base version the wall-config
+   * blob is based on. Read when POSTing a floor/wall save; bumped on success.
+   * Owned by the studio page so the geometry-drag path and the floor-editor
+   * path share one version.
+   */
+  wallVersionRef?: React.MutableRefObject<number>
+  /**
+   * Called with the server's latest config (incl. embedded `version`) when a
+   * wall-config save is rejected as stale (409). The parent reloads local state
+   * and shows the conflict toast.
+   */
+  onWallConfigConflict?: (latest: Record<string, unknown> & { version?: number }) => void
 }
 
 function SceneContent({
@@ -583,26 +596,37 @@ export default function StudioRoom(props: StudioRoomProps) {
         // Local cache is best-effort only; API save remains source of truth.
       }
     }
-    const savePayload = JSON.stringify(payload)
-    const saveOnce = async () => {
+    // Tier 2: send the version this layout is based on. A 409 means another
+    // user changed the room first — don't retry (it isn't transient); hand the
+    // latest back to the parent to reload + toast.
+    const savePayload = JSON.stringify({ baseVersion: props.wallVersionRef?.current ?? 0, config: payload })
+    const saveOnce = async (): Promise<'ok' | 'conflict'> => {
       const res = await fetch(`/api/studios/${wsKey}/wall-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         keepalive: true,
         body: savePayload,
       })
+      if (res.status === 409) {
+        const data = await res.json().catch(() => ({} as { latest?: Record<string, unknown> & { version?: number } }))
+        if (data.latest && props.onWallConfigConflict) props.onWallConfigConflict(data.latest)
+        return 'conflict'
+      }
       if (!res.ok) {
         const data = await res.json().catch(() => ({} as { error?: string }))
         throw new Error(data.error || `HTTP ${res.status}`)
       }
+      const data = await res.json().catch(() => ({} as { version?: number }))
+      if (typeof data.version === 'number' && props.wallVersionRef) props.wallVersionRef.current = data.version
+      return 'ok'
     }
 
     ;(async () => {
       try {
-        await saveOnce()
+        if ((await saveOnce()) === 'conflict') return
       } catch (firstError) {
         try {
-          await saveOnce()
+          if ((await saveOnce()) === 'conflict') return
         } catch (secondError) {
           console.error('Failed to save floor/wall config', { firstError, secondError })
           const message = secondError instanceof Error ? secondError.message : 'Please try again.'
@@ -610,7 +634,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         }
       }
     })()
-  }, [props.studioId, props.workspaceId, props.wallConfig, tables])
+  }, [props.studioId, props.workspaceId, props.wallConfig, props.wallVersionRef, props.onWallConfigConflict, tables])
 
   // Keep placedBoards3D in sync with boardPositions (e.g. after undo/redo)
   useEffect(() => {
