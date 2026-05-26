@@ -185,35 +185,35 @@ function scopeConfig(
   organization: { name: string; slug: string } | null,
   institutionHome: string | null,
 ): ScopeCfg {
-  const noun = accountMode === 'firm' ? 'Room' : 'Class'
+  const noun = accountMode === 'firm' ? 'Project' : 'Class'
   switch (scope) {
     case 'wentworth':
       return {
-        title: organization?.name || (accountMode === 'firm' ? 'Firm Rooms' : 'Network'),
+        title: organization?.name || (accountMode === 'firm' ? 'Firm Projects' : 'Network'),
         newLabel: `New ${noun}`,
         newHref: withInstitution('/workspace/new', institutionHome),
         emptyTitle: `No ${noun.toLowerCase()}s yet`,
         emptySubtext: accountMode === 'firm'
-          ? 'Create a firm room or join one with an invite code.'
+          ? 'Create a firm project or join one with an invite code.'
           : 'Create a class or join one with an invite code.',
         showJoin: true,
       }
     case 'shared':
       return {
-        title: 'Shared Rooms',
-        newLabel: 'New Shared Room',
+        title: 'Shared Projects',
+        newLabel: 'New Shared Project',
         newHref: '/workspace/new?type=shared',
-        emptyTitle: 'No shared rooms yet',
-        emptySubtext: 'Rooms you collaborate on with others will appear here.',
+        emptyTitle: 'No shared projects yet',
+        emptySubtext: 'Projects you collaborate on with others will appear here.',
         showJoin: true,
       }
     case 'personal':
       return {
-        title: 'Personal Rooms',
-        newLabel: 'New Personal Room',
+        title: 'Personal Projects',
+        newLabel: 'New Personal Project',
         newHref: withInstitution('/studio/new', institutionHome),
-        emptyTitle: 'No personal rooms yet',
-        emptySubtext: 'Create your first room to get started.',
+        emptyTitle: 'No personal projects yet',
+        emptySubtext: 'Create your first project to get started.',
         showJoin: false,
       }
   }

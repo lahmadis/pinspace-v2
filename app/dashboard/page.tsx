@@ -161,7 +161,7 @@ function DashboardContent() {
       const res = await fetch(`/api/workspaces/${confirmDeleteId}`, { method: 'DELETE' })
       if (res.ok) {
         await fetchUserStudios()
-        toast.success('Room deleted')
+        toast.success('Project deleted')
       } else {
         const err = await res.json()
         toast.error(`Failed to delete: ${err.error || 'Unknown error'}`)
@@ -189,7 +189,7 @@ function DashboardContent() {
       })
       if (res.ok) {
         await fetchUserStudios()
-        toast.success('Room renamed')
+        toast.success('Project renamed')
       } else {
         const err = await res.json()
         toast.error(`Failed to rename: ${err.error || 'Unknown error'}`)
@@ -230,7 +230,7 @@ function DashboardContent() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-sm px-6">
-          <p className="text-gray-900 font-semibold mb-2">Failed to load your rooms</p>
+          <p className="text-gray-900 font-semibold mb-2">Failed to load your projects</p>
           <p className="text-gray-500 text-sm mb-4">Check your connection and try again.</p>
           <button
             onClick={() => { setFetchError(false); fetchUserStudios() }}
@@ -283,7 +283,7 @@ function DashboardContent() {
       {renamingId && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Rename Room</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Rename Project</h3>
             <input
               type="text"
               value={renamingValue}
@@ -318,7 +318,7 @@ function DashboardContent() {
       {confirmDeleteId && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Room?</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Project?</h3>
             <p className="text-sm text-gray-600 mb-6">
               <strong>&ldquo;{confirmDeleteName}&rdquo;</strong> and all its boards will be permanently deleted. This cannot be undone.
             </p>
