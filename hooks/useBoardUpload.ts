@@ -6,6 +6,7 @@ import { generateOwnerColor } from '@/lib/ownerColors'
 import { toast } from '@/lib/toast'
 import { loadTexture } from '@/components/3d/useBoardTexture'
 import { useDirectUpload, type DirectUploadResult, type DirectUploadOptions } from '@/lib/useDirectUpload'
+import { MAX_IMAGE_SIZE_BYTES } from '@/lib/uploadLimits'
 
 interface UploadOptions {
   /**
@@ -678,7 +679,6 @@ export const useBoardUpload = (options: UploadOptions) => {
     input.accept = '.jpg,.jpeg,.png,.pdf'
     input.multiple = true
     
-    const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB (must match API)
     input.onchange = async (e) => {
       const files = Array.from((e.target as HTMLInputElement).files || [])
       if (files.length === 0) return
@@ -693,13 +693,13 @@ export const useBoardUpload = (options: UploadOptions) => {
           failCount++
           continue
         }
-        if (file.size > MAX_FILE_SIZE) {
+        if (file.size > MAX_IMAGE_SIZE_BYTES) {
           const mb = (file.size / (1024 * 1024)).toFixed(1)
           oversized.push(`${file.name} (${mb} MB)`)
           failCount++
           continue
         }
-        
+
         try {
           if (file.type === 'application/pdf') {
             const result = await uploadPDF(file, options, upload)
@@ -726,7 +726,7 @@ export const useBoardUpload = (options: UploadOptions) => {
       await options.onBoardUpdate()
 
       if (oversized.length > 0) {
-        toast.error(`These files are too large (max 50 MB):\n${oversized.join('\n')}`)
+        toast.error(`These files are too large (max 75 MB):\n${oversized.join('\n')}`)
       }
       const totalAttempted = successCount + failCount
       if (totalAttempted > 1 && successCount > 0 && failCount > 0) {
@@ -743,10 +743,9 @@ export const useBoardUpload = (options: UploadOptions) => {
   const uploadFileDirect = async (file: File): Promise<boolean> => {
     const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png']
     if (!validImageTypes.includes(file.type)) return false
-    const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
-    if (file.size > MAX_FILE_SIZE) {
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
       const mb = (file.size / (1024 * 1024)).toFixed(1)
-      toast.error(`${file.name} is too large (${mb} MB). Maximum size is 50 MB.`)
+      toast.error(`${file.name} is too large (${mb} MB). Maximum size is 75 MB.`)
       return false
     }
     try {
@@ -761,14 +760,13 @@ export const useBoardUpload = (options: UploadOptions) => {
   /** Upload multiple files (e.g. from drag-and-drop). Supports images + PDFs. */
   const uploadFilesDirect = async (files: File[]): Promise<void> => {
     const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
-    const MAX_FILE_SIZE = 50 * 1024 * 1024
     let successCount = 0
     let failCount = 0
     const oversized: string[] = []
 
     for (const file of files) {
       if (!validTypes.includes(file.type)) { failCount++; continue }
-      if (file.size > MAX_FILE_SIZE) {
+      if (file.size > MAX_IMAGE_SIZE_BYTES) {
         const mb = (file.size / (1024 * 1024)).toFixed(1)
         oversized.push(`${file.name} (${mb} MB)`)
         failCount++
@@ -788,7 +786,7 @@ export const useBoardUpload = (options: UploadOptions) => {
     await options.onBoardUpdate()
 
     if (oversized.length > 0) {
-      toast.error(`Files too large (max 50 MB):\n${oversized.join('\n')}`)
+      toast.error(`Files too large (max 75 MB):\n${oversized.join('\n')}`)
     }
     const totalAttempted = successCount + failCount
     if (totalAttempted > 1 && successCount > 0 && failCount > 0) {

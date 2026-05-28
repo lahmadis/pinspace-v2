@@ -3,10 +3,8 @@
 import { useState, useCallback } from 'react'
 import imageCompression from 'browser-image-compression'
 import { supabase } from '@/lib/supabase/client'
-import { MAX_MODEL_SIZE_BYTES, SUPPORTED_MODEL_EXTENSIONS } from '@/lib/uploadLimits'
+import { MAX_IMAGE_SIZE_BYTES, MAX_MODEL_SIZE_BYTES, SUPPORTED_MODEL_EXTENSIONS } from '@/lib/uploadLimits'
 
-// P3.5 TODO: move these to lib/uploadLimits.ts
-const MAX_IMAGE_SIZE_BYTES = 50 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'] as const
 const ALLOWED_DOCUMENT_TYPES = ['application/pdf'] as const
 
