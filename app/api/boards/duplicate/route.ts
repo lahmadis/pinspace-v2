@@ -123,6 +123,8 @@ export async function POST(request: NextRequest) {
       aspect_ratio: source.aspect_ratio,
       physical_width: source.physical_width,
       physical_height: source.physical_height,
+      board_width_in: source.board_width_in,
+      board_height_in: source.board_height_in,
     }
 
     const admin = supabaseServiceRole()
@@ -165,6 +167,8 @@ export async function POST(request: NextRequest) {
       aspectRatio: saved.aspect_ratio != null ? parseFloat(saved.aspect_ratio) : undefined,
       physicalWidth: saved.physical_width,
       physicalHeight: saved.physical_height,
+      boardWidthIn: saved.board_width_in != null ? Number(saved.board_width_in) : undefined,
+      boardHeightIn: saved.board_height_in != null ? Number(saved.board_height_in) : undefined,
     }
 
     return NextResponse.json({ success: true, board })

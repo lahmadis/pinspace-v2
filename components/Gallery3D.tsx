@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import { X } from 'lucide-react'
 import WallSystem from './3d/WallSystem'
 import LightboxModal from './LightboxModal'
+import { getBoardSizeInches } from '@/lib/boardDimensions'
 
 type Vec3 = { x: number; y: number; z: number }
 
@@ -450,9 +451,8 @@ function BoardProximityDetector({
           studioPos.z + wallTransform.z + localPos.z
         )
         
-        // Get board dimensions
-        const boardWidth = board.physicalWidth || 8.5
-        const boardHeight = board.physicalHeight || 11
+        // Get board dimensions (absolute inches, matching the WallSystem render)
+        const { widthIn: boardWidth, heightIn: boardHeight } = getBoardSizeInches(board)
         
         // Create a plane representing the board surface
         // Board normal: forward direction in world space (perpendicular to wall)

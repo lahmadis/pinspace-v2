@@ -80,6 +80,11 @@ export interface Board {
   // Physical dimensions in inches (for realistic sizing on walls)
   physicalWidth?: number   // Physical width in inches (e.g., 36 for a 3ft wide board)
   physicalHeight?: number  // Physical height in inches (e.g., 72 for a 6ft tall board)
+  // Absolute rendered board size in inches, independent of wall geometry. This
+  // is the source of truth for board size; resizing a wall must NOT change it.
+  // Resolved via getBoardSizeInches (lib/boardDimensions.ts) when absent.
+  boardWidthIn?: number
+  boardHeightIn?: number
 }
 
 export interface Comment {

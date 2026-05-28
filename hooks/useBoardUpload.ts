@@ -7,6 +7,7 @@ import { toast } from '@/lib/toast'
 import { loadTexture } from '@/components/3d/useBoardTexture'
 import { useDirectUpload, type DirectUploadResult, type DirectUploadOptions } from '@/lib/useDirectUpload'
 import { MAX_IMAGE_SIZE_BYTES } from '@/lib/uploadLimits'
+import { boardSizeInchesFromSource } from '@/lib/boardDimensions'
 
 interface UploadOptions {
   /**
@@ -109,6 +110,8 @@ const createTempBoard = (
     aspectRatio: number
     physicalWidth?: number
     physicalHeight?: number
+    boardWidthIn?: number
+    boardHeightIn?: number
     tags: string[]
     position?: { wallIndex: number; x: number; y: number; width: number; height: number; side?: 'front' | 'back' }
   }
@@ -134,6 +137,8 @@ const createTempBoard = (
     aspectRatio: options.aspectRatio,
     physicalWidth: options.physicalWidth,
     physicalHeight: options.physicalHeight,
+    boardWidthIn: options.boardWidthIn,
+    boardHeightIn: options.boardHeightIn,
     position: options.position,
   }
 }
@@ -269,6 +274,12 @@ const uploadFile = async (
     dims.aspectRatio,
     options.editingWallDimensions
   )
+  // Absolute board size in inches — the source of truth for rendered size,
+  // independent of the wall. Images carry no physical dims, so this falls back
+  // to the aspect-ratio + 36"-larger-dimension rule.
+  const { widthIn: boardWidthIn, heightIn: boardHeightIn } = boardSizeInchesFromSource({
+    aspectRatio: dims.aspectRatio,
+  })
 
   // Show board on wall with correct dimensions baked in (still optimistic — runs before API call).
   if (options.editingWall !== null && options.editingWallDimensions && earlyBlobUrl) {
@@ -285,6 +296,8 @@ const uploadFile = async (
       width: dims.width,
       height: dims.height,
       aspectRatio: dims.aspectRatio,
+      boardWidthIn,
+      boardHeightIn,
       tags: [],
       position: {
         wallIndex: options.editingWall,
@@ -324,6 +337,8 @@ const uploadFile = async (
       studentName: clerkName || undefined,
       width: dims.width,
       height: dims.height,
+      boardWidthIn,
+      boardHeightIn,
       ...(options.editingWall !== null && options.editingWallDimensions ? {
         position: {
           wallIndex: options.editingWall,
@@ -492,6 +507,13 @@ const uploadPDF = async (
       page.aspectRatio,
       options.editingWallDimensions
     )
+    // Absolute board size in inches. PDF pages carry true physical dimensions
+    // (points/72), so use them directly; aspect-ratio fallback otherwise.
+    const { widthIn: boardWidthIn, heightIn: boardHeightIn } = boardSizeInchesFromSource({
+      aspectRatio: page.aspectRatio,
+      physicalWidth: page.physicalWidth,
+      physicalHeight: page.physicalHeight,
+    })
 
     const gridPos = calculateGridPosition(pageIndex, pages.length)
 
@@ -517,6 +539,8 @@ const uploadPDF = async (
         aspectRatio: page.aspectRatio,
         physicalWidth: page.physicalWidth,
         physicalHeight: page.physicalHeight,
+        boardWidthIn,
+        boardHeightIn,
         tags: ['pdf'],
         position: {
           wallIndex: options.editingWall,
@@ -557,6 +581,8 @@ const uploadPDF = async (
         isPdf: true,
         physicalWidth: page.physicalWidth,
         physicalHeight: page.physicalHeight,
+        boardWidthIn,
+        boardHeightIn,
         ...(options.editingWall !== null && options.editingWallDimensions ? {
           position: {
             wallIndex: options.editingWall,

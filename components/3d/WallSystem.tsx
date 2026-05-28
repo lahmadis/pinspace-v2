@@ -5,6 +5,7 @@ import { Board } from '@/types'
 import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
 import { getWallTransformResolved, calculateFloorBounds } from '@/lib/wallLayout'
+import { getBoardSizeInches } from '@/lib/boardDimensions'
 
 interface WallDimensions {
   height: number
@@ -191,32 +192,11 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
             {boardsOnWall.map((board) => {
               if (!board.position) return null
 
-              // Get wall dimensions in feet (from wallConfig)
-              const wallDimensions = wallConfig.walls[wallIndex]
-              
-              // Calculate board dimensions: prefer saved resize (position % in 0-100) so size doesn't change on Save & Exit
-              const wallWidthInches = wallDimensions.width * 12
-              const wallHeightInches = wallDimensions.height * 12
-              let boardWidth: number | undefined
-              let boardHeight: number | undefined
+              // Board SIZE is absolute inches, independent of wall geometry —
+              // resizing a wall must not stretch the boards. Only POSITION
+              // (below) is wall-relative.
+              const { widthIn: boardWidth, heightIn: boardHeight } = getBoardSizeInches(board)
 
-              // Prefer saved position width/height (API format 0-100) so resized boards stay correct in room view
-              if (board.position.width != null && board.position.height != null && board.position.width > 0 && board.position.height > 0) {
-                boardWidth = (board.position.width / 100) * wallWidthInches
-                boardHeight = (board.position.height / 100) * wallHeightInches
-              } else if (board.physicalWidth && board.physicalHeight) {
-                const rawWidth = board.physicalWidth
-                const rawHeight = board.physicalHeight
-                const fitScale = Math.min(wallWidthInches / rawWidth, wallHeightInches / rawHeight, 1)
-                boardWidth = rawWidth * fitScale
-                boardHeight = rawHeight * fitScale
-              } else {
-                const DEFAULT_WIDTH_INCHES = 8.5
-                const DEFAULT_HEIGHT_INCHES = 11
-                boardWidth = DEFAULT_WIDTH_INCHES
-                boardHeight = DEFAULT_HEIGHT_INCHES
-              }
-              
               // Ensure we have valid dimensions
               if (boardWidth === undefined || boardHeight === undefined || boardWidth <= 0 || boardHeight <= 0) {
                 if (process.env.NODE_ENV === 'development') {

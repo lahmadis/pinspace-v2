@@ -416,6 +416,11 @@ export function useBoardState(
           ...boardWithoutPosition,
           workspaceId: board.studioId,
           studioId: board.studioId,
+          // Absolute board size (inches). Save & Exit acts as the retry path
+          // for a corner-resize whose dedicated PATCH failed; board.boardWidthIn
+          // reflects the latest resize via applyBoardSizeLocal.
+          boardWidthIn: board.boardWidthIn,
+          boardHeightIn: board.boardHeightIn,
           position: {
             wallIndex,
             x: apiX,
@@ -637,12 +642,33 @@ export function useBoardState(
     })
   }, [])
 
+  /**
+   * Local-only absolute-size update — mirrors a successful corner-resize PATCH
+   * back into the boards array (board_width_in / board_height_in, in inches) so
+   * post-edit-mode rendering (WallSystem reads board.boardWidthIn) sees the new
+   * size without waiting for a refetch. Bails out via value equality when
+   * unchanged, mirroring applyBoardRotationLocal.
+   */
+  const applyBoardSizeLocal = useCallback((boardId: string, widthIn: number, heightIn: number) => {
+    setBoards(prev => {
+      let changed = false
+      const next = prev.map(b => {
+        if (b.id !== boardId) return b
+        if (b.boardWidthIn === widthIn && b.boardHeightIn === heightIn) return b
+        changed = true
+        return { ...b, boardWidthIn: widthIn, boardHeightIn: heightIn }
+      })
+      return changed ? next : prev
+    })
+  }, [])
+
   return {
     boards,
     boardPositions,
     loadWallPositions,
     updateBoardPosition,
     applyBoardRotationLocal,
+    applyBoardSizeLocal,
     deleteBoard,
     addTempBoard,
     replaceTempBoard,

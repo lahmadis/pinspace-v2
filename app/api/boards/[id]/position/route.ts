@@ -18,7 +18,7 @@ export async function PATCH(
 
     const userId = session.user.id
     const boardId = params.id
-    const { wallIndex, x, y, width, height, side, rotation } = await request.json()
+    const { wallIndex, x, y, width, height, side, rotation, boardWidthIn, boardHeightIn } = await request.json()
 
     if (wallIndex === undefined || x === undefined || y === undefined) {
       return NextResponse.json({ error: 'Missing position data' }, { status: 400 })
@@ -66,6 +66,10 @@ export async function PATCH(
     }
     if (width !== undefined) updateData.position_width = width.toString()
     if (height !== undefined) updateData.position_height = height.toString()
+    // Absolute board size in inches (independent of wall). Corner-resize sends
+    // these; omitted on plain moves/rotates so the columns are preserved.
+    if (typeof boardWidthIn === 'number' && Number.isFinite(boardWidthIn)) updateData.board_width_in = boardWidthIn
+    if (typeof boardHeightIn === 'number' && Number.isFinite(boardHeightIn)) updateData.board_height_in = boardHeightIn
     // Only update rotation when the caller explicitly sends it. An earlier
     // version unconditionally wrote `rotation ?? 0`, which silently reset
     // the column on every drag-end / resize-end PATCH (those callers don't

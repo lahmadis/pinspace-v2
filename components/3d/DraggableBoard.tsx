@@ -14,6 +14,7 @@ import { Text, Html } from '@react-three/drei'
 import { PDFTextureMaterial } from './PDFTexture'
 import { useBoardTexture } from './useBoardTexture'
 import { toast } from '@/lib/toast'
+import { getBoardSizeInches } from '@/lib/boardDimensions'
 
 interface DraggableBoardProps {
   board: Board
@@ -42,6 +43,14 @@ interface DraggableBoardProps {
    * even though the DB has the new value.
    */
   onRotationPersisted?: (boardId: string, rotation: number) => void
+  /**
+   * Pushed on corner-resize PATCH success so the parent can mirror the
+   * server-acked absolute size (inches) into useBoardState.boards. That's the
+   * array WallSystem reads from once edit mode exits — without this, the scene
+   * re-reads the pre-resize size and visually reverts the resize. Symmetric
+   * with onRotationPersisted.
+   */
+  onSizePersisted?: (boardId: string, widthIn: number, heightIn: number) => void
   onDelete: (boardId: string) => void
   onCommentClick?: (board: Board) => void
   onSelect?: () => void
@@ -134,6 +143,7 @@ export function DraggableBoard({
   onDragEnd,
   onRotationChange,
   onRotationPersisted,
+  onSizePersisted,
   onDelete: _onDelete,
   onCommentClick,
   onSelect,
@@ -165,6 +175,17 @@ export function DraggableBoard({
   const meshRef = useRef<THREE.Mesh>(null)
   const innerGroupRef = useRef<THREE.Group>(null)
   const [localPosition, setLocalPosition] = useState(initialLocalPosition)
+  // Absolute board size in inches — the source of truth for size, independent
+  // of the wall. Seeded from the board's stored size (board_width_in /
+  // board_height_in, with a derived fallback) and updated optimistically during
+  // corner-resize. localPosition.width/height still flow through the legacy
+  // drag/persist channel but no longer drive rendered size.
+  const [sizeIn, setSizeIn] = useState<{ width: number; height: number }>(() => {
+    const s = getBoardSizeInches(board)
+    return { width: s.widthIn, height: s.heightIn }
+  })
+  const sizeRef = useRef(sizeIn)
+  const isResizingRef = useRef(false)
   const [isHovered, setIsHovered] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
@@ -182,6 +203,17 @@ export function DraggableBoard({
       setLocalRotation(propsRotation)
     }
   }, [propsRotation])
+
+  // Re-sync absolute size from props when the board's stored size changes
+  // externally (server ack, another user's resize) and we're not mid-resize.
+  useEffect(() => {
+    if (isResizingRef.current) return
+    const s = getBoardSizeInches(board)
+    const next = { width: s.widthIn, height: s.heightIn }
+    sizeRef.current = next
+    setSizeIn(next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board.boardWidthIn, board.boardHeightIn, board.physicalWidth, board.physicalHeight, board.aspectRatio])
 
   const resizeStartRef = useRef<{
     anchorX: number
@@ -286,43 +318,13 @@ useEffect(() => {
   const isBackSide = side === 'back'
   const renderXSign = isBackSide ? -1 : 1
   
-  // Calculate board size: prefer saved resize (width/height %) so corner resize is visible; else physical dimensions or defaults
+  // Wall inches are still used for POSITION (x/y are wall-relative) and as the
+  // upper clamp for corner-resize. Board SIZE is absolute (sizeIn), NOT derived
+  // from the wall — resizing the wall must not stretch the board.
   const wallWidthInches = wallDimensions.width * 12
   const wallHeightInches = wallDimensions.height * 12
-  let boardWidth: number | undefined
-  let boardHeight: number | undefined
-
-  // Prefer saved percentage dimensions when present (user has resized or we have placement data)
-  if (localPosition.width != null && localPosition.height != null && localPosition.width > 0 && localPosition.height > 0) {
-    boardWidth = localPosition.width * wallWidthInches
-    boardHeight = localPosition.height * wallHeightInches
-    devLog(`📐 [DraggableBoard] Using saved percentage dimensions: ${(localPosition.width * 100).toFixed(1)}% x ${(localPosition.height * 100).toFixed(1)}% = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
-  }
-  // Else use physical dimensions if available
-  if ((boardWidth === undefined || boardHeight === undefined) && board.physicalWidth && board.physicalHeight) {
-    const rawWidth = board.physicalWidth
-    const rawHeight = board.physicalHeight
-    const fitScale = Math.min(wallWidthInches / rawWidth, wallHeightInches / rawHeight, 1)
-    boardWidth = rawWidth * fitScale
-    boardHeight = rawHeight * fitScale
-    devLog(`📐 [DraggableBoard] Using physical dimensions: ${board.physicalWidth}" x ${board.physicalHeight}" = ${boardWidth.toFixed(2)} x ${boardHeight.toFixed(2)} units`)
-  }
-  // Fallback for existing boards without physical dimensions: default to 8.5×11 inches
-  if (boardWidth === undefined || boardHeight === undefined) {
-    const DEFAULT_WIDTH_INCHES = 8.5
-    const DEFAULT_HEIGHT_INCHES = 11
-    boardWidth = DEFAULT_WIDTH_INCHES
-    boardHeight = DEFAULT_HEIGHT_INCHES
-    devLog(`📐 [DraggableBoard] No dimensions found - using default: ${DEFAULT_WIDTH_INCHES}" x ${DEFAULT_HEIGHT_INCHES}" = ${boardWidth} x ${boardHeight} units`)
-  }
-  
-  // Ensure we have valid dimensions
-  if (boardWidth === undefined || boardHeight === undefined || boardWidth <= 0 || boardHeight <= 0) {
-    // Final safety fallback
-    boardWidth = 8.5
-    boardHeight = 11
-    console.warn(`⚠️ [DraggableBoard] Invalid dimensions for board ${board.id} - using default 8.5×11"`)
-  }
+  const boardWidth = sizeIn.width
+  const boardHeight = sizeIn.height
 
   const updatePosition = (clientX: number, clientY: number) => {
     const rotationForCoords = wallBaseRotationForCoords ?? wallRotation
@@ -573,10 +575,11 @@ if (e.intersections && e.intersections.length > 0) {
     if (!ptr) return
     const cx = positionRef.current.x * scaledWallWidth
     const cy = positionRef.current.y * scaledWallHeight
-    const w0 = positionRef.current.width ?? 0.3
-    const h0 = positionRef.current.height ?? 0.3
-    const halfW = (w0 * wallWidthInches) / 2
-    const halfH = (h0 * wallHeightInches) / 2
+    // Size is absolute inches (sizeRef), not a fraction of the wall.
+    const w0 = sizeRef.current.width
+    const h0 = sizeRef.current.height
+    const halfW = w0 / 2
+    const halfH = h0 / 2
 
     // Board-local corner directions (constant per cornerIndex; not affected by rotation).
     // 0=TR(+,+), 1=TL(-,+), 2=BL(-,-), 3=BR(+,-).
@@ -607,17 +610,19 @@ if (e.intersections && e.intersections.length > 0) {
     const cornerLocalDirX = cornerDirsLocal[cornerIndex].x
     const cornerLocalDirY = cornerDirsLocal[cornerIndex].y
 
-    const MIN_PCT = 0.05
-    const MAX_PCT = 1
-    const MIN_INCHES_W = MIN_PCT * wallWidthInches
-    const MIN_INCHES_H = MIN_PCT * wallHeightInches
-    const MAX_INCHES_W = MAX_PCT * wallWidthInches
-    const MAX_INCHES_H = MAX_PCT * wallHeightInches
+    // Size is absolute inches: floor at 2", cap at the wall's own dimensions.
+    const MIN_INCHES_W = 2
+    const MIN_INCHES_H = 2
+    const MAX_INCHES_W = wallWidthInches
+    const MAX_INCHES_H = wallHeightInches
 
-    // Snapshot for rollback if the API save fails.
-    const priorPosition = { x: positionRef.current.x, y: positionRef.current.y, width: w0, height: h0 }
+    // Snapshots for rollback if the API save fails: x/y (wall-relative) and
+    // size (absolute inches) roll back independently.
+    const priorXY = { x: positionRef.current.x, y: positionRef.current.y }
+    const priorSize = { width: w0, height: h0 }
 
     resizeStartRef.current = { anchorX: anchor.x, anchorY: anchor.y, initialCornerX: initialCorner.x, initialCornerY: initialCorner.y, initialWidth: w0, initialHeight: h0 }
+    isResizingRef.current = true
     setIsResizing(true)
     // Cursor is set on the WebGL canvas element — document.body's cursor is overridden by the canvas's own
     // computed style, so it never shows up over the 3D scene.
@@ -654,8 +659,8 @@ if (e.intersections && e.intersections.length > 0) {
         const deltaBY = -deltaWX * sinR + deltaWY * cosR
         const widthInches = THREE.MathUtils.clamp(deltaBX * cornerLocalDirX, MIN_INCHES_W, MAX_INCHES_W)
         const heightInches = THREE.MathUtils.clamp(deltaBY * cornerLocalDirY, MIN_INCHES_H, MAX_INCHES_H)
-        newW = widthInches / wallWidthInches
-        newH = heightInches / wallHeightInches
+        newW = widthInches
+        newH = heightInches
         // Active corner in wall-local: anchor + R(rotation) * (sign * inches in board-local).
         const cornerBX = cornerLocalDirX * widthInches
         const cornerBY = cornerLocalDirY * heightInches
@@ -669,8 +674,8 @@ if (e.intersections && e.intersections.length > 0) {
         const rawScale = Math.max(0.01, projectedLength / initialDiagonal)
         const initialW = resizeStartRef.current.initialWidth
         const initialH = resizeStartRef.current.initialHeight
-        const minScale = Math.max(MIN_PCT / initialW, MIN_PCT / initialH)
-        const maxScale = Math.min(MAX_PCT / initialW, MAX_PCT / initialH)
+        const minScale = Math.max(MIN_INCHES_W / initialW, MIN_INCHES_H / initialH)
+        const maxScale = Math.min(MAX_INCHES_W / initialW, MAX_INCHES_H / initialH)
         const scale = THREE.MathUtils.clamp(rawScale, minScale, maxScale)
         newW = initialW * scale
         newH = initialH * scale
@@ -682,8 +687,11 @@ if (e.intersections && e.intersections.length > 0) {
       const newCenterY = (ay + newCornerY) / 2
       const newX = newCenterX / wallWidthInches
       const newY = newCenterY / wallHeightInches
-      positionRef.current = { ...positionRef.current, x: newX, y: newY, width: newW, height: newH }
-      setLocalPosition(prev => ({ ...prev, x: newX, y: newY, width: newW, height: newH }))
+      // x/y are wall-relative (legacy channel); size is absolute inches.
+      positionRef.current = { ...positionRef.current, x: newX, y: newY }
+      setLocalPosition(prev => ({ ...prev, x: newX, y: newY }))
+      sizeRef.current = { width: newW, height: newH }
+      setSizeIn({ width: newW, height: newH })
     }
 
     const onUp = () => {
@@ -691,23 +699,19 @@ if (e.intersections && e.intersections.length > 0) {
       document.body.style.cursor = ''
       gl.domElement.style.cursor = ''
       const ref = positionRef.current
+      const sz = sizeRef.current
       justFinishedDragging.current = true
-      setLocalPosition({ x: ref.x, y: ref.y, width: ref.width, height: ref.height })
+      setLocalPosition(prev => ({ ...prev, x: ref.x, y: ref.y }))
 
-      // Mirror the post-resize x/y/width/height back into the parent's
-      // placedBoards3D Map. Without this, Save & Exit's bulk-PUT iterates a
-      // stale map and overwrites the size the PATCH below is about to
-      // persist (corner-resize also drifts x/y via the centering math, so
-      // those are stale too). Fires regardless of PATCH outcome — Save & Exit
-      // acts as the retry path on network failure. Symmetric with the
-      // drag-end callback in handlePointerDown.handleUp above.
+      // Mirror the post-resize x/y back into the parent's placedBoards3D Map
+      // (corner-resize drifts x/y via the centering math). Size is mirrored
+      // separately via onSizePersisted on PATCH success. Fires regardless of
+      // PATCH outcome — Save & Exit acts as the retry path on network failure.
       onDragEndRef.current(board.id, ref.x, ref.y, ref.width, ref.height, side)
 
       // Persist via PATCH on the dedicated position endpoint.
       const apiX = (ref.x + 0.5) * 100
       const apiY = (ref.y + 0.5) * 100
-      const apiWidth = (ref.width ?? 0.3) * 100
-      const apiHeight = (ref.height ?? 0.3) * 100
       const isMockBoard =
         board.id.startsWith('temp-') ||
         board.id.startsWith('demo-') ||
@@ -720,8 +724,9 @@ if (e.intersections && e.intersections.length > 0) {
             wallIndex: _wallIndex,
             x: apiX,
             y: apiY,
-            width: apiWidth,
-            height: apiHeight,
+            // Absolute board size in inches — independent of the wall.
+            boardWidthIn: sz.width,
+            boardHeightIn: sz.height,
             side,
             // Send the current rotation so resize doesn't drop it. Reading
             // from the ref (not localRotation state) avoids a stale-closure
@@ -732,21 +737,26 @@ if (e.intersections && e.intersections.length > 0) {
         })
           .then(res => {
             if (!res.ok) throw new Error(`HTTP ${res.status}`)
-            // Mirror server-acked rotation into useBoardState.boards. No-op
-            // when value hasn't changed (the setter bails out via referential
-            // equality), so this is safe to call on every resize.
+            // Mirror server-acked size + rotation into useBoardState.boards so
+            // the post-edit WallSystem render reads the new values without a
+            // refetch. Both setters bail out via referential/value equality, so
+            // calling them on every resize is safe.
+            onSizePersisted?.(board.id, sz.width, sz.height)
             onRotationPersisted?.(board.id, rotationRef.current)
           })
           .catch(err => {
             console.error('❌ [DraggableBoard] Resize PATCH failed:', err)
-            // Roll back to the position the board had before this resize started.
-            positionRef.current = { ...positionRef.current, ...priorPosition }
-            setLocalPosition(prev => ({ ...prev, ...priorPosition }))
+            // Roll back x/y (wall-relative) and size (inches) to pre-resize.
+            positionRef.current = { ...positionRef.current, x: priorXY.x, y: priorXY.y }
+            setLocalPosition(prev => ({ ...prev, x: priorXY.x, y: priorXY.y }))
+            sizeRef.current = priorSize
+            setSizeIn(priorSize)
             toast.error('Failed to save board size. Please try again.')
           })
       }
 
       resizeStartRef.current = null
+      isResizingRef.current = false
       setIsResizing(false)
       resizeListenersRef.current = { move: null, up: null }
       window.removeEventListener('pointermove', onMove)
@@ -758,7 +768,7 @@ if (e.intersections && e.intersections.length > 0) {
     resizeListenersRef.current = { move: onMove, up: onUp }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
-  }, [board.id, _wallIndex, getPointerOnWallPlane, gl, isLocked, scaledWallHeight, scaledWallWidth, side, wallHeightInches, wallWidthInches, worldToWallLocal])
+  }, [board.id, _wallIndex, getPointerOnWallPlane, gl, isLocked, scaledWallHeight, scaledWallWidth, side, wallHeightInches, wallWidthInches, worldToWallLocal, onSizePersisted, onRotationPersisted])
 
   /**
    * Rotate-handle pointer-down. Starts an angle-tracking drag around the board's center.

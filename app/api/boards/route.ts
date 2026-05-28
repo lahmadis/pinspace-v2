@@ -214,6 +214,8 @@ export async function GET(request: NextRequest) {
       aspectRatio: board.aspect_ratio ? parseFloat(board.aspect_ratio) : undefined,
       physicalWidth: board.physical_width ? parseFloat(board.physical_width) : undefined,
       physicalHeight: board.physical_height ? parseFloat(board.physical_height) : undefined,
+      boardWidthIn: board.board_width_in != null ? Number(board.board_width_in) : undefined,
+      boardHeightIn: board.board_height_in != null ? Number(board.board_height_in) : undefined,
     }))
 
     // Surface the resolved room so the studio page can subscribe to realtime
@@ -277,6 +279,11 @@ export async function PUT(request: NextRequest) {
         updateData.position_rotation = board.position.rotation
       }
     }
+
+    // Absolute board size in inches (independent of wall). Written here so Save
+    // & Exit's bulk save persists a corner-resize whose dedicated PATCH failed.
+    if (typeof board.boardWidthIn === 'number') updateData.board_width_in = board.boardWidthIn
+    if (typeof board.boardHeightIn === 'number') updateData.board_height_in = board.boardHeightIn
 
     if (board.title) updateData.title = board.title
     if (board.description !== undefined) updateData.description = board.description
@@ -367,6 +374,8 @@ export async function PUT(request: NextRequest) {
       ownerId: updatedBoard.owner_id,
       ownerName: updatedBoard.owner_name,
       ownerColor: updatedBoard.owner_color,
+      boardWidthIn: updatedBoard.board_width_in != null ? Number(updatedBoard.board_width_in) : undefined,
+      boardHeightIn: updatedBoard.board_height_in != null ? Number(updatedBoard.board_height_in) : undefined,
     }
 
     return NextResponse.json({ success: true, board: transformedBoard })
@@ -548,8 +557,10 @@ interface BoardsPostBody {
   isPdf?: unknown
   originalFilename?: unknown
   studentName?: unknown
-  physicalWidth?: unknown   // optional, real-world mm; maps to physical_width column
-  physicalHeight?: unknown  // optional, real-world mm; maps to physical_height column
+  physicalWidth?: unknown   // optional, real-world inches; maps to physical_width column
+  physicalHeight?: unknown  // optional, real-world inches; maps to physical_height column
+  boardWidthIn?: unknown    // absolute rendered board width in inches; maps to board_width_in
+  boardHeightIn?: unknown   // absolute rendered board height in inches; maps to board_height_in
 }
 
 export async function POST(request: NextRequest) {
@@ -588,6 +599,8 @@ export async function POST(request: NextRequest) {
     const roomIdRaw        = typeof raw.roomId           === 'string'  ? raw.roomId.trim()            : null
     const physicalWidth    = typeof raw.physicalWidth    === 'number'  ? raw.physicalWidth            : null
     const physicalHeight   = typeof raw.physicalHeight   === 'number'  ? raw.physicalHeight           : null
+    const boardWidthIn     = typeof raw.boardWidthIn     === 'number'  ? raw.boardWidthIn             : null
+    const boardHeightIn    = typeof raw.boardHeightIn    === 'number'  ? raw.boardHeightIn            : null
 
     const positionX           = typeof raw.position?.x           === 'number' ? raw.position.x           : null
     const positionY           = typeof raw.position?.y           === 'number' ? raw.position.y           : null
@@ -698,6 +711,8 @@ export async function POST(request: NextRequest) {
         aspect_ratio:       width && height && height > 0 ? width / height : null,
         physical_width:     physicalWidth,
         physical_height:    physicalHeight,
+        board_width_in:     boardWidthIn,
+        board_height_in:    boardHeightIn,
       })
       .select()
       .single()
@@ -744,6 +759,8 @@ export async function POST(request: NextRequest) {
       aspectRatio:    savedBoard.aspect_ratio    ? parseFloat(savedBoard.aspect_ratio)    : undefined,
       physicalWidth:  savedBoard.physical_width  ? parseFloat(savedBoard.physical_width)  : undefined,
       physicalHeight: savedBoard.physical_height ? parseFloat(savedBoard.physical_height) : undefined,
+      boardWidthIn:   savedBoard.board_width_in  != null ? Number(savedBoard.board_width_in)  : undefined,
+      boardHeightIn:  savedBoard.board_height_in != null ? Number(savedBoard.board_height_in) : undefined,
     }
 
     return NextResponse.json({ board, fullUrl, thumbnailUrl })

@@ -126,6 +126,7 @@ function SceneContent({
   onBoardPositionChange,
   onBoardRotationChange,
   onBoardRotationPersisted,
+  onBoardSizePersisted,
   onBoardDelete,
   draggingFromSidebar,
   onBoardDrop,
@@ -159,6 +160,8 @@ function SceneContent({
   onBoardRotationChange: (boardId: string, rotation: number) => void
   /** Mirrors a confirmed (server-acked) rotation back into useBoardState.boards so post-edit-mode rendering sees it. */
   onBoardRotationPersisted: (boardId: string, rotation: number) => void
+  /** Mirrors a confirmed (server-acked) absolute size (inches) back into useBoardState.boards so post-edit-mode rendering sees it. */
+  onBoardSizePersisted: (boardId: string, widthIn: number, heightIn: number) => void
   onBoardDelete: (boardId: string) => void
   draggingFromSidebar: Board | null
   onBoardDrop: (localX: number, localY: number) => void
@@ -357,6 +360,7 @@ function SceneContent({
                   onDragEnd={onBoardPositionChange}
                   onRotationChange={onBoardRotationChange}
                   onRotationPersisted={onBoardRotationPersisted}
+                  onSizePersisted={onBoardSizePersisted}
                   onDelete={onBoardDelete}
                   onCommentClick={onCommentClick}
                   onSelect={() => setSelectedBoardId(board.id)}
@@ -551,6 +555,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     loadWallPositions,
     updateBoardPosition,
     applyBoardRotationLocal,
+    applyBoardSizeLocal,
     deleteBoard,
     addTempBoard,
     replaceTempBoard,
@@ -1567,6 +1572,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             onBoardPositionChange={handleBoardPositionChange}
             onBoardRotationChange={handleBoardRotationChange}
             onBoardRotationPersisted={applyBoardRotationLocal}
+            onBoardSizePersisted={applyBoardSizeLocal}
             onBoardDelete={handleBoardDelete}
             draggingFromSidebar={draggingFromSidebar}
             onBoardDrop={handleBoardDrop}

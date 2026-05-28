@@ -53,6 +53,8 @@ function transformBoardRow(row: Record<string, unknown>): Board {
     aspectRatio: row.aspect_ratio ? parseFloat(row.aspect_ratio as string) : undefined,
     physicalWidth: row.physical_width ? parseFloat(row.physical_width as string) : undefined,
     physicalHeight: row.physical_height ? parseFloat(row.physical_height as string) : undefined,
+    boardWidthIn: row.board_width_in != null ? Number(row.board_width_in) : undefined,
+    boardHeightIn: row.board_height_in != null ? Number(row.board_height_in) : undefined,
   }
 }
 

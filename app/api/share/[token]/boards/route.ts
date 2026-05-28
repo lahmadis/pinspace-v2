@@ -81,6 +81,8 @@ export async function GET(
     aspectRatio: board.aspect_ratio ? parseFloat(board.aspect_ratio) : undefined,
     physicalWidth: board.physical_width ? parseFloat(board.physical_width) : undefined,
     physicalHeight: board.physical_height ? parseFloat(board.physical_height) : undefined,
+    boardWidthIn: board.board_width_in != null ? Number(board.board_width_in) : undefined,
+    boardHeightIn: board.board_height_in != null ? Number(board.board_height_in) : undefined,
   }))
 
   const response = NextResponse.json({
