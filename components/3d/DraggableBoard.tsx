@@ -254,7 +254,16 @@ useEffect(() => {
   const scaledWallHeight = wallDimensions.height * SCALE
   const isBackSide = side === 'back'
   const renderXSign = isBackSide ? -1 : 1
-  
+  /**
+   * Move-snap grid step in wall-local inches. Matches the 12" reference grid
+   * kept by Phase 3 (FloorEditorOverlay's walls-mode `GRID_INCHES`), so the
+   * snap conventions stay aligned across the floor editor and the wall edit.
+   * Snapping anchors the board CENTER (the same anchor the move math already
+   * uses) at multiples of this step from the wall center, so the "same spot"
+   * on two different walls produces identical wall-local coordinates.
+   */
+  const BOARD_MOVE_GRID_INCHES = 12
+
   // Wall inches are still used for POSITION (x/y are wall-relative) and as the
   // upper clamp for corner-resize. Board SIZE is absolute (sizeIn), NOT derived
   // from the wall — resizing the wall must not stretch the board.
@@ -263,7 +272,13 @@ useEffect(() => {
   const boardWidth = sizeIn.width
   const boardHeight = sizeIn.height
 
-  const updatePosition = (clientX: number, clientY: number) => {
+  /**
+   * `snap` controls Miro-style grid snap on this pointer-move sample.
+   * Default true; the Alt modifier flips it off for free placement (the
+   * handler reads `!ev.altKey` per event so the user can toggle mid-drag).
+   * Resize is a separate handler that never calls this — it stays free.
+   */
+  const updatePosition = (clientX: number, clientY: number, snap: boolean) => {
     const rotationForCoords = wallBaseRotationForCoords ?? wallRotation
 
     // Reuse pre-allocated scratch objects — no heap allocation on the hot drag path
@@ -285,8 +300,18 @@ useEffect(() => {
       const offsetX = dragOffset.current ? dragOffset.current.x : 0
       const offsetY = dragOffset.current ? dragOffset.current.y : 0
 
-      const normalizedX = THREE.MathUtils.clamp((pointerRenderX - offsetX) / scaledWallWidth, -0.5, 0.5)
-      const normalizedY = THREE.MathUtils.clamp((pointerRenderY - offsetY) / scaledWallHeight, -0.5, 0.5)
+      // Board center in wall-local inches. Snap rounds to the 12" grid here,
+      // BEFORE the divide-and-clamp to normalized, so the snapped value is
+      // exactly what's written to positionRef and persisted on pointer-up.
+      let centerInchesX = pointerRenderX - offsetX
+      let centerInchesY = pointerRenderY - offsetY
+      if (snap) {
+        centerInchesX = Math.round(centerInchesX / BOARD_MOVE_GRID_INCHES) * BOARD_MOVE_GRID_INCHES
+        centerInchesY = Math.round(centerInchesY / BOARD_MOVE_GRID_INCHES) * BOARD_MOVE_GRID_INCHES
+      }
+
+      const normalizedX = THREE.MathUtils.clamp(centerInchesX / scaledWallWidth, -0.5, 0.5)
+      const normalizedY = THREE.MathUtils.clamp(centerInchesY / scaledWallHeight, -0.5, 0.5)
 
       lastPointerRef.current = { clientX, normalizedX }
 
@@ -390,9 +415,11 @@ if (e.intersections && e.intersections.length > 0) {
     gl.domElement.style.cursor = 'grabbing'
     devLog('🖱️ isDragging set to true, attaching global listeners...')
     
-    // Start listening to window events
+    // Start listening to window events. Snap is on by default; holding Alt
+    // disables it for that pointer sample so the user can drop a board
+    // off-grid without releasing first.
     const handleMove = (e: PointerEvent) => {
-      updatePosition(e.clientX, e.clientY)
+      updatePosition(e.clientX, e.clientY, !e.altKey)
     }
     
     const handleUp = (e: PointerEvent) => {
