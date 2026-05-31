@@ -24,6 +24,27 @@ export interface WallConfig {
   customTransforms?: WallTransformOverride[]
 }
 
+/**
+ * Canonical fresh-room layout: 4 zigzag walls with hand-tuned customTransforms.
+ * Used by the studio page on first entry and by the rooms-create endpoint to seed
+ * new rooms so they don't inherit any sibling room's edited config.
+ */
+export const DEFAULT_WALL_CONFIG: WallConfig = {
+  layoutType: 'zigzag',
+  walls: [
+    { height: 10, width: 8 },
+    { height: 10, width: 8 },
+    { height: 10, width: 8 },
+    { height: 10, width: 8 },
+  ],
+  customTransforms: [
+    { x: -43.90182462935905, z: -93.15280816860862, rotationY: 0 },
+    { x: 1.5, z: -46.5, rotationY: 1.5707963267948966 },
+    { x: 46.83620060511996, z: -1.2549356733049677, rotationY: 0 },
+    { x: 91.85236286631033, z: 49.35139735216034, rotationY: 1.5707963267948966 },
+  ],
+}
+
 const SCALE = 12 // feet to inches
 
 /** Returns transform for a wall, using customTransforms override when present. */

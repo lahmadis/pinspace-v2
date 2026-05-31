@@ -1,6 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { validateName } from '@/lib/validation/safeName'
+import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
+
+const CONFIG_BUCKET = 'board-images'
+const CONFIG_PREFIX = 'wall-configs'
+
+/**
+ * Seed a fresh per-room wall-config blob so the new room doesn't fall back to
+ * the workspace's legacy blob (which would inherit a sibling room's edits).
+ * Best-effort: a storage failure here is logged but does not fail the room
+ * insert. The wall-config GET treats a missing blob as "use defaults" anyway.
+ */
+async function seedDefaultWallConfig(workspaceId: string, roomId: string): Promise<void> {
+  try {
+    const admin = supabaseServiceRole()
+    const filePath = `${CONFIG_PREFIX}/${workspaceId}/${roomId}.json`
+    const blob = { ...DEFAULT_WALL_CONFIG, version: 0 }
+    const payload = Buffer.from(JSON.stringify(blob), 'utf-8')
+    const { error } = await admin.storage.from(CONFIG_BUCKET).upload(filePath, payload, {
+      upsert: true,
+      contentType: 'application/json',
+    })
+    if (error) console.warn('Failed to seed default wall config for new room', { workspaceId, roomId, error })
+  } catch (err) {
+    console.warn('Unexpected error seeding default wall config', { workspaceId, roomId, err })
+  }
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -80,6 +106,8 @@ export async function POST(
       console.error('Error creating room:', insertError)
       return NextResponse.json({ error: 'Failed to create room' }, { status: 500 })
     }
+
+    await seedDefaultWallConfig(workspaceId, room.id as string)
 
     return NextResponse.json({ room }, { status: 201 })
   } catch (error) {

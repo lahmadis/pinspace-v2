@@ -592,11 +592,13 @@ export default function StudioRoom(props: StudioRoomProps) {
       return { ...t, modelUrl: isPersistable ? url : undefined }
     })
     const payload = { ...props.wallConfig, tables: tablesToSave }
-    // Wall-config is workspace-scoped (Phase 6.2 leaves it unchanged): both the
-    // localStorage key and the API path key on workspace id, NOT room id. Fall
-    // back to studioId only as a brief safety net before workspaceId resolves.
+    // Phase 2a: wall-config is per-room. The endpoint path segment still uses
+    // the workspace id (the route's auth check loads `workspaces.owner_id` by
+    // that id); the room id is appended as a query param so the route reads
+    // and writes the per-room blob. studioId here IS the room id.
     const wsKey = props.workspaceId ?? props.studioId
-    const savedConfigKey = `studio-${wsKey}-wall-config`
+    const roomId = props.studioId
+    const savedConfigKey = `studio-${roomId}-wall-config`
     try {
       // Keep local fallback compact and avoid huge transient model payloads.
       localStorage.setItem(savedConfigKey, JSON.stringify(payload))
@@ -619,7 +621,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     // latest back to the parent to reload + toast.
     const savePayload = JSON.stringify({ baseVersion: props.wallVersionRef?.current ?? 0, config: payload })
     const saveOnce = async (): Promise<'ok' | 'conflict'> => {
-      const res = await fetch(`/api/studios/${wsKey}/wall-config`, {
+      const res = await fetch(`/api/studios/${wsKey}/wall-config?roomId=${encodeURIComponent(roomId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         keepalive: true,

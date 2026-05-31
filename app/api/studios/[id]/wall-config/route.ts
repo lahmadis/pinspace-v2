@@ -14,10 +14,22 @@ const CONFIG_PREFIX = 'wall-configs'
  */
 type StoredConfig = { version: number; config: Record<string, unknown> }
 
-async function readConfigFromStorage(id: string): Promise<StoredConfig | null> {
+/**
+ * Per-room blob path. When roomId is omitted we fall back to the legacy
+ * workspace-scoped path (`wall-configs/{wsId}.json`) so older clients that
+ * haven't been updated yet — and existing rooms whose per-room blob hasn't
+ * been seeded yet — keep functioning. New rooms get seeded at create time so
+ * they don't pick up the workspace blob's edits.
+ */
+function configPath(wsId: string, roomId: string | null): string {
+  return roomId
+    ? `${CONFIG_PREFIX}/${wsId}/${roomId}.json`
+    : `${CONFIG_PREFIX}/${wsId}.json`
+}
+
+async function readConfigAt(filePath: string): Promise<StoredConfig | null> {
   try {
     const db = supabaseServiceRole()
-    const filePath = `${CONFIG_PREFIX}/${id}.json`
     const { data, error } = await db.storage.from(CONFIG_BUCKET).download(filePath)
     if (error || !data) return null
     const raw = await data.text()
@@ -37,9 +49,8 @@ async function readConfigFromStorage(id: string): Promise<StoredConfig | null> {
   }
 }
 
-async function writeConfigToStorage(id: string, config: unknown, version: number): Promise<void> {
+async function writeConfigToStorage(filePath: string, config: unknown, version: number): Promise<void> {
   const db = supabaseServiceRole()
-  const filePath = `${CONFIG_PREFIX}/${id}.json`
   // Spread config first so the authoritative `version` always wins, even if a
   // stale `version` rode in on the client's config payload.
   const blob = { ...(config as Record<string, unknown>), version }
@@ -51,8 +62,9 @@ async function writeConfigToStorage(id: string, config: unknown, version: number
   if (error) throw error
 }
 
-export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const { id } = params
+  const roomId = request.nextUrl.searchParams.get('roomId')
 
   // Sample studios get a static default zigzag config (read-only, never POSTed).
   if (id.startsWith('sample-studio-')) {
@@ -69,7 +81,23 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     return NextResponse.json({ exists: true, config: defaultConfig, version: 0 }, { status: 200 })
   }
 
-  const stored = await readConfigFromStorage(id)
+  // Per-room read first when roomId is supplied; fall back to the legacy
+  // workspace blob so existing rooms (created before this change, no per-room
+  // blob yet) keep showing their current config. The first save will bump the
+  // version against whatever path we end up writing to.
+  if (roomId) {
+    const perRoom = await readConfigAt(configPath(id, roomId))
+    if (perRoom) {
+      return NextResponse.json({ exists: true, config: perRoom.config, version: perRoom.version }, { status: 200 })
+    }
+    const legacy = await readConfigAt(configPath(id, null))
+    if (legacy) {
+      return NextResponse.json({ exists: true, config: legacy.config, version: legacy.version }, { status: 200 })
+    }
+    return NextResponse.json({ exists: false, config: null, version: 0 }, { status: 200 })
+  }
+
+  const stored = await readConfigAt(configPath(id, null))
   if (stored) {
     return NextResponse.json({ exists: true, config: stored.config, version: stored.version }, { status: 200 })
   }
@@ -78,6 +106,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const { id } = params
+  const roomId = request.nextUrl.searchParams.get('roomId')
 
   const { data: { session } } = await supabaseServer().auth.getSession()
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -103,7 +132,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         ? body.baseVersion
         : 0
 
-    const current = await readConfigFromStorage(id)
+    // Writes target the per-room blob when roomId is supplied; the version
+    // counter is scoped to that same blob. The legacy path is only used when
+    // roomId is omitted (back-compat for older clients).
+    const writePath = configPath(id, roomId)
+    const current = await readConfigAt(writePath)
     const currentVersion = current?.version ?? 0
 
     // Stale write: the client's base is behind what's stored. Reject with 409
@@ -117,7 +150,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     }
 
     const nextVersion = currentVersion + 1
-    await writeConfigToStorage(id, incomingConfig, nextVersion)
+    await writeConfigToStorage(writePath, incomingConfig, nextVersion)
     return NextResponse.json({ success: true, version: nextVersion })
   } catch (err) {
     console.error('Failed to save wall config:', err)

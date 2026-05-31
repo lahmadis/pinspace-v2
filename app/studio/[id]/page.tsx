@@ -11,7 +11,7 @@ import PresenceBar, { type PresentUser } from '@/components/3d/PresenceBar'
 import { ArrowLeft, Share2, Settings, Box, ChevronDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
-import type { WallConfig } from '@/lib/wallLayout'
+import { DEFAULT_WALL_CONFIG, type WallConfig } from '@/lib/wallLayout'
 
 type RealtimeBoardPayload = {
   eventType: 'INSERT' | 'UPDATE' | 'DELETE'
@@ -72,21 +72,7 @@ const StudioRoom = dynamic(
   ),
 })
 
-const DEFAULT_CONFIG: WallConfig = {
-  layoutType: 'zigzag',
-  walls: [
-    { height: 10, width: 8 },
-    { height: 10, width: 8 },
-    { height: 10, width: 8 },
-    { height: 10, width: 8 }
-  ],
-  customTransforms: [
-    { x: -43.90182462935905, z: -93.15280816860862,  rotationY: 0 },
-    { x: 1.5,                z: -46.5,               rotationY: 1.5707963267948966 },
-    { x: 46.83620060511996,  z: -1.2549356733049677, rotationY: 0 },
-    { x: 91.85236286631033,  z: 49.35139735216034,   rotationY: 1.5707963267948966 }
-  ]
-}
+const DEFAULT_CONFIG = DEFAULT_WALL_CONFIG
 
 export default function StudioPage() {
   const params = useParams()
@@ -152,11 +138,8 @@ export default function StudioPage() {
   const wallPersistLatestRef = useRef<WallConfig | null>(null)
 
   const cacheWallConfigLocally = useCallback((config: WallConfig) => {
-    // Wall-config remains workspace-scoped (Phase 6.2 leaves it intentionally
-    // unchanged). Fall back to studioId only as a safety net during the brief
-    // window before workspaceId resolves.
-    const wsKey = workspaceId ?? studioId
-    const savedConfigKey = `studio-${wsKey}-wall-config`
+    // Phase 2a: wall-config is per-room. studioId is the room id here.
+    const savedConfigKey = `studio-${studioId}-wall-config`
     const rawTables = (config as { tables?: Array<{ modelUrl?: string }> }).tables
     const compactConfig =
       Array.isArray(rawTables)
@@ -189,7 +172,7 @@ export default function StudioPage() {
         // Local fallback is optional; API remains source of truth.
       }
     }
-  }, [studioId, workspaceId])
+  }, [studioId])
 
   // 409 handler: a save was rejected as stale. Adopt the server's latest config
   // (strip the embedded version back out so wallConfig stays clean), update the
@@ -212,7 +195,7 @@ export default function StudioPage() {
     wallPersistLatestRef.current = null
     const wsKey = workspaceId ?? studioId
     try {
-      const res = await fetch(`/api/studios/${wsKey}/wall-config`, {
+      const res = await fetch(`/api/studios/${wsKey}/wall-config?roomId=${encodeURIComponent(studioId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ baseVersion: wallVersionRef.current, config }),
@@ -320,14 +303,17 @@ export default function StudioPage() {
           }
         }
 
-        // Wall-config stays keyed by workspace id (the existing
-        // /api/studios/[id]/wall-config endpoint expects workspace_id, and
-        // localStorage entries from before the URL flip use workspace id too).
+        // Phase 2a: wall-config is now per-room. The endpoint path segment is
+        // still the workspace id (for the auth check); the room id is appended
+        // as a query param so the route reads/writes the per-room blob. If a
+        // per-room blob doesn't exist yet, the endpoint falls back to the
+        // legacy workspace blob so existing rooms keep their current config.
         const wallConfigWsId = resolvedWorkspaceId ?? studioId
+        const wallConfigUrl = `/api/studios/${wallConfigWsId}/wall-config?roomId=${encodeURIComponent(studioId)}`
 
         let loadedConfig: WallConfig | null = null
         try {
-          const resConfig = await fetch(`/api/studios/${wallConfigWsId}/wall-config`, { signal })
+          const resConfig = await fetch(wallConfigUrl, { signal })
           if (resConfig.ok) {
             const data = await resConfig.json()
             // Capture the base version so the first save sends the right
@@ -342,9 +328,9 @@ export default function StudioPage() {
           console.warn('Wall config API fetch failed, falling back to localStorage', e)
         }
 
-        // Fallback: localStorage
+        // Fallback: localStorage (per-room key)
         if (!loadedConfig) {
-          const savedConfigKey = `studio-${wallConfigWsId}-wall-config`
+          const savedConfigKey = `studio-${studioId}-wall-config`
           const savedConfig = localStorage.getItem(savedConfigKey)
           if (savedConfig) {
             loadedConfig = JSON.parse(savedConfig)
@@ -357,7 +343,7 @@ export default function StudioPage() {
           // First entry: silently persist defaults so subsequent loads just read them.
           setWallConfig(DEFAULT_CONFIG)
           try {
-            const res = await fetch(`/api/studios/${wallConfigWsId}/wall-config`, {
+            const res = await fetch(wallConfigUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ baseVersion: 0, config: DEFAULT_CONFIG }),
@@ -382,7 +368,7 @@ export default function StudioPage() {
           }
           try {
             localStorage.setItem(
-              `studio-${wallConfigWsId}-wall-config`,
+              `studio-${studioId}-wall-config`,
               JSON.stringify(DEFAULT_CONFIG)
             )
           } catch {
