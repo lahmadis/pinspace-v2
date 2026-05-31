@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { calculateFloorBounds, getWallTransformResolved, getWallTransform } from '@/lib/wallLayout'
 import type { WallConfig, WallTransformOverride } from '@/lib/wallLayout'
 import type { FloorTable } from '@/types'
-import { X, Plus, Upload, Trash2, Magnet } from 'lucide-react'
+import { X, Plus, Upload, Trash2 } from 'lucide-react'
 import { WallConfigPreview } from './WallConfigPreview'
 import { toast } from '@/lib/toast'
 import { MAX_MODEL_SIZE_BYTES } from '@/lib/uploadLimits'
@@ -12,9 +12,7 @@ import { MAX_MODEL_SIZE_BYTES } from '@/lib/uploadLimits'
 const TABLE_HEIGHT_INCHES = 18 // 1.5 feet
 const DEFAULT_TABLE_WIDTH = 24
 const DEFAULT_TABLE_DEPTH = 18
-const GRID_INCHES = 12 // 1 ft grid
-const SNAP_ENDPOINT_THRESHOLD = 12 // inches — endpoint snap radius
-const SNAP_ANGLE_DEG = 15 // degrees — rotation snap increment when snap ON
+const GRID_INCHES = 12 // 1 ft grid (visual reference only; wall transforms are free-continuous)
 
 interface FloorEditorOverlayProps {
   studioId: string
@@ -26,6 +24,21 @@ interface FloorEditorOverlayProps {
   mode?: 'tables' | 'walls'
   /** Called when wall positions/rotations change (walls mode). */
   onWallConfigChange?: (config: WallConfig) => void
+  /**
+   * Per-board wall index for every board in the current room, used to decide
+   * whether a wall is "occupied" before allowing deletion. We deliberately
+   * pass just the indices (not full Board objects) to keep the overlay
+   * decoupled from the board shape and avoid retriggering renders on
+   * unrelated board updates.
+   */
+  boardWallIndices?: ReadonlyArray<number | null | undefined>
+  /**
+   * Fired after a wall has been removed at `deletedIndex`. The parent must
+   * decrement `position.wallIndex` for every board with index > deletedIndex
+   * (both in memory and in the DB) so boards stay pinned to the correct
+   * physical wall after the splice.
+   */
+  onWallRemoved?: (deletedIndex: number) => void
 }
 
 const VIEW_WIDTH = 700
@@ -61,10 +74,6 @@ function worldToScreen(
 }
 
 
-function snapToGrid(v: number, grid: number): number {
-  return Math.round(v / grid) * grid
-}
-
 function wrapAngle(a: number): number {
   while (a > Math.PI) a -= 2 * Math.PI
   while (a <= -Math.PI) a += 2 * Math.PI
@@ -83,6 +92,8 @@ export default function FloorEditorOverlay({
   onSaveAndExit,
   mode = 'tables',
   onWallConfigChange,
+  boardWallIndices,
+  onWallRemoved,
 }: FloorEditorOverlayProps) {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
   const [uploadingTableId, setUploadingTableId] = useState<string | null>(null)
@@ -90,14 +101,13 @@ export default function FloorEditorOverlay({
   const [dragStart, setDragStart] = useState<{ x: number; z: number; startPx: number; startPy: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Snap toggle
-  const [snapOn, setSnapOn] = useState(true)
+  // Walls mode: which wall the user has selected (target of the Remove wall
+  // button). null = nothing selected. Set by pointerdown on a wall polygon.
+  const [selectedWallIndex, setSelectedWallIndex] = useState<number | null>(null)
 
   // Walls mode: drag/rotate/stretch state
   const [draggingWallIndex, setDraggingWallIndex] = useState<number | null>(null)
   const [wallDragStart, setWallDragStart] = useState<{ x: number; z: number; startPx: number; startPy: number } | null>(null)
-  // Ghost position for move snap preview (world coords)
-  const [ghostWallPos, setGhostWallPos] = useState<{ index: number; x: number; z: number } | null>(null)
 
   const [rotatingWallIndex, setRotatingWallIndex] = useState<number | null>(null)
   const [rotateStart, setRotateStart] = useState<{
@@ -118,8 +128,6 @@ export default function FloorEditorOverlay({
     axisX: number
     axisZ: number
   } | null>(null)
-  // Endpoint snap target for stretch (world coords of the snapping endpoint on another wall)
-  const [stretchSnapTarget, setStretchSnapTarget] = useState<{ px: number; py: number } | null>(null)
 
   const floorPlanRef = useRef<HTMLDivElement>(null)
 
@@ -275,25 +283,11 @@ export default function FloorEditorOverlay({
     []
   )
 
-  // ── Wall endpoints for snap reference ────────────────────────────────────
-  const getWallEndpoints = useCallback(
-    (cfg: WallConfig): Array<{ wallIndex: number; end: 'start' | 'end'; x: number; z: number }> => {
-      return cfg.walls.flatMap((_, i) => {
-        const t = getWallTransformResolved(cfg, i)
-        const cos = Math.cos(t.rotationY)
-        const sin = Math.sin(t.rotationY)
-        const halfW = t.width / 2
-        // Width axis matches Three.js Ry(θ): (+cosθ, −sinθ).
-        return [
-          { wallIndex: i, end: 'start' as const, x: t.x - halfW * cos, z: t.z + halfW * sin },
-          { wallIndex: i, end: 'end' as const, x: t.x + halfW * cos, z: t.z - halfW * sin },
-        ]
-      })
-    },
-    []
-  )
-
   // ── Unified pointer move ──────────────────────────────────────────────────
+  //
+  // Walls move/rotate/stretch are intentionally free-continuous: no grid snap,
+  // no angle snap, no neighbor-endpoint snap. Users want fine control over the
+  // room layout. Board placement snap (a separate surface) is unaffected.
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
@@ -301,15 +295,8 @@ export default function FloorEditorOverlay({
       if (draggingWallIndex !== null && wallDragStart && onWallConfigChange) {
         const deltaPx = e.clientX - wallDragStart.startPx
         const deltaPy = e.clientY - wallDragStart.startPy
-        let newX = wallDragStart.x + deltaPx * invScale
-        let newZ = wallDragStart.z - deltaPy * invScale
-
-        if (snapOn) {
-          newX = snapToGrid(newX, GRID_INCHES)
-          newZ = snapToGrid(newZ, GRID_INCHES)
-        }
-
-        setGhostWallPos({ index: draggingWallIndex, x: newX, z: newZ })
+        const newX = wallDragStart.x + deltaPx * invScale
+        const newZ = wallDragStart.z - deltaPy * invScale
 
         const custom = ensureCustomTransforms(wallConfig, draggingWallIndex)
         custom[draggingWallIndex] = { ...custom[draggingWallIndex], x: newX, z: newZ }
@@ -329,18 +316,8 @@ export default function FloorEditorOverlay({
         // +delta (not −delta): under the corrected width-axis convention the
         // visible wall long-axis rotates with screen-angle = +rotationY, so an
         // increasing cursor angle (clockwise drag, screen y-down) must increase
-        // rotationY for the wall to follow the cursor. The old −delta was tuned
-        // to the pre-fix mirrored rendering and inverted rotation after the flip.
-        let newRotationY = rotateStart.initialRotationY + delta
-
-        if (e.shiftKey) {
-          // Shift: 90° snap regardless of snapOn
-          const SNAP_RAD = Math.PI / 2
-          newRotationY = Math.round(newRotationY / SNAP_RAD) * SNAP_RAD
-        } else if (snapOn) {
-          const SNAP_RAD = (SNAP_ANGLE_DEG * Math.PI) / 180
-          newRotationY = Math.round(newRotationY / SNAP_RAD) * SNAP_RAD
-        }
+        // rotationY for the wall to follow the cursor.
+        const newRotationY = rotateStart.initialRotationY + delta
 
         const custom = ensureCustomTransforms(wallConfig, rotatingWallIndex)
         custom[rotatingWallIndex] = { ...custom[rotatingWallIndex], rotationY: newRotationY }
@@ -359,47 +336,12 @@ export default function FloorEditorOverlay({
         const deltaAlong = deltaX * stretchStart.axisX + deltaZ * stretchStart.axisZ
         const signedDelta = stretchStart.end === 'end' ? deltaAlong : -deltaAlong
         const MIN_WALL_INCHES = 24
-        let nextWidthInches = Math.max(MIN_WALL_INCHES, stretchStart.initialWidthInches + signedDelta)
-        let widthDelta = nextWidthInches - stretchStart.initialWidthInches
-        let centerShift = widthDelta / 2
+        const nextWidthInches = Math.max(MIN_WALL_INCHES, stretchStart.initialWidthInches + signedDelta)
+        const widthDelta = nextWidthInches - stretchStart.initialWidthInches
+        const centerShift = widthDelta / 2
         const centerSign = stretchStart.end === 'end' ? 1 : -1
-        let nextCenterX = stretchStart.initialCenterX + stretchStart.axisX * centerShift * centerSign
-        let nextCenterZ = stretchStart.initialCenterZ + stretchStart.axisZ * centerShift * centerSign
-
-        // Endpoint snap: find nearest other wall's endpoint
-        let snapTarget: { px: number; py: number } | null = null
-        if (snapOn) {
-          const allEndpoints = getWallEndpoints(wallConfig)
-          // Current moved endpoint world coords
-          const movedEndX = nextCenterX + stretchStart.axisX * (nextWidthInches / 2) * (stretchStart.end === 'end' ? 1 : -1)
-          const movedEndZ = nextCenterZ + stretchStart.axisZ * (nextWidthInches / 2) * (stretchStart.end === 'end' ? 1 : -1)
-
-          let bestDist = SNAP_ENDPOINT_THRESHOLD
-          let bestEp: { x: number; z: number } | null = null
-          for (const ep of allEndpoints) {
-            if (ep.wallIndex === stretchingWallIndex) continue
-            const d = Math.sqrt((ep.x - movedEndX) ** 2 + (ep.z - movedEndZ) ** 2)
-            if (d < bestDist) { bestDist = d; bestEp = ep }
-          }
-          if (bestEp) {
-            // Snap: recompute width and center so moved endpoint lands on bestEp
-            const snapDist = Math.sqrt(
-              (bestEp.x - stretchStart.initialCenterX) ** 2 + (bestEp.z - stretchStart.initialCenterZ) ** 2
-            )
-            const dotSign = stretchStart.end === 'end' ? 1 : -1
-            const projAlongAxis =
-              (bestEp.x - stretchStart.initialCenterX) * stretchStart.axisX * dotSign +
-              (bestEp.z - stretchStart.initialCenterZ) * stretchStart.axisZ * dotSign
-            nextWidthInches = Math.max(MIN_WALL_INCHES, projAlongAxis * 2)
-            widthDelta = nextWidthInches - stretchStart.initialWidthInches
-            centerShift = widthDelta / 2
-            nextCenterX = stretchStart.initialCenterX + stretchStart.axisX * centerShift * centerSign
-            nextCenterZ = stretchStart.initialCenterZ + stretchStart.axisZ * centerShift * centerSign
-            snapTarget = { px: worldToScreen(bestEp.x, bestEp.z, bounds)[0], py: worldToScreen(bestEp.x, bestEp.z, bounds)[1] }
-            void snapDist
-          }
-        }
-        setStretchSnapTarget(snapTarget)
+        const nextCenterX = stretchStart.initialCenterX + stretchStart.axisX * centerShift * centerSign
+        const nextCenterZ = stretchStart.initialCenterZ + stretchStart.axisZ * centerShift * centerSign
 
         const nextWalls = wallConfig.walls.map((wall, idx) =>
           idx === stretchingWallIndex ? { ...wall, width: nextWidthInches / 12 } : wall
@@ -424,8 +366,8 @@ export default function FloorEditorOverlay({
     [
       draggingWallIndex, wallDragStart, rotatingWallIndex, rotateStart,
       stretchingWallIndex, stretchStart, draggingTableId, dragStart,
-      invScale, setTables, wallConfig, onWallConfigChange, snapOn,
-      ensureCustomTransforms, getWallEndpoints, bounds,
+      invScale, setTables, wallConfig, onWallConfigChange,
+      ensureCustomTransforms,
     ]
   )
 
@@ -449,8 +391,6 @@ export default function FloorEditorOverlay({
       setUndoIndex((prev) => prev + 1)
       lastAppliedWallConfigRef.current = null
     }
-    setGhostWallPos(null)
-    setStretchSnapTarget(null)
     setDraggingTableId(null)
     setDragStart(null)
     setDraggingWallIndex(null)
@@ -467,6 +407,10 @@ export default function FloorEditorOverlay({
     (index: number, e: React.PointerEvent) => {
       e.preventDefault()
       e.stopPropagation()
+      // Always select on click (even when drag does nothing, e.g. read-only).
+      // The Remove wall button reads `selectedWallIndex`; selecting before
+      // dragging means a click-without-drag also primes the delete target.
+      setSelectedWallIndex(index)
       if (!onWallConfigChange) return
       const transform = getWallTransformResolved(wallConfig, index)
       setDraggingWallIndex(index)
@@ -538,14 +482,45 @@ export default function FloorEditorOverlay({
   }, [wallConfig, onWallConfigChange, undoIndex, ensureCustomTransforms])
 
   const handleRemoveWall = useCallback(() => {
-    if (!onWallConfigChange || wallConfig.walls.length <= 1) return
-    const newWalls = wallConfig.walls.slice(0, -1)
-    const newCustom = wallConfig.customTransforms?.slice(0, -1) ?? []
-    const next = { ...wallConfig, walls: newWalls, customTransforms: newCustom }
+    if (!onWallConfigChange) return
+    if (wallConfig.walls.length <= 1) return
+    if (selectedWallIndex == null) return
+    if (selectedWallIndex < 0 || selectedWallIndex >= wallConfig.walls.length) return
+
+    // Board-safety guard: never silently orphan boards. If anything is pinned
+    // to this wall, refuse the delete and tell the user. The previous version
+    // always popped the LAST wall regardless of selection, which (combined
+    // with index-based wall identity) lost real boards in production.
+    const boardsHere = (boardWallIndices ?? []).filter((idx) => idx === selectedWallIndex).length
+    if (boardsHere > 0) {
+      toast.error(
+        `This wall has ${boardsHere} board${boardsHere === 1 ? '' : 's'} on it. ` +
+        `Move or remove them before deleting the wall.`
+      )
+      return
+    }
+
+    // Splice the targeted index from BOTH walls[] and customTransforms[]; they
+    // are index-aligned, so dropping the same slot keeps every other wall on
+    // its existing transform.
+    const newWalls = wallConfig.walls.filter((_, i) => i !== selectedWallIndex)
+    const newCustom = wallConfig.customTransforms
+      ? wallConfig.customTransforms.filter((_, i) => i !== selectedWallIndex)
+      : undefined
+    const next: WallConfig = newCustom
+      ? { ...wallConfig, walls: newWalls, customTransforms: newCustom }
+      : { ...wallConfig, walls: newWalls }
+
     onWallConfigChange(next)
+    // Tell the parent so it can decrement position.wallIndex for every board
+    // whose index was strictly greater than the deleted index (in-memory +
+    // DB). Boards on the deleted index don't exist here — the guard above
+    // refused the delete if any were present.
+    onWallRemoved?.(selectedWallIndex)
     setUndoHistory((prev) => [...prev.slice(0, undoIndex + 1), next])
     setUndoIndex((prev) => prev + 1)
-  }, [wallConfig, onWallConfigChange, undoIndex])
+    setSelectedWallIndex(null)
+  }, [wallConfig, onWallConfigChange, undoIndex, selectedWallIndex, boardWallIndices, onWallRemoved])
 
   // ── Compute wall geometry for rendering ───────────────────────────────────
 
@@ -692,24 +667,12 @@ export default function FloorEditorOverlay({
               <button
                 type="button"
                 onClick={handleRemoveWall}
-                disabled={wallConfig.walls.length <= 1}
+                disabled={selectedWallIndex == null || wallConfig.walls.length <= 1}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 rounded-xl text-sm font-medium transition-colors shadow-sm"
+                title={selectedWallIndex == null ? 'Click a wall to select it first' : `Remove wall ${selectedWallIndex + 1}`}
               >
                 <Trash2 className="w-4 h-4" />
                 Remove wall
-              </button>
-              <button
-                type="button"
-                onClick={() => setSnapOn((v) => !v)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm ${
-                  snapOn
-                    ? 'bg-indigo-100 text-indigo-700 border border-indigo-300 hover:bg-indigo-200'
-                    : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'
-                }`}
-                title={snapOn ? 'Snap on — click to turn off' : 'Snap off — click to turn on'}
-              >
-                <Magnet className="w-4 h-4" />
-                Snap {snapOn ? 'on' : 'off'}
               </button>
             </div>
           )}
@@ -718,7 +681,7 @@ export default function FloorEditorOverlay({
         <div className="p-6 overflow-auto">
           <p className="text-sm text-gray-500 mb-4">
             {mode === 'walls'
-              ? 'Top-down view. Drag walls to move. Drag endpoint handles to resize. Use the circle handle on the front edge to rotate (Shift = 90°, Snap = 15°). Ctrl+Z undo, Ctrl+Y redo.'
+              ? 'Top-down view. Click a wall to select it. Drag walls to move, endpoint handles to resize, the circle handle on the front edge to rotate. Ctrl+Z undo, Ctrl+Y redo.'
               : 'Top-down view. Drag tables to move. Click a table then "Add model" to place a 3D model on it.'}
           </p>
 
@@ -755,13 +718,15 @@ export default function FloorEditorOverlay({
               ))}
 
               {/* Wall polygons */}
-              {wallGeometry.map(({ index, points, frontEdge }) => (
+              {wallGeometry.map(({ index, points, frontEdge }) => {
+                const isSelected = mode === 'walls' && selectedWallIndex === index
+                return (
                 <g key={index}>
                   <polygon
                     points={points.join(',')}
-                    fill="#4f46e5"
-                    stroke="#3730a3"
-                    strokeWidth={0.5}
+                    fill={isSelected ? '#6366f1' : '#4f46e5'}
+                    stroke={isSelected ? '#facc15' : '#3730a3'}
+                    strokeWidth={isSelected ? 2.5 : 0.5}
                     className={mode === 'walls' ? 'cursor-move' : ''}
                     style={{ pointerEvents: mode === 'walls' ? 'all' : 'none' }}
                     onPointerDown={mode === 'walls' ? (e) => handleWallPointerDown(index, e) : undefined}
@@ -778,36 +743,8 @@ export default function FloorEditorOverlay({
                     />
                   )}
                 </g>
-              ))}
-
-              {/* Ghost overlay for move-snap preview */}
-              {mode === 'walls' && ghostWallPos && snapOn && (() => {
-                const idx = ghostWallPos.index
-                const transform = getWallTransformResolved(wallConfig, idx)
-                const halfW = transform.width / 2
-                const halfD = 3
-                const cos = Math.cos(transform.rotationY)
-                const sin = Math.sin(transform.rotationY)
-                // Width axis matches Three.js Ry(θ): (+cosθ, −sinθ) — same as the live corner math.
-                const snappedCorners = [
-                  [ghostWallPos.x - halfW * cos - halfD * sin, ghostWallPos.z + halfW * sin - halfD * cos],
-                  [ghostWallPos.x + halfW * cos - halfD * sin, ghostWallPos.z - halfW * sin - halfD * cos],
-                  [ghostWallPos.x + halfW * cos + halfD * sin, ghostWallPos.z - halfW * sin + halfD * cos],
-                  [ghostWallPos.x - halfW * cos + halfD * sin, ghostWallPos.z + halfW * sin + halfD * cos],
-                ]
-                const ghostPoints = snappedCorners.map(([x, z]) => worldToScreen(x, z, bounds)).flat()
-                return (
-                  <polygon
-                    points={ghostPoints.join(',')}
-                    fill="none"
-                    stroke="#4f46e5"
-                    strokeWidth={1.5}
-                    strokeDasharray="4 3"
-                    opacity={0.5}
-                    style={{ pointerEvents: 'none' }}
-                  />
                 )
-              })()}
+              })}
 
               {/* Rotate handle lines (wall center → handle) */}
               {mode === 'walls' && wallGeometry.map(({ index, centerPx, centerPy, handlePx, handlePy }) => (
@@ -839,17 +776,6 @@ export default function FloorEditorOverlay({
                   <circle cx={endPx} cy={endPy} r={4} fill="#ffffff" stroke="#4f46e5" strokeWidth={1.5} />
                 </g>
               ))}
-
-              {/* Stretch snap target marker */}
-              {stretchSnapTarget && (
-                <circle
-                  cx={stretchSnapTarget.px} cy={stretchSnapTarget.py} r={6}
-                  fill="none"
-                  stroke="#4f46e5"
-                  strokeWidth={1.5}
-                  style={{ pointerEvents: 'none' }}
-                />
-              )}
             </svg>
 
             {/* 3D minimap preview — walls mode only */}

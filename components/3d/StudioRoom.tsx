@@ -8,7 +8,7 @@ import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { supabase } from '@/lib/supabase/client'
 import { Board, FloorTable } from '@/types'
 import WallSystem from './WallSystem'
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { CameraController } from './CameraController'
 import { EditModeOverlay } from './EditModeOverlay'
@@ -655,6 +655,51 @@ export default function StudioRoom(props: StudioRoomProps) {
       }
     })()
   }, [props.studioId, props.workspaceId, props.wallConfig, props.wallVersionRef, props.onWallConfigConflict, tables])
+
+  /**
+   * Wall indices for the floor editor's board-safety guard. Just the indices —
+   * not full Board objects — so the prop is cheap and the editor stays
+   * decoupled from the board shape.
+   */
+  const boardWallIndices = useMemo(
+    () => localBoards.map((b) => b.position?.wallIndex ?? null),
+    [localBoards]
+  )
+
+  /**
+   * After the floor editor pops a wall at `deletedIndex`, every board on a
+   * higher wall needs its `position_wall_index` decremented so it stays on
+   * the same physical wall (which has shifted down one slot in walls[]).
+   * The editor's board-safety guard refuses to delete a wall that has any
+   * boards on it, so we never have to handle boards on the deleted index.
+   *
+   * Best-effort: surface a toast on failure but don't block the editor —
+   * realtime UPDATE events from the PATCH will keep clients in sync, and
+   * onBoardUpdate re-fetches as a defensive backstop.
+   */
+  const handleWallRemoved = useCallback(
+    async (deletedIndex: number) => {
+      const roomId = props.studioId
+      try {
+        const res = await fetch('/api/boards/reindex-after-wall-delete', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId, deletedWallIndex: deletedIndex }),
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({} as { error?: string }))
+          throw new Error(data.error || `HTTP ${res.status}`)
+        }
+        // Refetch boards so local state picks up the new wall_index values.
+        await props.onBoardUpdate()
+      } catch (err) {
+        console.error('Failed to reindex boards after wall delete', err)
+        const message = err instanceof Error ? err.message : 'Please refresh.'
+        toast.error(`Wall removed but board indices may be stale. ${message}`)
+      }
+    },
+    [props.studioId, props.onBoardUpdate]
+  )
 
   // Keep placedBoards3D in sync with boardPositions (e.g. after undo/redo)
   useEffect(() => {
@@ -1497,6 +1542,8 @@ export default function StudioRoom(props: StudioRoomProps) {
           onSaveAndExit={handleFloorEditorSave}
           mode={props.floorEditorMode ?? 'tables'}
           onWallConfigChange={props.onWallConfigChange}
+          boardWallIndices={boardWallIndices}
+          onWallRemoved={handleWallRemoved}
         />
       )}
 
