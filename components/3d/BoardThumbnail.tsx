@@ -122,13 +122,14 @@ export default function BoardThumbnail({ board, position, width, height, onClick
     e.stopPropagation()
   }
 
-  // Apply persisted rotation around the board's center. Default 0 when undefined.
-  const rotationZ = board.position?.rotation ?? board.position_rotation ?? 0
+  // Phase 6: board rotation is no longer applied — boards render flat.
+  // The DB column is preserved for non-destructive removal; we just ignore
+  // any stored value on render.
 
   return (
     <group
       position={position}
-      rotation={[0, 0, rotationZ]}
+      rotation={[0, 0, 0]}
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
       onPointerDown={handlePointerDown}

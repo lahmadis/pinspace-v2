@@ -299,7 +299,6 @@ export function useBoardState(
     width?: number,  // decimal 0.0 to 1.0
     height?: number,  // decimal 0.0 to 1.0
     side: 'front' | 'back' = 'front',
-    rotation?: number  // radians; passed through to /api/boards PUT for persistence
   ) => {
       devLog('💾 [useBoardState] updateBoardPosition:', {
       boardId,
@@ -375,12 +374,6 @@ export function useBoardState(
           width: apiWidth,
           height: apiHeight,
           side: positionSide,
-          // Preserve rotation: use the explicitly-passed value when given,
-          // otherwise fall back to whatever the board already has. Without
-          // this, rebuilding the position object here would silently strip
-          // rotation set earlier in the same edit session by Callsite B's
-          // /position PATCH success branch.
-          rotation: rotation ?? b.position?.rotation,
         },
       }
     }))
@@ -428,10 +421,6 @@ export function useBoardState(
             width: apiWidth,
             height: apiHeight,
             side: positionSide,
-            // Forward rotation when known so /api/boards PUT can persist
-            // position_rotation. Caller passes undefined when it doesn't
-            // know — the route's update branch ignores undefined.
-            rotation,
           }
         })
       })
@@ -456,7 +445,6 @@ export function useBoardState(
                 width: apiWidth,
                 height: apiHeight,
                 side: b.position?.side || side || 'front',
-                rotation: rotation ?? b.position?.rotation,
             }
           }
         }
@@ -616,38 +604,10 @@ export function useBoardState(
   }, [])
 
   /**
-   * Local-only rotation update — mirrors a successful rotate / resize PATCH
-   * back into the boards array so post-edit-mode rendering (WallSystem reads
-   * board.position.rotation) sees the new value without waiting for a refetch.
-   *
-   * Bails out via referential equality when the value hasn't changed, so
-   * callers can fire it from a per-PATCH success branch without forcing a
-   * re-render of consumers each time.
-   */
-  const applyBoardRotationLocal = useCallback((boardId: string, rotation: number) => {
-    setBoards(prev => {
-      let changed = false
-      const next = prev.map(b => {
-        if (b.id !== boardId) return b
-        const current = b.position?.rotation ?? b.position_rotation ?? 0
-        if (current === rotation) return b
-        changed = true
-        return {
-          ...b,
-          position: b.position ? { ...b.position, rotation } : b.position,
-          position_rotation: rotation,
-        }
-      })
-      return changed ? next : prev
-    })
-  }, [])
-
-  /**
    * Local-only absolute-size update — mirrors a corner-resize back into the
    * boards array (board_width_in / board_height_in, in inches) so post-edit-
    * mode rendering (WallSystem reads board.boardWidthIn) sees the new size
-   * without waiting for a refetch. Bails out via value equality when
-   * unchanged, mirroring applyBoardRotationLocal.
+   * without waiting for a refetch. Bails out via value equality when unchanged.
    *
    * Also writes to boardsRef synchronously: callers (DraggableBoard) apply
    * the resize on pointer-up *before* the PATCH fires so a same-tick Save &
@@ -680,7 +640,6 @@ export function useBoardState(
     boardPositions,
     loadWallPositions,
     updateBoardPosition,
-    applyBoardRotationLocal,
     applyBoardSizeLocal,
     deleteBoard,
     addTempBoard,

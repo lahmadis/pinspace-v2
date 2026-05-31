@@ -28,27 +28,10 @@ interface DraggableBoardProps {
   initialLocalPosition?: { x: number; y: number; width?: number; height?: number }
   onDragEnd: (boardId: string, localX: number, localY: number, width?: number, height?: number, side?: 'front' | 'back') => void
   /**
-   * Pushed on every rotate-handle pointer-move so the parent can mirror the
-   * current rotation into placedBoards3D — that's where Save & Exit reads
-   * from when bulk-saving the wall (handleEditComplete in StudioRoom).
-   * Without this, the rotate-end PATCH (the only fetch that sends rotation)
-   * is the sole source of persistence and there's no fallback.
-   */
-  onRotationChange?: (boardId: string, rotation: number) => void
-  /**
-   * Pushed on rotate-handle / corner-resize PATCH success so the parent can
-   * mirror the server-acked rotation into useBoardState.boards. That's the
-   * array WallSystem reads from once edit mode exits — without this, the
-   * scene re-reads the pre-rotation value and visually reverts the rotation
-   * even though the DB has the new value.
-   */
-  onRotationPersisted?: (boardId: string, rotation: number) => void
-  /**
    * Pushed on corner-resize PATCH success so the parent can mirror the
    * server-acked absolute size (inches) into useBoardState.boards. That's the
    * array WallSystem reads from once edit mode exits — without this, the scene
-   * re-reads the pre-resize size and visually reverts the resize. Symmetric
-   * with onRotationPersisted.
+   * re-reads the pre-resize size and visually reverts the resize.
    */
   onSizePersisted?: (boardId: string, widthIn: number, heightIn: number) => void
   onDelete: (boardId: string) => void
@@ -60,51 +43,18 @@ interface DraggableBoardProps {
   isWorkspaceMember?: boolean // Whether user is a member of the workspace
 }
 
-/**
- * CSS cursor for the rotate handles. There's no built-in rotate cursor, so we
- * inline a small SVG (curved arrow) as a data URL. Hotspot is the center (12 12)
- * of the 24x24 image so the curve sits where the user is pointing.
- */
-const ROTATE_CURSOR =
-  "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 12a9 9 0 1 1-3-6.7'/><polyline points='21,3 21,9 15,9'/></svg>\") 12 12, auto"
-
-type ResizeCursor = 'ns-resize' | 'ew-resize' | 'nwse-resize' | 'nesw-resize'
+type ResizeCursor = 'nwse-resize' | 'nesw-resize'
 
 /**
- * Pick the resize cursor that matches a rotated corner's actual screen-space diagonal.
- * `localDirX`/`localDirY` are the unrotated corner direction signs (TR = +1,+1 etc.);
- * `rotation` is the board's rotation in radians (matches the value applied as rotation.z).
- * The corner direction is rotated, then snapped to the nearest 45° to pick a cursor.
+ * Corner→cursor lookup. Boards no longer rotate, so the cursor follows just
+ * the corner index. After the back-side X-mirror, TR↔TL and BL↔BR swap,
+ * which also swaps which diagonal each corner sits on.
+ *   TR (0) / BL (2) → NE↔SW diagonal → 'nesw-resize'
+ *   TL (1) / BR (3) → NW↔SE diagonal → 'nwse-resize'
  */
-function pickResizeCursorForRotatedCorner(
-  localDirX: number,
-  localDirY: number,
-  rotation: number
-): ResizeCursor {
-  const cosR = Math.cos(rotation)
-  const sinR = Math.sin(rotation)
-  const worldX = cosR * localDirX - sinR * localDirY
-  const worldY = sinR * localDirX + cosR * localDirY
-  const angle = Math.atan2(worldY, worldX)
-  const norm = ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)
-  // 0=E, 1=NE, 2=N, 3=NW, 4=W, 5=SW, 6=S, 7=SE
-  const snapped = Math.round(norm / (Math.PI / 4)) % 8
-  switch (snapped) {
-    case 0:
-    case 4:
-      return 'ew-resize'
-    case 2:
-    case 6:
-      return 'ns-resize'
-    case 1:
-    case 5:
-      return 'nesw-resize'
-    case 3:
-    case 7:
-      return 'nwse-resize'
-    default:
-      return 'nwse-resize'
-  }
+function resizeCursorForCorner(cornerIndex: number, isBackSide: boolean): ResizeCursor {
+  const effective = isBackSide ? (cornerIndex === 0 ? 1 : cornerIndex === 1 ? 0 : cornerIndex === 2 ? 3 : 2) : cornerIndex
+  return effective === 0 || effective === 2 ? 'nesw-resize' : 'nwse-resize'
 }
 
 function BoardTextureMaterial({ imageUrl }: { imageUrl: string }) {
@@ -141,8 +91,6 @@ export function DraggableBoard({
   side = 'front',
   initialLocalPosition = { x: 0, y: 0 },
   onDragEnd,
-  onRotationChange,
-  onRotationPersisted,
   onSizePersisted,
   onDelete: _onDelete,
   onCommentClick,
@@ -189,20 +137,9 @@ export function DraggableBoard({
   const [isHovered, setIsHovered] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
-  // Rotation in radians around the board's center (rotation.z). Mirrors board.position.rotation
-  // when not actively rotating; updated optimistically during rotate-drag.
-  const propsRotation = board.position?.rotation ?? board.position_rotation ?? 0
-  const [localRotation, setLocalRotation] = useState<number>(propsRotation)
-  const rotationRef = useRef<number>(propsRotation)
-  const isRotatingRef = useRef(false)
-  const [isRotating, setIsRotating] = useState(false)
-  // Sync from props when not actively rotating (e.g. another user updated rotation, or initial load).
-  useEffect(() => {
-    if (!isRotatingRef.current) {
-      rotationRef.current = propsRotation
-      setLocalRotation(propsRotation)
-    }
-  }, [propsRotation])
+  // Rotation removed (Phase 6): boards always render flat. The stored
+  // position_rotation column is intentionally preserved in the DB but no
+  // longer read or applied. WallSystem and BoardThumbnail also ignore it.
 
   // Re-sync absolute size from props when the board's stored size changes
   // externally (server ack, another user's resize) and we're not mid-resize.
@@ -581,22 +518,16 @@ if (e.intersections && e.intersections.length > 0) {
     const halfW = w0 / 2
     const halfH = h0 / 2
 
-    // Board-local corner directions (constant per cornerIndex; not affected by rotation).
-    // 0=TR(+,+), 1=TL(-,+), 2=BL(-,-), 3=BR(+,-).
+    // Board-local corner directions. 0=TR(+,+), 1=TL(-,+), 2=BL(-,-), 3=BR(+,-).
+    // Rotation removed in Phase 6, so board-local axes equal wall-local axes
+    // and the corners drop straight onto the center+offset.
     const cornerDirsLocal: Array<{ x: number; y: number }> = [
       { x: 1, y: 1 }, { x: -1, y: 1 }, { x: -1, y: -1 }, { x: 1, y: -1 },
     ]
-
-    // Compute the rotated corner positions in wall-local space.
-    // The board itself is rotated by `rotationRef.current` around (cx, cy).
-    const rot = rotationRef.current
-    const cosR = Math.cos(rot)
-    const sinR = Math.sin(rot)
-    const rotateAroundCenter = (lx: number, ly: number) => ({
-      x: cx + cosR * lx - sinR * ly,
-      y: cy + sinR * lx + cosR * ly,
-    })
-    const corners = cornerDirsLocal.map(d => rotateAroundCenter(d.x * halfW, d.y * halfH))
+    const corners = cornerDirsLocal.map(d => ({
+      x: cx + d.x * halfW,
+      y: cy + d.y * halfH,
+    }))
 
     const anchorIndex = (cornerIndex + 2) % 4
     const anchor = corners[anchorIndex]
@@ -648,32 +579,39 @@ if (e.intersections && e.intersections.length > 0) {
       let newCornerX: number
       let newCornerY: number
 
+      // Both modes are RELATIVE — they apply the pointer's displacement
+      // *from the initial corner position*, not the pointer's absolute
+      // distance from the anchor. The free-mode code used to be absolute
+      // (`width = deltaFromAnchor * sign`), which made the board jump on
+      // gesture start whenever the user clicked the handle off-center.
+      // Now both modes start at the initial size and grow/shrink by the
+      // pointer's drag delta, so the same gesture produces the same result
+      // regardless of where on the handle pointer-down landed.
+      const initialW = resizeStartRef.current.initialWidth
+      const initialH = resizeStartRef.current.initialHeight
+      const initialCornerX = resizeStartRef.current.initialCornerX
+      const initialCornerY = resizeStartRef.current.initialCornerY
+      const dragDX = pointerWall.x - initialCornerX
+      const dragDY = pointerWall.y - initialCornerY
+
       if (shiftHeldRef.current) {
-        // Shift held = free resize: width/height move independently along the BOARD-LOCAL axes
-        // (so a rotated board still resizes "horizontally" along its own width axis, not screen-X).
-        const deltaWX = pointerWall.x - ax
-        const deltaWY = pointerWall.y - ay
-        // Project wall-local delta into the board's rotated frame:
-        // board-local x-axis = (cosR, sinR); board-local y-axis = (-sinR, cosR).
-        const deltaBX = deltaWX * cosR + deltaWY * sinR
-        const deltaBY = -deltaWX * sinR + deltaWY * cosR
-        const widthInches = THREE.MathUtils.clamp(deltaBX * cornerLocalDirX, MIN_INCHES_W, MAX_INCHES_W)
-        const heightInches = THREE.MathUtils.clamp(deltaBY * cornerLocalDirY, MIN_INCHES_H, MAX_INCHES_H)
-        newW = widthInches
-        newH = heightInches
-        // Active corner in wall-local: anchor + R(rotation) * (sign * inches in board-local).
-        const cornerBX = cornerLocalDirX * widthInches
-        const cornerBY = cornerLocalDirY * heightInches
-        newCornerX = ax + cosR * cornerBX - sinR * cornerBY
-        newCornerY = ay + sinR * cornerBX + cosR * cornerBY
+        // Shift held = FREE resize: width and height move independently.
+        // Project the drag delta onto each board-local axis via the corner
+        // sign; that's the per-axis growth from the initial dimension.
+        const widthDelta = dragDX * cornerLocalDirX
+        const heightDelta = dragDY * cornerLocalDirY
+        newW = THREE.MathUtils.clamp(initialW + widthDelta, MIN_INCHES_W, MAX_INCHES_W)
+        newH = THREE.MathUtils.clamp(initialH + heightDelta, MIN_INCHES_H, MAX_INCHES_H)
+        // The active corner sits at anchor + (sign * width, sign * height).
+        newCornerX = ax + cornerLocalDirX * newW
+        newCornerY = ay + cornerLocalDirY * newH
       } else {
-        // Default = locked aspect ratio: project pointer displacement onto the diagonal, scale both axes equally.
-        const dx = pointerWall.x - ax
-        const dy = pointerWall.y - ay
-        const projectedLength = dx * dirNormX + dy * dirNormY
-        const rawScale = Math.max(0.01, projectedLength / initialDiagonal)
-        const initialW = resizeStartRef.current.initialWidth
-        const initialH = resizeStartRef.current.initialHeight
+        // Default = PROPORTIONAL: project drag delta onto the anchor→corner
+        // diagonal direction, grow the diagonal by that scalar, scale both
+        // axes by the same ratio. Aspect ratio is locked.
+        const projectedDelta = dragDX * dirNormX + dragDY * dirNormY
+        const newDiagonal = Math.max(0.01, initialDiagonal + projectedDelta)
+        const rawScale = newDiagonal / initialDiagonal
         const minScale = Math.max(MIN_INCHES_W / initialW, MIN_INCHES_H / initialH)
         const maxScale = Math.min(MAX_INCHES_W / initialW, MAX_INCHES_H / initialH)
         const scale = THREE.MathUtils.clamp(rawScale, minScale, maxScale)
@@ -738,19 +676,12 @@ if (e.intersections && e.intersections.length > 0) {
             boardWidthIn: sz.width,
             boardHeightIn: sz.height,
             side,
-            // Send the current rotation so resize doesn't drop it. Reading
-            // from the ref (not localRotation state) avoids a stale-closure
-            // capture inside this pointer-up handler — same pattern the
-            // rotate-end PATCH uses below.
-            rotation: rotationRef.current,
           }),
         })
           .then(res => {
             if (!res.ok) throw new Error(`HTTP ${res.status}`)
-            // Mirror server-acked rotation into useBoardState.boards. Size
-            // was applied optimistically above, so no second size write is
-            // needed on success (applyBoardSizeLocal bails on value equality).
-            onRotationPersisted?.(board.id, rotationRef.current)
+            // Size was applied optimistically above (Phase 5), so success is
+            // a no-op here — applyBoardSizeLocal bails on value equality.
           })
           .catch(err => {
             console.error('❌ [DraggableBoard] Resize PATCH failed:', err)
@@ -779,110 +710,9 @@ if (e.intersections && e.intersections.length > 0) {
     resizeListenersRef.current = { move: onMove, up: onUp }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
-  }, [board.id, _wallIndex, getPointerOnWallPlane, gl, isLocked, scaledWallHeight, scaledWallWidth, side, wallHeightInches, wallWidthInches, worldToWallLocal, onSizePersisted, onRotationPersisted])
+  }, [board.id, _wallIndex, getPointerOnWallPlane, gl, isLocked, scaledWallHeight, scaledWallWidth, side, wallHeightInches, wallWidthInches, worldToWallLocal, onSizePersisted])
 
-  /**
-   * Rotate-handle pointer-down. Starts an angle-tracking drag around the board's center.
-   * Pivot is the board's center in wall-local space; pointer angle is computed in wall-local 2D.
-   * Hold Shift to snap to 15° (π/12) increments. Persists via PATCH on pointer-up; rolls back on failure.
-   */
-  const handleRotatePointerDown = useCallback((
-    e: ThreeEvent<PointerEvent>
-  ) => {
-    e.stopPropagation()
-    if (isLocked) return
-    const pointerPlanePoint = getPointerOnWallPlane(e.clientX, e.clientY)
-    if (!pointerPlanePoint) return
-
-    const cx = positionRef.current.x * scaledWallWidth
-    const cy = positionRef.current.y * scaledWallHeight
-    const pointerWall0 = worldToWallLocal(pointerPlanePoint)
-    const startPointerAngle = Math.atan2(pointerWall0.y - cy, pointerWall0.x - cx)
-    const startRotation = rotationRef.current
-    const priorRotation = startRotation
-
-    isRotatingRef.current = true
-    setIsRotating(true)
-    gl.domElement.style.cursor = ROTATE_CURSOR
-
-    const shiftHeldRef = { current: e.shiftKey }
-    const onKeyDown = (ev: KeyboardEvent) => { if (ev.key === 'Shift') shiftHeldRef.current = true }
-    const onKeyUp = (ev: KeyboardEvent) => { if (ev.key === 'Shift') shiftHeldRef.current = false }
-    window.addEventListener('keydown', onKeyDown)
-    window.addEventListener('keyup', onKeyUp)
-
-    const SNAP_INCREMENT = Math.PI / 12 // 15°
-
-    const onMove = (ev: PointerEvent) => {
-      const p = getPointerOnWallPlane(ev.clientX, ev.clientY)
-      if (!p) return
-      const pointerWall = worldToWallLocal(p)
-      const currentAngle = Math.atan2(pointerWall.y - cy, pointerWall.x - cx)
-      let next = startRotation + (currentAngle - startPointerAngle)
-      if (shiftHeldRef.current) {
-        next = Math.round(next / SNAP_INCREMENT) * SNAP_INCREMENT
-      }
-      rotationRef.current = next
-      setLocalRotation(next)
-      // Mirror to parent's placedBoards3D so handleEditComplete can read the
-      // current rotation when bulk-saving on Save & Exit.
-      onRotationChange?.(board.id, next)
-    }
-
-    const onUp = () => {
-      gl.domElement.style.cursor = ''
-      const finalRotation = rotationRef.current
-      isRotatingRef.current = false
-      setIsRotating(false)
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      window.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('keyup', onKeyUp)
-
-      const isMockBoard =
-        board.id.startsWith('temp-') ||
-        board.id.startsWith('demo-') ||
-        board.id.startsWith('sample-')
-      if (isMockBoard) return
-
-      // Persist via PATCH on the dedicated position endpoint.
-      // We need to send wallIndex/x/y because the route requires them — reuse current values.
-      const ref = positionRef.current
-      fetch(`/api/boards/${board.id}/position`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          wallIndex: _wallIndex,
-          x: (ref.x + 0.5) * 100,
-          y: (ref.y + 0.5) * 100,
-          width: (ref.width ?? 0.3) * 100,
-          height: (ref.height ?? 0.3) * 100,
-          side,
-          rotation: finalRotation,
-        }),
-      })
-        .then(res => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          // Mirror server-acked rotation into useBoardState.boards so the
-          // post-edit-mode WallSystem render reads the new value instead of
-          // the stale pre-rotation rotation from board.position.
-          onRotationPersisted?.(board.id, finalRotation)
-        })
-        .catch(err => {
-          console.error('❌ [DraggableBoard] Rotation PATCH failed:', err)
-          rotationRef.current = priorRotation
-          setLocalRotation(priorRotation)
-          // Roll back the parent state too so placedBoards3D matches the DB.
-          onRotationChange?.(board.id, priorRotation)
-          toast.error('Failed to save board rotation. Please try again.')
-        })
-    }
-
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-  }, [board.id, _wallIndex, getPointerOnWallPlane, gl, isLocked, scaledWallHeight, scaledWallWidth, side, worldToWallLocal])
-
-  devLog(`🧱 DraggableBoard on wall: rotation=${wallRotation.toFixed(2)}, side=${boardSide}, boardZ=${boardZ}`)
+  devLog(`🧱 DraggableBoard on wall: wallRotation=${wallRotation.toFixed(2)}, side=${boardSide}, boardZ=${boardZ}`)
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
   const hasImage = board.fullImageUrl || board.thumbnailUrl
   const imageUrl = board.fullImageUrl || board.thumbnailUrl || ''
@@ -906,14 +736,13 @@ if (e.intersections && e.intersections.length > 0) {
   const deleteButtonX = boardWidth / 2 - deleteButtonSize / 2 - deleteButtonSize * 0.3
   const deleteButtonY = boardHeight / 2 - deleteButtonSize / 2 - deleteButtonSize * 0.3
 
-  // Render rotation derived from local state so optimistic updates (during rotate-drag) take effect immediately.
-  // Back side mirrors the rotation so the displayed direction matches the front-side intuition.
-  const renderRotationZ = isBackSide ? -localRotation : localRotation
+  // Board rotation removed in Phase 6 — always render flat. Pre-existing
+  // position_rotation values are intentionally ignored at render time.
 
   // Position the group at the wall position, then position board within group's local space
   return (
     <group position={wallPosition} rotation={[0, wallRotation, 0]}>
-      <group ref={innerGroupRef} position={[boardXRender, boardY, boardZ]} rotation={[0, 0, renderRotationZ]}>
+      <group ref={innerGroupRef} position={[boardXRender, boardY, boardZ]} rotation={[0, 0, 0]}>
         <mesh
           ref={meshRef}
           onPointerDown={handlePointerDown}
@@ -989,86 +818,49 @@ if (e.intersections && e.intersections.length > 0) {
         )}
 
         {/*
-         * Corner handles, rendered only in edit mode for boards this user can edit.
-         * Two stacked invisible meshes per corner:
-         *   - Resize handle: smaller, in front (z higher) so it takes pointer priority on the corner itself.
-         *   - Rotate handle: larger, behind the resize handle. Only the "donut" outside the resize handle picks
-         *     up rotate hover events; the inner area belongs to resize.
-         *
-         * Cursor for resize is rotation-aware (snaps the diagonal direction to the nearest 45°).
-         * Cursor for rotate is a custom curved-arrow SVG.
-         * The board body still owns drag-to-move; both handles intercept their own pointer events.
+         * Corner resize handles, rendered only in edit mode for boards this
+         * user can edit. The board body still owns drag-to-move; the handles
+         * intercept their own pointer events. Rotate handles were removed in
+         * Phase 6 along with the rotation gesture.
          */}
         {canEdit && !isLocked && (() => {
           const resizeHandleSize = Math.max(2, Math.min(boardWidth, boardHeight) * 0.12)
-          // Rotate handle is ~1.7x larger so the "outside the corner" zone is comfortably discoverable.
-          const rotateHandleSize = resizeHandleSize * 1.7
           // 0=TR, 1=TL, 2=BL, 3=BR — must match the indexing in handleCornerPointerDown.
-          const corners: Array<{ index: number; localX: number; y: number; localDirX: number; localDirY: number }> = [
-            { index: 0, localX: boardWidth / 2, y: boardHeight / 2, localDirX: 1, localDirY: 1 },
-            { index: 1, localX: -boardWidth / 2, y: boardHeight / 2, localDirX: -1, localDirY: 1 },
-            { index: 2, localX: -boardWidth / 2, y: -boardHeight / 2, localDirX: -1, localDirY: -1 },
-            { index: 3, localX: boardWidth / 2, y: -boardHeight / 2, localDirX: 1, localDirY: -1 },
+          const corners: Array<{ index: number; localX: number; y: number }> = [
+            { index: 0, localX: boardWidth / 2, y: boardHeight / 2 },
+            { index: 1, localX: -boardWidth / 2, y: boardHeight / 2 },
+            { index: 2, localX: -boardWidth / 2, y: -boardHeight / 2 },
+            { index: 3, localX: boardWidth / 2, y: -boardHeight / 2 },
           ]
-          // Mirror the corner local direction for back-side boards (matches the position mirroring).
-          const effectiveDir = (dx: number) => (isBackSide ? -dx : dx)
 
-          return corners.flatMap(({ index, localX, y, localDirX, localDirY }) => {
+          return corners.map(({ index, localX, y }) => {
             const handleX = isBackSide ? -localX : localX
-            // Compute the cursor live each pointer-event from the current renderRotationZ so a rotated
-            // board still shows the right resize cursor at each corner.
-            const cursorForNow = (): ResizeCursor =>
-              pickResizeCursorForRotatedCorner(effectiveDir(localDirX), localDirY, renderRotationZ)
-            return [
-              // ROTATE handle: behind the resize handle, picks up the "outside corner" donut zone.
-              <mesh
-                key={`rotate-${index}`}
-                position={[handleX, y, BOARD_THICKNESS / 2 + 0.005]}
-                renderOrder={2}
-                onPointerOver={(e) => {
-                  e.stopPropagation()
-                  gl.domElement.style.cursor = ROTATE_CURSOR
-                }}
-                onPointerMove={(e) => {
-                  e.stopPropagation()
-                  gl.domElement.style.cursor = ROTATE_CURSOR
-                }}
-                onPointerOut={(e) => {
-                  e.stopPropagation()
-                  if (!isResizing && !isRotating) gl.domElement.style.cursor = ''
-                }}
-                onPointerDown={(e) => {
-                  handleRotatePointerDown(e)
-                }}
-              >
-                <boxGeometry args={[rotateHandleSize, rotateHandleSize, BOARD_THICKNESS + 0.01]} />
-                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-              </mesh>,
-              // RESIZE handle: in front so it wins the inner corner area.
+            const cursor = resizeCursorForCorner(index, isBackSide)
+            return (
               <mesh
                 key={`resize-${index}`}
                 position={[handleX, y, BOARD_THICKNESS / 2 + 0.02]}
                 renderOrder={3}
                 onPointerOver={(e) => {
                   e.stopPropagation()
-                  gl.domElement.style.cursor = cursorForNow()
+                  gl.domElement.style.cursor = cursor
                 }}
                 onPointerMove={(e) => {
                   e.stopPropagation()
-                  gl.domElement.style.cursor = cursorForNow()
+                  gl.domElement.style.cursor = cursor
                 }}
                 onPointerOut={(e) => {
                   e.stopPropagation()
-                  if (!isResizing && !isRotating) gl.domElement.style.cursor = ''
+                  if (!isResizing) gl.domElement.style.cursor = ''
                 }}
                 onPointerDown={(e) => {
-                  handleCornerPointerDown(e, index, cursorForNow())
+                  handleCornerPointerDown(e, index, cursor)
                 }}
               >
                 <boxGeometry args={[resizeHandleSize, resizeHandleSize, BOARD_THICKNESS + 0.02]} />
                 <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-              </mesh>,
-            ]
+              </mesh>
+            )
           })
         })()}
 
