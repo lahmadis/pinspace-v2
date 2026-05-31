@@ -667,18 +667,19 @@ export default function StudioRoom(props: StudioRoomProps) {
   )
 
   /**
-   * After the floor editor pops a wall at `deletedIndex`, every board on a
-   * higher wall needs its `position_wall_index` decremented so it stays on
-   * the same physical wall (which has shifted down one slot in walls[]).
-   * The editor's board-safety guard refuses to delete a wall that has any
-   * boards on it, so we never have to handle boards on the deleted index.
+   * Re-index boards on walls past `deletedIndex` so they stay pinned to the
+   * correct physical wall after the floor editor pops the wall at
+   * `deletedIndex`. The editor's board-safety guard refuses to delete a wall
+   * that has any boards on it, so we never have to handle boards on the
+   * deleted index.
    *
-   * Best-effort: surface a toast on failure but don't block the editor —
-   * realtime UPDATE events from the PATCH will keep clients in sync, and
-   * onBoardUpdate re-fetches as a defensive backstop.
+   * Returns `{ ok }` so the editor can sequence this atomically with the
+   * geometry POST: on failure the editor leaves the wall in place and the
+   * room stays consistent. onBoardUpdate refreshes localBoards on success so
+   * the 3D view picks up the new indices.
    */
   const handleWallRemoved = useCallback(
-    async (deletedIndex: number) => {
+    async (deletedIndex: number): Promise<{ ok: boolean }> => {
       const roomId = props.studioId
       try {
         const res = await fetch('/api/boards/reindex-after-wall-delete', {
@@ -688,17 +689,80 @@ export default function StudioRoom(props: StudioRoomProps) {
         })
         if (!res.ok) {
           const data = await res.json().catch(() => ({} as { error?: string }))
-          throw new Error(data.error || `HTTP ${res.status}`)
+          console.error('reindex-after-wall-delete failed', { status: res.status, data })
+          return { ok: false }
         }
         // Refetch boards so local state picks up the new wall_index values.
         await props.onBoardUpdate()
+        return { ok: true }
       } catch (err) {
         console.error('Failed to reindex boards after wall delete', err)
-        const message = err instanceof Error ? err.message : 'Please refresh.'
-        toast.error(`Wall removed but board indices may be stale. ${message}`)
+        return { ok: false }
       }
     },
     [props.studioId, props.onBoardUpdate]
+  )
+
+  /**
+   * Persist a wall config snapshot through the same endpoint Save & Exit
+   * uses (POST /api/studios/[wsId]/wall-config?roomId=...), updating the
+   * local version counter from the response. Used by the floor editor to
+   * commit the geometry half of an atomic wall delete: deleting a wall
+   * decrements board indices in the DB right away, so the wall config has
+   * to land in the same logical transaction (best-effort here — a separate
+   * tx isn't available). Returns `{ ok: false }` on any non-2xx response
+   * including 409; a 409 also bubbles up through onWallConfigConflict.
+   */
+  const handlePersistWallConfig = useCallback(
+    async (nextConfig: WallConfig): Promise<{ ok: boolean }> => {
+      const tablesToSave = tables.map((t) => {
+        const url = t.modelUrl ?? ''
+        const isBlob = url.startsWith('blob:')
+        const isPersistable =
+          !isBlob &&
+          (url.startsWith('http://') ||
+            url.startsWith('https://') ||
+            (url.startsWith('/') && !url.startsWith('//')))
+        return { ...t, modelUrl: isPersistable ? url : undefined }
+      })
+      const payload = { ...nextConfig, tables: tablesToSave }
+      const wsKey = props.workspaceId ?? props.studioId
+      const roomId = props.studioId
+      const body = JSON.stringify({
+        baseVersion: props.wallVersionRef?.current ?? 0,
+        config: payload,
+      })
+      try {
+        const res = await fetch(
+          `/api/studios/${wsKey}/wall-config?roomId=${encodeURIComponent(roomId)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+          }
+        )
+        if (res.status === 409) {
+          const data = await res
+            .json()
+            .catch(() => ({} as { latest?: Record<string, unknown> & { version?: number } }))
+          if (data.latest && props.onWallConfigConflict) props.onWallConfigConflict(data.latest)
+          return { ok: false }
+        }
+        if (!res.ok) {
+          console.error('persist wall config failed', { status: res.status })
+          return { ok: false }
+        }
+        const data = await res.json().catch(() => ({} as { version?: number }))
+        if (typeof data.version === 'number' && props.wallVersionRef) {
+          props.wallVersionRef.current = data.version
+        }
+        return { ok: true }
+      } catch (err) {
+        console.error('persist wall config threw', err)
+        return { ok: false }
+      }
+    },
+    [tables, props.studioId, props.workspaceId, props.wallVersionRef, props.onWallConfigConflict]
   )
 
   // Keep placedBoards3D in sync with boardPositions (e.g. after undo/redo)
@@ -1544,6 +1608,7 @@ export default function StudioRoom(props: StudioRoomProps) {
           onWallConfigChange={props.onWallConfigChange}
           boardWallIndices={boardWallIndices}
           onWallRemoved={handleWallRemoved}
+          onPersistWallConfig={handlePersistWallConfig}
         />
       )}
 

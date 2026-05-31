@@ -33,12 +33,22 @@ interface FloorEditorOverlayProps {
    */
   boardWallIndices?: ReadonlyArray<number | null | undefined>
   /**
-   * Fired after a wall has been removed at `deletedIndex`. The parent must
-   * decrement `position.wallIndex` for every board with index > deletedIndex
-   * (both in memory and in the DB) so boards stay pinned to the correct
-   * physical wall after the splice.
+   * Decrements `position.wallIndex` for every board with index > deletedIndex
+   * (both in DB and in local state) so boards stay pinned to the correct
+   * physical wall after the splice. Awaited by `handleRemoveWall`; if `ok`
+   * is false the wall delete is aborted before any geometry change so the
+   * room stays consistent.
    */
-  onWallRemoved?: (deletedIndex: number) => void
+  onWallRemoved?: (deletedIndex: number) => Promise<{ ok: boolean }>
+  /**
+   * Persists the post-splice wall config to the per-room blob using the
+   * same endpoint Save & Exit uses, and updates the local version counter
+   * from the server response. Wall delete is committed atomically by
+   * pairing this with `onWallRemoved`; staging the splice in undo history
+   * (as before) would let Ctrl+Z restore the wall after the boards had
+   * already been re-indexed, putting boards on the wrong walls.
+   */
+  onPersistWallConfig?: (next: WallConfig) => Promise<{ ok: boolean }>
 }
 
 const VIEW_WIDTH = 700
@@ -94,6 +104,7 @@ export default function FloorEditorOverlay({
   onWallConfigChange,
   boardWallIndices,
   onWallRemoved,
+  onPersistWallConfig,
 }: FloorEditorOverlayProps) {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
   const [uploadingTableId, setUploadingTableId] = useState<string | null>(null)
@@ -481,7 +492,12 @@ export default function FloorEditorOverlay({
     setUndoIndex((prev) => prev + 1)
   }, [wallConfig, onWallConfigChange, undoIndex, ensureCustomTransforms])
 
-  const handleRemoveWall = useCallback(() => {
+  // Guard so a slow re-index PATCH can't be triggered twice by an impatient
+  // double-click on Remove wall.
+  const removingWallRef = useRef(false)
+
+  const handleRemoveWall = useCallback(async () => {
+    if (removingWallRef.current) return
     if (!onWallConfigChange) return
     if (wallConfig.walls.length <= 1) return
     if (selectedWallIndex == null) return
@@ -491,7 +507,8 @@ export default function FloorEditorOverlay({
     // to this wall, refuse the delete and tell the user. The previous version
     // always popped the LAST wall regardless of selection, which (combined
     // with index-based wall identity) lost real boards in production.
-    const boardsHere = (boardWallIndices ?? []).filter((idx) => idx === selectedWallIndex).length
+    const targetIndex = selectedWallIndex
+    const boardsHere = (boardWallIndices ?? []).filter((idx) => idx === targetIndex).length
     if (boardsHere > 0) {
       toast.error(
         `This wall has ${boardsHere} board${boardsHere === 1 ? '' : 's'} on it. ` +
@@ -500,27 +517,55 @@ export default function FloorEditorOverlay({
       return
     }
 
-    // Splice the targeted index from BOTH walls[] and customTransforms[]; they
-    // are index-aligned, so dropping the same slot keeps every other wall on
-    // its existing transform.
-    const newWalls = wallConfig.walls.filter((_, i) => i !== selectedWallIndex)
+    // Pre-compute the post-splice config so we can pass it to the persistor
+    // verbatim without recomputing after the await. walls[] and
+    // customTransforms[] are index-aligned, so dropping the same slot keeps
+    // every other wall on its existing transform.
+    const newWalls = wallConfig.walls.filter((_, i) => i !== targetIndex)
     const newCustom = wallConfig.customTransforms
-      ? wallConfig.customTransforms.filter((_, i) => i !== selectedWallIndex)
+      ? wallConfig.customTransforms.filter((_, i) => i !== targetIndex)
       : undefined
     const next: WallConfig = newCustom
       ? { ...wallConfig, walls: newWalls, customTransforms: newCustom }
       : { ...wallConfig, walls: newWalls }
 
-    onWallConfigChange(next)
-    // Tell the parent so it can decrement position.wallIndex for every board
-    // whose index was strictly greater than the deleted index (in-memory +
-    // DB). Boards on the deleted index don't exist here — the guard above
-    // refused the delete if any were present.
-    onWallRemoved?.(selectedWallIndex)
-    setUndoHistory((prev) => [...prev.slice(0, undoIndex + 1), next])
-    setUndoIndex((prev) => prev + 1)
-    setSelectedWallIndex(null)
-  }, [wallConfig, onWallConfigChange, undoIndex, selectedWallIndex, boardWallIndices, onWallRemoved])
+    removingWallRef.current = true
+    try {
+      // (a) Re-index boards first. If this fails we change NOTHING so the
+      // room stays consistent; the user can retry.
+      if (onWallRemoved) {
+        const reindexResult = await onWallRemoved(targetIndex)
+        if (!reindexResult.ok) {
+          toast.error("Couldn't re-index boards for the wall delete. No changes made.")
+          return
+        }
+      }
+
+      // (b) Splice locally so the UI reflects the delete immediately, then
+      // (c) persist the new wall config through the same path Save & Exit
+      // uses (the persistor also bumps the local version counter from the
+      // server's response, so a subsequent Save & Exit doesn't 409).
+      onWallConfigChange(next)
+      if (onPersistWallConfig) {
+        const persistResult = await onPersistWallConfig(next)
+        if (!persistResult.ok) {
+          // (d) Rare both-must-fail window: re-index already committed
+          // server-side. Tell the user state is momentarily inconsistent.
+          toast.error('Wall delete failed to save — please refresh.')
+        }
+      }
+
+      // (e) Clear selection. Wall delete is intentionally NOT pushed to
+      // undoHistory — undoing it would restore the wall while leaving boards
+      // re-indexed, the exact desync this atomic commit exists to prevent.
+      setSelectedWallIndex(null)
+    } finally {
+      removingWallRef.current = false
+    }
+  }, [
+    wallConfig, onWallConfigChange, selectedWallIndex, boardWallIndices,
+    onWallRemoved, onPersistWallConfig,
+  ])
 
   // ── Compute wall geometry for rendering ───────────────────────────────────
 
