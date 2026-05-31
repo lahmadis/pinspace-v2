@@ -91,6 +91,14 @@ export default function WorkspaceRoomsPage() {
   // of workspace ownership. Mirrors the server gate in PATCH /api/rooms/[id].
   const isAccountInstructor = profile.accountRole === 'instructor'
   const canPublish = isInstructor && isAccountInstructor
+  // Adding rooms is allowed for any collaborator on a SHARED project, not just
+  // the owner. Shared projects join new collaborators as `student`-role members
+  // (see /api/workspaces/[id]/join), so an instructor-only gate hides the
+  // affordance from people who are explicitly invited to collaborate. Class
+  // workspaces keep the instructor-only behavior.
+  const isSharedProject = workspace?.type === 'shared'
+  const isAnyMember = !!workspace && workspace.members.some(m => m.userId === user?.id)
+  const canAddRoom = isInstructor || (isSharedProject && isAnyMember)
 
   const handleCreateRoom = async () => {
     const trimmed = newRoomName.trim()
@@ -495,8 +503,8 @@ export default function WorkspaceRoomsPage() {
             )
           })}
 
-          {/* Add Room card — owner only */}
-          {isInstructor && (
+          {/* Add Room card — owner/instructor on class workspaces; any member on shared projects */}
+          {canAddRoom && (
             addingRoom ? (
               <div className="bg-indigo-50 border-2 border-indigo-200 rounded-xl p-6 flex flex-col gap-3">
                 <p className="text-sm font-semibold text-indigo-900">Name your new room</p>
@@ -545,7 +553,7 @@ export default function WorkspaceRoomsPage() {
           )}
         </div>
 
-        {rooms.length === 0 && !isInstructor && (
+        {rooms.length === 0 && !canAddRoom && (
           <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
               <DoorOpen className="w-8 h-8 text-gray-600" />

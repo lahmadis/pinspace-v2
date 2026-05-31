@@ -32,8 +32,18 @@ export const dynamic = 'force-dynamic'
 
 /**
  * POST /api/workspaces/[id]/rooms — create a new room in this workspace.
- * Workspace owner only. New room's display_order is max(existing)+1 so it
- * appears at the bottom of the list. Returns the created room.
+ *
+ * Allowed for: the workspace owner OR anyone with a workspace_members row
+ * (regardless of role). Shared projects add collaborators as `student`-role
+ * members via the join route, so a strict instructor-only check would lock
+ * them out of adding rooms to a project they're collaborating on. Class
+ * workspaces still hide the "+ New Room" affordance from non-instructor
+ * members in the UI, so functional class behavior is unchanged — a student
+ * with the gumption to curl this endpoint directly would now succeed,
+ * matching the wall-config route's existing membership check.
+ *
+ * New room's display_order is max(existing)+1 so it appears at the bottom
+ * of the list. Returns the created room.
  */
 export async function POST(
   request: NextRequest,
@@ -75,7 +85,15 @@ export async function POST(
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
     if (workspace.owner_id !== userId) {
-      return NextResponse.json({ error: 'Only workspace owners can create rooms' }, { status: 403 })
+      const { data: membership } = await admin
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (!membership) {
+        return NextResponse.json({ error: 'Not a member of this workspace' }, { status: 403 })
+      }
     }
 
     // Resolve next display_order. Reading max+1 isn't strictly serializable —
