@@ -541,6 +541,13 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [draggingFromSidebar, setDraggingFromSidebar] = useState<Board | null>(null)
   const [commentPanelBoard, setCommentPanelBoard] = useState<Board | null>(null)
   const copiedBoardRef = useRef<Board | null>(null)
+  /**
+   * How many times the current `copiedBoardRef` has been pasted. Reset on
+   * every copy so the first paste of a fresh source lands at +1 grid step,
+   * not stacked on the previous run. Used by handlePaste to cascade
+   * successive pastes diagonally so they don't overlap exactly.
+   */
+  const pasteCountRef = useRef(0)
   const {
     boards: localBoards,
     boardPositions,
@@ -1294,6 +1301,35 @@ export default function StudioRoom(props: StudioRoomProps) {
     const side = editingWallSide
     const apiWidth = copied.position?.width ?? 30
     const apiHeight = copied.position?.height ?? 30
+
+    // Cascade pastes so successive Cmd+V's don't stack exactly on each other.
+    // Each paste shifts the source position by N × 12" (the same grid step
+    // Phase 7 snaps board moves to), then re-snaps to the 12" wall-local
+    // grid, then clamps inside the wall. Source position is reused as the
+    // base regardless of which wall the source was on — wall-local API
+    // coords (0–100) are the same shape on every wall, so "the same spot"
+    // pastes to "the same spot" on the target wall.
+    pasteCountRef.current += 1
+    const offsetCount = pasteCountRef.current
+    const wallWInches = editingWallDimensions.width * 12
+    const wallHInches = editingWallDimensions.height * 12
+    const GRID_INCHES = 12
+    // Convert a 12" step to API percent for each axis.
+    const stepAPIx = (GRID_INCHES / wallWInches) * 100
+    const stepAPIy = (GRID_INCHES / wallHInches) * 100
+    const srcAPIx = copied.position?.x ?? 50
+    const srcAPIy = copied.position?.y ?? 50
+    // Snap a value to the 12" grid centered on the wall (API 50 = wall center),
+    // matching Phase 7's wall-center-relative snap convention.
+    const snapAPI = (v: number, step: number) => 50 + Math.round((v - 50) / step) * step
+    const rawX = srcAPIx + stepAPIx * offsetCount
+    const rawY = srcAPIy + stepAPIy * offsetCount
+    const apiX = Math.max(0, Math.min(100, snapAPI(rawX, stepAPIx)))
+    const apiY = Math.max(0, Math.min(100, snapAPI(rawY, stepAPIy)))
+    // The placedBoards3D map uses wall-local NORMALIZED coords (-0.5..+0.5).
+    const normX = (apiX / 100) - 0.5
+    const normY = (apiY / 100) - 0.5
+
     const tempBoard: Board = {
       id: tempId,
       // Stable client-side React key, carried onto the real board after
@@ -1312,8 +1348,8 @@ export default function StudioRoom(props: StudioRoomProps) {
       tags: copied.tags ?? [],
       position: {
         wallIndex: editingWall,
-        x: 50,
-        y: 50,
+        x: apiX,
+        y: apiY,
         width: apiWidth,
         height: apiHeight,
         side,
@@ -1325,13 +1361,15 @@ export default function StudioRoom(props: StudioRoomProps) {
       originalHeight: copied.originalHeight,
       physicalWidth: copied.physicalWidth,
       physicalHeight: copied.physicalHeight,
+      boardWidthIn: copied.boardWidthIn,
+      boardHeightIn: copied.boardHeightIn,
     }
     addTempBoard(tempBoard, copied.fullImageUrl ?? copied.thumbnailUrl)
     const normW = (apiWidth / 100) || 0.3
     const normH = (apiHeight / 100) || 0.3
     setPlacedBoards3D(prev => {
       const m = new Map(prev)
-      m.set(tempId, { x: 0, y: 0, width: normW, height: normH })
+      m.set(tempId, { x: normX, y: normY, width: normW, height: normH })
       placedBoards3DRef.current = m
       return m
     })
@@ -1345,8 +1383,8 @@ export default function StudioRoom(props: StudioRoomProps) {
           // is a room id, so use the resolved workspaceId.
           workspaceId: props.workspaceId ?? props.studioId,
           wallIndex: editingWall,
-          position_x: 50,
-          position_y: 50,
+          position_x: apiX,
+          position_y: apiY,
           position_side: side,
           position_width: apiWidth,
           position_height: apiHeight,
@@ -1366,7 +1404,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         : {
             ...newBoard,
             localId: tempId,
-            position: { wallIndex: editingWall, x: 50, y: 50, width: apiWidth, height: apiHeight, side },
+            position: { wallIndex: editingWall, x: apiX, y: apiY, width: apiWidth, height: apiHeight, side },
           }
       replaceTempBoard(tempId, boardToUse)
       setPlacedBoards3D(prev => {
@@ -1395,7 +1433,10 @@ export default function StudioRoom(props: StudioRoomProps) {
   const handleCopy = useCallback(() => {
     if (!selectedBoardId) return
     const board = localBoards.find(b => b.id === selectedBoardId)
-    if (board) copiedBoardRef.current = board
+    if (board) {
+      copiedBoardRef.current = board
+      pasteCountRef.current = 0
+    }
   }, [selectedBoardId, localBoards])
 
   // Keyboard shortcuts: Backspace/Delete = delete selected board, Ctrl+Z = undo, Ctrl+Y = redo, Ctrl+C/V = copy/paste, Escape = deselect
@@ -1406,8 +1447,11 @@ export default function StudioRoom(props: StudioRoomProps) {
         return
       }
 
-      // Ctrl+Z = undo, Ctrl+Y = redo, Ctrl+C = copy, Ctrl+V = paste
-      if (e.ctrlKey) {
+      // Ctrl/Cmd+Z = undo, Ctrl/Cmd+Y = redo, Ctrl/Cmd+C = copy, Ctrl/Cmd+V
+      // = paste. metaKey covers Cmd on macOS; the browser's native `paste`
+      // event already fires on Cmd+V, so Cmd+V is handled by the window
+      // listener below — we only handle Cmd+C here.
+      if (e.ctrlKey || e.metaKey) {
         if (e.key === 'z') {
           e.preventDefault()
           undo()
@@ -1418,7 +1462,10 @@ export default function StudioRoom(props: StudioRoomProps) {
           e.preventDefault()
           if (selectedBoardId && editingWall !== null) {
             const board = localBoards.find(b => b.id === selectedBoardId)
-            if (board) copiedBoardRef.current = board
+            if (board) {
+              copiedBoardRef.current = board
+              pasteCountRef.current = 0
+            }
           }
         }
         return
