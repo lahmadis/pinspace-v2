@@ -24,6 +24,7 @@ import TableWithModel from './TableWithModel'
 import ModelViewer from './ModelViewer'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import { toast } from '@/lib/toast'
+import { getBoardSizeInches } from '@/lib/boardDimensions'
 
 
 interface WallDimensions {
@@ -321,22 +322,37 @@ function SceneContent({
           {(() => {
             const entries = Array.from(placedBoards3D.entries())
             devLog('🎨 [SceneContent] Rendering', entries.length, 'draggable boards for wall', editingWall)
+            // Smart-guide geometry for every board currently on this wall +
+            // side. Centers are in wall-local INCHES with origin at wall
+            // center (matches DraggableBoard's `localPosition * scaledWall*`
+            // math). Sizes come from absolute board_width_in/board_height_in
+            // via getBoardSizeInches so guides reflect the actual rendered
+            // size, not the legacy normalized fraction in placedBoards3D.
+            // Each board renders this same array as a prop and filters out
+            // itself by id during the drag scan.
+            const wallWInches = editingWallDimensions.width * 12
+            const wallHInches = editingWallDimensions.height * 12
+            const guideGeometry = entries.flatMap(([id, pos]) => {
+              const b = localBoards.find(lb => lb.id === id)
+              if (!b) return []
+              const { widthIn, heightIn } = getBoardSizeInches(b)
+              return [{
+                id,
+                centerInchesX: (pos.x ?? 0) * wallWInches,
+                centerInchesY: (pos.y ?? 0) * wallHInches,
+                widthInches: widthIn,
+                heightInches: heightIn,
+              }]
+            })
             return entries.map(([boardId, localPos]) => {
               const board = localBoards.find(b => b.id === boardId)
               if (!board) {
                 console.warn(`❌ [SceneContent] Board ${boardId} not found in localBoards list`)
                 return null
               }
-              
-              // Verify board is on the correct side
-              // const boardSide = board.position?.side || 'front'
-              
-              // REMOVE: if (boardSide !== 'front') {
-              // REMOVE:   console.warn(`⚠️ [SceneContent] Board ${boardId} is on ${boardSide} side but we're editing front side`)
-              // REMOVE: }
-              
+
               devLog(`🎨 [SceneContent] Rendering board ${boardId}`)
-              
+
               return (
                 <DraggableBoard
                   // Key by localId (stable across temp→real id swap) so an
@@ -361,6 +377,7 @@ function SceneContent({
                   isSelected={selectedBoardId === board.id}
                   workspaceId={studioId}
                   isWorkspaceMember={isWorkspaceMember}
+                  otherBoardsOnWall={guideGeometry}
                 />
               )
             })

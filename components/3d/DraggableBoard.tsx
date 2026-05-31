@@ -41,6 +41,20 @@ interface DraggableBoardProps {
   isSelected?: boolean
   workspaceId?: string // Workspace/studio ID to check membership
   isWorkspaceMember?: boolean // Whether user is a member of the workspace
+  /**
+   * Every board on the SAME wall + side as this one (this board included is
+   * fine — it's filtered out by id during the smart-guide scan). Centers are
+   * in wall-local inches with origin at wall center, matching this board's
+   * own `localPosition * scaledWall*` math. Used only for alignment guides;
+   * `undefined` or `[]` disables guides for this drag.
+   */
+  otherBoardsOnWall?: ReadonlyArray<{
+    id: string
+    centerInchesX: number
+    centerInchesY: number
+    widthInches: number
+    heightInches: number
+  }>
 }
 
 type ResizeCursor = 'nwse-resize' | 'nesw-resize'
@@ -98,7 +112,8 @@ export function DraggableBoard({
   onDeselect,
   isSelected = false,
   workspaceId: _workspaceId,
-  isWorkspaceMember = false
+  isWorkspaceMember = false,
+  otherBoardsOnWall,
 }: DraggableBoardProps) {
   const [user, setUser] = useState<User | null>(null)
   
@@ -254,15 +269,6 @@ useEffect(() => {
   const scaledWallHeight = wallDimensions.height * SCALE
   const isBackSide = side === 'back'
   const renderXSign = isBackSide ? -1 : 1
-  /**
-   * Move-snap grid step in wall-local inches. Matches the 12" reference grid
-   * kept by Phase 3 (FloorEditorOverlay's walls-mode `GRID_INCHES`), so the
-   * snap conventions stay aligned across the floor editor and the wall edit.
-   * Snapping anchors the board CENTER (the same anchor the move math already
-   * uses) at multiples of this step from the wall center, so the "same spot"
-   * on two different walls produces identical wall-local coordinates.
-   */
-  const BOARD_MOVE_GRID_INCHES = 12
 
   // Wall inches are still used for POSITION (x/y are wall-relative) and as the
   // upper clamp for corner-resize. Board SIZE is absolute (sizeIn), NOT derived
@@ -273,12 +279,23 @@ useEffect(() => {
   const boardHeight = sizeIn.height
 
   /**
-   * `snap` controls Miro-style grid snap on this pointer-move sample.
-   * Default true; the Alt modifier flips it off for free placement (the
-   * handler reads `!ev.altKey` per event so the user can toggle mid-drag).
-   * Resize is a separate handler that never calls this — it stays free.
+   * Smart-guide soft-snap threshold in wall-local inches. While dragging,
+   * if any of the dragged board's three vertical lines (left edge, center,
+   * right edge) is within this distance of another board's three vertical
+   * lines — or the equivalent on the horizontal axis — the dragged board
+   * snaps to that exact alignment and a Miro-style guide line is drawn.
+   * Outside the threshold the drag is fully free / continuous.
    */
-  const updatePosition = (clientX: number, clientY: number, snap: boolean) => {
+  const GUIDE_SNAP_THRESHOLD_IN = 2
+
+  // Active alignment guides for the current pointer sample. Cleared on
+  // pointer-up. Each entry is a wall-local inch coordinate along its axis.
+  const [activeGuides, setActiveGuides] = useState<{ vertical: number[]; horizontal: number[] }>({
+    vertical: [],
+    horizontal: [],
+  })
+
+  const updatePosition = (clientX: number, clientY: number) => {
     const rotationForCoords = wallBaseRotationForCoords ?? wallRotation
 
     // Reuse pre-allocated scratch objects — no heap allocation on the hot drag path
@@ -300,15 +317,86 @@ useEffect(() => {
       const offsetX = dragOffset.current ? dragOffset.current.x : 0
       const offsetY = dragOffset.current ? dragOffset.current.y : 0
 
-      // Board center in wall-local inches. Snap rounds to the 12" grid here,
-      // BEFORE the divide-and-clamp to normalized, so the snapped value is
-      // exactly what's written to positionRef and persisted on pointer-up.
+      // Board center in wall-local inches (anchor = CENTER). Free movement —
+      // no grid snap. Smart guides may still nudge by up to
+      // GUIDE_SNAP_THRESHOLD_IN if a neighbor alignment is in range.
       let centerInchesX = pointerRenderX - offsetX
       let centerInchesY = pointerRenderY - offsetY
-      if (snap) {
-        centerInchesX = Math.round(centerInchesX / BOARD_MOVE_GRID_INCHES) * BOARD_MOVE_GRID_INCHES
-        centerInchesY = Math.round(centerInchesY / BOARD_MOVE_GRID_INCHES) * BOARD_MOVE_GRID_INCHES
+
+      // Smart guide / soft snap. Find the closest neighbor alignment along
+      // each axis independently and shift the dragged center onto it if
+      // within threshold. After snapping, collect every neighbor line the
+      // dragged board now coincides with so we can draw a guide for each.
+      const halfW = boardWidth / 2
+      const halfH = boardHeight / 2
+      const others = otherBoardsOnWall ?? []
+
+      let bestXDelta = 0
+      let bestXDeltaAbs = GUIDE_SNAP_THRESHOLD_IN
+      let bestYDelta = 0
+      let bestYDeltaAbs = GUIDE_SNAP_THRESHOLD_IN
+
+      for (const other of others) {
+        if (other.id === board.id) continue
+        const ohw = other.widthInches / 2
+        const ohh = other.heightInches / 2
+        const dragXLines = [centerInchesX - halfW, centerInchesX, centerInchesX + halfW]
+        const otherXLines = [other.centerInchesX - ohw, other.centerInchesX, other.centerInchesX + ohw]
+        for (const dx of dragXLines) {
+          for (const ox of otherXLines) {
+            const delta = ox - dx
+            const absD = Math.abs(delta)
+            if (absD < bestXDeltaAbs) {
+              bestXDeltaAbs = absD
+              bestXDelta = delta
+            }
+          }
+        }
+        const dragYLines = [centerInchesY - halfH, centerInchesY, centerInchesY + halfH]
+        const otherYLines = [other.centerInchesY - ohh, other.centerInchesY, other.centerInchesY + ohh]
+        for (const dy of dragYLines) {
+          for (const oy of otherYLines) {
+            const delta = oy - dy
+            const absD = Math.abs(delta)
+            if (absD < bestYDeltaAbs) {
+              bestYDeltaAbs = absD
+              bestYDelta = delta
+            }
+          }
+        }
       }
+
+      centerInchesX += bestXDelta
+      centerInchesY += bestYDelta
+
+      // After snap, re-scan to find EVERY active alignment (multiple
+      // neighbors may align simultaneously). Use a tighter tolerance for
+      // "did this pair land on the same line" to avoid drawing guides
+      // that are only loosely near.
+      const verticalSet = new Set<number>()
+      const horizontalSet = new Set<number>()
+      if (others.length > 0) {
+        const dragXLines = [centerInchesX - halfW, centerInchesX, centerInchesX + halfW]
+        const dragYLines = [centerInchesY - halfH, centerInchesY, centerInchesY + halfH]
+        for (const other of others) {
+          if (other.id === board.id) continue
+          const ohw = other.widthInches / 2
+          const ohh = other.heightInches / 2
+          const otherXLines = [other.centerInchesX - ohw, other.centerInchesX, other.centerInchesX + ohw]
+          const otherYLines = [other.centerInchesY - ohh, other.centerInchesY, other.centerInchesY + ohh]
+          for (const dx of dragXLines) {
+            for (const ox of otherXLines) {
+              if (Math.abs(dx - ox) < 0.25) verticalSet.add(Math.round(ox * 100) / 100)
+            }
+          }
+          for (const dy of dragYLines) {
+            for (const oy of otherYLines) {
+              if (Math.abs(dy - oy) < 0.25) horizontalSet.add(Math.round(oy * 100) / 100)
+            }
+          }
+        }
+      }
+      setActiveGuides({ vertical: Array.from(verticalSet), horizontal: Array.from(horizontalSet) })
 
       const normalizedX = THREE.MathUtils.clamp(centerInchesX / scaledWallWidth, -0.5, 0.5)
       const normalizedY = THREE.MathUtils.clamp(centerInchesY / scaledWallHeight, -0.5, 0.5)
@@ -415,11 +503,11 @@ if (e.intersections && e.intersections.length > 0) {
     gl.domElement.style.cursor = 'grabbing'
     devLog('🖱️ isDragging set to true, attaching global listeners...')
     
-    // Start listening to window events. Snap is on by default; holding Alt
-    // disables it for that pointer sample so the user can drop a board
-    // off-grid without releasing first.
+    // Start listening to window events. Board movement is FREE / continuous;
+    // only the smart-guide soft-snap inside updatePosition can nudge the
+    // dragged center onto a neighbor's edge or center.
     const handleMove = (e: PointerEvent) => {
-      updatePosition(e.clientX, e.clientY, !e.altKey)
+      updatePosition(e.clientX, e.clientY)
     }
     
     const handleUp = (e: PointerEvent) => {
@@ -446,7 +534,10 @@ if (e.intersections && e.intersections.length > 0) {
       
       // Mark that we just finished dragging to prevent sync from resetting position
       justFinishedDragging.current = true
-      
+
+      // Smart guides are transient — only visible during the drag.
+      setActiveGuides({ vertical: [], horizontal: [] })
+
       // Call onDragEnd with ref value (NOT state)
       const finalPos = positionRef.current
       const persistedPos = finalPos
@@ -769,6 +860,26 @@ if (e.intersections && e.intersections.length > 0) {
   // Position the group at the wall position, then position board within group's local space
   return (
     <group position={wallPosition} rotation={[0, wallRotation, 0]}>
+      {isDragging && activeGuides.vertical.map((gx) => (
+        <mesh
+          key={`vg-${gx}`}
+          position={[isBackSide ? -gx : gx, 0, boardZ + 0.01]}
+          raycast={() => null}
+        >
+          <planeGeometry args={[0.5, scaledWallHeight]} />
+          <meshBasicMaterial color="#ec4899" transparent opacity={0.95} depthTest={false} depthWrite={false} />
+        </mesh>
+      ))}
+      {isDragging && activeGuides.horizontal.map((gy) => (
+        <mesh
+          key={`hg-${gy}`}
+          position={[0, gy, boardZ + 0.01]}
+          raycast={() => null}
+        >
+          <planeGeometry args={[scaledWallWidth, 0.5]} />
+          <meshBasicMaterial color="#ec4899" transparent opacity={0.95} depthTest={false} depthWrite={false} />
+        </mesh>
+      ))}
       <group ref={innerGroupRef} position={[boardXRender, boardY, boardZ]} rotation={[0, 0, 0]}>
         <mesh
           ref={meshRef}
