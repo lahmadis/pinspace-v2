@@ -541,16 +541,32 @@ export function useBoardState(
       return newMap
     })
     
-    // Replace in boards list
+    // Replace in boards list. Merge — don't wholesale-replace — the local
+    // temp board onto the server's realBoard so any optimistic edits the
+    // user made during the temp-board window survive the reconcile.
+    //
+    // The race the merge closes: no resize PATCH fires for temp ids (see
+    // DraggableBoard.tsx's `isMockBoard` skip), so a resize done before
+    // the upload POST resolves only lives in `boards[tempId].boardWidthIn`.
+    // realBoard always carries the upload-time original size — wholesale-
+    // replacing here would discard the user's scale and Save & Exit would
+    // then persist the original to the DB. Same race shape applies to
+    // position, so it's merged too. For both fields the local value is
+    // either the user's edit OR identical to realBoard's (the temp board
+    // was seeded from the same aspect-ratio math the server runs), so the
+    // merge is a no-op when the user didn't touch anything.
     optimisticBoardUntilRef.current.set(realBoard.id, Date.now() + 30000)
     setBoards(prev => {
       let replaced = false
       const next = prev.map(b => {
-        if (b.id === tempId) {
-          replaced = true
-          return realBoard
+        if (b.id !== tempId) return b
+        replaced = true
+        return {
+          ...realBoard,
+          boardWidthIn: b.boardWidthIn ?? realBoard.boardWidthIn,
+          boardHeightIn: b.boardHeightIn ?? realBoard.boardHeightIn,
+          position: b.position ?? realBoard.position,
         }
-        return b
       })
       if (!replaced) next.push(realBoard)
       return next
