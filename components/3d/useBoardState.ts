@@ -643,13 +643,26 @@ export function useBoardState(
   }, [])
 
   /**
-   * Local-only absolute-size update — mirrors a successful corner-resize PATCH
-   * back into the boards array (board_width_in / board_height_in, in inches) so
-   * post-edit-mode rendering (WallSystem reads board.boardWidthIn) sees the new
-   * size without waiting for a refetch. Bails out via value equality when
+   * Local-only absolute-size update — mirrors a corner-resize back into the
+   * boards array (board_width_in / board_height_in, in inches) so post-edit-
+   * mode rendering (WallSystem reads board.boardWidthIn) sees the new size
+   * without waiting for a refetch. Bails out via value equality when
    * unchanged, mirroring applyBoardRotationLocal.
+   *
+   * Also writes to boardsRef synchronously: callers (DraggableBoard) apply
+   * the resize on pointer-up *before* the PATCH fires so a same-tick Save &
+   * Exit (which reads boardsRef.current.find(...).boardWidthIn) gets the
+   * new dimensions instead of the pre-resize ones. Without the ref write,
+   * the useEffect that mirrors `boards` into the ref would still hold the
+   * stale value until React's next render — and the bulk save would race
+   * (and often lose to) the in-flight resize PATCH.
    */
   const applyBoardSizeLocal = useCallback((boardId: string, widthIn: number, heightIn: number) => {
+    boardsRef.current = boardsRef.current.map(b => {
+      if (b.id !== boardId) return b
+      if (b.boardWidthIn === widthIn && b.boardHeightIn === heightIn) return b
+      return { ...b, boardWidthIn: widthIn, boardHeightIn: heightIn }
+    })
     setBoards(prev => {
       let changed = false
       const next = prev.map(b => {

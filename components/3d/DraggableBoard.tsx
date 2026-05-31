@@ -705,9 +705,19 @@ if (e.intersections && e.intersections.length > 0) {
 
       // Mirror the post-resize x/y back into the parent's placedBoards3D Map
       // (corner-resize drifts x/y via the centering math). Size is mirrored
-      // separately via onSizePersisted on PATCH success. Fires regardless of
-      // PATCH outcome — Save & Exit acts as the retry path on network failure.
+      // separately via onSizePersisted, just below. Fires regardless of PATCH
+      // outcome — Save & Exit acts as the retry path on network failure.
       onDragEndRef.current(board.id, ref.x, ref.y, ref.width, ref.height, side)
+
+      // Apply the size to useBoardState.boards SYNCHRONOUSLY here, before the
+      // PATCH fires. The bulk Save & Exit reads boardWidthIn/boardHeightIn
+      // from boardsRef.current at click time; doing this on PATCH success
+      // (the previous behavior) raced the user's Save & Exit and frequently
+      // lost — the bulk PUT sent the pre-resize size and overwrote the
+      // in-flight PATCH. applyBoardSizeLocal also updates boardsRef
+      // synchronously so a same-tick read by updateBoardPosition sees the
+      // new values without waiting for React's next render.
+      onSizePersisted?.(board.id, sz.width, sz.height)
 
       // Persist via PATCH on the dedicated position endpoint.
       const apiX = (ref.x + 0.5) * 100
@@ -737,20 +747,21 @@ if (e.intersections && e.intersections.length > 0) {
         })
           .then(res => {
             if (!res.ok) throw new Error(`HTTP ${res.status}`)
-            // Mirror server-acked size + rotation into useBoardState.boards so
-            // the post-edit WallSystem render reads the new values without a
-            // refetch. Both setters bail out via referential/value equality, so
-            // calling them on every resize is safe.
-            onSizePersisted?.(board.id, sz.width, sz.height)
+            // Mirror server-acked rotation into useBoardState.boards. Size
+            // was applied optimistically above, so no second size write is
+            // needed on success (applyBoardSizeLocal bails on value equality).
             onRotationPersisted?.(board.id, rotationRef.current)
           })
           .catch(err => {
             console.error('❌ [DraggableBoard] Resize PATCH failed:', err)
-            // Roll back x/y (wall-relative) and size (inches) to pre-resize.
+            // Roll back x/y (wall-relative) and size (inches) to pre-resize,
+            // including the optimistic boards update applied above so the
+            // canonical state stays consistent with the user-visible board.
             positionRef.current = { ...positionRef.current, x: priorXY.x, y: priorXY.y }
             setLocalPosition(prev => ({ ...prev, x: priorXY.x, y: priorXY.y }))
             sizeRef.current = priorSize
             setSizeIn(priorSize)
+            onSizePersisted?.(board.id, priorSize.width, priorSize.height)
             toast.error('Failed to save board size. Please try again.')
           })
       }
