@@ -496,31 +496,34 @@ export default function FloorEditorOverlay({
   // double-click on Remove wall.
   const removingWallRef = useRef(false)
 
-  const handleRemoveWall = useCallback(async () => {
+  // Open when the user clicks Remove wall on a wall that has boards. Holds
+  // the index + board count so the modal can render and the confirm handler
+  // knows what to delete. Null while no confirmation is pending.
+  const [pendingDelete, setPendingDelete] = useState<{ index: number; boardCount: number } | null>(null)
+
+  /**
+   * Atomic wall delete. Same path for the empty-wall case (no modal) and
+   * the confirm-from-modal case (boards will also be deleted server-side).
+   *   (1) await re-index PATCH. Fail → toast, abort, change nothing.
+   *   (2) splice walls[i] + customTransforms[i] and call onWallConfigChange.
+   *   (3) await geometry POST through the same path Save & Exit uses; the
+   *       parent bumps wallVersionRef from the response so a later Save &
+   *       Exit doesn't 409 against a stale version.
+   *   (4) If only (3) failed, toast "please refresh" — rare both-must-fail.
+   *   (5) onBoardUpdate (StudioRoom does this inside onWallRemoved).
+   *   (6) Clear selection + close modal.
+   * Wall delete is intentionally NOT pushed to undoHistory — undoing it
+   * would restore the wall while leaving boards already deleted/re-indexed
+   * server-side, the exact desync this atomic commit prevents.
+   */
+  const commitWallDelete = useCallback(async (targetIndex: number) => {
     if (removingWallRef.current) return
     if (!onWallConfigChange) return
+    if (targetIndex < 0 || targetIndex >= wallConfig.walls.length) return
     if (wallConfig.walls.length <= 1) return
-    if (selectedWallIndex == null) return
-    if (selectedWallIndex < 0 || selectedWallIndex >= wallConfig.walls.length) return
 
-    // Board-safety guard: never silently orphan boards. If anything is pinned
-    // to this wall, refuse the delete and tell the user. The previous version
-    // always popped the LAST wall regardless of selection, which (combined
-    // with index-based wall identity) lost real boards in production.
-    const targetIndex = selectedWallIndex
-    const boardsHere = (boardWallIndices ?? []).filter((idx) => idx === targetIndex).length
-    if (boardsHere > 0) {
-      toast.error(
-        `This wall has ${boardsHere} board${boardsHere === 1 ? '' : 's'} on it. ` +
-        `Move or remove them before deleting the wall.`
-      )
-      return
-    }
-
-    // Pre-compute the post-splice config so we can pass it to the persistor
-    // verbatim without recomputing after the await. walls[] and
-    // customTransforms[] are index-aligned, so dropping the same slot keeps
-    // every other wall on its existing transform.
+    // walls[] and customTransforms[] are index-aligned; dropping the same
+    // slot keeps every other wall on its existing transform.
     const newWalls = wallConfig.walls.filter((_, i) => i !== targetIndex)
     const newCustom = wallConfig.customTransforms
       ? wallConfig.customTransforms.filter((_, i) => i !== targetIndex)
@@ -531,41 +534,49 @@ export default function FloorEditorOverlay({
 
     removingWallRef.current = true
     try {
-      // (a) Re-index boards first. If this fails we change NOTHING so the
-      // room stays consistent; the user can retry.
       if (onWallRemoved) {
         const reindexResult = await onWallRemoved(targetIndex)
         if (!reindexResult.ok) {
-          toast.error("Couldn't re-index boards for the wall delete. No changes made.")
+          toast.error("Couldn't update boards for the wall delete. No changes made.")
           return
         }
       }
 
-      // (b) Splice locally so the UI reflects the delete immediately, then
-      // (c) persist the new wall config through the same path Save & Exit
-      // uses (the persistor also bumps the local version counter from the
-      // server's response, so a subsequent Save & Exit doesn't 409).
       onWallConfigChange(next)
       if (onPersistWallConfig) {
         const persistResult = await onPersistWallConfig(next)
         if (!persistResult.ok) {
-          // (d) Rare both-must-fail window: re-index already committed
-          // server-side. Tell the user state is momentarily inconsistent.
           toast.error('Wall delete failed to save — please refresh.')
         }
       }
 
-      // (e) Clear selection. Wall delete is intentionally NOT pushed to
-      // undoHistory — undoing it would restore the wall while leaving boards
-      // re-indexed, the exact desync this atomic commit exists to prevent.
       setSelectedWallIndex(null)
+      setPendingDelete(null)
     } finally {
       removingWallRef.current = false
     }
-  }, [
-    wallConfig, onWallConfigChange, selectedWallIndex, boardWallIndices,
-    onWallRemoved, onPersistWallConfig,
-  ])
+  }, [wallConfig, onWallConfigChange, onWallRemoved, onPersistWallConfig])
+
+  const handleRemoveWall = useCallback(() => {
+    if (removingWallRef.current) return
+    if (!onWallConfigChange) return
+    if (wallConfig.walls.length <= 1) return
+    if (selectedWallIndex == null) return
+    if (selectedWallIndex < 0 || selectedWallIndex >= wallConfig.walls.length) return
+
+    const targetIndex = selectedWallIndex
+    const boardsHere = (boardWallIndices ?? []).filter((idx) => idx === targetIndex).length
+    if (boardsHere > 0) {
+      // Open the confirm modal — destructive op, surface the board count so
+      // the user knows what they're agreeing to. We don't toast-block here
+      // anymore (Phase 3.1: boards get deleted alongside the wall).
+      setPendingDelete({ index: targetIndex, boardCount: boardsHere })
+      return
+    }
+
+    // Empty wall — commit directly, no modal.
+    void commitWallDelete(targetIndex)
+  }, [wallConfig, onWallConfigChange, selectedWallIndex, boardWallIndices, commitWallDelete])
 
   // ── Compute wall geometry for rendering ───────────────────────────────────
 
@@ -927,6 +938,48 @@ export default function FloorEditorOverlay({
           )}
         </div>
       </div>
+
+      {pendingDelete && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => { if (!removingWallRef.current) setPendingDelete(null) }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wall-delete-title"
+          >
+            <h3 id="wall-delete-title" className="text-lg font-semibold text-gray-900 mb-2">
+              Delete this wall?
+            </h3>
+            <p className="text-sm text-gray-600 mb-6">
+              This wall has {pendingDelete.boardCount} board{pendingDelete.boardCount === 1 ? '' : 's'} on it.
+              Deleting the wall will permanently delete those board{pendingDelete.boardCount === 1 ? '' : 's'}.
+              This can&apos;t be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPendingDelete(null)}
+                disabled={removingWallRef.current}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => { void commitWallDelete(pendingDelete.index) }}
+                disabled={removingWallRef.current}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+              >
+                Delete wall
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
