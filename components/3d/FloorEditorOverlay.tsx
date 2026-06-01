@@ -7,7 +7,7 @@ import type { FloorTable } from '@/types'
 import { X, Plus, Upload, Trash2 } from 'lucide-react'
 import { WallConfigPreview } from './WallConfigPreview'
 import { toast } from '@/lib/toast'
-import { MAX_MODEL_SIZE_BYTES } from '@/lib/uploadLimits'
+import { maxModelBytesForName } from '@/lib/uploadLimits'
 
 const TABLE_HEIGHT_INCHES = 18 // 1.5 feet
 const DEFAULT_TABLE_WIDTH = 24
@@ -243,9 +243,13 @@ export default function FloorEditorOverlay({
       const tableId = selectedTableId
       if (!file || !tableId) return
       const lower = file.name.toLowerCase()
-      const isSupportedExt = lower.endsWith('.glb') || lower.endsWith('.gltf') || lower.endsWith('.3dm')
-      if (!isSupportedExt) { toast.error('Please select a .glb, .gltf, or .3dm file.'); e.target.value = ''; return }
-      if (file.size > MAX_MODEL_SIZE_BYTES) { toast.error('Model must be under 10 MB.'); e.target.value = ''; return }
+      const isSupportedExt = lower.endsWith('.glb') || lower.endsWith('.gltf') || lower.endsWith('.3dm') || lower.endsWith('.stl')
+      if (!isSupportedExt) { toast.error('Please select a .glb, .gltf, .3dm, or .stl file.'); e.target.value = ''; return }
+      const maxBytes = maxModelBytesForName(lower)
+      if (file.size > maxBytes) {
+        const capMb = Math.round(maxBytes / (1024 * 1024))
+        toast.error(`Model must be under ${capMb} MB.`); e.target.value = ''; return
+      }
       try {
         setUploadingTableId(tableId)
         const formData = new FormData()
@@ -914,7 +918,7 @@ export default function FloorEditorOverlay({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".glb,.gltf,.3dm"
+                accept=".glb,.gltf,.3dm,.stl"
                 className="hidden"
                 onChange={handleTableFileChange}
               />

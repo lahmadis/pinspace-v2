@@ -6,9 +6,14 @@ import { useGLTF, Center } from '@react-three/drei'
 import * as THREE from 'three'
 import type { FloorTable } from '@/types'
 import { useRhino3dm } from '@/components/3d/useRhino3dm'
+import { useStlLoader } from '@/components/3d/useStlLoader'
 
 function is3dm(url: string) {
   return url.toLowerCase().endsWith('.3dm')
+}
+
+function isStl(url: string) {
+  return url.toLowerCase().endsWith('.stl')
 }
 
 const TABLE_HEIGHT = 18 // 1.5 feet in inches
@@ -131,12 +136,24 @@ function RhinoModelOnTable({
   return <ScaledModel cloned={cloned} scale={scale} size={size} hovered={hovered} />
 }
 
+function StlModelOnTable({
+  url, tableWidth, tableDepth, hovered,
+}: ModelOnTableProps & { hovered: boolean }) {
+  // STL carries no material/color; useStlLoader gives it a default gray
+  // MeshStandardMaterial. It then goes through the same scale/center/recolor
+  // (applyWallColor) treatment as every other on-table model, so it sits on the
+  // table consistently with .glb/.3dm.
+  const { scene } = useStlLoader(url)
+  const { cloned, scale, size } = useScaledClone(scene, tableWidth, tableDepth)
+  return <ScaledModel cloned={cloned} scale={scale} size={size} hovered={hovered} />
+}
+
 function ModelOnTable({
   url, tableWidth, tableDepth, hovered,
 }: ModelOnTableProps & { hovered: boolean }) {
-  return is3dm(url)
-    ? <RhinoModelOnTable url={url} tableWidth={tableWidth} tableDepth={tableDepth} hovered={hovered} />
-    : <GlbModelOnTable url={url} tableWidth={tableWidth} tableDepth={tableDepth} hovered={hovered} />
+  if (is3dm(url)) return <RhinoModelOnTable url={url} tableWidth={tableWidth} tableDepth={tableDepth} hovered={hovered} />
+  if (isStl(url)) return <StlModelOnTable url={url} tableWidth={tableWidth} tableDepth={tableDepth} hovered={hovered} />
+  return <GlbModelOnTable url={url} tableWidth={tableWidth} tableDepth={tableDepth} hovered={hovered} />
 }
 
 interface TableWithModelProps {

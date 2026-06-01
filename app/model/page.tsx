@@ -7,7 +7,7 @@ import ModelViewer from '@/components/3d/ModelViewer'
 import Loading from '@/components/Loading'
 import { Upload } from 'lucide-react'
 import { toast } from '@/lib/toast'
-import { MAX_MODEL_SIZE_BYTES } from '@/lib/uploadLimits'
+import { maxModelBytesForName } from '@/lib/uploadLimits'
 
 function ModelPageContent() {
   const searchParams = useSearchParams()
@@ -57,13 +57,15 @@ function ModelPageContent() {
     const file = e.target.files?.[0]
     if (!file) return
     const lower = file.name.toLowerCase()
-    const isSupportedExt = lower.endsWith('.glb') || lower.endsWith('.gltf') || lower.endsWith('.3dm')
+    const isSupportedExt = lower.endsWith('.glb') || lower.endsWith('.gltf') || lower.endsWith('.3dm') || lower.endsWith('.stl')
     if (!isSupportedExt) {
-      toast.error('Please select a .glb, .gltf, or .3dm file.')
+      toast.error('Please select a .glb, .gltf, .3dm, or .stl file.')
       return
     }
-    if (file.size > MAX_MODEL_SIZE_BYTES) {
-      toast.error('Model must be under 10 MB.')
+    const maxBytes = maxModelBytesForName(lower)
+    if (file.size > maxBytes) {
+      const capMb = Math.round(maxBytes / (1024 * 1024))
+      toast.error(`Model must be under ${capMb} MB.`)
       return
     }
     if (lastObjectUrlRef.current) {
@@ -118,7 +120,7 @@ function ModelPageContent() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".glb,.gltf,.3dm"
+              accept=".glb,.gltf,.3dm,.stl"
               onChange={handleFileChange}
               className="hidden"
             />

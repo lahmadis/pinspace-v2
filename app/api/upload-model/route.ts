@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
-import { MAX_MODEL_SIZE_BYTES, SUPPORTED_MODEL_EXTENSIONS } from '@/lib/uploadLimits'
+import { maxModelBytesForName, SUPPORTED_MODEL_EXTENSIONS } from '@/lib/uploadLimits'
 
 function getSafeName(name: string): string {
   return name
@@ -39,8 +39,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Only .glb, .gltf, .3dm, and .stl files are supported' }, { status: 400 })
     }
 
-    if (file.size > MAX_MODEL_SIZE_BYTES) {
-      return NextResponse.json({ error: 'Model exceeds 10 MB limit' }, { status: 400 })
+    const maxBytes = maxModelBytesForName(lowerName)
+    if (file.size > maxBytes) {
+      const capMb = Math.round(maxBytes / (1024 * 1024))
+      const fileMb = (file.size / (1024 * 1024)).toFixed(1)
+      return NextResponse.json(
+        { error: `Model is too large: ${fileMb} MB exceeds the ${capMb} MB limit` },
+        { status: 400 }
+      )
     }
 
     const ext = lowerName.endsWith('.glb') ? 'glb'
@@ -53,12 +59,15 @@ export async function POST(request: NextRequest) {
     const filePath = `${session.user.id}/models/${timestamp}-${random}-${base}.${ext}`
 
     const bytes = new Uint8Array(await file.arrayBuffer())
+    // Set contentType deterministically from the extension rather than trusting
+    // the browser-supplied file.type (often empty or octet-stream), so Storage
+    // always receives a MIME the bucket accepts. All four are allow-listed on
+    // the board-images bucket. .3dm has no standard MIME → octet-stream.
     const contentType =
-      file.type ||
-      (ext === 'glb' ? 'model/gltf-binary'
-        : ext === '3dm' ? 'application/octet-stream'
-        : ext === 'stl' ? 'model/stl'
-        : 'model/gltf+json')
+      ext === 'glb' ? 'model/gltf-binary'
+      : ext === 'stl' ? 'model/stl'
+      : ext === '3dm' ? 'application/octet-stream'
+      : 'model/gltf+json' // gltf
 
     const { error: uploadError } = await supabase.storage
       .from('board-images')
@@ -69,7 +78,15 @@ export async function POST(request: NextRequest) {
 
     if (uploadError) {
       console.error('Model upload failed:', uploadError)
-      return NextResponse.json({ error: 'Failed to upload model' }, { status: 500 })
+      // Surface the real storage reason (mime/size/status) so the client can
+      // show something actionable instead of a generic failure. These messages
+      // describe the request, not secrets.
+      const detail = uploadError.message || 'unknown storage error'
+      const statusCode = (uploadError as { statusCode?: string | number }).statusCode
+      return NextResponse.json(
+        { error: `Failed to upload model (${contentType}): ${detail}${statusCode ? ` [status ${statusCode}]` : ''}` },
+        { status: 500 }
+      )
     }
 
     const { data: publicUrlData } = supabase.storage
