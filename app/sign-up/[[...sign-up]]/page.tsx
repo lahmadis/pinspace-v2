@@ -315,6 +315,12 @@ function SignUpInner() {
                 autoFocus
               />
             </div>
+            <div className="flex items-start gap-2.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3.5 py-3 text-sm text-indigo-900">
+              <span aria-hidden="true" className="text-base leading-none">📬</span>
+              <p>
+                <span className="font-semibold">Don&apos;t see the code?</span> It may be in your spam or junk folder — please check there.
+              </p>
+            </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
             <button
               type="submit"
@@ -325,9 +331,9 @@ function SignUpInner() {
             </button>
           </form>
           <p className="mt-4 text-sm text-gray-500 text-center">
-            Didn&apos;t receive the code? Check your spam folder or{' '}
+            Still nothing?{' '}
             <button type="button" onClick={handleBackToEmail} className="text-indigo-600 hover:underline">
-              use a different email
+              Use a different email
             </button>
           </p>
           <div className="mt-6 pt-4 border-t border-gray-200">
