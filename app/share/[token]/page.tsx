@@ -11,6 +11,7 @@ import WallSystem from '@/components/3d/WallSystem'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
+import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
 
 interface WallDimensions {
   height: number
@@ -205,19 +206,34 @@ export default function SharePage() {
         const data = await res.json()
         setBoards(data.boards || [])
         const workspaceId: string | null = data.room?.workspaceId ?? null
+        const roomId: string | null = data.room?.id ?? null
         setRoomName(data.room?.name ?? null)
 
+        // Phase 2b: pass roomId so the route reads the per-room wall-config blob
+        // (which has its own legacy fallback). Without it the route only reads
+        // the workspace-level blob and returns config:null for rooms created or
+        // edited after the per-room migration — which left the room blank.
+        let resolvedConfig: WallConfig | null = null
         if (workspaceId) {
           try {
-            const configRes = await fetch(`/api/studios/${workspaceId}/wall-config`)
+            const configUrl = roomId
+              ? `/api/studios/${workspaceId}/wall-config?roomId=${encodeURIComponent(roomId)}`
+              : `/api/studios/${workspaceId}/wall-config`
+            const configRes = await fetch(configUrl)
             if (!cancelled && configRes.ok) {
               const configData = await configRes.json()
-              if (configData?.config) setWallConfig(configData.config)
+              if (configData?.config) resolvedConfig = configData.config
             }
           } catch {
-            // wall config is cosmetic — don't fail the whole page
+            // wall config fetch failed — fall back to a default below.
           }
         }
+
+        // Never leave the room blank: boards render only inside <WallSystem>,
+        // which is gated on wallConfig. If config is genuinely missing or the
+        // fetch failed, render boards on a default wall layout rather than
+        // showing an empty room.
+        if (!cancelled) setWallConfig(resolvedConfig ?? DEFAULT_WALL_CONFIG)
 
         if (!cancelled) setLoadState('ok')
       } catch {

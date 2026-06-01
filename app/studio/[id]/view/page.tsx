@@ -225,9 +225,12 @@ export default function StudioViewPage() {
       // before workspaceId resolves.
       const wsKey = resolvedWorkspaceId ?? studioId
       try {
+        // Phase 2b: pass roomId (= studioId after the URL flip) so the route
+        // reads the per-room wall-config blob (with legacy fallback) instead of
+        // only the workspace-level blob, which returns null for per-room rooms.
         const configUrl = isDemo
-          ? `/api/studios/${wsKey}/wall-config?demo=true`
-          : `/api/studios/${wsKey}/wall-config`
+          ? `/api/studios/${wsKey}/wall-config?roomId=${encodeURIComponent(studioId)}&demo=true`
+          : `/api/studios/${wsKey}/wall-config?roomId=${encodeURIComponent(studioId)}`
         const resConfig = await fetch(configUrl)
         if (cancelled) return
         if (resConfig.ok) {
