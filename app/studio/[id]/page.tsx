@@ -8,7 +8,7 @@ import { Board } from '@/types'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
 import PresenceBar, { type PresentUser } from '@/components/3d/PresenceBar'
-import { ArrowLeft, Share2, Settings, Box, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Share2, Settings, Box, ChevronDown, Menu, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import { DEFAULT_WALL_CONFIG, type WallConfig } from '@/lib/wallLayout'
@@ -82,6 +82,9 @@ export default function StudioPage() {
   
   const [boards, setBoards] = useState<Board[]>([])
   const [showShareModal, setShowShareModal] = useState(false)
+  // Phone-only collapsed toolbar — see the hamburger panel rendered below
+  // sm. Desktop toolbar stays uncontrolled.
+  const [showStudioMenu, setShowStudioMenu] = useState(false)
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [boardsError, setBoardsError] = useState(false)
@@ -742,13 +745,11 @@ export default function StudioPage() {
             </div>
           )}
 
-          {/* Top-right buttons - Hide when in edit mode */}
+          {/* Top-right buttons (desktop / >= sm) - Hide when in edit mode.
+              Phones get the hamburger panel right below; the `hidden sm:flex`
+              switch swaps the two without changing handlers. */}
           {!isEditMode && (
-            // flex-wrap + max-w so the row drops to multiple lines on narrow
-            // viewports (~390-440px) instead of clipping past the right edge.
-            // justify-end keeps wrapped rows right-aligned under the anchor.
-            // sm:flex-nowrap restores the single-line desktop look.
-            <div className="fixed top-4 right-4 z-40 flex flex-wrap justify-end items-center gap-2.5 max-w-[calc(100vw-2rem)] sm:flex-nowrap sm:max-w-none">
+            <div className="hidden sm:flex fixed top-4 right-4 z-40 flex-nowrap justify-end items-center gap-2.5">
               {/* Share button */}
               <button
                 onClick={() => setShowShareModal(true)}
@@ -778,6 +779,68 @@ export default function StudioPage() {
                   <Settings className="w-4 h-4" />
                   Reconfigure Walls
                 </button>
+              )}
+            </div>
+          )}
+
+          {/* Phone-only toolbar (< sm) — collapses Share, Place 3D model, and
+              Reconfigure Walls into a single hamburger so the buttons don't
+              cover the 3D view. Each menu item calls the same handler as its
+              desktop counterpart, then closes the menu. Top-left logo +
+              workspace/room breadcrumb stay visible because they carry the
+              "where am I" context. */}
+          {!isEditMode && (
+            <div className="sm:hidden fixed top-4 right-4 z-40">
+              <button
+                onClick={() => setShowStudioMenu((v) => !v)}
+                aria-label={showStudioMenu ? 'Close studio menu' : 'Open studio menu'}
+                aria-expanded={showStudioMenu}
+                className="p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-colors"
+              >
+                {showStudioMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </button>
+              {showStudioMenu && (
+                <>
+                  {/* Tap-outside backdrop — sits under the panel, above the
+                      canvas; pointer-events catches the tap and closes. */}
+                  <div
+                    className="fixed inset-0 z-[-1]"
+                    onClick={() => setShowStudioMenu(false)}
+                  />
+                  <div
+                    className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
+                    role="menu"
+                  >
+                    <button
+                      role="menuitem"
+                      onClick={() => { setShowStudioMenu(false); setShowShareModal(true) }}
+                      className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <Share2 className="w-4 h-4 text-blue-600" />
+                      Share
+                    </button>
+                    {!isArchived && (
+                      <button
+                        role="menuitem"
+                        onClick={() => { setShowStudioMenu(false); setFloorEditorMode('tables'); setFloorEditorOpen(true) }}
+                        className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
+                      >
+                        <Box className="w-4 h-4 text-indigo-600" />
+                        Place 3D model
+                      </button>
+                    )}
+                    {!isArchived && (
+                      <button
+                        role="menuitem"
+                        onClick={() => { setShowStudioMenu(false); handleReconfigureWalls() }}
+                        className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
+                      >
+                        <Settings className="w-4 h-4 text-indigo-600" />
+                        Reconfigure Walls
+                      </button>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           )}
