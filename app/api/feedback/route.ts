@@ -71,7 +71,7 @@ export async function POST(request: Request) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'PinSpace <noreply@pinspace.app>',
+            from: 'PinSpace <noreply@mail.pinspace3d.com>',
             to: ['slahmadi04@gmail.com'],
             subject: `PinSpace feedback — ${preview}`,
             html,
