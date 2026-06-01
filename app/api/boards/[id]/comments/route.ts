@@ -72,7 +72,7 @@ export async function GET(
 
     const { data: workspace } = await serviceSupabase
       .from('workspaces')
-      .select('is_public, published_at')
+      .select('owner_id, is_public, published_at')
       .eq('id', resolvedWorkspaceId)
       .single()
 
@@ -102,9 +102,36 @@ export async function GET(
       return NextResponse.json({ comments: transformedComments })
     }
 
-    // Private workspace: use user session so RLS applies (members can read)
+    // Private workspace: enforce access in app code, then read with the
+    // service role — mirroring the POST and the public branch above. We can't
+    // rely on supabaseServer() RLS here: the comments SELECT policy nests a
+    // SELECT FROM workspaces, and workspaces has no membership-based SELECT
+    // policy, so a non-owner member gets an empty result and their own saved
+    // comments disappear on refresh. Owner OR workspace_members row is the
+    // boundary (same check the POST uses); true non-members are rejected.
     const supabase = supabaseServer()
-    const { data: comments, error } = await supabase
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const userId = session?.user?.id
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const isOwner = workspace?.owner_id === userId
+    if (!isOwner) {
+      const { data: membership } = await serviceSupabase
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', resolvedWorkspaceId)
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (!membership) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
+
+    const { data: comments, error } = await serviceSupabase
       .from('comments')
       .select('*')
       .eq('board_id', boardId)
