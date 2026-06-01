@@ -50,9 +50,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to save feedback' }, { status: 500 })
     }
 
-    // 2. Best-effort email notification. Failure here must NOT fail the request.
+    // 2. Best-effort email notification. Failure here must NOT fail the request,
+    //    but it must NOT be silent either: we surface whether it worked via the
+    //    `emailSent` flag in the response and console.error the REAL error so a
+    //    Resend rejection or missing key shows up in the Vercel function logs.
+    //    (Matches the delete-account route's env var + fetch pattern exactly.)
+    let emailSent = false
     const resendKey = process.env.RESEND_API_KEY
-    if (resendKey) {
+    if (!resendKey) {
+      // RESEND_API_KEY is the HTTP Resend API key — SEPARATE from the SMTP creds
+      // Supabase uses for auth/OTP emails. If auth emails work but this doesn't,
+      // the key is likely missing/misscoped in Vercel: add RESEND_API_KEY to the
+      // project's env (Production) and redeploy. No code change can fix that.
+      console.error('[feedback] RESEND_API_KEY is not set — email NOT sent (row saved). Likely a Vercel env scoping issue.')
+    } else {
       const preview = message.length > 60 ? `${message.slice(0, 60)}…` : message
       const html = [
         `<p style="white-space:pre-wrap">${escapeHtml(message)}</p>`,
@@ -64,7 +75,7 @@ export async function POST(request: Request) {
         `</p>`,
       ].join('')
       try {
-        await fetch('https://api.resend.com/emails', {
+        const res = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${resendKey}`,
@@ -77,15 +88,22 @@ export async function POST(request: Request) {
             html,
           }),
         })
+        if (res.ok) {
+          emailSent = true
+        } else {
+          // fetch does NOT throw on 4xx/5xx, so without this check a Resend
+          // rejection (bad key, unverified domain, bad payload) looks like
+          // success. Log the real status + body so it's visible in Vercel.
+          const detail = await res.text().catch(() => '(no body)')
+          console.error(`[feedback] Resend rejected send: ${res.status} ${res.statusText} — ${detail}`)
+        }
       } catch (emailErr) {
-        // Non-fatal — the row is already saved as backup.
-        console.error('Failed to send feedback email:', emailErr)
+        // Network-level throw before a response — row is already saved as backup.
+        console.error('[feedback] Resend send threw:', emailErr)
       }
-    } else {
-      console.warn('RESEND_API_KEY not set — feedback saved but email skipped')
     }
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, emailSent })
   } catch {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
