@@ -17,15 +17,20 @@ type StudioResponse = {
 // ============================================================================
 // DEMO ONLY — remove with the `demo-bubbles` branch.
 // ----------------------------------------------------------------------------
-// ~20 mock studio bubbles so the Wentworth network looks populated for a screen
+// ~30 mock studio bubbles so the Wentworth network looks populated for a screen
 // recording. These are VISUAL ONLY: rendered client-side, appended to the live
 // `nodes` array, never written to Supabase and never fetched. They carry NO
 // `url` and NO `publishedRooms`, so clicking one navigates nowhere; `handleClick`
 // also early-returns on the `demo-mock-` id prefix as a guard. Counts/years/
 // instructors are varied so sizes and connection lines look organic, and a few
-// instructors repeat to draw "same instructor" links. DO NOT use this pattern in
+// instructors repeat to draw "same instructor" links. Every mock uses the app's
+// brand indigo (DEMO_INDIGO) so they all render the same color, matching the
+// BubbleNetwork default / real Wentworth bubbles. DO NOT use this pattern in
 // production — delete this constant and its two references when the demo is done.
 // ============================================================================
+// The app's brand indigo for bubbles — same value used by BubbleNetwork's color
+// scale, the real Wentworth nodes, and the explore drill-down bubbles (#6366f1).
+const DEMO_INDIGO = '#6366f1'
 const DEMO_MOCK_STUDIOS: BubbleNode[] = [
   { id: 'demo-mock-1',  name: 'Studio 01 — Comparative Analysis',        label: 'Studio 01 — Comparative Analysis',        year: 1,         department: 'Architecture',      instructor: 'Prof. R. Alvarez', count: 14 },
   { id: 'demo-mock-2',  name: 'Studio 02 — Drawing & Representation',     label: 'Studio 02 — Drawing & Representation',     year: 1,         department: 'Architecture',      instructor: 'Prof. M. Chen',    count: 9  },
@@ -47,7 +52,18 @@ const DEMO_MOCK_STUDIOS: BubbleNode[] = [
   { id: 'demo-mock-18', name: 'Interior Studio — Workplace Futures',     label: 'Interior Studio — Workplace Futures',     year: 4,         department: 'Interior Design',   instructor: 'Prof. J. Romano',  count: 9  },
   { id: 'demo-mock-19', name: 'Industrial Design — Mobility',            label: 'Industrial Design — Mobility',            year: 3,         department: 'Industrial Design', instructor: 'Prof. T. Yamada',  count: 17 },
   { id: 'demo-mock-20', name: 'Industrial Design — Assistive Products',  label: 'Industrial Design — Assistive Products',  year: 4,         department: 'Industrial Design', instructor: 'Prof. T. Yamada',  count: 12 },
-]
+  { id: 'demo-mock-21', name: 'Studio 13 — Mixed-Use Block',             label: 'Studio 13 — Mixed-Use Block',             year: 3,         department: 'Architecture',      instructor: 'Prof. R. Alvarez', count: 20 },
+  { id: 'demo-mock-22', name: 'Studio 14 — Performing Arts Center',      label: 'Studio 14 — Performing Arts Center',      year: 4,         department: 'Architecture',      instructor: 'Prof. M. Chen',    count: 23 },
+  { id: 'demo-mock-23', name: 'Studio 15 — Modular Housing',             label: 'Studio 15 — Modular Housing',             year: 2,         department: 'Architecture',      instructor: 'Prof. L. Petrov',  count: 8  },
+  { id: 'demo-mock-24', name: 'Studio 16 — Riverfront Market',           label: 'Studio 16 — Riverfront Market',           year: 3,         department: 'Architecture',      instructor: 'Prof. D. Nguyen',  count: 14 },
+  { id: 'demo-mock-25', name: 'Vertical Studio — Museum Annex',          label: 'Vertical Studio — Museum Annex',          year: 4,         department: 'Architecture',      instructor: 'Prof. S. Okafor',  count: 17 },
+  { id: 'demo-mock-26', name: 'Graduate Thesis — Climate Adaptive Façades', label: 'Graduate Thesis — Climate Adaptive Façades', year: 'Masters', department: 'Architecture', instructor: 'Prof. K. Schmidt', count: 6  },
+  { id: 'demo-mock-27', name: 'Graduate Thesis — Civic Infrastructure',  label: 'Graduate Thesis — Civic Infrastructure',  year: 'Masters', department: 'Architecture',      instructor: 'Prof. R. Alvarez', count: 10 },
+  { id: 'demo-mock-28', name: 'Interior Studio — Adaptive Retail',       label: 'Interior Studio — Adaptive Retail',       year: 3,         department: 'Interior Design',   instructor: 'Prof. J. Romano',  count: 13 },
+  { id: 'demo-mock-29', name: 'Industrial Design — Sustainable Packaging', label: 'Industrial Design — Sustainable Packaging', year: 3,      department: 'Industrial Design', instructor: 'Prof. T. Yamada',  count: 9  },
+  { id: 'demo-mock-30', name: 'Studio 17 — Light & Atmosphere',          label: 'Studio 17 — Light & Atmosphere',          year: 1,         department: 'Architecture',      instructor: 'Prof. M. Chen',    count: 16 },
+  // Apply the brand indigo to every mock so they all render the same color.
+].map((s) => ({ ...s, color: DEMO_INDIGO }))
 // END DEMO ONLY
 
 function ExplorePageInner() {
