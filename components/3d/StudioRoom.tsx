@@ -1320,29 +1320,20 @@ export default function StudioRoom(props: StudioRoomProps) {
     const apiHeight = copied.position?.height ?? 30
 
     // Cascade pastes so successive Cmd+V's don't stack exactly on each other.
-    // Each paste shifts the source position by N × 12" (the same grid step
-    // Phase 7 snaps board moves to), then re-snaps to the 12" wall-local
-    // grid, then clamps inside the wall. Source position is reused as the
-    // base regardless of which wall the source was on — wall-local API
-    // coords (0–100) are the same shape on every wall, so "the same spot"
-    // pastes to "the same spot" on the target wall.
+    // Each paste shifts the source position by N × 5% of wall width/height.
+    // Free placement (no grid snap) — board movement itself is free since
+    // Phase 7 was reverted, so paste shouldn't impose a grid the user can't
+    // see. Source position is reused as the base regardless of which wall
+    // the source was on; wall-local API coords (0–100) are the same shape
+    // on every wall, so "the same spot" pastes to "the same spot" on the
+    // target wall.
     pasteCountRef.current += 1
     const offsetCount = pasteCountRef.current
-    const wallWInches = editingWallDimensions.width * 12
-    const wallHInches = editingWallDimensions.height * 12
-    const GRID_INCHES = 12
-    // Convert a 12" step to API percent for each axis.
-    const stepAPIx = (GRID_INCHES / wallWInches) * 100
-    const stepAPIy = (GRID_INCHES / wallHInches) * 100
+    const PASTE_OFFSET_API = 5 // % of wall per paste — small enough to keep the new board near the source
     const srcAPIx = copied.position?.x ?? 50
     const srcAPIy = copied.position?.y ?? 50
-    // Snap a value to the 12" grid centered on the wall (API 50 = wall center),
-    // matching Phase 7's wall-center-relative snap convention.
-    const snapAPI = (v: number, step: number) => 50 + Math.round((v - 50) / step) * step
-    const rawX = srcAPIx + stepAPIx * offsetCount
-    const rawY = srcAPIy + stepAPIy * offsetCount
-    const apiX = Math.max(0, Math.min(100, snapAPI(rawX, stepAPIx)))
-    const apiY = Math.max(0, Math.min(100, snapAPI(rawY, stepAPIy)))
+    const apiX = Math.max(0, Math.min(100, srcAPIx + PASTE_OFFSET_API * offsetCount))
+    const apiY = Math.max(0, Math.min(100, srcAPIy + PASTE_OFFSET_API * offsetCount))
     // The placedBoards3D map uses wall-local NORMALIZED coords (-0.5..+0.5).
     const normX = (apiX / 100) - 0.5
     const normY = (apiY / 100) - 0.5
