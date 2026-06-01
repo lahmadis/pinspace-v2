@@ -99,6 +99,9 @@ export default function WorkspaceRoomsPage() {
   const isSharedProject = workspace?.type === 'shared'
   const isAnyMember = !!workspace && workspace.members.some(m => m.userId === user?.id)
   const canAddRoom = isInstructor || (isSharedProject && isAnyMember)
+  // Phase 10: any workspace member (owner or invited collaborator, any role)
+  // may rename rooms. Other room controls (publish, delete) stay owner-only.
+  const canRename = isAnyMember
 
   const handleCreateRoom = async () => {
     const trimmed = newRoomName.trim()
@@ -462,9 +465,10 @@ export default function WorkspaceRoomsPage() {
                   </Link>
                 )}
 
-                {/* Owner-only edit affordances. Visible on hover so they don't
-                    crowd the card. Hover effects suppressed when editing. */}
-                {isInstructor && !isEditing && (
+                {/* Edit affordances. Visible on hover so they don't crowd the
+                    card. Hover effects suppressed when editing. Rename is open
+                    to any member (Phase 10); publish + delete stay owner-only. */}
+                {canRename && !isEditing && (
                   <div className="px-6 pb-4 flex items-center justify-end gap-1 -mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     {accountMode !== 'personal' && canPublish && (
                       <button
@@ -489,14 +493,16 @@ export default function WorkspaceRoomsPage() {
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                    <button
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRoomToDelete(room) }}
-                      disabled={isBusy}
-                      className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
-                      aria-label="Delete room"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {isInstructor && (
+                      <button
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRoomToDelete(room) }}
+                        disabled={isBusy}
+                        className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
+                        aria-label="Delete room"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

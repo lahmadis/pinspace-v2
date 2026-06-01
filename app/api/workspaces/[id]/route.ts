@@ -244,18 +244,45 @@ export async function PATCH(
     const body = await request.json().catch(() => ({}))
     const { name, description } = body
 
-    const { data: workspace, error: fetchError } = await supabase
+    // Phase 10: any workspace member (any role) may rename. A rename is a
+    // name-only PATCH; changing any other field (e.g. description) stays
+    // owner-only.
+    const wantsName = name !== undefined
+    const wantsDescription = typeof description === 'string'
+    const isNameOnlyRename = wantsName && !wantsDescription
+
+    // Read + write via service role: the workspaces RLS has no membership-based
+    // SELECT/UPDATE policy (see GET above), so a non-owner member can neither
+    // read nor write their own workspace under the user session. Access is
+    // enforced in application code below.
+    const admin = supabaseServiceRole()
+    const { data: workspace, error: fetchError } = await admin
       .from('workspaces')
       .select('owner_id')
       .eq('id', workspaceId)
-      .single()
+      .maybeSingle()
 
     if (fetchError || !workspace) {
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
-    if (workspace.owner_id !== userId) {
-      return NextResponse.json({ error: 'Only workspace owners can update the workspace' }, { status: 403 })
+    const isOwner = workspace.owner_id === userId
+
+    if (!isOwner) {
+      // Non-owners may ONLY perform a name-only rename, and only if they are a
+      // member of the workspace. Any other change stays owner-only.
+      if (!isNameOnlyRename) {
+        return NextResponse.json({ error: 'Only workspace owners can update the workspace' }, { status: 403 })
+      }
+      const { data: membership } = await admin
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (!membership) {
+        return NextResponse.json({ error: 'Only workspace members can rename the workspace' }, { status: 403 })
+      }
     }
 
     const updateData: { name?: string; description?: string } = {}
@@ -272,11 +299,10 @@ export async function PATCH(
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
     }
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await admin
       .from('workspaces')
       .update(updateData)
       .eq('id', workspaceId)
-      .eq('owner_id', userId)
 
     if (updateError) {
       console.error('Error updating workspace:', updateError)

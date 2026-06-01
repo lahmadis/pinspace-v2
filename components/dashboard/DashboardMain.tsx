@@ -80,17 +80,20 @@ function RoomCard({
           </span>
         )}
 
-        {isOwner && (
-          <div className="absolute top-2 right-2" ref={menuRef}>
-            <button
-              type="button"
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : workspace.id) }}
-              className="p-1.5 rounded-lg bg-white/70 hover:bg-white text-gray-500 hover:text-gray-700 transition-colors shadow-sm opacity-0 group-hover:opacity-100"
-            >
-              <MoreVertical className="w-3.5 h-3.5" />
-            </button>
-            {isMenuOpen && (
-              <div className="absolute right-0 top-9 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+        {/* Every dashboard card is a workspace the user owns or is a member of
+            (the list is owned ∪ member), so Rename is available on all cards
+            (Phase 10). Settings + Delete remain owner-only. */}
+        <div className="absolute top-2 right-2" ref={menuRef}>
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : workspace.id) }}
+            className="p-1.5 rounded-lg bg-white/70 hover:bg-white text-gray-500 hover:text-gray-700 transition-colors shadow-sm opacity-0 group-hover:opacity-100"
+          >
+            <MoreVertical className="w-3.5 h-3.5" />
+          </button>
+          {isMenuOpen && (
+            <div className="absolute right-0 top-9 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+              {isOwner && (
                 <Link
                   href={withInstitution(`/workspace/${workspace.id}/settings`, institutionSlug)}
                   onClick={() => setOpenMenuId(null)}
@@ -98,13 +101,15 @@ function RoomCard({
                 >
                   <Settings className="w-4 h-4" /> Settings
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => { onRename(workspace.id, workspace.name || ''); setOpenMenuId(null) }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left"
-                >
-                  <Pencil className="w-4 h-4" /> Rename
-                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => { onRename(workspace.id, workspace.name || ''); setOpenMenuId(null) }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left"
+              >
+                <Pencil className="w-4 h-4" /> Rename
+              </button>
+              {isOwner && (
                 <button
                   type="button"
                   onClick={() => onDelete(workspace.id, workspace.name || '')}
@@ -112,10 +117,10 @@ function RoomCard({
                 >
                   <Trash2 className="w-4 h-4" /> Delete
                 </button>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Card body — link */}

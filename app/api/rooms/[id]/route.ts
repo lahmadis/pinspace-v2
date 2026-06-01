@@ -6,13 +6,19 @@ import { validateName } from '@/lib/validation/safeName'
 export const dynamic = 'force-dynamic'
 
 /**
- * Look up the room and verify the caller owns its parent workspace.
+ * Look up the room and authorize the caller against its parent workspace.
  * Returns { room, workspaceId } on success or a NextResponse on failure so the
  * caller can early-return without re-checking shape.
+ *
+ * By default this is owner-only (used for DELETE and any non-rename mutation).
+ * Pass `allowMembers: true` to also admit any workspace member (any role,
+ * including student) — used ONLY for the name-only rename path (Phase 10).
+ * Destructive operations must NOT pass allowMembers.
  */
 async function authorizeRoomMutation(
   request: NextRequest,
-  roomId: string
+  roomId: string,
+  options: { allowMembers?: boolean } = {}
 ): Promise<
   | { ok: true; room: Record<string, unknown>; workspaceId: string; userId: string }
   | { ok: false; response: NextResponse }
@@ -52,8 +58,31 @@ async function authorizeRoomMutation(
   if (!workspace) {
     return { ok: false, response: NextResponse.json({ error: 'Parent workspace not found' }, { status: 404 }) }
   }
-  if (workspace.owner_id !== userId) {
-    return { ok: false, response: NextResponse.json({ error: 'Only workspace owners can mutate rooms' }, { status: 403 }) }
+
+  let authorized = workspace.owner_id === userId
+  if (!authorized && options.allowMembers) {
+    // Any workspace member (any role) may rename. Membership is the boundary
+    // for non-owners; true non-members still fall through to 403 below.
+    const { data: membership } = await admin
+      .from('workspace_members')
+      .select('user_id')
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', userId)
+      .maybeSingle()
+    authorized = membership !== null
+  }
+  if (!authorized) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        {
+          error: options.allowMembers
+            ? 'Only workspace members can rename rooms'
+            : 'Only workspace owners can mutate rooms',
+        },
+        { status: 403 }
+      ),
+    }
   }
 
   return { ok: true, room, workspaceId, userId }
@@ -73,11 +102,20 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const auth = await authorizeRoomMutation(request, params.id)
+    const body = await request.json().catch(() => ({}))
+
+    // A name-only rename is permitted for any workspace member (Phase 10).
+    // Any other field (displayOrder, isPublished) stays owner-only, so we only
+    // relax the gate when `name` is the sole field being changed.
+    const wantsName = typeof body?.name === 'string'
+    const wantsDisplayOrder = body?.displayOrder != null
+    const wantsIsPublished = typeof body?.isPublished === 'boolean'
+    const isNameOnlyRename = wantsName && !wantsDisplayOrder && !wantsIsPublished
+
+    const auth = await authorizeRoomMutation(request, params.id, { allowMembers: isNameOnlyRename })
     if (!auth.ok) return auth.response
     const { room } = auth
 
-    const body = await request.json().catch(() => ({}))
     const updates: Record<string, unknown> = {}
 
     if (typeof body?.name === 'string') {
