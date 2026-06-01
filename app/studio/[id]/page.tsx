@@ -645,7 +645,10 @@ export default function StudioPage() {
 
           {/* Top Left - Logo and breadcrumb. Hidden in wall edit mode. */}
           {!isEditMode && (
-            <div className="fixed top-4 left-4 z-40 flex items-center gap-2.5">
+            // Same flex-wrap/max-w pattern as the right toolbar so a long
+            // workspace + room breadcrumb pill drops to a second line on
+            // narrow viewports instead of running off the right edge.
+            <div className="fixed top-4 left-4 z-40 flex flex-wrap items-center gap-2.5 max-w-[calc(100vw-2rem)] sm:flex-nowrap sm:max-w-none">
               {/* PinSpace Logo - links to home */}
               <button
                 onClick={() => router.push('/')}
@@ -741,7 +744,11 @@ export default function StudioPage() {
 
           {/* Top-right buttons - Hide when in edit mode */}
           {!isEditMode && (
-            <div className="fixed top-4 right-4 z-40 flex items-center gap-2.5">
+            // flex-wrap + max-w so the row drops to multiple lines on narrow
+            // viewports (~390-440px) instead of clipping past the right edge.
+            // justify-end keeps wrapped rows right-aligned under the anchor.
+            // sm:flex-nowrap restores the single-line desktop look.
+            <div className="fixed top-4 right-4 z-40 flex flex-wrap justify-end items-center gap-2.5 max-w-[calc(100vw-2rem)] sm:flex-nowrap sm:max-w-none">
               {/* Share button */}
               <button
                 onClick={() => setShowShareModal(true)}

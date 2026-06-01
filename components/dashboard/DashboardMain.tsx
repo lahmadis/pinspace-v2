@@ -259,10 +259,17 @@ export function DashboardMain({
   return (
     <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
       {/* Top bar */}
-      <div className="shrink-0 h-16 flex items-center justify-between px-6 border-b border-gray-200 bg-white">
-        <span className="text-base font-semibold text-gray-900 pl-10 md:pl-0">{cfg.title}</span>
+      {/* Wrap below sm so the org title + action buttons each get their own
+          row on narrow viewports (≤ ~440px) instead of pushing New Class past
+          the right edge. min-w-0 on the title lets it shrink rather than
+          shove the actions row off, and the actions inner row also wraps so
+          three buttons (Show archived / Join with code / New Class) don't
+          clip individually on the narrowest phones. sm:flex-nowrap + sm:h-16
+          restore the desktop row exactly. */}
+      <div className="shrink-0 sm:h-16 flex flex-wrap items-center justify-between gap-2 px-6 py-3 sm:py-0 sm:flex-nowrap border-b border-gray-200 bg-white">
+        <span className="text-base font-semibold text-gray-900 pl-10 md:pl-0 min-w-0 truncate">{cfg.title}</span>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {hasArchived && profile.accountRole === 'instructor' && (
             <button
               type="button"
