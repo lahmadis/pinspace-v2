@@ -85,6 +85,24 @@ export function useBoardState(
       b.position.x != null &&
       b.position.y != null
 
+    /**
+     * Phase 5.2: keep the local absolute size when a parent refetch /
+     * realtime UPDATE flows in. The DB row for a freshly uploaded board
+     * carries the upload-time ORIGINAL boardWidthIn/Height — no resize PATCH
+     * ever fires for a temp id, so any in-session resize lives ONLY in our
+     * local `boards[id].boardWidthIn`. Without this fallback, the wholesale
+     * `{ ...parentBoard, ... }` assignment in the branches below silently
+     * overwrites the user's NEW size with the DB's ORIGINAL, mirroring the
+     * exact clobber Phase 5.1 fixed at the temp→real swap one layer down.
+     * When there's no `ex`, the parent is brand-new locally — return as-is.
+     */
+    const preferLocalSize = (parent: Board, ex: Board | undefined): Board =>
+      ex ? {
+        ...parent,
+        boardWidthIn:  ex.boardWidthIn  ?? parent.boardWidthIn,
+        boardHeightIn: ex.boardHeightIn ?? parent.boardHeightIn,
+      } : parent
+
     initialBoards.forEach((parentBoard) => {
       const existing = boardMap.get(parentBoard.id)
       const parentHasPosition = hasValidPosition(parentBoard)
@@ -104,15 +122,21 @@ export function useBoardState(
         parentBoard.position.y != null
       ) {
         boardMap.set(parentBoard.id, {
-          ...parentBoard,
+          ...preferLocalSize(parentBoard, existing),
           position: normalizePosition({ ...parentBoard.position, side: 'back' }),
         })
       } else if (parentHasPosition && parentBoard.position) {
-        boardMap.set(parentBoard.id, { ...parentBoard, position: normalizePosition(parentBoard.position) })
+        boardMap.set(parentBoard.id, {
+          ...preferLocalSize(parentBoard, existing),
+          position: normalizePosition(parentBoard.position),
+        })
       } else if (existingHasPosition && existing!.position) {
-        boardMap.set(parentBoard.id, { ...parentBoard, position: normalizePosition(existing!.position) })
+        boardMap.set(parentBoard.id, {
+          ...preferLocalSize(parentBoard, existing),
+          position: normalizePosition(existing!.position),
+        })
       } else {
-        boardMap.set(parentBoard.id, parentBoard)
+        boardMap.set(parentBoard.id, preferLocalSize(parentBoard, existing))
       }
       // Once server includes this board, clear optimistic hold.
       optimisticBoardUntilRef.current.delete(parentBoard.id)
