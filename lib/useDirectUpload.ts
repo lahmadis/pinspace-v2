@@ -5,7 +5,12 @@ import imageCompression from 'browser-image-compression'
 import { supabase } from '@/lib/supabase/client'
 import { MAX_IMAGE_SIZE_BYTES, MAX_MODEL_SIZE_BYTES, SUPPORTED_MODEL_EXTENSIONS } from '@/lib/uploadLimits'
 
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'] as const
+// HEIC/HEIF are accepted here because the upload pipeline converts them to
+// JPEG (via heic2any in hooks/useBoardUpload.ts) BEFORE calling this hook.
+// Listing the original MIME types defends against any path that hands an
+// unconverted HEIC straight through — better to throw a typed error here
+// than to fail silently inside imageCompression.
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif'] as const
 const ALLOWED_DOCUMENT_TYPES = ['application/pdf'] as const
 
 const BUCKET = 'board-images'

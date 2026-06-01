@@ -9,6 +9,31 @@ import { useDirectUpload, type DirectUploadResult, type DirectUploadOptions } fr
 import { MAX_IMAGE_SIZE_BYTES } from '@/lib/uploadLimits'
 import { boardSizeInchesFromSource } from '@/lib/boardDimensions'
 
+/**
+ * iPhones deliver camera-roll photos as HEIC/HEIF by default. Browsers
+ * report them as `image/heic` (or `image/heif`, or — on a few old/odd
+ * mobile browsers — empty string with a `.heic`/`.heif` filename). Treat
+ * any of those as HEIC so the conversion path can kick in. Used by every
+ * type-check gate in this file so no upload entry point silently rejects
+ * an iPhone photo.
+ */
+const isHeic = (file: File): boolean =>
+  /^image\/hei[cf]$/i.test(file.type) || /\.(heic|heif)$/i.test(file.name)
+
+/**
+ * Convert a HEIC/HEIF File to a JPEG File. heic2any is dynamic-imported
+ * here so non-HEIC sessions (desktop, Android JPEG, etc.) never download
+ * the ~600KB libheif bundle. Throws on conversion failure — callers
+ * should catch and surface a per-file toast.
+ */
+async function convertHeicToJpeg(file: File): Promise<File> {
+  const heic2any = (await import('heic2any')).default
+  const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 })
+  const jpegBlob = Array.isArray(result) ? result[0] : result
+  const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg') || `${file.name || 'photo'}.jpg`
+  return new File([jpegBlob], newName, { type: 'image/jpeg' })
+}
+
 interface UploadOptions {
   /**
    * URL `[id]` segment of the studio page. Post-Phase-6.2b URL flip this is a
@@ -248,10 +273,30 @@ const CENTER_API = 50 // also used when patching real board position in replaceT
  * the placeholder appears at the correct aspect ratio from frame 1 (no snap/flicker).
  */
 const uploadFile = async (
-  file: File,
+  inputFile: File,
   options: UploadOptions,
   directUpload: (file: File, opts?: DirectUploadOptions) => Promise<DirectUploadResult>
 ): Promise<{ success: boolean; uploadedBoard?: Board }> => {
+  // HEIC is iPhone's default camera-roll format. The downstream pipeline
+  // (imageCompression, canvas-based dimension reads, blob preview URLs)
+  // can't decode HEIC in any non-Safari browser, so convert to JPEG first
+  // and feed the rest of the function the converted File. The
+  // dynamic-import inside isHeic keeps the ~600KB libheif bundle off
+  // sessions that never see a HEIC.
+  let file = inputFile
+  if (isHeic(inputFile)) {
+    try {
+      file = await convertHeicToJpeg(inputFile)
+    } catch (err) {
+      console.error(`[Upload] HEIC conversion failed for ${inputFile.name}:`, err)
+      toast.error(
+        `"${inputFile.name}" — couldn't convert this photo. ` +
+        `On iPhone, Settings > Camera > Formats > Most Compatible, or export as JPEG.`
+      )
+      return { success: false }
+    }
+  }
+
   const title = file.name.replace(/\.[^/.]+$/, '')
   let tempBoardId: string | null = null
   let blobUrl: string | null = null
@@ -432,6 +477,12 @@ const uploadFile = async (
         placedBoards3DRef: options.placedBoards3DRef,
       })
     }
+    // Per-file toast so the failure is never invisible. The temp board
+    // flashing onto the wall and disappearing is the same visual signal
+    // as "nothing happened" for a user — without this toast, a failed
+    // upload looked silent (the long-standing iPhone HEIC failure mode).
+    const errMsg = error instanceof Error ? error.message : 'Upload failed'
+    toast.error(`"${file.name}" — ${errMsg}`)
     return { success: false }
   }
 }
@@ -702,20 +753,30 @@ export const useBoardUpload = (options: UploadOptions) => {
   const handleUpload = () => {
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = '.jpg,.jpeg,.png,.pdf'
+    // Mix extensions and MIME types so iOS, Android, and desktop pickers
+    // all surface HEIC/HEIF photos from the library. iOS reports HEIC as
+    // `image/heic`; older Android sometimes reports an empty type and the
+    // extension is what's left to match on.
+    input.accept = '.jpg,.jpeg,.png,.pdf,.heic,.heif,image/heic,image/heif,image/jpeg,image/png'
     input.multiple = true
     
     input.onchange = async (e) => {
       const files = Array.from((e.target as HTMLInputElement).files || [])
       if (files.length === 0) return
       
-      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
+      // Empty-string covered via isHeic — some browsers omit the type for
+      // HEIC and only the extension is left to match on.
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 'image/heic', 'image/heif', '']
       let successCount = 0
       let failCount = 0
       const oversized: string[] = []
 
       for (const file of files) {
-        if (!validTypes.includes(file.type)) {
+        if (!validTypes.includes(file.type) && !isHeic(file)) {
+          // Surface — silent failCount++ on unsupported file types is the
+          // mode that made iPhone HEICs look like "nothing happened" to
+          // users on mobile.
+          toast.error(`"${file.name}" — unsupported format (${file.type || 'unknown'}).`)
           failCount++
           continue
         }
@@ -767,8 +828,8 @@ export const useBoardUpload = (options: UploadOptions) => {
 
   /** Upload a single image file (e.g. from clipboard paste). Only images; PDFs use the file picker. */
   const uploadFileDirect = async (file: File): Promise<boolean> => {
-    const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png']
-    if (!validImageTypes.includes(file.type)) return false
+    const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/heic', 'image/heif', '']
+    if (!validImageTypes.includes(file.type) && !isHeic(file)) return false
     if (file.size > MAX_IMAGE_SIZE_BYTES) {
       const mb = (file.size / (1024 * 1024)).toFixed(1)
       toast.error(`${file.name} is too large (${mb} MB). Maximum size is 75 MB.`)
@@ -785,13 +846,17 @@ export const useBoardUpload = (options: UploadOptions) => {
 
   /** Upload multiple files (e.g. from drag-and-drop). Supports images + PDFs. */
   const uploadFilesDirect = async (files: File[]): Promise<void> => {
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 'image/heic', 'image/heif', '']
     let successCount = 0
     let failCount = 0
     const oversized: string[] = []
 
     for (const file of files) {
-      if (!validTypes.includes(file.type)) { failCount++; continue }
+      if (!validTypes.includes(file.type) && !isHeic(file)) {
+        toast.error(`"${file.name}" — unsupported format (${file.type || 'unknown'}).`)
+        failCount++
+        continue
+      }
       if (file.size > MAX_IMAGE_SIZE_BYTES) {
         const mb = (file.size / (1024 * 1024)).toFixed(1)
         oversized.push(`${file.name} (${mb} MB)`)
