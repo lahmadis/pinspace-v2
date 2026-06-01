@@ -4,6 +4,7 @@ import { Suspense, useState, useRef, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from '@/lib/toast'
 import JoinClassModal from '@/components/JoinClassModal'
+import FeedbackButton from '@/components/FeedbackButton'
 import { useAccountMode } from '@/lib/useAccountMode'
 import { useAuthSession } from '@/hooks/useAuthSession'
 import { useProfile } from '@/lib/ProfileContext'
@@ -297,6 +298,9 @@ function DashboardContent() {
         onLeave={handleLeave}
         onShowJoinModal={() => setShowJoinModal(true)}
       />
+
+      {/* Persistent feedback button — fixed bottom-right, opens its own modal. */}
+      <FeedbackButton />
 
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
 
