@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRef, useEffect, useState } from 'react'
 import {
   GraduationCap, Users, Building2, MoreVertical, Plus,
-  Settings, Trash2, ExternalLink, Pencil, Archive, UserPlus, Network,
+  Settings, Trash2, ExternalLink, Pencil, Archive, UserPlus, Network, LogOut,
 } from 'lucide-react'
 import type { Workspace } from '@/types'
 import type { Scope } from './DashboardSidebar'
@@ -38,10 +38,11 @@ interface RoomCardProps {
   institutionSlug: string | null
   onDelete: (id: string, name: string) => void
   onRename: (id: string, name: string) => void
+  onLeave: (id: string, name: string) => void
 }
 
 function RoomCard({
-  workspace, isOwner, scope, openMenuId, setOpenMenuId, institutionSlug, onDelete, onRename,
+  workspace, isOwner, scope, openMenuId, setOpenMenuId, institutionSlug, onDelete, onRename, onLeave,
 }: RoomCardProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const isMenuOpen = openMenuId === workspace.id
@@ -116,6 +117,17 @@ function RoomCard({
                   className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
                 >
                   <Trash2 className="w-4 h-4" /> Delete
+                </button>
+              )}
+              {/* Non-owner members can leave. Every non-owned dashboard card is a
+                  membership, so !isOwner ⟹ member. Owners get Delete instead. */}
+              {!isOwner && (
+                <button
+                  type="button"
+                  onClick={() => { onLeave(workspace.id, workspace.name || ''); setOpenMenuId(null) }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
+                >
+                  <LogOut className="w-4 h-4" /> Leave project
                 </button>
               )}
             </div>
@@ -236,12 +248,13 @@ interface DashboardMainProps {
   organization: { name: string; slug: string } | null
   onDelete: (id: string, name: string) => void
   onRename: (id: string, name: string) => void
+  onLeave: (id: string, name: string) => void
   onShowJoinModal: () => void
 }
 
 export function DashboardMain({
   scope, rooms, userId, accountMode, institutionHome, loading,
-  organization, onDelete, onRename, onShowJoinModal,
+  organization, onDelete, onRename, onLeave, onShowJoinModal,
 }: DashboardMainProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
@@ -371,6 +384,7 @@ export function DashboardMain({
                 institutionSlug={institutionHome}
                 onDelete={onDelete}
                 onRename={onRename}
+                onLeave={onLeave}
               />
             ))}
           </div>
