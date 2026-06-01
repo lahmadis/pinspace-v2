@@ -14,6 +14,41 @@ type StudioResponse = {
   hasOrg?: boolean
 }
 
+// ============================================================================
+// DEMO ONLY — remove with the `demo-bubbles` branch.
+// ----------------------------------------------------------------------------
+// ~20 mock studio bubbles so the Wentworth network looks populated for a screen
+// recording. These are VISUAL ONLY: rendered client-side, appended to the live
+// `nodes` array, never written to Supabase and never fetched. They carry NO
+// `url` and NO `publishedRooms`, so clicking one navigates nowhere; `handleClick`
+// also early-returns on the `demo-mock-` id prefix as a guard. Counts/years/
+// instructors are varied so sizes and connection lines look organic, and a few
+// instructors repeat to draw "same instructor" links. DO NOT use this pattern in
+// production — delete this constant and its two references when the demo is done.
+// ============================================================================
+const DEMO_MOCK_STUDIOS: BubbleNode[] = [
+  { id: 'demo-mock-1',  name: 'Studio 01 — Comparative Analysis',        label: 'Studio 01 — Comparative Analysis',        year: 1,         department: 'Architecture',      instructor: 'Prof. R. Alvarez', count: 14 },
+  { id: 'demo-mock-2',  name: 'Studio 02 — Drawing & Representation',     label: 'Studio 02 — Drawing & Representation',     year: 1,         department: 'Architecture',      instructor: 'Prof. M. Chen',    count: 9  },
+  { id: 'demo-mock-3',  name: 'Studio 03 — Small House',                  label: 'Studio 03 — Small House',                  year: 2,         department: 'Architecture',      instructor: 'Prof. R. Alvarez', count: 18 },
+  { id: 'demo-mock-4',  name: 'Studio 04 — Adaptive Reuse',              label: 'Studio 04 — Adaptive Reuse',              year: 2,         department: 'Architecture',      instructor: 'Prof. S. Okafor',  count: 12 },
+  { id: 'demo-mock-5',  name: 'Studio 05 — Waterfront Pavilion',         label: 'Studio 05 — Waterfront Pavilion',         year: 2,         department: 'Architecture',      instructor: 'Prof. L. Petrov',  count: 7  },
+  { id: 'demo-mock-6',  name: 'Studio 06 — Community Health Clinic',     label: 'Studio 06 — Community Health Clinic',     year: 3,         department: 'Architecture',      instructor: 'Prof. M. Chen',    count: 21 },
+  { id: 'demo-mock-7',  name: 'Studio 07 — Urban Infill Housing',        label: 'Studio 07 — Urban Infill Housing',        year: 3,         department: 'Architecture',      instructor: 'Prof. D. Nguyen',  count: 16 },
+  { id: 'demo-mock-8',  name: 'Studio 08 — Transit Hub',                 label: 'Studio 08 — Transit Hub',                 year: 3,         department: 'Architecture',      instructor: 'Prof. S. Okafor',  count: 10 },
+  { id: 'demo-mock-9',  name: 'Studio 09 — Tectonics & Material',        label: 'Studio 09 — Tectonics & Material',        year: 4,         department: 'Architecture',      instructor: 'Prof. K. Schmidt', count: 6  },
+  { id: 'demo-mock-10', name: 'Studio 10 — Net-Zero School',            label: 'Studio 10 — Net-Zero School',            year: 4,         department: 'Architecture',      instructor: 'Prof. D. Nguyen',  count: 19 },
+  { id: 'demo-mock-11', name: 'Studio 11 — High-Rise Systems',           label: 'Studio 11 — High-Rise Systems',           year: 4,         department: 'Architecture',      instructor: 'Prof. L. Petrov',  count: 13 },
+  { id: 'demo-mock-12', name: 'Studio 12 — Public Library',              label: 'Studio 12 — Public Library',              year: 4,         department: 'Architecture',      instructor: 'Prof. K. Schmidt', count: 22 },
+  { id: 'demo-mock-13', name: 'Comprehensive Studio — Civic Center',     label: 'Comprehensive Studio — Civic Center',     year: 4,         department: 'Architecture',      instructor: 'Prof. R. Alvarez', count: 24 },
+  { id: 'demo-mock-14', name: 'Graduate Thesis — Coastal Resilience',    label: 'Graduate Thesis — Coastal Resilience',    year: 'Masters', department: 'Architecture',      instructor: 'Prof. S. Okafor',  count: 8  },
+  { id: 'demo-mock-15', name: 'Graduate Thesis — Post-Industrial Landscapes', label: 'Graduate Thesis — Post-Industrial Landscapes', year: 'Masters', department: 'Architecture', instructor: 'Prof. M. Chen', count: 5  },
+  { id: 'demo-mock-16', name: 'Graduate Thesis — Housing Equity',        label: 'Graduate Thesis — Housing Equity',        year: 'Masters', department: 'Architecture',      instructor: 'Prof. D. Nguyen',  count: 11 },
+  { id: 'demo-mock-17', name: 'Interior Studio — Hospitality Design',    label: 'Interior Studio — Hospitality Design',    year: 3,         department: 'Interior Design',   instructor: 'Prof. J. Romano',  count: 15 },
+  { id: 'demo-mock-18', name: 'Interior Studio — Workplace Futures',     label: 'Interior Studio — Workplace Futures',     year: 4,         department: 'Interior Design',   instructor: 'Prof. J. Romano',  count: 9  },
+  { id: 'demo-mock-19', name: 'Industrial Design — Mobility',            label: 'Industrial Design — Mobility',            year: 3,         department: 'Industrial Design', instructor: 'Prof. T. Yamada',  count: 17 },
+  { id: 'demo-mock-20', name: 'Industrial Design — Assistive Products',  label: 'Industrial Design — Assistive Products',  year: 4,         department: 'Industrial Design', instructor: 'Prof. T. Yamada',  count: 12 },
+]
+// END DEMO ONLY
 
 function ExplorePageInner() {
   const router = useRouter()
@@ -102,8 +137,11 @@ function ExplorePageInner() {
         if (res.ok) {
           const data: StudioResponse = await res.json()
           const studios = data.studios || []
-          setNodes(studios)
-          setTotalStudios(data.totals?.studios ?? 0)
+          // DEMO ONLY (demo-bubbles branch): pad the display array with mock
+          // studios so the network looks populated. Real studios still render
+          // exactly as before — the mocks are purely additive and carry no url.
+          setNodes([...studios, ...DEMO_MOCK_STUDIOS])
+          setTotalStudios((data.totals?.studios ?? 0) + DEMO_MOCK_STUDIOS.length)
           setTotalStudents(data.totals?.students ?? 0)
           setHasOrg(data.hasOrg !== false)
           // Eager-prefetch first few studios so opening them is instant even without hover
@@ -132,6 +170,10 @@ function ExplorePageInner() {
   )
 
   const handleClick = (node: BubbleNode) => {
+    // DEMO ONLY (demo-bubbles branch): mock bubbles are visual only — clicking
+    // one does nothing. Guard here so a click never errors or tries to navigate.
+    if (node.id.startsWith('demo-mock-')) return
+
     const demoParam = isDemo ? '?demo=true' : ''
 
     // Already drilled into a workspace: bubbles here are its rooms — open one.
