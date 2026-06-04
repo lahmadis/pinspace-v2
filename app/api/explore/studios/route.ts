@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoStudios, getDemoTotals } from '@/lib/mockData'
+import { isSuperadmin } from '@/lib/auth/superadmin'
 
 // Allow short-lived caching so repeat visits and multiple clients don't all hit Supabase
 export const dynamic = 'force-dynamic'
@@ -78,6 +79,17 @@ export async function GET(request: NextRequest) {
         .eq('user_id', session.user.id)
         .maybeSingle()
       if (profile?.organization_id) institutionFilterId = profile.organization_id
+    }
+
+    // Platform superadmin: may view ANY org's network (read-only). The `org`
+    // query param selects which org; it is honored ONLY after verifying the
+    // caller is a superadmin server-side (service role, from the session user
+    // id). A non-superadmin passing `org` is ignored and stays scoped to their
+    // own org. This is the sole cross-org override — content endpoints still
+    // gate independently on published status.
+    const requestedOrg = searchParams.get('org')
+    if (requestedOrg && session?.user?.id && (await isSuperadmin(session.user.id))) {
+      institutionFilterId = requestedOrg
     }
 
     if (!institutionFilterId) {

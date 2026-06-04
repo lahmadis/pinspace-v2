@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoBoards, transformDemoBoard, DEMO_STUDIOS } from '@/lib/mockData'
 import { getSampleComments } from '@/lib/sampleData'
+import { isSuperadmin, isNetworkPublished } from '@/lib/auth/superadmin'
 
 export const dynamic = 'force-dynamic'
 
@@ -118,16 +119,30 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const isOwner = workspace?.owner_id === userId
-    if (!isOwner) {
-      const { data: membership } = await serviceSupabase
-        .from('workspace_members')
-        .select('user_id')
-        .eq('workspace_id', resolvedWorkspaceId)
-        .eq('user_id', userId)
-        .maybeSingle()
-      if (!membership) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // Platform superadmin: READ-ONLY access to network-published content, in
+    // addition to owner/member. Verified server-side via service role; scoped
+    // strictly to published-to-network content. (This is the GET/read path
+    // only — comment create/edit/delete keep their existing author checks.)
+    const superadminViewer = await isSuperadmin(userId, serviceSupabase)
+    const networkPublished =
+      superadminViewer &&
+      (await isNetworkPublished(serviceSupabase, {
+        roomId: board.room_id,
+        workspaceId: resolvedWorkspaceId,
+      }))
+
+    if (!(superadminViewer && networkPublished)) {
+      const isOwner = workspace?.owner_id === userId
+      if (!isOwner) {
+        const { data: membership } = await serviceSupabase
+          .from('workspace_members')
+          .select('user_id')
+          .eq('workspace_id', resolvedWorkspaceId)
+          .eq('user_id', userId)
+          .maybeSingle()
+        if (!membership) {
+          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        }
       }
     }
 

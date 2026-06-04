@@ -4,6 +4,7 @@ import { getDemoBoards, transformDemoBoard } from '@/lib/mockData'
 import { getSampleBoards } from '@/lib/sampleData'
 import { resolveMainRoomId } from '@/lib/rooms'
 import { validateLinkUrl } from '@/lib/linkUrl'
+import { isSuperadmin, isNetworkPublished } from '@/lib/auth/superadmin'
 
 // No static caching — boards change frequently (uploads, position updates)
 export const dynamic = 'force-dynamic'
@@ -132,27 +133,39 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      // Verify the user is the workspace owner or a member
-      const { data: ws } = await adminDb
-        .from('workspaces')
-        .select('owner_id')
-        .eq('id', scopedWorkspaceId)
-        .single()
+      // Platform superadmin: READ-ONLY access to network-published content, in
+      // addition to owner/member access. Verified server-side via service role
+      // from the authenticated user id (never a client flag). Scoped strictly
+      // to published-to-network content — unpublished workspaces still require
+      // ownership/membership below.
+      const superadminViewer = await isSuperadmin(userId, adminDb)
+      const networkPublished =
+        superadminViewer &&
+        (await isNetworkPublished(adminDb, { roomId: scopedRoomId, workspaceId: scopedWorkspaceId }))
 
-      if (!ws) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
-      }
+      if (!(superadminViewer && networkPublished)) {
+        // Verify the user is the workspace owner or a member
+        const { data: ws } = await adminDb
+          .from('workspaces')
+          .select('owner_id')
+          .eq('id', scopedWorkspaceId)
+          .single()
 
-      if (ws.owner_id !== userId) {
-        const { data: membership } = await adminDb
-          .from('workspace_members')
-          .select('user_id')
-          .eq('workspace_id', scopedWorkspaceId)
-          .eq('user_id', userId)
-          .maybeSingle()
+        if (!ws) {
+          return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        }
 
-        if (!membership) {
-          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        if (ws.owner_id !== userId) {
+          const { data: membership } = await adminDb
+            .from('workspace_members')
+            .select('user_id')
+            .eq('workspace_id', scopedWorkspaceId)
+            .eq('user_id', userId)
+            .maybeSingle()
+
+          if (!membership) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+          }
         }
       }
     }

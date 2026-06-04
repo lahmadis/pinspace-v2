@@ -39,6 +39,10 @@ function ExplorePageInner() {
   const [measuredHeaderHeight, setMeasuredHeaderHeight] = useState(57)
 
   const isDemo = searchParams?.get('demo') === 'true'
+  // Superadmin org override: when present, requests this org's network instead
+  // of the caller's own. Forwarded to the explore endpoints, which honor it
+  // ONLY after verifying superadmin server-side (ignored for everyone else).
+  const orgParam = searchParams?.get('org') || null
 
   useEffect(() => {
     const el = headerRef.current
@@ -72,7 +76,10 @@ function ExplorePageInner() {
     if (isDemo) return
     const loadAcademicYears = async () => {
       try {
-        const res = await fetch('/api/explore/academic-years', { cache: 'no-store' })
+        const ayUrl = orgParam
+          ? `/api/explore/academic-years?org=${encodeURIComponent(orgParam)}`
+          : '/api/explore/academic-years'
+        const res = await fetch(ayUrl, { cache: 'no-store' })
         if (res.ok) {
           const data = await res.json()
           setAvailableAcademicYears(data.academicYears || [])
@@ -89,7 +96,7 @@ function ExplorePageInner() {
       }
     }
     loadAcademicYears()
-  }, [isDemo])
+  }, [isDemo, orgParam])
 
   useEffect(() => {
     const load = async () => {
@@ -97,6 +104,7 @@ function ExplorePageInner() {
         const params = new URLSearchParams()
         if (isDemo) params.set('demo', 'true')
         if (!isDemo && selectedAcademicYear) params.set('academic_year', selectedAcademicYear)
+        if (orgParam) params.set('org', orgParam)
         const url = `/api/explore/studios${params.toString() ? `?${params.toString()}` : ''}`
         const res = await fetch(url, { cache: 'no-store' })
         if (res.ok) {
@@ -119,7 +127,7 @@ function ExplorePageInner() {
       }
     }
     load()
-  }, [isDemo, selectedAcademicYear, router])
+  }, [isDemo, selectedAcademicYear, orgParam, router])
 
   const handleNodeHover = useCallback(
     (node: BubbleNode) => {

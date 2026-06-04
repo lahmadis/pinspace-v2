@@ -1,13 +1,15 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { isSuperadmin } from '@/lib/auth/superadmin'
 
 export const dynamic = 'force-dynamic'
 
 // GET /api/explore/academic-years
 // Returns academic-year buckets (with counts) scoped to the signed-in user's
-// own institution. Pilot pass 7: no cross-institution browsing — institution
-// is always derived from session, never from query params.
-export async function GET() {
+// own institution. Institution is derived from session, never from query
+// params — EXCEPT a platform superadmin may pass `org` to scope to any org
+// (read-only), verified server-side. Mirrors /api/explore/studios.
+export async function GET(request: NextRequest) {
   try {
     // Pilot pass 7: scope to user's own org from session.
     const userClient = supabaseServer()
@@ -20,6 +22,13 @@ export async function GET() {
         .eq('user_id', session.user.id)
         .maybeSingle()
       if (profile?.organization_id) institutionFilterId = profile.organization_id
+    }
+
+    // Superadmin org override (read-only). Honored only after server-side
+    // verification; ignored for everyone else.
+    const requestedOrg = request.nextUrl.searchParams.get('org')
+    if (requestedOrg && session?.user?.id && (await isSuperadmin(session.user.id))) {
+      institutionFilterId = requestedOrg
     }
 
     if (!institutionFilterId) {

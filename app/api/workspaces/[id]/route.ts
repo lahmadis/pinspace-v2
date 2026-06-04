@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { validateName } from '@/lib/validation/safeName'
+import { isSuperadmin, isNetworkPublished } from '@/lib/auth/superadmin'
 
 // GET specific workspace
 export async function GET(
@@ -113,7 +114,18 @@ export async function GET(
       orgMatchClass = viewerProfile?.organization_id === workspace.organization_id
     }
 
+    // Platform superadmin: READ-ONLY access to network-published workspaces, in
+    // addition to the checks above. Verified server-side via service role from
+    // the authenticated user id. Scoped strictly to published-to-network
+    // content — a superadmin gets NO access to unpublished workspaces here.
+    let isSuperadminViewer = false
     if (!isOwner && !isMember && !isPublicPublished && !orgMatchClass) {
+      isSuperadminViewer =
+        (await isSuperadmin(userId, admin)) &&
+        (await isNetworkPublished(admin, { workspaceId }))
+    }
+
+    if (!isOwner && !isMember && !isPublicPublished && !orgMatchClass && !isSuperadminViewer) {
       // Shared rooms are joinable by link: tell the client to route the visitor
       // into the join/prompt flow (the /join/{code} page) instead of erroring.
       if (workspace.type === 'shared') {

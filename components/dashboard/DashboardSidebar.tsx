@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { resetAccountModeCache } from '@/lib/useAccountMode'
 import { useProfile } from '@/lib/ProfileContext'
+import { SuperadminOrgSwitcher } from './SuperadminOrgSwitcher'
 
 export type Scope = 'wentworth' | 'shared' | 'personal'
 
@@ -108,6 +109,10 @@ export function DashboardSidebar({
           {hasOrganization && navBtn('wentworth', orgLabel, <Network className="w-4 h-4" />)}
           {navBtn('shared', 'Shared', <Users className="w-4 h-4" />)}
           {navBtn('personal', 'Personal', <User className="w-4 h-4" />)}
+
+          {/* Superadmin-only: read-only org network switcher. Self-gates — renders
+              nothing for non-superadmins (server-verified via its endpoint). */}
+          <SuperadminOrgSwitcher />
         </nav>
 
         {/* Bottom section */}
