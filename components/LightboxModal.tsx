@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { Comment, Board } from '@/types'
 import { validateLinkUrl } from '@/lib/linkUrl'
+import { ExternalLink } from 'lucide-react'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 
 // TEMP diagnostic — always-on tracing of the lightbox link read/write path.
@@ -617,7 +618,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               </p>
             )
           })()}
-          {/* Video link editor (edit mode only) */}
+          {/* Link editor (edit mode only) */}
           {isEditMode && (
             <div className="mt-0.5" onClick={(e) => e.stopPropagation()}>
               {editingLink ? (
@@ -664,7 +665,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 010-5.656l3-3a4 4 0 015.656 5.656l-1.5 1.5" />
                   </svg>
-                  <span>{resolvedLinkUrl ? 'Edit video link' : 'Add video link'}</span>
+                  <span>{resolvedLinkUrl ? 'Edit link' : 'Add link'}</span>
                 </button>
               )}
             </div>
@@ -673,17 +674,15 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
         {/* Navigation + Close */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Open video — visible to everyone when a link is attached */}
+          {/* Open link — visible to everyone when a link is attached */}
           {resolvedLinkUrl && (
             <button
               onClick={(e) => { e.stopPropagation(); openVideo() }}
               className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors"
-              title="Open video in a new tab"
+              title="Open link in a new tab"
             >
-              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-              <span>Open video</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Open link</span>
             </button>
           )}
           {/* Previous */}

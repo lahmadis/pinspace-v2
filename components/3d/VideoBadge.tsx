@@ -1,9 +1,10 @@
 'use client'
 
 import { Html } from '@react-three/drei'
+import { ExternalLink } from 'lucide-react'
 
 interface VideoBadgeProps {
-  /** The validated video link to open. */
+  /** The validated link to open. */
   url: string
   /** Board width in scene units (inches). */
   width: number
@@ -12,8 +13,8 @@ interface VideoBadgeProps {
 }
 
 /**
- * Small play-button badge overlaid on the top-left corner of a board that has
- * a video link. Clicking it opens the link in a new tab (noopener,noreferrer)
+ * Small link badge overlaid on the top-left corner of a board that has an
+ * attached link. Clicking it opens the link in a new tab (noopener,noreferrer)
  * and stops propagation so the board's own click (lightbox / select / drag)
  * never fires. Rendered as an Html overlay so it captures DOM clicks directly
  * rather than competing with the 3D raycaster.
@@ -35,8 +36,8 @@ export default function VideoBadge({ url, width, height }: VideoBadgeProps) {
     >
       <button
         type="button"
-        title="Open video"
-        aria-label="Open video"
+        title="Open link"
+        aria-label="Open link"
         onClick={(e) => {
           e.stopPropagation()
           window.open(url, '_blank', 'noopener,noreferrer')
@@ -57,10 +58,8 @@ export default function VideoBadge({ url, width, height }: VideoBadgeProps) {
           boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
         }}
       >
-        {/* Play triangle */}
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: 1 }}>
-          <path d="M8 5v14l11-7z" />
-        </svg>
+        {/* Generic link icon */}
+        <ExternalLink size={14} strokeWidth={2.25} />
       </button>
     </Html>
   )
