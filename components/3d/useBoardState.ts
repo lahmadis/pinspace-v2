@@ -5,6 +5,14 @@ import { toast } from '@/lib/toast'
 const isDev = process.env.NODE_ENV === 'development'
 const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
 
+// TEMP diagnostic — always-on (NOT devLog-gated) tracing of every board-position
+// write / rebuild so we can see, in production, why a fresh-upload move reverts.
+// Remove once the revert is root-caused.
+const postrace = (...args: unknown[]) => {
+  // eslint-disable-next-line no-console
+  console.log('[POSTRACE]', new Date().toISOString(), ...args)
+}
+
 /**
  * Centralized board state management hook
  * 
@@ -126,12 +134,21 @@ export function useBoardState(
         linkUrl: parent.linkUrl,
       } : parent
 
+    // [POSTRACE] compact position formatter for logging
+    const fmtPos = (p: { wallIndex?: unknown; x?: unknown; y?: unknown; width?: unknown; height?: unknown; side?: unknown } | null | undefined) =>
+      p ? `w${p.wallIndex}(${Number(p.x).toFixed(1)},${Number(p.y).toFixed(1)})[${p.width ?? '?'}x${p.height ?? '?'}]${p.side ?? 'front'}` : 'none'
+
+    postrace('parent-sync FIRED', 'editCtx', { wall: activeEditWallRef.current, side: activeEditSideRef.current }, 'initialBoards=', initialBoards.length)
+
     initialBoards.forEach((parentBoard) => {
       const existing = boardMap.get(parentBoard.id)
       const parentHasPosition = hasValidPosition(parentBoard)
       const existingHasPosition = existing != null && hasValidPosition(existing)
       const parentSide = parentBoard.position?.side || 'front'
       const existingSide = existing?.position?.side || 'front'
+      // [POSTRACE] snapshot of local (existing) vs incoming (parent) position
+      const posBefore = fmtPos(existing?.position)
+      const parentPosStr = fmtPos(parentBoard.position)
 
       // Single ownership during an edit session: while the user is actively
       // editing a wall in 2D, boardPositions (in StudioRoom, fed by drags /
@@ -154,12 +171,14 @@ export function useBoardState(
         Number(existing!.position.wallIndex) === activeWall &&
         existingSide === activeEditSideRef.current
       if (onActiveWall && existing!.position) {
+        postrace('parent-sync', parentBoard.id, 'branch=ACTIVE_WALL_OWNERSHIP editEngaged=true', `boardWall=${existing!.position.wallIndex}/${existingSide}`, `KEEP local ${posBefore} (parent had ${parentPosStr})`)
         boardMap.set(parentBoard.id, {
           ...preferLocalSize(parentBoard, existing),
           position: normalizePosition(existing!.position),
         })
         return // keep local position for the whole edit session
       }
+      postrace('parent-sync', parentBoard.id, 'ownership NOT engaged', `activeWall=${activeWall}`, `existingHasPos=${existingHasPosition}`, `boardWall=${existing?.position?.wallIndex ?? 'n/a'}/${existingSide}`, `localPos=${posBefore} parentPos=${parentPosStr}`)
 
       // Optimistic hold: within the window opened by replaceTempBoard, the
       // server row is still the upload-time ORIGINAL (a move/scale done before
@@ -173,6 +192,7 @@ export function useBoardState(
       const holdUntil = optimisticBoardUntilRef.current.get(parentBoard.id) ?? 0
       const holdActive = holdUntil > Date.now()
       if (holdActive && existingHasPosition && existing!.position) {
+        postrace('parent-sync', parentBoard.id, 'branch=OPTIMISTIC_HOLD', `holdMsLeft=${holdUntil - Date.now()}`, `KEEP local ${posBefore} (parent had ${parentPosStr})`)
         boardMap.set(parentBoard.id, {
           ...preferLocalSize(parentBoard, existing),
           position: normalizePosition(existing!.position),
@@ -191,21 +211,25 @@ export function useBoardState(
         parentBoard.position.x != null &&
         parentBoard.position.y != null
       ) {
+        postrace('parent-sync', parentBoard.id, 'branch=ADOPT_PARENT_SIDE_BACK', `${posBefore} -> ${parentPosStr}`)
         boardMap.set(parentBoard.id, {
           ...preferLocalSize(parentBoard, existing),
           position: normalizePosition({ ...parentBoard.position, side: 'back' }),
         })
       } else if (parentHasPosition && parentBoard.position) {
+        postrace('parent-sync', parentBoard.id, 'branch=ADOPT_PARENT_POSITION (server wins)', `${posBefore} -> ${parentPosStr}`)
         boardMap.set(parentBoard.id, {
           ...preferLocalSize(parentBoard, existing),
           position: normalizePosition(parentBoard.position),
         })
       } else if (existingHasPosition && existing!.position) {
+        postrace('parent-sync', parentBoard.id, 'branch=KEEP_EXISTING (parent had no pos)', `${posBefore} -> ${posBefore}`)
         boardMap.set(parentBoard.id, {
           ...preferLocalSize(parentBoard, existing),
           position: normalizePosition(existing!.position),
         })
       } else {
+        postrace('parent-sync', parentBoard.id, 'branch=FALLBACK_NO_POSITION', `${posBefore} -> ${parentPosStr}`)
         boardMap.set(parentBoard.id, preferLocalSize(parentBoard, existing))
       }
       // Once server includes this board (hold expired or server position
@@ -318,14 +342,16 @@ export function useBoardState(
       }
       
       newPositions.set(board.id, { x, y, width, height })
-      
+      postrace('loadWallPositions', board.id, `wall=${wallIndex}/${side}`, `api(${board.position.x},${board.position.y}) -> norm(${x.toFixed(3)},${y.toFixed(3)}) dim(${width.toFixed(3)}x${height.toFixed(3)})`)
+
       devLog(`📂 [useBoardState] Loaded ${board.id}:`, {
         api: { x: board.position.x, y: board.position.y },
         normalized: { x, y },
         dimensions: { width, height }
       })
     })
-    
+
+    postrace('loadWallPositions SET MAP', `wall=${wallIndex}/${side}`, `count=${newPositions.size}`)
     setBoardPositions(newPositions)
     return newPositions
   }, [apiToNormalized, apiToDecimal])
@@ -346,6 +372,7 @@ export function useBoardState(
    */
   const applySnapshot = useCallback((snapshot: [string, BoardPosition][]) => {
     const map = new Map(snapshot)
+    postrace('applySnapshot (undo/redo)', `entries=${map.size}`, Array.from(map.entries()).map(([id, p]) => `${id}:(${p.x.toFixed(2)},${p.y.toFixed(2)})`).join(' '))
     setBoardPositions(map)
     setBoards(prev => prev.map(b => {
       const pos = map.get(b.id)
@@ -402,7 +429,12 @@ export function useBoardState(
         dimensions: { width, height },
         side,
     })
-    
+
+    {
+      const before = boardPositionsRef.current.get(boardId)
+      postrace('updateBoardPosition ENTER', boardId, `wall=${wallIndex}/${side}`, `boardPositions ${before ? `(${before.x.toFixed(3)},${before.y.toFixed(3)})[${before.width.toFixed(3)}x${before.height.toFixed(3)}]` : 'none'} -> (${x.toFixed(3)},${y.toFixed(3)})[${(width ?? before?.width ?? 0.3).toFixed(3)}x${(height ?? before?.height ?? 0.3).toFixed(3)}]`)
+    }
+
     pushUndo()
 
     // Capture prior local state for rollback if the API save fails.
@@ -484,9 +516,11 @@ export function useBoardState(
         boardWorkspaceId.startsWith('sample-') ||
         boardWorkspaceId.startsWith('mock-')
       if (shouldSkipPersistence) {
+        postrace('updateBoardPosition PUT SKIPPED (non-persisted id)', boardId, `workspaceId=${boardWorkspaceId}`)
         devLog('⚠️ [useBoardState] Skipping API save for non-persisted board', { boardId, boardWorkspaceId })
         return Promise.resolve()
       }
+      postrace('updateBoardPosition PUT FIRING', boardId, `payload api(${apiX.toFixed(2)},${apiY.toFixed(2)})[${apiWidth.toFixed(2)}x${apiHeight.toFixed(2)}] sizeIn(${board.boardWidthIn}x${board.boardHeightIn})`)
       
       devLog('💾 [useBoardState] Saving to API:', {
         boardId,
@@ -521,12 +555,14 @@ export function useBoardState(
       })
       
       if (!response.ok) {
+        postrace('updateBoardPosition PUT FAILED -> ROLLBACK', boardId, `status=${response.status}`)
         console.error('❌ [useBoardState] API save failed', { status: response.status, statusText: response.statusText })
         rollback()
         toast.error('Failed to save board position. Please try again.')
         return
       }
-      
+      postrace('updateBoardPosition PUT OK', boardId, `status=${response.status}`)
+
       // Update the board in the boards array with new position (in API format)
       // This ensures WallSystem sees the updated position immediately
       setBoards(prev => prev.map(b => {
@@ -549,6 +585,7 @@ export function useBoardState(
       devLog('✅ [useBoardState] Position saved successfully and boards array updated')
     } catch (error: unknown) {
       // Network failure: roll back the optimistic local state and notify the user.
+      postrace('updateBoardPosition PUT THREW -> ROLLBACK', boardId, String(error))
       console.error('❌ [useBoardState] Failed to save position:', error)
       rollback()
       toast.error('Failed to save board position. Please try again.')
@@ -615,7 +652,10 @@ export function useBoardState(
       const y = isTemp ? 0 : apiToNormalized(board.position.y)
       const width = board.position.width ? apiToDecimal(board.position.width) : 0.3
       const height = board.position.height ? apiToDecimal(board.position.height) : 0.3
+      postrace('addTempBoard SEED boardPositions', board.id, `isTemp=${isTemp}`, `seeded(${x.toFixed(3)},${y.toFixed(3)})[${width.toFixed(3)}x${height.toFixed(3)}]`, `(board.position api was (${board.position.x},${board.position.y}))`)
       setBoardPositions(prev => new Map(prev).set(board.id, { x, y, width, height }))
+    } else {
+      postrace('addTempBoard NO board.position', board.id)
     }
   }, [apiToNormalized, apiToDecimal])
   
@@ -623,6 +663,7 @@ export function useBoardState(
    * Replace temporary board with real board from API
    */
   const replaceTempBoard = useCallback((tempId: string, realBoard: Board) => {
+    postrace('replaceTempBoard ENTER', `${tempId} -> ${realBoard.id}`, `hold set +30s`, `tempPos=${(() => { const p = boardPositionsRef.current.get(tempId); return p ? `(${p.x.toFixed(3)},${p.y.toFixed(3)})[${p.width.toFixed(3)}x${p.height.toFixed(3)}]` : 'none' })()}`, `realBoard.position=${realBoard.position ? `api(${realBoard.position.x},${realBoard.position.y})[${realBoard.position.width}x${realBoard.position.height}]` : 'none'}`)
     devLog('🔄 [useBoardState] Replacing temp board:', tempId, '→', realBoard.id)
     const temp = tempBoardsRef.current.get(tempId)
     if (temp && typeof temp.blobUrl === 'string' && temp.blobUrl.startsWith('blob:')) {
@@ -707,6 +748,7 @@ export function useBoardState(
       const tempPosInner = newMap.get(tempId)
 
       if (tempPosInner) {
+        postrace('replaceTempBoard CARRY POS', `${tempId} -> ${realBoard.id}`, `(${tempPosInner.x.toFixed(3)},${tempPosInner.y.toFixed(3)})[${tempPosInner.width.toFixed(3)}x${tempPosInner.height.toFixed(3)}]`)
         newMap.delete(tempId)
         newMap.set(realBoard.id, tempPosInner)
       } else if (realBoard.position) {
@@ -746,6 +788,7 @@ export function useBoardState(
         (mergedBoard.boardWidthIn ?? null) !== (r.boardWidthIn ?? null) ||
         (mergedBoard.boardHeightIn ?? null) !== (r.boardHeightIn ?? null)
       if (positionDiffers || sizeDiffers) {
+        postrace('replaceTempBoard RECONCILE FLUSH FIRING', r.id, `positionDiffers=${positionDiffers} sizeDiffers=${sizeDiffers}`, `flush carriedPos(${carriedPos.x.toFixed(3)},${carriedPos.y.toFixed(3)})[${carriedPos.width.toFixed(3)}x${carriedPos.height.toFixed(3)}]`)
         void updateBoardPosition(
           r.id,
           Number(mp.wallIndex),
@@ -755,7 +798,11 @@ export function useBoardState(
           carriedPos.height,
           mp.side === 'back' ? 'back' : 'front',
         )
+      } else {
+        postrace('replaceTempBoard RECONCILE FLUSH SKIPPED (no diff)', r.id)
       }
+    } else {
+      postrace('replaceTempBoard RECONCILE FLUSH SKIPPED (no mergedPos/carriedPos)', realBoard.id, `mergedPos=${!!mergedBoard.position} carriedPos=${!!carriedPos}`)
     }
   }, [apiToNormalized, apiToDecimal, updateBoardPosition])
   
@@ -832,6 +879,8 @@ export function useBoardState(
    */
   const applyBoardLinkLocal = useCallback((boardId: string, linkUrl: string | null) => {
     const next = linkUrl || undefined
+    const beforeInArray = boardsRef.current.find(b => b.id === boardId)?.linkUrl
+    postrace('applyBoardLinkLocal', boardId, `boards[].linkUrl: ${JSON.stringify(beforeInArray)} -> ${JSON.stringify(next)}`, `found=${boardsRef.current.some(b => b.id === boardId)}`)
     boardsRef.current = boardsRef.current.map(b =>
       b.id === boardId && b.linkUrl !== next ? { ...b, linkUrl: next } : b
     )
@@ -842,6 +891,7 @@ export function useBoardState(
         changed = true
         return { ...b, linkUrl: next }
       })
+      postrace('applyBoardLinkLocal setBoards', boardId, `changed=${changed} afterInArray=${JSON.stringify(out.find(b => b.id === boardId)?.linkUrl)}`)
       return changed ? out : prev
     })
   }, [])

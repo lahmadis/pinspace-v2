@@ -19,6 +19,13 @@ type RealtimeBoardPayload = {
   old: Record<string, unknown>
 }
 
+// TEMP diagnostic — always-on tracing of the realtime boards channel, the
+// upstream writer that feeds props.boards -> useBoardState parent-sync.
+const postrace = (...args: unknown[]) => {
+  // eslint-disable-next-line no-console
+  console.log('[POSTRACE]', new Date().toISOString(), ...args)
+}
+
 function transformBoardRow(row: Record<string, unknown>): Board {
   return {
     id: row.id as string,
@@ -421,6 +428,8 @@ export default function StudioPage() {
             'postgres_changes',
             { event: '*', schema: 'public', table: 'boards', filter: `room_id=eq.${roomId}` },
             (payload: RealtimeBoardPayload) => {
+              const _row = payload.new as Record<string, unknown>
+              postrace('realtime', payload.eventType, `id=${_row?.id ?? (payload.old as { id?: string })?.id}`, `upload_status=${_row?.upload_status}`, `serverPos wall=${_row?.wall_index} (${_row?.position_x},${_row?.position_y})[${_row?.position_width}x${_row?.position_height}] side=${_row?.position_side}`, `link_url=${JSON.stringify(_row?.link_url)}`)
               if (payload.eventType === 'INSERT') {
                 // /api/upload first INSERTs a placeholder row with empty
                 // thumbnail_url/full_image_url and upload_status='pending',
@@ -431,29 +440,34 @@ export default function StudioPage() {
                 // the UPDATE handler below picks up the row when it goes
                 // 'pending' → 'complete'.
                 const newRow = payload.new as Record<string, unknown>
-                if (newRow.upload_status === 'pending') return
+                if (newRow.upload_status === 'pending') { postrace('realtime INSERT skipped (pending placeholder)', newRow.id); return }
                 const incoming = transformBoardRow(newRow)
                 setBoards((prev) => {
                   // Skip if we already have this board (optimistic upload by this user)
-                  if (prev.some((b) => b.id === incoming.id)) return prev
+                  if (prev.some((b) => b.id === incoming.id)) { postrace('realtime INSERT skipped (already present)', incoming.id); return prev }
+                  postrace('realtime INSERT -> parent setBoards APPEND', incoming.id, `pos=${incoming.position ? `(${incoming.position.x},${incoming.position.y})` : 'none'}`)
                   return [...prev, incoming]
                 })
               } else if (payload.eventType === 'UPDATE') {
                 const newRow = payload.new as Record<string, unknown>
                 // Still a placeholder — ignore until it goes complete.
-                if (newRow.upload_status === 'pending') return
+                if (newRow.upload_status === 'pending') { postrace('realtime UPDATE skipped (pending placeholder)', newRow.id); return }
                 const updated = transformBoardRow(newRow)
                 setBoards((prev) => {
                   const exists = prev.some((b) => b.id === updated.id)
                   if (exists) {
+                    const before = prev.find((b) => b.id === updated.id)
+                    postrace('realtime UPDATE -> parent setBoards REPLACE (wholesale)', updated.id, `pos ${before?.position ? `(${before.position.x},${before.position.y})` : 'none'} -> ${updated.position ? `(${updated.position.x},${updated.position.y})` : 'none'}`, `link ${JSON.stringify(before?.linkUrl)} -> ${JSON.stringify(updated.linkUrl)}`)
                     return prev.map((b) => (b.id === updated.id ? updated : b))
                   }
                   // 'pending' → 'complete' transition. Other users who never
                   // saw the placeholder get the row here for the first time.
+                  postrace('realtime UPDATE -> parent setBoards APPEND (first sight)', updated.id, `pos=${updated.position ? `(${updated.position.x},${updated.position.y})` : 'none'}`)
                   return [...prev, updated]
                 })
               } else if (payload.eventType === 'DELETE') {
                 const deletedId = (payload.old as { id?: string }).id
+                postrace('realtime DELETE -> parent setBoards FILTER', deletedId)
                 if (deletedId) setBoards((prev) => prev.filter((b) => b.id !== deletedId))
               }
             }

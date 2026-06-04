@@ -7,6 +7,12 @@ import { Comment, Board } from '@/types'
 import { validateLinkUrl } from '@/lib/linkUrl'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 
+// TEMP diagnostic — always-on tracing of the lightbox link read/write path.
+const postrace = (...args: unknown[]) => {
+  // eslint-disable-next-line no-console
+  console.log('[POSTRACE]', new Date().toISOString(), ...args)
+}
+
 interface LightboxModalProps {
   board: Board | null
   allBoards: Board[] // For navigation
@@ -173,6 +179,9 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   }, [isOpen, autoEnterPresentCompare, compareBoards.length])
 
   useEffect(() => {
+    // [POSTRACE] board the lightbox renders on (re)open — linkOverride is reset
+    // here, so what shows is board.linkUrl unless re-saved this session.
+    if (board) postrace('lightbox BOARD MOUNT/CHANGE', board.id, `board.linkUrl=${JSON.stringify(board.linkUrl)} (linkOverride reset to null)`)
     setEditingAuthorName(false)
     setAuthorNameInput('')
     setDisplayedAuthorName(null)
@@ -257,12 +266,14 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       return
     }
     const { value, error } = validateLinkUrl(linkInput)
+    postrace('handleSaveLink', board.id, `input=${JSON.stringify(linkInput)} validated=${JSON.stringify(value)} validationError=${JSON.stringify(error)}`)
     if (error) {
       setLinkError(error)
       return
     }
     const current = linkOverride ? linkOverride.value : board.linkUrl ?? null
     if (value === current) {
+      postrace('handleSaveLink NO-OP (value === current)', board.id, `value=${JSON.stringify(value)}`)
       setEditingLink(false)
       setLinkError(null)
       return
@@ -282,18 +293,22 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         }),
         credentials: 'include',
       })
+      postrace('handleSaveLink PUT RESPONSE', board.id, `status=${res.status} ok=${res.ok}`)
       if (res.ok) {
         setLinkOverride({ value })
         setEditingLink(false)
         // Push the persisted value up so the parent's boards cache (and the
         // open-lightbox snapshot) stay current — otherwise reopening the
         // lightbox re-reads a stale board and the link disappears until refresh.
+        postrace('handleSaveLink CALLING onLinkSaved', board.id, `value=${JSON.stringify(value)} hasCallback=${!!onLinkSaved}`)
         onLinkSaved?.(board.id, value)
       } else {
         const data = await res.json().catch(() => ({}))
+        postrace('handleSaveLink PUT FAILED', board.id, `status=${res.status} error=${JSON.stringify(data?.error)}`)
         setLinkError(data?.error || 'Failed to save link.')
       }
-    } catch {
+    } catch (e) {
+      postrace('handleSaveLink PUT THREW', board.id, String(e))
       setLinkError('Failed to save link.')
     } finally {
       linkSaveInFlightRef.current = false
