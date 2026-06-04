@@ -571,13 +571,21 @@ export default function StudioRoom(props: StudioRoomProps) {
     loadWallPositions,
     updateBoardPosition,
     applyBoardSizeLocal,
+    applyBoardLinkLocal,
     deleteBoard,
     addTempBoard,
     replaceTempBoard,
     removeTempBoard,
     undo,
     redo,
-  } = useBoardState(props.boards, props.studioId, async () => { await Promise.resolve(); props.onBoardUpdate() })
+  } = useBoardState(
+    props.boards,
+    props.studioId,
+    async () => { await Promise.resolve(); props.onBoardUpdate() },
+    // Single-ownership context: while a wall is being edited in 2D, the hook's
+    // parent-sync leaves position for that wall's boards under local control.
+    { wall: editingWall, side: editingWallSide },
+  )
 
   // Sync tables when wall config loads or studio changes (strip blob URLs so GLTF never sees them)
   useEffect(() => {
@@ -790,19 +798,25 @@ export default function StudioRoom(props: StudioRoomProps) {
         const isTemp = board.id.startsWith('temp-')
         const pos = boardPositions.get(board.id)
         const existing = currentPlaced.get(board.id)
-        // Temp boards: never overwrite center with boardPositions (avoids jump to corner from async timing)
-        const alreadyAtCenter = existing && Math.abs(existing.x) < 0.01 && Math.abs(existing.y) < 0.01
-        if (isTemp && existing && alreadyAtCenter) {
-          newMap.set(board.id, existing)
-        } else if (pos) {
-          const usePos = isTemp ? { ...pos, x: 0, y: 0 } : pos
-          newMap.set(board.id, usePos)
-        } else if (isTemp) {
-          // Temp not in boardPositions yet (async batching); keep at center so upload always shows immediately
-          newMap.set(board.id, existing ?? { x: 0, y: 0, width: 0.3, height: 0.3 })
+        if (pos) {
+          // boardPositions is the single source of truth for the live edit
+          // session — for temp boards too. The old code force-pinned temp x/y
+          // to center here, which snapped a fresh upload back to the middle the
+          // instant it was dragged while its upload was still in flight (the
+          // move/scale lived in boardPositions, this rebuild overwrote it).
+          // A freshly added temp is seeded at center in boardPositions
+          // (addTempBoard), so honoring pos still shows new uploads centered;
+          // a dragged temp now keeps the user's placement.
+          newMap.set(board.id, pos)
         } else if (existing) {
-          // Real board not in boardPositions yet (e.g. after refetch/race); keep current placement so it doesn't disappear
+          // Not in boardPositions yet (async batching right after add/swap, or
+          // a refetch race): keep the current on-screen placement so the board
+          // never disappears or jumps.
           newMap.set(board.id, existing)
+        } else if (isTemp) {
+          // Brand-new temp with no position tracked anywhere yet; show at center
+          // so the upload appears immediately.
+          newMap.set(board.id, { x: 0, y: 0, width: 0.3, height: 0.3 })
         }
       })
     setPlacedBoards3D(newMap)
@@ -1744,6 +1758,15 @@ export default function StudioRoom(props: StudioRoomProps) {
       onNavigate={handleLightboxNavigate}
       isEditMode={!props.isArchived}
       currentUserRole={props.currentUserRole ?? null}
+      onLinkSaved={(boardId, linkUrl) => {
+        // Persisted server-side already; mirror into the local boards cache so
+        // a later reopen reads the fresh link, and into the open snapshot so
+        // navigation within the lightbox stays consistent this session.
+        applyBoardLinkLocal(boardId, linkUrl)
+        setLightboxBoard((prev) =>
+          prev && prev.id === boardId ? { ...prev, linkUrl: linkUrl || undefined } : prev
+        )
+      }}
     />
     </>
   )

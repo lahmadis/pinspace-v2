@@ -40,7 +40,14 @@ const fitAspectWithinBounds = (
 export function useBoardState(
   initialBoards: Board[],
   studioId: string,
-  onRefresh: () => Promise<void>
+  onRefresh: () => Promise<void>,
+  // The wall + side the local user is actively editing in 2D, or null when not
+  // in edit mode. While set, boardPositions is the SOLE source of truth for
+  // that wall's board positions: parent refetches / realtime / reconcile may
+  // refresh metadata but must NOT overwrite position for boards on this wall
+  // (see parent-sync below). Incoming server positions for the wall are only
+  // adopted once this clears or changes (Save & Exit / wall switch).
+  editContext?: { wall: number | null; side: 'front' | 'back' }
 ) {
   // Board state
   const [boards, setBoards] = useState<Board[]>(initialBoards)
@@ -52,6 +59,16 @@ export function useBoardState(
   const boardPositionsRef = useRef(boardPositions)
   const tempBoardsRef = useRef(tempBoards)
   const optimisticBoardUntilRef = useRef<Map<string, number>>(new Map())
+
+  // Active 2D edit target, mirrored into refs so the parent-sync effect (which
+  // only re-runs on initialBoards) always reads the latest value without
+  // re-subscribing. null wall = not editing → server positions flow normally.
+  const activeEditWallRef = useRef<number | null>(editContext?.wall ?? null)
+  const activeEditSideRef = useRef<'front' | 'back'>(editContext?.side ?? 'front')
+  useEffect(() => {
+    activeEditWallRef.current = editContext?.wall ?? null
+    activeEditSideRef.current = editContext?.side ?? 'front'
+  }, [editContext?.wall, editContext?.side])
   
   // Undo/redo: snapshot is serializable boardPositions for current wall
   const undoStackRef = useRef<Array<[string, BoardPosition][]>>([])
@@ -115,6 +132,34 @@ export function useBoardState(
       const existingHasPosition = existing != null && hasValidPosition(existing)
       const parentSide = parentBoard.position?.side || 'front'
       const existingSide = existing?.position?.side || 'front'
+
+      // Single ownership during an edit session: while the user is actively
+      // editing a wall in 2D, boardPositions (in StudioRoom, fed by drags /
+      // temp→real swap) owns on-screen placement for every board on that wall.
+      // A parent refetch / realtime UPDATE / reconcile that lands mid-session
+      // must refresh metadata (thumbnail, link, size handled by preferLocalSize)
+      // but NOT move the board — otherwise a fresh upload dragged while its
+      // upload is in flight snaps back to the server's upload-time origin once
+      // the 30s optimistic hold below expires. So whenever the LOCAL board sits
+      // on the actively-edited wall+side and has a valid position, keep the
+      // local position regardless of the hold. The server position is adopted
+      // only after the session ends or the wall changes (activeEditWallRef
+      // flips), at which point Save & Exit has already PUT the local values so
+      // the adopt is a no-op. Hold is left intact (not cleared) here.
+      const activeWall = activeEditWallRef.current
+      const onActiveWall =
+        activeWall != null &&
+        existingHasPosition &&
+        existing!.position != null &&
+        Number(existing!.position.wallIndex) === activeWall &&
+        existingSide === activeEditSideRef.current
+      if (onActiveWall && existing!.position) {
+        boardMap.set(parentBoard.id, {
+          ...preferLocalSize(parentBoard, existing),
+          position: normalizePosition(existing!.position),
+        })
+        return // keep local position for the whole edit session
+      }
 
       // Optimistic hold: within the window opened by replaceTempBoard, the
       // server row is still the upload-time ORIGINAL (a move/scale done before
@@ -772,12 +817,42 @@ export function useBoardState(
     })
   }, [])
 
+  /**
+   * Local-only link-url update — mirrors a just-persisted video link (PUT in
+   * LightboxModal.handleSaveLink) back into the boards array so the lightbox,
+   * which re-reads the board from `boards` each time it opens, shows the link
+   * without waiting for a refetch. Without this the PUT lands server-side but
+   * the local boards array stays stale, so closing and reopening the lightbox
+   * reads the old board and the link vanishes until a full refresh.
+   *
+   * linkUrl is normalized to string | undefined (the Board type has no null);
+   * a null/empty save clears the field. Writes boardsRef synchronously too so
+   * a same-tick read (e.g. parent-sync's preferLocalSize, which trusts the
+   * server value) and the next render agree. Bails via value equality.
+   */
+  const applyBoardLinkLocal = useCallback((boardId: string, linkUrl: string | null) => {
+    const next = linkUrl || undefined
+    boardsRef.current = boardsRef.current.map(b =>
+      b.id === boardId && b.linkUrl !== next ? { ...b, linkUrl: next } : b
+    )
+    setBoards(prev => {
+      let changed = false
+      const out = prev.map(b => {
+        if (b.id !== boardId || b.linkUrl === next) return b
+        changed = true
+        return { ...b, linkUrl: next }
+      })
+      return changed ? out : prev
+    })
+  }, [])
+
   return {
     boards,
     boardPositions,
     loadWallPositions,
     updateBoardPosition,
     applyBoardSizeLocal,
+    applyBoardLinkLocal,
     deleteBoard,
     addTempBoard,
     replaceTempBoard,

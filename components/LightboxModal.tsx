@@ -18,6 +18,14 @@ interface LightboxModalProps {
   isEditMode?: boolean
   /** Role of the currently authenticated user in this workspace. Instructor sees email. */
   currentUserRole?: 'instructor' | 'student' | null
+  /**
+   * Called after a video link save persists (PUT ok). The parent uses it to
+   * write the new linkUrl into its local boards cache (and the open-lightbox
+   * snapshot) so reopening the lightbox shows the link without a refresh —
+   * the PUT alone only updates the server, not the local board the lightbox
+   * re-reads on open. null = link cleared.
+   */
+  onLinkSaved?: (boardId: string, linkUrl: string | null) => void
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -65,7 +73,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -277,6 +285,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       if (res.ok) {
         setLinkOverride({ value })
         setEditingLink(false)
+        // Push the persisted value up so the parent's boards cache (and the
+        // open-lightbox snapshot) stay current — otherwise reopening the
+        // lightbox re-reads a stale board and the link disappears until refresh.
+        onLinkSaved?.(board.id, value)
       } else {
         const data = await res.json().catch(() => ({}))
         setLinkError(data?.error || 'Failed to save link.')
@@ -287,7 +299,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       linkSaveInFlightRef.current = false
       setSavingLink(false)
     }
-  }, [board, linkInput, linkOverride])
+  }, [board, linkInput, linkOverride, onLinkSaved])
 
   const fetchComments = async () => {
     if (!board) return
