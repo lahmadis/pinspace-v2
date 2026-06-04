@@ -3,6 +3,7 @@ import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoBoards, transformDemoBoard } from '@/lib/mockData'
 import { getSampleBoards } from '@/lib/sampleData'
 import { resolveMainRoomId } from '@/lib/rooms'
+import { validateLinkUrl } from '@/lib/linkUrl'
 
 // No static caching — boards change frequently (uploads, position updates)
 export const dynamic = 'force-dynamic'
@@ -216,6 +217,7 @@ export async function GET(request: NextRequest) {
       physicalHeight: board.physical_height ? parseFloat(board.physical_height) : undefined,
       boardWidthIn: board.board_width_in != null ? Number(board.board_width_in) : undefined,
       boardHeightIn: board.board_height_in != null ? Number(board.board_height_in) : undefined,
+      linkUrl: board.link_url ?? undefined,
     }))
 
     // Surface the resolved room so the studio page can subscribe to realtime
@@ -290,6 +292,15 @@ export async function PUT(request: NextRequest) {
     if (board.tags) updateData.tags = board.tags
     if (board.studentName) updateData.student_name = board.studentName
     if (board.studentEmail) updateData.student_email = board.studentEmail
+
+    // Optional video link. Only touch the column when the caller explicitly
+    // sends the field (undefined = "leave as-is", so position-only/author-only
+    // PUTs don't wipe an existing link). An empty/whitespace value clears it.
+    if (board.linkUrl !== undefined) {
+      const { value, error } = validateLinkUrl(board.linkUrl)
+      if (error) return NextResponse.json({ error }, { status: 400 })
+      updateData.link_url = value
+    }
 
     // Use service role for access checks to avoid RLS mismatches
     const adminDb = supabaseServiceRole()
@@ -376,6 +387,7 @@ export async function PUT(request: NextRequest) {
       ownerColor: updatedBoard.owner_color,
       boardWidthIn: updatedBoard.board_width_in != null ? Number(updatedBoard.board_width_in) : undefined,
       boardHeightIn: updatedBoard.board_height_in != null ? Number(updatedBoard.board_height_in) : undefined,
+      linkUrl: updatedBoard.link_url ?? undefined,
     }
 
     return NextResponse.json({ success: true, board: transformedBoard })
@@ -561,6 +573,7 @@ interface BoardsPostBody {
   physicalHeight?: unknown  // optional, real-world inches; maps to physical_height column
   boardWidthIn?: unknown    // absolute rendered board width in inches; maps to board_width_in
   boardHeightIn?: unknown   // absolute rendered board height in inches; maps to board_height_in
+  linkUrl?: unknown         // optional video link; validated + maps to link_url (nullable)
 }
 
 export async function POST(request: NextRequest) {
@@ -601,6 +614,10 @@ export async function POST(request: NextRequest) {
     const physicalHeight   = typeof raw.physicalHeight   === 'number'  ? raw.physicalHeight           : null
     const boardWidthIn     = typeof raw.boardWidthIn     === 'number'  ? raw.boardWidthIn             : null
     const boardHeightIn    = typeof raw.boardHeightIn    === 'number'  ? raw.boardHeightIn            : null
+    // Optional video link — validate + normalize with the shared rules. Reject
+    // a malformed link with 400 rather than silently dropping it.
+    const { value: linkUrl, error: linkUrlError } = validateLinkUrl(raw.linkUrl)
+    if (linkUrlError) return NextResponse.json({ error: linkUrlError }, { status: 400 })
 
     const positionX           = typeof raw.position?.x           === 'number' ? raw.position.x           : null
     const positionY           = typeof raw.position?.y           === 'number' ? raw.position.y           : null
@@ -713,6 +730,7 @@ export async function POST(request: NextRequest) {
         physical_height:    physicalHeight,
         board_width_in:     boardWidthIn,
         board_height_in:    boardHeightIn,
+        link_url:           linkUrl,
       })
       .select()
       .single()
@@ -761,6 +779,7 @@ export async function POST(request: NextRequest) {
       physicalHeight: savedBoard.physical_height ? parseFloat(savedBoard.physical_height) : undefined,
       boardWidthIn:   savedBoard.board_width_in  != null ? Number(savedBoard.board_width_in)  : undefined,
       boardHeightIn:  savedBoard.board_height_in != null ? Number(savedBoard.board_height_in) : undefined,
+      linkUrl:        savedBoard.link_url ?? undefined,
     }
 
     return NextResponse.json({ board, fullUrl, thumbnailUrl })

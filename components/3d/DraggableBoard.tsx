@@ -15,6 +15,7 @@ import { PDFTextureMaterial } from './PDFTexture'
 import { useBoardTexture } from './useBoardTexture'
 import { toast } from '@/lib/toast'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
+import VideoBadge from './VideoBadge'
 
 interface DraggableBoardProps {
   board: Board
@@ -1078,6 +1079,12 @@ if (e.intersections && e.intersections.length > 0) {
             </Html>
           ) : null
         })()}
+
+        {/* Video link badge — opens the attached video in a new tab. Hidden
+            while dragging so it doesn't capture the gesture. */}
+        {board.linkUrl && !isDragging && (
+          <VideoBadge url={board.linkUrl} width={boardWidth} height={boardHeight} />
+        )}
 
         {/* Comment Count Bubble - Clean minimal design */}
         {board.comments && board.comments.length > 0 && onCommentClick && !isDragging && (

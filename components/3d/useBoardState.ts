@@ -101,6 +101,12 @@ export function useBoardState(
         ...parent,
         boardWidthIn:  ex.boardWidthIn  ?? parent.boardWidthIn,
         boardHeightIn: ex.boardHeightIn ?? parent.boardHeightIn,
+        // linkUrl is SERVER-authoritative (set via PUT on a real board id, not
+        // a temp-only local edit like size), so the parent/server value wins.
+        // Stated explicitly alongside size so this clobber-prone wholesale
+        // `{ ...parent }` assignment can never accidentally pin a stale local
+        // link or, conversely, drop a freshly-saved one.
+        linkUrl: parent.linkUrl,
       } : parent
 
     initialBoards.forEach((parentBoard) => {
@@ -589,6 +595,11 @@ export function useBoardState(
           ...realBoard,
           boardWidthIn: b.boardWidthIn ?? realBoard.boardWidthIn,
           boardHeightIn: b.boardHeightIn ?? realBoard.boardHeightIn,
+          // linkUrl is server-authoritative — a link can only be attached via
+          // PUT on a real board id, never on a temp board (which 404s), so the
+          // temp board's linkUrl is always undefined and realBoard's value
+          // wins. Stated explicitly so a future field merge here can't drop it.
+          linkUrl: realBoard.linkUrl,
           position: b.position ?? realBoard.position,
         }
       })

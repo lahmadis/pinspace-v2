@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { Comment, Board } from '@/types'
+import { validateLinkUrl } from '@/lib/linkUrl'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 
 interface LightboxModalProps {
@@ -88,6 +89,16 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const [displayedAuthorName, setDisplayedAuthorName] = useState<string | null>(null)
   const [isSavingAuthorName, setIsSavingAuthorName] = useState(false)
   const authorSaveInFlightRef = useRef(false)
+  // Optional video link editing (edit mode). linkOverride is a sentinel that
+  // holds the optimistic post-save value (including null when cleared) so the
+  // UI reflects the edit without waiting for a parent refetch; null sentinel =
+  // "use board.linkUrl". Reset on board change.
+  const [linkOverride, setLinkOverride] = useState<{ value: string | null } | null>(null)
+  const [editingLink, setEditingLink] = useState(false)
+  const [linkInput, setLinkInput] = useState('')
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const [savingLink, setSavingLink] = useState(false)
+  const linkSaveInFlightRef = useRef(false)
 
   const isOpen = board !== null
   const [profileFullName, setProfileFullName] = useState<string | null>(null)
@@ -157,6 +168,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     setEditingAuthorName(false)
     setAuthorNameInput('')
     setDisplayedAuthorName(null)
+    setLinkOverride(null)
+    setEditingLink(false)
+    setLinkInput('')
+    setLinkError(null)
     if (!board) {
       setComments([])
       setNewComment('')
@@ -227,6 +242,52 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       setEditingAuthorName(false)
     }
   }, [board, authorNameInput, displayedAuthorName])
+
+  const handleSaveLink = useCallback(async () => {
+    if (linkSaveInFlightRef.current || !board) {
+      setEditingLink(false)
+      return
+    }
+    const { value, error } = validateLinkUrl(linkInput)
+    if (error) {
+      setLinkError(error)
+      return
+    }
+    const current = linkOverride ? linkOverride.value : board.linkUrl ?? null
+    if (value === current) {
+      setEditingLink(false)
+      setLinkError(null)
+      return
+    }
+    linkSaveInFlightRef.current = true
+    setSavingLink(true)
+    setLinkError(null)
+    try {
+      const res = await fetch('/api/boards', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: board.id,
+          workspaceId: board.workspaceId || board.studioId,
+          // null clears the link; the server re-validates with the same rules.
+          linkUrl: value,
+        }),
+        credentials: 'include',
+      })
+      if (res.ok) {
+        setLinkOverride({ value })
+        setEditingLink(false)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setLinkError(data?.error || 'Failed to save link.')
+      }
+    } catch {
+      setLinkError('Failed to save link.')
+    } finally {
+      linkSaveInFlightRef.current = false
+      setSavingLink(false)
+    }
+  }, [board, linkInput, linkOverride])
 
   const fetchComments = async () => {
     if (!board) return
@@ -455,6 +516,13 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
   const imageUrl = board.fullImageUrl || board.thumbnailUrl
   const isPDF = imageUrl?.toLowerCase().endsWith('.pdf')
+  // Resolved video link: optimistic override (incl. cleared = null) wins over
+  // the board's stored value so the UI updates immediately after an edit.
+  const resolvedLinkUrl = linkOverride ? linkOverride.value : board.linkUrl ?? null
+
+  const openVideo = () => {
+    if (resolvedLinkUrl) window.open(resolvedLinkUrl, '_blank', 'noopener,noreferrer')
+  }
 
   return (
     <div 
@@ -522,10 +590,75 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               </p>
             )
           })()}
+          {/* Video link editor (edit mode only) */}
+          {isEditMode && (
+            <div className="mt-0.5" onClick={(e) => e.stopPropagation()}>
+              {editingLink ? (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={linkInput}
+                      onChange={(e) => {
+                        setLinkInput(e.target.value)
+                        if (linkError) setLinkError(null)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); handleSaveLink() }
+                        else if (e.key === 'Escape') { setEditingLink(false); setLinkError(null) }
+                      }}
+                      autoFocus
+                      disabled={savingLink}
+                      placeholder="https://..."
+                      className="text-[11px] text-slate-900 bg-white/95 border border-indigo-400 rounded px-1.5 py-0.5 w-52 sm:w-64 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+                    />
+                    <button
+                      onClick={handleSaveLink}
+                      disabled={savingLink}
+                      className="text-[11px] px-2 py-0.5 rounded bg-indigo-500 text-white hover:bg-indigo-400 disabled:opacity-60"
+                    >
+                      {savingLink ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => { setEditingLink(false); setLinkError(null) }}
+                      disabled={savingLink}
+                      className="text-[11px] px-2 py-0.5 rounded bg-white/10 text-white/80 hover:bg-white/20 disabled:opacity-60"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {linkError && <p className="text-[10px] text-red-300">{linkError}</p>}
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setLinkInput(resolvedLinkUrl ?? ''); setEditingLink(true); setLinkError(null) }}
+                  className="text-[11px] text-slate-300/90 hover:text-white inline-flex items-center gap-1"
+                >
+                  <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 010-5.656l3-3a4 4 0 015.656 5.656l-1.5 1.5" />
+                  </svg>
+                  <span>{resolvedLinkUrl ? 'Edit video link' : 'Add video link'}</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Navigation + Close */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Open video — visible to everyone when a link is attached */}
+          {resolvedLinkUrl && (
+            <button
+              onClick={(e) => { e.stopPropagation(); openVideo() }}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors"
+              title="Open video in a new tab"
+            >
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              <span>Open video</span>
+            </button>
+          )}
           {/* Previous */}
           <button
             onClick={(e) => {

@@ -7,6 +7,7 @@ import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { PDFTextureMaterial } from './PDFTexture'
 import { useBoardTexture } from './useBoardTexture'
+import VideoBadge from './VideoBadge'
 
 interface BoardThumbnailProps {
   board: Board
@@ -174,6 +175,9 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           <lineBasicMaterial attach="material" color="#94a3b8" transparent opacity={0.5} />
         </lineSegments>
       )}
+
+      {/* Video link badge — opens the attached video in a new tab. */}
+      {board.linkUrl && <VideoBadge url={board.linkUrl} width={width} height={height} />}
 
       {/* Uploader name tooltip - visible in 3D room hover */}
       {isHovered && (

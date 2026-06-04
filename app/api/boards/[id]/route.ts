@@ -71,6 +71,7 @@ export async function GET(
       physicalHeight: board.physical_height ? parseFloat(board.physical_height) : undefined,
       boardWidthIn: board.board_width_in != null ? Number(board.board_width_in) : undefined,
       boardHeightIn: board.board_height_in != null ? Number(board.board_height_in) : undefined,
+      linkUrl: board.link_url ?? undefined,
     }
 
     return NextResponse.json({ board: transformedBoard })

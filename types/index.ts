@@ -85,6 +85,11 @@ export interface Board {
   // Resolved via getBoardSizeInches (lib/boardDimensions.ts) when absent.
   boardWidthIn?: number
   boardHeightIn?: number
+  // Optional external video link (YouTube, Vimeo, Loom, …). The board image is
+  // the cover; a non-null value renders a play badge in the 3D room and an
+  // "Open video" button in the lightbox. Validated via lib/linkUrl.ts. Maps to
+  // the boards.link_url column. Undefined / absent = no link.
+  linkUrl?: string
 }
 
 export interface Comment {
