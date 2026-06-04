@@ -116,6 +116,25 @@ export function useBoardState(
       const parentSide = parentBoard.position?.side || 'front'
       const existingSide = existing?.position?.side || 'front'
 
+      // Optimistic hold: within the window opened by replaceTempBoard, the
+      // server row is still the upload-time ORIGINAL (a move/scale done before
+      // the flush PUT round-trips hasn't landed yet). Adopting
+      // normalizePosition(parentBoard.position) here would snap the board back
+      // to center — the exact fresh-upload revert this fixes. So while the hold
+      // is active and the local board has a valid position, KEEP the local
+      // position (size is still carried by preferLocalSize). The hold is NOT
+      // cleared in this branch — only when it expires or when we actually adopt
+      // the server position below — so the protection lasts the whole window.
+      const holdUntil = optimisticBoardUntilRef.current.get(parentBoard.id) ?? 0
+      const holdActive = holdUntil > Date.now()
+      if (holdActive && existingHasPosition && existing!.position) {
+        boardMap.set(parentBoard.id, {
+          ...preferLocalSize(parentBoard, existing),
+          position: normalizePosition(existing!.position),
+        })
+        return // keep the hold; skip the adopt-server + hold-delete below
+      }
+
       // Preserve local 'back' when API returns 'front' (e.g. position_side not in DB), but only if parent position has required fields
       if (
         parentHasPosition &&
@@ -144,7 +163,8 @@ export function useBoardState(
       } else {
         boardMap.set(parentBoard.id, preferLocalSize(parentBoard, existing))
       }
-      // Once server includes this board, clear optimistic hold.
+      // Once server includes this board (hold expired or server position
+      // adopted), clear optimistic hold.
       optimisticBoardUntilRef.current.delete(parentBoard.id)
     })
 
@@ -586,32 +606,61 @@ export function useBoardState(
     // was seeded from the same aspect-ratio math the server runs), so the
     // merge is a no-op when the user didn't touch anything.
     optimisticBoardUntilRef.current.set(realBoard.id, Date.now() + 30000)
+
+    // Read the local temp board + its live normalized position from the refs
+    // BEFORE mutating state. Deriving the flush inputs from the refs (the same
+    // source updateBoardPosition itself reads) avoids depending on setState
+    // updater timing — React may run an updater during a later render, not
+    // synchronously at dispatch, so values captured inside the updaters below
+    // can't be trusted immediately afterward.
+    const localTemp = boardsRef.current.find(b => b.id === tempId)
+    const carriedPos = boardPositionsRef.current.get(tempId)
+
+    // Merge — don't wholesale-replace — the local temp board onto realBoard so
+    // optimistic size (boardWidthIn/Height) and position survive the swap. No
+    // resize/move PATCH fires for temp ids, so those edits live ONLY locally;
+    // realBoard carries the upload-time original. linkUrl is server-authoritative
+    // (never set on a temp id), so realBoard's value wins there.
+    const mergedBoard: Board = {
+      ...realBoard,
+      boardWidthIn: localTemp?.boardWidthIn ?? realBoard.boardWidthIn,
+      boardHeightIn: localTemp?.boardHeightIn ?? realBoard.boardHeightIn,
+      linkUrl: realBoard.linkUrl,
+      position: localTemp?.position ?? realBoard.position,
+    }
+
+    // Sync boardsRef synchronously OUTSIDE the updater so the flush below
+    // (updateBoardPosition reads boardsRef.current to find the board + build its
+    // PUT body) sees the real board immediately — a setState updater may not run
+    // until a later render, so an in-updater ref write can't be relied on here.
+    {
+      const prevRef = boardsRef.current
+      let replacedRef = false
+      const nextRef = prevRef.map(b => {
+        if (b.id !== tempId) return b
+        replacedRef = true
+        return mergedBoard
+      })
+      if (!replacedRef) nextRef.push(mergedBoard)
+      boardsRef.current = nextRef
+    }
     setBoards(prev => {
       let replaced = false
       const next = prev.map(b => {
         if (b.id !== tempId) return b
         replaced = true
-        return {
-          ...realBoard,
-          boardWidthIn: b.boardWidthIn ?? realBoard.boardWidthIn,
-          boardHeightIn: b.boardHeightIn ?? realBoard.boardHeightIn,
-          // linkUrl is server-authoritative — a link can only be attached via
-          // PUT on a real board id, never on a temp board (which 404s), so the
-          // temp board's linkUrl is always undefined and realBoard's value
-          // wins. Stated explicitly so a future field merge here can't drop it.
-          linkUrl: realBoard.linkUrl,
-          position: b.position ?? realBoard.position,
-        }
+        return mergedBoard
       })
       if (!replaced) next.push(realBoard)
       return next
     })
-    
-    // Update positions map
+
+    // Update positions map: carry the temp board's live position over to the
+    // real id (this is what keeps the on-screen placement after the swap).
     setBoardPositions(prev => {
       const newMap = new Map(prev)
       const tempPosInner = newMap.get(tempId)
-      
+
       if (tempPosInner) {
         newMap.delete(tempId)
         newMap.set(realBoard.id, tempPosInner)
@@ -623,10 +672,47 @@ export function useBoardState(
         const height = realBoard.position.height ? apiToDecimal(realBoard.position.height) : 0.3
         newMap.set(realBoard.id, { x, y, width, height })
       }
-      
+
       return newMap
     })
-  }, [apiToNormalized, apiToDecimal])
+
+    // Flush pending optimistic edits to the server for the now-real id. A
+    // move/scale made during the temp window is only local (temp ids skip
+    // persistence), so the server row is still the upload-time original; the
+    // optimistic hold protects the next refetch, and THIS makes the server
+    // itself correct so the edit survives the refetch AND Save & Exit + wall
+    // re-entry (which read from the server).
+    //
+    // Same persistence path Save & Exit uses — updateBoardPosition PUTs the
+    // position + boardWidthIn/boardHeightIn (read from boardsRef, synced above)
+    // and skips non-real ids. Fire once, no retry: on failure it rolls back to
+    // the current local values and the hold still covers the in-session view.
+    if (mergedBoard.position && carriedPos) {
+      const mp = mergedBoard.position
+      const r = realBoard
+      const approxEq = (a?: number, b?: number) => Math.abs((a ?? 0) - (b ?? 0)) <= 0.01
+      const positionDiffers =
+        !r.position ||
+        !approxEq(mp.x, r.position.x) ||
+        !approxEq(mp.y, r.position.y) ||
+        !approxEq(mp.width, r.position.width) ||
+        !approxEq(mp.height, r.position.height)
+      const sizeDiffers =
+        (mergedBoard.boardWidthIn ?? null) !== (r.boardWidthIn ?? null) ||
+        (mergedBoard.boardHeightIn ?? null) !== (r.boardHeightIn ?? null)
+      if (positionDiffers || sizeDiffers) {
+        void updateBoardPosition(
+          r.id,
+          Number(mp.wallIndex),
+          carriedPos.x,
+          carriedPos.y,
+          carriedPos.width,
+          carriedPos.height,
+          mp.side === 'back' ? 'back' : 'front',
+        )
+      }
+    }
+  }, [apiToNormalized, apiToDecimal, updateBoardPosition])
   
   /**
    * Remove a temporary board (cleanup on error)
