@@ -577,6 +577,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     boardPositions,
     loadWallPositions,
     updateBoardPosition,
+    resolveBoardId,
     applyBoardSizeLocal,
     applyBoardLinkLocal,
     deleteBoard,
@@ -1260,12 +1261,17 @@ export default function StudioRoom(props: StudioRoomProps) {
   }
 
   const handleBoardPositionChange = useCallback(
-    (boardId: string, localX: number, localY: number, width?: number, height?: number, side?: 'front' | 'back') => {
+    (rawBoardId: string, localX: number, localY: number, width?: number, height?: number, side?: 'front' | 'back') => {
+      // FIX 2b: a pointer-up can fire after the temp→real swap still carrying the
+      // temp id. Resolve to the real id up front so the placedBoards3D write and
+      // the persisted updateBoardPosition both target the real board — otherwise
+      // the write lands under a dead temp key and the board visibly reverts.
+      const boardId = resolveBoardId(rawBoardId)
       devLog('🔁 [StudioRoom] handleBoardPositionChange CALLED:', { boardId, localX, localY, width, height, side })
 
       // 1) compute finalPosition from the drag values + any existing values
       const currentMap = placedBoards3DRef.current
-      const existing = currentMap.get(boardId)
+      const existing = currentMap.get(boardId) ?? currentMap.get(rawBoardId)
 
       const finalPosition = {
         x: localX,
@@ -1274,10 +1280,13 @@ export default function StudioRoom(props: StudioRoomProps) {
         height: height ?? existing?.height ?? 0.2,
       }
 
-      postrace('handleBoardPositionChange (drag/resize write)', boardId, `isTemp=${boardId.startsWith('temp-')}`, `existing=${existing ? `(${existing.x.toFixed(3)},${existing.y.toFixed(3)})` : 'none'} -> final(${finalPosition.x.toFixed(3)},${finalPosition.y.toFixed(3)})[${finalPosition.width.toFixed(3)}x${finalPosition.height.toFixed(3)}]`)
+      postrace('handleBoardPositionChange (drag/resize write)', `${rawBoardId}${boardId !== rawBoardId ? ` (aliased -> ${boardId})` : ''}`, `isTemp=${rawBoardId.startsWith('temp-')}`, `existing=${existing ? `(${existing.x.toFixed(3)},${existing.y.toFixed(3)})` : 'none'} -> final(${finalPosition.x.toFixed(3)},${finalPosition.y.toFixed(3)})[${finalPosition.width.toFixed(3)}x${finalPosition.height.toFixed(3)}]`)
 
-      // 2) update the Map, the ref, and the React state
+      // 2) update the Map, the ref, and the React state. FIX 2c: if a stale temp
+      // key for this board is still present (e.g. the swap's carry hasn't run in
+      // this map yet), delete it so the temp key can't be resurrected.
       const newMap = new Map(currentMap)
+      if (boardId !== rawBoardId) newMap.delete(rawBoardId)
       newMap.set(boardId, finalPosition)
       placedBoards3DRef.current = newMap
       setPlacedBoards3D(newMap)
@@ -1297,7 +1306,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         )
       }
     },
-    [editingWall, editingWallSide, updateBoardPosition]
+    [editingWall, editingWallSide, updateBoardPosition, resolveBoardId]
   )
 
 

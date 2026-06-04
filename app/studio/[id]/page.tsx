@@ -12,6 +12,7 @@ import { ArrowLeft, Share2, Settings, Box, ChevronDown, Menu, X } from 'lucide-r
 import { supabase } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import { DEFAULT_WALL_CONFIG, type WallConfig } from '@/lib/wallLayout'
+import { isBoardReconciling } from '@/lib/pendingBoardReconcile'
 
 type RealtimeBoardPayload = {
   eventType: 'INSERT' | 'UPDATE' | 'DELETE'
@@ -62,6 +63,12 @@ function transformBoardRow(row: Record<string, unknown>): Board {
     physicalHeight: row.physical_height ? parseFloat(row.physical_height as string) : undefined,
     boardWidthIn: row.board_width_in != null ? Number(row.board_width_in) : undefined,
     boardHeightIn: row.board_height_in != null ? Number(row.board_height_in) : undefined,
+    // FIX 1: realtime mapping previously omitted link_url, so every realtime
+    // UPDATE wholesale-REPLACE wrote linkUrl=undefined, wiping a saved video
+    // link (and parent-sync's server-authoritative linkUrl then propagated the
+    // wipe). Mirror the GET /api/boards serializer (route.ts) which maps
+    // link_url -> linkUrl; keep the two in sync when adding columns.
+    linkUrl: (row.link_url as string | null) ?? undefined,
   }
 }
 
@@ -429,7 +436,7 @@ export default function StudioPage() {
             { event: '*', schema: 'public', table: 'boards', filter: `room_id=eq.${roomId}` },
             (payload: RealtimeBoardPayload) => {
               const _row = payload.new as Record<string, unknown>
-              postrace('realtime', payload.eventType, `id=${_row?.id ?? (payload.old as { id?: string })?.id}`, `upload_status=${_row?.upload_status}`, `serverPos wall=${_row?.wall_index} (${_row?.position_x},${_row?.position_y})[${_row?.position_width}x${_row?.position_height}] side=${_row?.position_side}`, `link_url=${JSON.stringify(_row?.link_url)}`)
+              postrace('realtime', payload.eventType, `id=${_row?.id ?? (payload.old as { id?: string })?.id}`, `upload_status=${_row?.upload_status}`, `serverPos wall=${_row?.position_wall_index} (${_row?.position_x},${_row?.position_y})[${_row?.position_width}x${_row?.position_height}] side=${_row?.position_side}`, `link_url=${JSON.stringify(_row?.link_url)}`)
               if (payload.eventType === 'INSERT') {
                 // /api/upload first INSERTs a placeholder row with empty
                 // thumbnail_url/full_image_url and upload_status='pending',
@@ -442,6 +449,10 @@ export default function StudioPage() {
                 const newRow = payload.new as Record<string, unknown>
                 if (newRow.upload_status === 'pending') { postrace('realtime INSERT skipped (pending placeholder)', newRow.id); return }
                 const incoming = transformBoardRow(newRow)
+                // FIX 2d: this client's own in-flight upload is about to reconcile
+                // its temp board into this real id (replaceTempBoard). Appending
+                // here would put the id in the array twice until the swap lands.
+                if (isBoardReconciling(incoming.id)) { postrace('realtime INSERT skipped (locally reconciling)', incoming.id); return }
                 setBoards((prev) => {
                   // Skip if we already have this board (optimistic upload by this user)
                   if (prev.some((b) => b.id === incoming.id)) { postrace('realtime INSERT skipped (already present)', incoming.id); return prev }
@@ -462,6 +473,9 @@ export default function StudioPage() {
                   }
                   // 'pending' → 'complete' transition. Other users who never
                   // saw the placeholder get the row here for the first time.
+                  // FIX 2d: but if this client is mid-reconcile for the id, the
+                  // local swap will add it — don't append a second copy.
+                  if (isBoardReconciling(updated.id)) { postrace('realtime UPDATE append skipped (locally reconciling)', updated.id); return prev }
                   postrace('realtime UPDATE -> parent setBoards APPEND (first sight)', updated.id, `pos=${updated.position ? `(${updated.position.x},${updated.position.y})` : 'none'}`)
                   return [...prev, updated]
                 })

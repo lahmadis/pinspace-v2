@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Board } from '@/types'
 import { toast } from '@/lib/toast'
+import { markBoardReconciling } from '@/lib/pendingBoardReconcile'
 
 const isDev = process.env.NODE_ENV === 'development'
 const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
@@ -67,6 +68,26 @@ export function useBoardState(
   const boardPositionsRef = useRef(boardPositions)
   const tempBoardsRef = useRef(tempBoards)
   const optimisticBoardUntilRef = useRef<Map<string, number>>(new Map())
+
+  // FIX 2: temp-id → real-id alias map. A drag/resize gesture started on a temp
+  // board can deliver its final position AFTER replaceTempBoard has swapped the
+  // temp id for the real one (observed: pointer-up fired ~9s after the swap).
+  // Such a write would land in boardPositions under a dead temp key and the
+  // real board would keep its pre-drag placement — the visible "revert". Every
+  // position write resolves its incoming id through this map first, so late
+  // temp-keyed writes retarget the real board (and persist, since the resolved
+  // id is no longer a temp id). Entries self-expire (~60s).
+  const boardIdAliasRef = useRef<Map<string, { realId: string; expiry: number }>>(new Map())
+  const resolveBoardId = useCallback((id: string): string => {
+    const alias = boardIdAliasRef.current.get(id)
+    if (!alias) return id
+    if (alias.expiry < Date.now()) {
+      boardIdAliasRef.current.delete(id)
+      return id
+    }
+    postrace('ALIAS', id, '->', alias.realId)
+    return alias.realId
+  }, [])
 
   // Active 2D edit target, mirrored into refs so the parent-sync effect (which
   // only re-runs on initialBoards) always reads the latest value without
@@ -414,7 +435,7 @@ export function useBoardState(
    * Update board position (handles both local state and API save)
    */
   const updateBoardPosition = useCallback(async (
-    boardId: string,
+    rawBoardId: string,
     wallIndex: number,
     x: number,  // normalized -0.5 to 0.5
     y: number,  // normalized -0.5 to 0.5
@@ -422,6 +443,11 @@ export function useBoardState(
     height?: number,  // decimal 0.0 to 1.0
     side: 'front' | 'back' = 'front',
   ) => {
+      // FIX 2b: resolve temp→real before any write so a late drag that still
+      // carries the temp id targets the real board (boards array, boardPositions
+      // map, and the PUT all use the resolved id; a resolved id is real, so
+      // persistence is no longer skipped as it would be for a temp id).
+      const boardId = resolveBoardId(rawBoardId)
       devLog('💾 [useBoardState] updateBoardPosition:', {
       boardId,
       wallIndex,
@@ -591,7 +617,7 @@ export function useBoardState(
       toast.error('Failed to save board position. Please try again.')
       return
     }
-  }, [normalizedToApi, decimalToApi])
+  }, [normalizedToApi, decimalToApi, resolveBoardId])
   
   /**
    * Delete a board
@@ -693,6 +719,18 @@ export function useBoardState(
     // merge is a no-op when the user didn't touch anything.
     optimisticBoardUntilRef.current.set(realBoard.id, Date.now() + 30000)
 
+    // FIX 2a: record temp→real so a drag/resize that fires its pointer-up after
+    // this swap (still carrying the temp id) retargets the real board instead of
+    // writing a dead key. Kept ~60s — long enough to outlast any in-flight
+    // gesture, short enough not to leak. FIX 2d: also mark the real id as
+    // locally reconciling so the page's realtime INSERT handler skips appending
+    // it (it would otherwise duplicate the id while the temp still exists).
+    if (tempId !== realBoard.id) {
+      boardIdAliasRef.current.set(tempId, { realId: realBoard.id, expiry: Date.now() + 60000 })
+      postrace('ALIAS', tempId, '->', realBoard.id, '(registered)')
+    }
+    markBoardReconciling(realBoard.id)
+
     // Read the local temp board + its live normalized position from the refs
     // BEFORE mutating state. Deriving the flush inputs from the refs (the same
     // source updateBoardPosition itself reads) avoids depending on setState
@@ -719,25 +757,32 @@ export function useBoardState(
     // (updateBoardPosition reads boardsRef.current to find the board + build its
     // PUT body) sees the real board immediately — a setState updater may not run
     // until a later render, so an in-updater ref write can't be relied on here.
+    // FIX 2d: replace the temp entry with mergedBoard AND drop any pre-existing
+    // entry already carrying the real id (a realtime INSERT can append the real
+    // board before this swap runs). Guarantees the array never holds the id
+    // twice, whichever order the swap and the INSERT land in.
     {
       const prevRef = boardsRef.current
       let replacedRef = false
-      const nextRef = prevRef.map(b => {
-        if (b.id !== tempId) return b
-        replacedRef = true
-        return mergedBoard
-      })
-      if (!replacedRef) nextRef.push(mergedBoard)
+      const nextRef: Board[] = []
+      for (const b of prevRef) {
+        if (b.id === tempId) { replacedRef = true; nextRef.push(mergedBoard); continue }
+        if (b.id === realBoard.id) continue // dedupe: merged below is authoritative
+        nextRef.push(b)
+      }
+      if (!replacedRef && !nextRef.some(b => b.id === mergedBoard.id)) nextRef.push(mergedBoard)
       boardsRef.current = nextRef
     }
     setBoards(prev => {
       let replaced = false
-      const next = prev.map(b => {
-        if (b.id !== tempId) return b
-        replaced = true
-        return mergedBoard
-      })
-      if (!replaced) next.push(realBoard)
+      const next: Board[] = []
+      for (const b of prev) {
+        if (b.id === tempId) { replaced = true; next.push(mergedBoard); continue }
+        if (b.id === realBoard.id) continue // dedupe pre-existing real entry
+        next.push(b)
+      }
+      if (!replaced && !next.some(b => b.id === mergedBoard.id)) next.push(mergedBoard)
+      postrace('replaceTempBoard setBoards', `tempReplaced=${replaced}`, `len=${next.length}`, `realIdCount=${next.filter(b => b.id === mergedBoard.id).length}`)
       return next
     })
 
@@ -901,6 +946,7 @@ export function useBoardState(
     boardPositions,
     loadWallPositions,
     updateBoardPosition,
+    resolveBoardId,
     applyBoardSizeLocal,
     applyBoardLinkLocal,
     deleteBoard,
