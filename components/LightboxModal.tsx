@@ -127,6 +127,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // functions (A.2). No realtime this phase — fetched on board open only.
   const [boardComments, setBoardComments] = useState<BoardComment[]>([])
   const [calloutError, setCalloutError] = useState<string | null>(null)
+  // True only after a successful (200) board-comments fetch — i.e. the viewer
+  // is a workspace member/owner/superadmin. Public/unauthenticated viewers get
+  // 403 and the entire callout layer (pins, Add-callout, overlay) stays hidden.
+  const [calloutsAccessible, setCalloutsAccessible] = useState(false)
   const [calloutMode, setCalloutMode] = useState(false)            // placing a new pin
   const [composer, setComposer] = useState<{ fx: number; fy: number } | null>(null)
   const [composerText, setComposerText] = useState('')
@@ -234,6 +238,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     setEditingCalloutId(null)
     setEditingCalloutText('')
     setCalloutError(null)
+    setCalloutsAccessible(false)
     setBoardComments([])
     if (!board) {
       setComments([])
@@ -411,25 +416,37 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     // No board-comments API for demo/sample boards — skip cleanly.
     if (isDemoMode || board.id.startsWith('sample-')) {
       setBoardComments([])
+      setCalloutsAccessible(false)
       return
     }
     try {
       setCalloutError(null)
+      // Cookie auth: the session is sent regardless of client-side `user`
+      // hydration, so members get 200 even before auth state settles.
       const res = await fetch(`/api/boards/${board.id}/board-comments`, { credentials: 'include' })
+      // Callouts are private to workspace members. A 401/403 (public or
+      // unauthenticated viewer) degrades silently: no pins, no Add-callout,
+      // no error, no console noise.
+      if (res.status === 401 || res.status === 403) {
+        setBoardComments([])
+        setCalloutsAccessible(false)
+        setCalloutError(null)
+        return
+      }
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setCalloutError(
-          res.status === 401 || res.status === 403 ? 'Sign in to view callouts'
-            : (data?.error || 'Failed to load callouts')
-        )
         setBoardComments([])
+        setCalloutsAccessible(false)
+        setCalloutError(data?.error || 'Failed to load callouts')
         return
       }
       setBoardComments(data.comments || [])
-    } catch (err) {
-      console.error('Error fetching callouts:', err)
-      setCalloutError('Failed to load callouts')
+      setCalloutsAccessible(true)
+    } catch {
+      // Network blip — degrade quietly (no toast, no console spam).
       setBoardComments([])
+      setCalloutsAccessible(false)
+      setCalloutError(null)
     }
   }
 
@@ -1040,8 +1057,9 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             </button>
           )}
 
-          {/* Add Callout toggle — enters placement mode for an anchored pin */}
-          {calloutsEnabled && user && (
+          {/* Add Callout toggle — enters placement mode for an anchored pin.
+              Hidden unless the viewer has callout access (workspace member). */}
+          {calloutsEnabled && user && calloutsAccessible && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -1287,8 +1305,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   </button>
                 )}
 
-                {/* ---- Anchored callout overlay (single-image, non-present) ---- */}
-                {!isPresentMode && calloutsEnabled && (
+                {/* ---- Anchored callout overlay (single-image, non-present) ----
+                    Gated on calloutsAccessible so public/unauthenticated viewers
+                    get no pins, capture layer, composer, or control strip. */}
+                {!isPresentMode && calloutsEnabled && calloutsAccessible && (
                   <>
                     {/* Pins — pass-through layer except on the pins themselves.
                         Positions are re-derived from the viewport mapping every

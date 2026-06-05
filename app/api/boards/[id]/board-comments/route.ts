@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
-import { isSuperadmin, isNetworkPublished } from '@/lib/auth/superadmin'
+import { isSuperadmin } from '@/lib/auth/superadmin'
 
 export const dynamic = 'force-dynamic'
 
-// Phase A.1 critique layer: anchored, threaded board comments.
+// Critique layer: anchored, threaded board comments.
 //
-// Auth gate mirrors app/api/boards/[id]/comments/route.ts exactly:
-//   resolve board → room → workspace, then
-//   public-published OR superadmin(network-published) OR owner OR member.
+// Auth gates (Phase A.3.1 — critique is PRIVATE to the room's workspace, NOT
+// exposed on public/published access like the board image is):
+//   GET  → session required; workspace owner OR member OR superadmin, else 403.
+//          No public path. (Phase A.5 will add a guest_token path here.)
+//   POST → session required; owner/member on private workspaces. NOTE: the
+//          public-workspace branch still permits any authenticated user to
+//          create a callout — an intentional, separately-tracked asymmetry vs
+//          GET (left as-is this phase).
 // All reads/writes go through the service-role client after explicit app-code
 // checks (no new RLS policies — table is service-role-only).
 
@@ -54,7 +59,24 @@ export async function GET(
   try {
     const boardId = params.id
 
-    // Resolve board → room → workspace with the service role (mirrors comments GET).
+    // Critique content (callouts) is PRIVATE to the room's workspace — unlike
+    // the board images, it is NOT exposed on public/published access. Require a
+    // session and authorize as workspace owner OR member OR superadmin; everyone
+    // else (unauthenticated or public-only visitors) gets 403. We return 403
+    // (not 401) for the no-session case on purpose: a logged-out visitor of a
+    // public board whose IMAGE they can legitimately see should not be bounced
+    // into a login flow just because the private critique layer is hidden.
+    // (Phase A.5 will add a guest_token access path to this same gate.)
+    const supabase = supabaseServer()
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const userId = session?.user?.id
+    if (!userId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Resolve board → room → workspace with the service role.
     const serviceSupabase = supabaseServiceRole()
     const { data: board, error: boardErr } = await serviceSupabase
       .from('boards')
@@ -81,45 +103,27 @@ export async function GET(
 
     const { data: workspace } = await serviceSupabase
       .from('workspaces')
-      .select('owner_id, is_public, published_at')
+      .select('owner_id')
       .eq('id', resolvedWorkspaceId)
       .single()
 
-    const isPublicWorkspace = workspace?.is_public && workspace?.published_at != null
-
-    if (!isPublicWorkspace) {
-      // Private workspace: enforce access in app code, then read with service role.
-      const supabase = supabaseServer()
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      const userId = session?.user?.id
-      if (!userId) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const superadminViewer = await isSuperadmin(userId, serviceSupabase)
-      const networkPublished =
-        superadminViewer &&
-        (await isNetworkPublished(serviceSupabase, {
-          roomId: board.room_id,
-          workspaceId: resolvedWorkspaceId,
-        }))
-
-      if (!(superadminViewer && networkPublished)) {
-        const isOwner = workspace?.owner_id === userId
-        if (!isOwner) {
-          const { data: membership } = await serviceSupabase
-            .from('workspace_members')
-            .select('user_id')
-            .eq('workspace_id', resolvedWorkspaceId)
-            .eq('user_id', userId)
-            .maybeSingle()
-          if (!membership) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-          }
-        }
-      }
+    // Owner OR member OR superadmin. No public path — public/published access
+    // does NOT grant visibility into the critique layer.
+    let allowed = workspace?.owner_id === userId
+    if (!allowed) {
+      const { data: membership } = await serviceSupabase
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', resolvedWorkspaceId)
+        .eq('user_id', userId)
+        .maybeSingle()
+      allowed = membership != null
+    }
+    if (!allowed) {
+      allowed = await isSuperadmin(userId, serviceSupabase)
+    }
+    if (!allowed) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const { data: comments, error } = await serviceSupabase
