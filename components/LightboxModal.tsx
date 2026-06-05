@@ -42,6 +42,16 @@ interface LightboxModalProps {
    * re-reads on open. null = link cleared.
    */
   onLinkSaved?: (boardId: string, linkUrl: string | null) => void
+  // ---- Guest-critic mode (Phase A.5) ----
+  /** When set, critique requests carry this token and writes are attributed to the guest. */
+  guestToken?: string | null
+  /** The guest's entered display name, attached to their comments/traces. */
+  guestName?: string | null
+  /** The resolved guest_tokens.id, used to tell which rows are the guest's own. */
+  guestTokenId?: string | null
+  /** Capabilities from the guest token. */
+  guestCanComment?: boolean
+  guestCanTrace?: boolean
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -89,7 +99,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -188,7 +198,16 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
   const isOpen = board !== null
   const [profileFullName, setProfileFullName] = useState<string | null>(null)
-  const authorName = profileFullName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Anonymous'
+  // Guest-critic mode: no session user; identity comes from the token + name.
+  const isGuest = !!guestToken
+  const canComment = isGuest ? !!guestCanComment : !!user
+  const canTrace = isGuest ? !!guestCanTrace : !!user
+  const authorName = isGuest
+    ? (guestName || 'Guest')
+    : (profileFullName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Anonymous')
+  // Attach the guest token header to critique requests when in guest mode.
+  const guestHeader = (): Record<string, string> =>
+    isGuest && guestToken ? { 'X-Guest-Token': guestToken } : {}
   const isDemoMode = searchParams.get('demo') === 'true' || (typeof window !== 'undefined' && window.location.pathname.includes('demo-studio-'))
 
   useEffect(() => {
@@ -428,6 +447,13 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
   const fetchComments = async () => {
     if (!board) return
+    // Guests get no legacy (unanchored) comments panel at all.
+    if (isGuest) {
+      setComments([])
+      setCommentsAccessible(false)
+      setLoading(false)
+      return
+    }
 
     try {
       setLoading(true)
@@ -484,7 +510,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       setCalloutError(null)
       // Cookie auth: the session is sent regardless of client-side `user`
       // hydration, so members get 200 even before auth state settles.
-      const res = await fetch(`/api/boards/${board.id}/board-comments`, { credentials: 'include' })
+      const res = await fetch(`/api/boards/${board.id}/board-comments`, { credentials: 'include', headers: guestHeader() })
       // Callouts are private to workspace members. A 401/403 (public or
       // unauthenticated viewer) degrades silently: no pins, no Add-callout,
       // no error, no console noise.
@@ -517,14 +543,14 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     if (!board || !composer || composerPosting) return
     const text = composerText.trim()
     if (!text) return
-    if (!user) { setCalloutError('Sign in to add a callout'); return }
+    if (!canComment) { setCalloutError('You don’t have comment access'); return }
     const fx = composer.fx
     const fy = composer.fy
     const tempId = `temp-bc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     const optimistic: BoardComment = {
       id: tempId, boardId: board.id, roomId: '', parentId: null,
       anchorX: fx, anchorY: fy, body: text,
-      authorId: user.id, guestTokenId: null, authorName,
+      authorId: isGuest ? null : (user?.id ?? null), guestTokenId: isGuest ? guestTokenId : null, authorName,
       resolved: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     }
     setComposerPosting(true)
@@ -533,8 +559,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     try {
       const res = await fetch(`/api/boards/${board.id}/board-comments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ anchorX: fx, anchorY: fy, body: text }),
+        headers: { 'Content-Type': 'application/json', ...guestHeader() },
+        body: JSON.stringify({ anchorX: fx, anchorY: fy, body: text, guestName: isGuest ? authorName : undefined }),
         credentials: 'include',
       })
       const data = await res.json().catch(() => ({}))
@@ -561,12 +587,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     if (!board || replyPosting) return
     const text = replyText.trim()
     if (!text) return
-    if (!user) { setCalloutError('Sign in to reply'); return }
+    if (!canComment) { setCalloutError('You don’t have comment access'); return }
     const tempId = `temp-bc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     const optimistic: BoardComment = {
       id: tempId, boardId: board.id, roomId: '', parentId: rootId,
       anchorX: null, anchorY: null, body: text,
-      authorId: user.id, guestTokenId: null, authorName,
+      authorId: isGuest ? null : (user?.id ?? null), guestTokenId: isGuest ? guestTokenId : null, authorName,
       resolved: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     }
     setReplyPosting(true)
@@ -575,8 +601,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     try {
       const res = await fetch(`/api/boards/${board.id}/board-comments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parentId: rootId, body: text }),
+        headers: { 'Content-Type': 'application/json', ...guestHeader() },
+        body: JSON.stringify({ parentId: rootId, body: text, guestName: isGuest ? authorName : undefined }),
         credentials: 'include',
       })
       const data = await res.json().catch(() => ({}))
@@ -604,7 +630,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     try {
       const res = await fetch(`/api/board-comments/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...guestHeader() },
         body: JSON.stringify({ body: text }),
         credentials: 'include',
       })
@@ -633,6 +659,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     try {
       const res = await fetch(`/api/board-comments/${id}`, {
         method: 'DELETE',
+        headers: guestHeader(),
         credentials: 'include',
       })
       const data = await res.json().catch(() => ({}))
@@ -657,7 +684,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     try {
       const res = await fetch(`/api/board-comments/${rootId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...guestHeader() },
         body: JSON.stringify({ resolved: nextResolved }),
         credentials: 'include',
       })
@@ -699,7 +726,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       return
     }
     try {
-      const res = await fetch(`/api/boards/${board.id}/traces`, { credentials: 'include' })
+      const res = await fetch(`/api/boards/${board.id}/traces`, { credentials: 'include', headers: guestHeader() })
       // 401/403 (non-member) degrades silently — the layer is gated on
       // calloutsAccessible, which the board-comments fetch already resolved.
       if (res.status === 401 || res.status === 403) {
@@ -719,12 +746,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // Persist MY trace (debounced via scheduleSaveTrace). Optimistic: on failure
   // we keep local strokes and toast once so nothing is lost.
   const putTrace = async (strokes: TraceStroke[]) => {
-    if (!board || !user) return
+    if (!board || !canTrace) return
     try {
       const res = await fetch(`/api/boards/${board.id}/traces`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ strokes, authorColor: traceColor }),
+        headers: { 'Content-Type': 'application/json', ...guestHeader() },
+        body: JSON.stringify({ strokes, authorColor: traceColor, guestName: isGuest ? authorName : undefined }),
         credentials: 'include',
       })
       if (!res.ok) {
@@ -795,10 +822,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     setPendingClearTrace(false)
     setMyStrokes([])
     if (saveTimerRef.current) { window.clearTimeout(saveTimerRef.current); saveTimerRef.current = null }
-    if (user) setBoardTraces((prev) => prev.filter((t) => t.authorId !== user.id))
-    if (!board || !user) return
+    setBoardTraces((prev) => prev.filter((t) => (isGuest ? t.guestTokenId !== guestTokenId : t.authorId !== user?.id)))
+    if (!board || !canTrace) return
     try {
-      const res = await fetch(`/api/boards/${board.id}/traces`, { method: 'DELETE', credentials: 'include' })
+      const res = await fetch(`/api/boards/${board.id}/traces`, { method: 'DELETE', headers: guestHeader(), credentials: 'include' })
       if (!res.ok && !traceSaveFailedRef.current) {
         traceSaveFailedRef.current = true
         toast.error('Couldn’t clear your trace.')
@@ -814,13 +841,14 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // the traces have loaded and the client user id is known (cookie auth means
   // the fetch can resolve before client `user` hydrates).
   useEffect(() => {
-    if (!board || !user?.id || !tracesLoaded) return
+    const haveTraceIdentity = isGuest ? !!guestTokenId : !!user?.id
+    if (!board || !haveTraceIdentity || !tracesLoaded) return
     if (tracesInitedForBoardRef.current === board.id) return
-    const mine = boardTraces.find((t) => t.authorId === user.id)
+    const mine = boardTraces.find((t) => (isGuest ? t.guestTokenId === guestTokenId : t.authorId === user?.id))
     setMyStrokes(mine && Array.isArray(mine.strokes) ? mine.strokes : [])
     if (mine?.authorColor) setTraceColor(mine.authorColor)
     tracesInitedForBoardRef.current = board.id
-  }, [board, boardTraces, user?.id, tracesLoaded])
+  }, [board, boardTraces, user?.id, tracesLoaded, isGuest, guestTokenId])
 
   // Redraw the trace canvas. Points map through imageFractionToContainerPoint
   // each call, so strokes stay glued to the image at any zoom/pan. Stroke width
@@ -867,9 +895,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       })
       ctx.stroke()
     }
-    const myKey = user?.id ?? 'me'
+    const myKey = isGuest ? (guestTokenId ?? 'guest') : (user?.id ?? 'me')
     for (const t of boardTraces) {
-      if (user?.id && t.authorId === user.id) continue // mine drawn from myStrokes
+      const isMine = isGuest
+        ? (t.guestTokenId != null && t.guestTokenId === guestTokenId)
+        : (!!user?.id && t.authorId === user.id)
+      if (isMine) continue // mine drawn from myStrokes
       if (hiddenTraceAuthors.has(t.authorId ?? t.guestTokenId ?? t.id)) continue
       ;(Array.isArray(t.strokes) ? t.strokes : []).forEach(drawStroke)
     }
@@ -879,7 +910,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         drawStroke({ color: traceColor, width: traceWidth, points: drawingPoints })
       }
     }
-  }, [mapFracToPt, boardTraces, myStrokes, drawingPoints, hiddenTraceAuthors, traceColor, traceWidth, user?.id])
+  }, [mapFracToPt, boardTraces, myStrokes, drawingPoints, hiddenTraceAuthors, traceColor, traceWidth, user?.id, isGuest, guestTokenId])
 
   // Redraw on stroke/layer changes AND on every zoom/pan transform change.
   useEffect(() => {
@@ -1100,7 +1131,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const activeRoot = activeThreadRootId
     ? rootCallouts.find((r) => r.id === activeThreadRootId) ?? null
     : null
-  const isCalloutAuthor = (c: BoardComment) => !!user && c.authorId === user.id
+  const isCalloutAuthor = (c: BoardComment) =>
+    isGuest ? (!!guestTokenId && c.guestTokenId === guestTokenId) : (!!user && c.authorId === user.id)
   // Callouts only make sense on a single raster image the viewport can map.
   const calloutsEnabled = !isPDF && compareBoards.length <= 1 && !isDemoMode && !board.id.startsWith('sample-')
 
@@ -1315,8 +1347,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           )}
 
           {/* Add Callout toggle — enters placement mode for an anchored pin.
-              Hidden unless the viewer has callout access (workspace member). */}
-          {calloutsEnabled && user && calloutsAccessible && (
+              Hidden unless the viewer has comment access (member or guest critic). */}
+          {calloutsEnabled && calloutsAccessible && canComment && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -1343,8 +1375,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             </button>
           )}
 
-          {/* Trace toggle — freehand drawing over the board (members only) */}
-          {calloutsEnabled && user && calloutsAccessible && (
+          {/* Trace toggle — freehand drawing over the board (member or guest critic) */}
+          {calloutsEnabled && calloutsAccessible && canTrace && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -1726,10 +1758,13 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                     {/* Trace layers control — toggle each author's layer on/off */}
                     {(() => {
                       const layers: Array<{ key: string; name: string; color: string }> = []
-                      const myKey = user?.id ?? 'me'
+                      const myKey = isGuest ? (guestTokenId ?? 'guest') : (user?.id ?? 'me')
                       if (myStrokes.length > 0) layers.push({ key: myKey, name: `${authorName} (you)`, color: traceColor })
                       for (const t of boardTraces) {
-                        if (user?.id && t.authorId === user.id) continue
+                        const isMine = isGuest
+                          ? (t.guestTokenId != null && t.guestTokenId === guestTokenId)
+                          : (!!user?.id && t.authorId === user.id)
+                        if (isMine) continue
                         layers.push({ key: t.authorId ?? t.guestTokenId ?? t.id, name: t.authorName, color: t.authorColor ?? '#94a3b8' })
                       }
                       if (layers.length === 0) return null
@@ -2153,7 +2188,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
           {/* Reply composer */}
           <div className="flex-shrink-0 border-t border-gray-200 px-3 py-2.5 bg-gray-50">
-            {user ? (
+            {canComment ? (
               <div className="space-y-2">
                 <textarea
                   value={replyText}

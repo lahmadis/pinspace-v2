@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { resolveGuestToken, getGuestTokenFromRequest } from '@/lib/auth/guestToken'
 
 export const dynamic = 'force-dynamic'
 
-// Phase A.1 critique layer: edit / resolve / delete an anchored board comment.
+// Critique layer: edit / resolve / delete an anchored board comment.
 //
-//   PATCH  body      -> author only
-//   PATCH  resolved  -> workspace owner OR comment author
-//   DELETE           -> comment author OR workspace owner
+//   PATCH  body      -> author only (session author OR guest matching guest_token_id)
+//   PATCH  resolved  -> workspace owner OR author (guests: their own only)
+//   DELETE           -> author OR workspace owner (guests: their own only)
 //
-// All access checks are in app code via the service-role client (table is
-// service-role-only, no RLS policies).
+// A guest is identified by X-Guest-Token; they may act only on rows whose
+// guest_token_id matches their token. All access checks are in app code via the
+// service-role client (table is service-role-only, no RLS policies).
 
 interface BoardCommentRow {
   id: string
@@ -99,26 +101,11 @@ export async function PATCH(
       return NextResponse.json({ error: 'resolved must be a boolean' }, { status: 400 })
     }
 
-    const supabase = supabaseServer()
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
-
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
+    const guestToken = getGuestTokenFromRequest(request)
     const admin = supabaseServiceRole()
     const { data: comment, error: fetchError } = await admin
       .from('board_comments')
-      .select('id, board_id, author_id')
+      .select('id, board_id, author_id, guest_token_id')
       .eq('id', commentId)
       .maybeSingle()
 
@@ -126,9 +113,33 @@ export async function PATCH(
       return NextResponse.json({ error: 'Comment not found' }, { status: 404 })
     }
 
-    const isAuthor = comment.author_id != null && comment.author_id === userId
-    const workspaceOwnerId = await resolveWorkspaceOwnerId(admin, comment.board_id as string)
-    const isWorkspaceOwner = workspaceOwnerId != null && workspaceOwnerId === userId
+    // Identity: guest (own row only) OR session (author / workspace owner).
+    let isAuthor = false
+    let isWorkspaceOwner = false
+    if (guestToken) {
+      const guest = await resolveGuestToken(guestToken)
+      if (!guest) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      isAuthor = comment.guest_token_id != null && comment.guest_token_id === guest.tokenId
+    } else {
+      const supabase = supabaseServer()
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+      if (sessionError) {
+        console.error('Session error:', sessionError)
+        return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
+      }
+      const userId = session?.user?.id
+      if (!userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      isAuthor = comment.author_id != null && comment.author_id === userId
+      const workspaceOwnerId = await resolveWorkspaceOwnerId(admin, comment.board_id as string)
+      isWorkspaceOwner = workspaceOwnerId != null && workspaceOwnerId === userId
+    }
 
     // Per-field authorization: body edit is author-only; resolve is owner-or-author.
     if (wantsBodyEdit && !isAuthor) {
@@ -168,32 +179,17 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { commentId: string } }
 ) {
   try {
     const commentId = params.commentId
 
-    const supabase = supabaseServer()
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
-
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
+    const guestToken = getGuestTokenFromRequest(request)
     const admin = supabaseServiceRole()
     const { data: comment, error: fetchError } = await admin
       .from('board_comments')
-      .select('id, board_id, author_id')
+      .select('id, board_id, author_id, guest_token_id')
       .eq('id', commentId)
       .maybeSingle()
 
@@ -201,13 +197,36 @@ export async function DELETE(
       return NextResponse.json({ error: 'Comment not found' }, { status: 404 })
     }
 
-    const isAuthor = comment.author_id != null && comment.author_id === userId
-    const workspaceOwnerId = await resolveWorkspaceOwnerId(admin, comment.board_id as string)
-    const isWorkspaceOwner = workspaceOwnerId != null && workspaceOwnerId === userId
+    let allowed = false
+    if (guestToken) {
+      const guest = await resolveGuestToken(guestToken)
+      if (!guest) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      allowed = comment.guest_token_id != null && comment.guest_token_id === guest.tokenId
+    } else {
+      const supabase = supabaseServer()
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+      if (sessionError) {
+        console.error('Session error:', sessionError)
+        return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
+      }
+      const userId = session?.user?.id
+      if (!userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      const isAuthor = comment.author_id != null && comment.author_id === userId
+      const workspaceOwnerId = await resolveWorkspaceOwnerId(admin, comment.board_id as string)
+      const isWorkspaceOwner = workspaceOwnerId != null && workspaceOwnerId === userId
+      allowed = isAuthor || isWorkspaceOwner
+    }
 
-    if (!isAuthor && !isWorkspaceOwner) {
+    if (!allowed) {
       return NextResponse.json(
-        { error: 'Only the author or workspace owner can delete this comment' },
+        { error: 'Not authorized to delete this comment' },
         { status: 403 }
       )
     }

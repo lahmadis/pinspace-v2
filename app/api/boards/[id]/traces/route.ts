@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { isSuperadmin } from '@/lib/auth/superadmin'
+import { resolveGuestToken, getGuestTokenFromRequest } from '@/lib/auth/guestToken'
 
 export const dynamic = 'force-dynamic'
 
 // Trace layer: per-author freehand drawing over a board, stored as JSON strokes
 // in image-fraction coords (resolution-independent). Privacy + auth gates mirror
-// board-comments exactly:
-//   GET    → session required; workspace owner OR member OR superadmin, else 403.
-//            No public path. (Phase A.5 will add a guest_token path.)
-//   PUT    → session required (401); owner OR member OR superadmin. Upserts the
-//            CURRENT USER's single row for this board.
-//   DELETE → session required (401); clears the current user's own row only.
+// board-comments:
+//   GET    → session (owner/member/superadmin) OR guest token whose room matches.
+//   PUT    → session (owner/member/superadmin) OR guest token with canTrace.
+//            Upserts the caller's single row (keyed by author_id OR guest_token_id).
+//   DELETE → clears the caller's own row only (by author_id OR guest_token_id).
 // One row per (board, author) — enforced by board_traces_board_author_ux. The
 // upsert is manual (select-then-update/insert) because that unique index is a
 // functional expression, not a plain column set `onConflict` can target.
@@ -79,11 +79,40 @@ function normalizeStrokes(
 
 // GET /api/boards/[id]/traces — all traces for the board (every author's layer).
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
     const boardId = params.id
+
+    // Guest path: valid token whose room matches this board grants read access.
+    const guestToken = getGuestTokenFromRequest(request)
+    if (guestToken) {
+      const guest = await resolveGuestToken(guestToken)
+      if (!guest) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      const guestDb = supabaseServiceRole()
+      const { data: gBoard } = await guestDb
+        .from('boards')
+        .select('room_id')
+        .eq('id', boardId)
+        .single()
+      if (!gBoard) return NextResponse.json({ error: 'Board not found' }, { status: 404 })
+      if (gBoard.room_id !== guest.roomId) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      const { data: gTraces, error: gErr } = await guestDb
+        .from('board_traces')
+        .select('*')
+        .eq('board_id', boardId)
+        .order('created_at', { ascending: true })
+      if (gErr) {
+        console.error('Error fetching board traces (guest):', gErr)
+        return NextResponse.json({ error: 'Failed to fetch traces' }, { status: 500 })
+      }
+      return NextResponse.json({
+        traces: (gTraces || []).map((t) => transformRow(t as BoardTraceRow)),
+      })
+    }
 
     const supabase = supabaseServer()
     const {
@@ -169,25 +198,13 @@ export async function PUT(
   try {
     const boardId = params.id
 
-    const supabase = supabaseServer()
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-    const userId = session?.user?.id
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const guestToken = getGuestTokenFromRequest(request)
 
     const rawBody = await request.text()
     if (rawBody.length > MAX_PAYLOAD_BYTES) {
       return NextResponse.json({ error: 'Trace payload too large (max 1 MB)' }, { status: 413 })
     }
-    let body: { strokes?: unknown; authorColor?: unknown }
+    let body: { strokes?: unknown; authorColor?: unknown; guestName?: unknown }
     try {
       body = JSON.parse(rawBody)
     } catch {
@@ -210,64 +227,94 @@ export async function PUT(
     if (boardError || !board) {
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
-
-    let resolvedWorkspaceId = board.workspace_id as string | null
-    if (board.room_id) {
-      const { data: room } = await admin
-        .from('rooms')
-        .select('workspace_id')
-        .eq('id', board.room_id)
-        .maybeSingle()
-      if (room?.workspace_id) resolvedWorkspaceId = room.workspace_id as string
-    }
-    if (!resolvedWorkspaceId) {
-      return NextResponse.json({ error: 'Board has no workspace' }, { status: 404 })
-    }
     const roomId = board.room_id as string | null
     if (!roomId) {
       return NextResponse.json({ error: 'Board has no room' }, { status: 404 })
     }
 
-    const { data: workspace } = await admin
-      .from('workspaces')
-      .select('owner_id')
-      .eq('id', resolvedWorkspaceId)
-      .single()
+    // Identity: guest token (canTrace + room match) OR session (owner/member/superadmin).
+    let authorId: string | null = null
+    let guestTokenId: string | null = null
+    let authorName = ''
 
-    let canWrite = workspace?.owner_id === userId
-    if (!canWrite) {
-      const { data: membership } = await admin
-        .from('workspace_members')
-        .select('user_id')
-        .eq('workspace_id', resolvedWorkspaceId)
+    if (guestToken) {
+      const guest = await resolveGuestToken(guestToken)
+      if (!guest || !guest.canTrace) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      if (board.room_id !== guest.roomId) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      guestTokenId = guest.tokenId
+      const nm = typeof body?.guestName === 'string' ? body.guestName.trim() : ''
+      authorName = (nm || guest.label || 'Guest').slice(0, 80)
+    } else {
+      const supabase = supabaseServer()
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+      if (sessionError) {
+        console.error('Session error:', sessionError)
+        return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
+      }
+      const userId = session?.user?.id
+      if (!userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+
+      let resolvedWorkspaceId = board.workspace_id as string | null
+      if (board.room_id) {
+        const { data: room } = await admin
+          .from('rooms')
+          .select('workspace_id')
+          .eq('id', board.room_id)
+          .maybeSingle()
+        if (room?.workspace_id) resolvedWorkspaceId = room.workspace_id as string
+      }
+      if (!resolvedWorkspaceId) {
+        return NextResponse.json({ error: 'Board has no workspace' }, { status: 404 })
+      }
+
+      const { data: workspace } = await admin
+        .from('workspaces')
+        .select('owner_id')
+        .eq('id', resolvedWorkspaceId)
+        .single()
+
+      let canWrite = workspace?.owner_id === userId
+      if (!canWrite) {
+        const { data: membership } = await admin
+          .from('workspace_members')
+          .select('user_id')
+          .eq('workspace_id', resolvedWorkspaceId)
+          .eq('user_id', userId)
+          .maybeSingle()
+        canWrite = membership != null
+      }
+      if (!canWrite) {
+        canWrite = await isSuperadmin(userId, admin)
+      }
+      if (!canWrite) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+
+      authorId = userId
+      const { data: userProfile } = await admin
+        .from('user_profiles')
+        .select('full_name')
         .eq('user_id', userId)
         .maybeSingle()
-      canWrite = membership != null
-    }
-    if (!canWrite) {
-      canWrite = await isSuperadmin(userId, admin)
-    }
-    if (!canWrite) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      const profileName = userProfile?.full_name?.trim() || null
+      authorName = profileName || session.user.email?.split('@')[0] || 'Anonymous'
     }
 
-    // author_name from profile (mirrors board-comments POST).
-    const { data: userProfile } = await admin
-      .from('user_profiles')
-      .select('full_name')
-      .eq('user_id', userId)
-      .maybeSingle()
-    const profileName = userProfile?.full_name?.trim() || null
-    const authorName = profileName || session.user.email?.split('@')[0] || 'Anonymous'
-
-    // Manual upsert keyed by (board_id, author_id) — the unique index is a
-    // functional expression, so we select-then-update/insert.
-    const { data: existing } = await admin
-      .from('board_traces')
-      .select('id')
-      .eq('board_id', boardId)
-      .eq('author_id', userId)
-      .maybeSingle()
+    // Manual upsert keyed by (board_id, author) — the unique index is a
+    // functional expression, so we select-then-update/insert. The author column
+    // is author_id for sessions, guest_token_id for guests.
+    const { data: existing } = authorId
+      ? await admin.from('board_traces').select('id').eq('board_id', boardId).eq('author_id', authorId).maybeSingle()
+      : await admin.from('board_traces').select('id').eq('board_id', boardId).eq('guest_token_id', guestTokenId as string).maybeSingle()
 
     let row: BoardTraceRow | null = null
     if (existing) {
@@ -295,7 +342,8 @@ export async function PUT(
           id: traceId,
           board_id: boardId,
           room_id: roomId,
-          author_id: userId,
+          author_id: authorId,
+          guest_token_id: guestTokenId,
           author_name: authorName,
           author_color: authorColor,
           strokes,
@@ -316,13 +364,33 @@ export async function PUT(
   }
 }
 
-// DELETE /api/boards/[id]/traces — clear the current user's own trace.
+// DELETE /api/boards/[id]/traces — clear the caller's own trace (session OR guest).
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
     const boardId = params.id
+    const admin = supabaseServiceRole()
+    const guestToken = getGuestTokenFromRequest(request)
+
+    if (guestToken) {
+      const guest = await resolveGuestToken(guestToken)
+      if (!guest) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      // Guest-scoped: only the row carrying this guest token is removed.
+      const { error } = await admin
+        .from('board_traces')
+        .delete()
+        .eq('board_id', boardId)
+        .eq('guest_token_id', guest.tokenId)
+      if (error) {
+        console.error('Error deleting board trace (guest):', error)
+        return NextResponse.json({ error: 'Failed to clear trace' }, { status: 500 })
+      }
+      return NextResponse.json({ success: true })
+    }
 
     const supabase = supabaseServer()
     const {
@@ -339,7 +407,6 @@ export async function DELETE(
     }
 
     // Author-scoped: the WHERE clause restricts deletion to the caller's own row.
-    const admin = supabaseServiceRole()
     const { error } = await admin
       .from('board_traces')
       .delete()

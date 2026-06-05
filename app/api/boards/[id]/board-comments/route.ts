@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { isSuperadmin } from '@/lib/auth/superadmin'
+import { resolveGuestToken, getGuestTokenFromRequest } from '@/lib/auth/guestToken'
 
 export const dynamic = 'force-dynamic'
 
 // Critique layer: anchored, threaded board comments.
 //
-// Auth gates (Phase A.3.1 — critique is PRIVATE to the room's workspace, NOT
-// exposed on public/published access like the board image is):
-//   GET  → session required; workspace owner OR member OR superadmin, else 403.
-//          No public path. (Phase A.5 will add a guest_token path here.)
-//   POST → same gate as GET: session required; owner OR member OR superadmin.
-//          No public short-circuit. (Phase A.5 will add a guest_token path.)
+// Auth gates (critique is PRIVATE to the room's workspace, NOT exposed on
+// public/published access like the board image is):
+//   GET  → session: owner OR member OR superadmin, else 403.
+//          guest:   X-Guest-Token resolving to this board's room (read access).
+//   POST → session: owner OR member OR superadmin.
+//          guest:   X-Guest-Token with canComment, room must match the board;
+//                   row stored with guest_token_id + author_id null.
 // All reads/writes go through the service-role client after explicit app-code
 // checks (no new RLS policies — table is service-role-only).
 
@@ -51,11 +53,41 @@ function transformRow(c: BoardCommentRow) {
 
 // GET /api/boards/[id]/board-comments — all anchored comments for the board, created_at asc.
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
     const boardId = params.id
+
+    // Guest path: a valid X-Guest-Token whose room matches this board grants
+    // read access to the critique layer (no session needed).
+    const guestToken = getGuestTokenFromRequest(request)
+    if (guestToken) {
+      const guest = await resolveGuestToken(guestToken)
+      if (!guest) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      const guestDb = supabaseServiceRole()
+      const { data: gBoard } = await guestDb
+        .from('boards')
+        .select('room_id')
+        .eq('id', boardId)
+        .single()
+      if (!gBoard) return NextResponse.json({ error: 'Board not found' }, { status: 404 })
+      if (gBoard.room_id !== guest.roomId) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      const { data: gComments, error: gErr } = await guestDb
+        .from('board_comments')
+        .select('*')
+        .eq('board_id', boardId)
+        .order('created_at', { ascending: true })
+      if (gErr) {
+        console.error('Error fetching board comments (guest):', gErr)
+        return NextResponse.json({ error: 'Failed to fetch board comments' }, { status: 500 })
+      }
+      return NextResponse.json({
+        comments: (gComments || []).map((c) => transformRow(c as BoardCommentRow)),
+      })
+    }
 
     // Critique content (callouts) is PRIVATE to the room's workspace — unlike
     // the board images, it is NOT exposed on public/published access. Require a
@@ -64,7 +96,6 @@ export async function GET(
     // (not 401) for the no-session case on purpose: a logged-out visitor of a
     // public board whose IMAGE they can legitimately see should not be bounced
     // into a login flow just because the private critique layer is hidden.
-    // (Phase A.5 will add a guest_token access path to this same gate.)
     const supabase = supabaseServer()
     const {
       data: { session },
@@ -155,7 +186,8 @@ export async function POST(
 ) {
   try {
     const boardId = params.id
-    const { anchorX, anchorY, body, parentId } = await request.json()
+    const guestToken = getGuestTokenFromRequest(request)
+    const { anchorX, anchorY, body, parentId, guestName } = await request.json()
 
     if (!body || typeof body !== 'string' || body.trim().length === 0) {
       return NextResponse.json({ error: 'Comment body is required' }, { status: 400 })
@@ -176,23 +208,7 @@ export async function POST(
       return NextResponse.json({ error: 'parentId must be a string' }, { status: 400 })
     }
 
-    const supabase = supabaseServer()
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
-
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Resolve board → room → workspace; enforce the write gate (mirrors comments POST).
+    // Resolve the board first — both auth paths need its room.
     const admin = supabaseServiceRole()
     const { data: board, error: boardError } = await admin
       .from('boards')
@@ -203,48 +219,87 @@ export async function POST(
     if (boardError || !board) {
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
-
-    let resolvedWorkspaceId = board.workspace_id as string | null
-    if (board.room_id) {
-      const { data: room } = await admin
-        .from('rooms')
-        .select('workspace_id')
-        .eq('id', board.room_id)
-        .maybeSingle()
-      if (room?.workspace_id) resolvedWorkspaceId = room.workspace_id as string
-    }
-    if (!resolvedWorkspaceId) {
-      return NextResponse.json({ error: 'Board has no workspace' }, { status: 404 })
-    }
     // board_comments.room_id is NOT NULL — require a resolved room for the insert.
     const roomId = board.room_id as string | null
     if (!roomId) {
       return NextResponse.json({ error: 'Board has no room' }, { status: 404 })
     }
 
-    // Phase A.3.2: writes match the GET gate exactly — owner OR member OR
-    // superadmin, no public short-circuit.
-    const { data: workspace } = await admin
-      .from('workspaces')
-      .select('owner_id')
-      .eq('id', resolvedWorkspaceId)
-      .single()
+    // Identity: guest token (canComment + room match) OR session (owner/member/superadmin).
+    let authorId: string | null = null
+    let guestTokenId: string | null = null
+    let authorName = ''
 
-    let canWrite = workspace?.owner_id === userId
-    if (!canWrite) {
-      const { data: membership } = await admin
-        .from('workspace_members')
-        .select('user_id')
-        .eq('workspace_id', resolvedWorkspaceId)
+    if (guestToken) {
+      const guest = await resolveGuestToken(guestToken)
+      if (!guest || !guest.canComment) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      if (board.room_id !== guest.roomId) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      guestTokenId = guest.tokenId
+      const nm = typeof guestName === 'string' ? guestName.trim() : ''
+      authorName = (nm || guest.label || 'Guest').slice(0, 80)
+    } else {
+      const supabase = supabaseServer()
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+      if (sessionError) {
+        console.error('Session error:', sessionError)
+        return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
+      }
+      const userId = session?.user?.id
+      if (!userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+
+      let resolvedWorkspaceId = board.workspace_id as string | null
+      if (board.room_id) {
+        const { data: room } = await admin
+          .from('rooms')
+          .select('workspace_id')
+          .eq('id', board.room_id)
+          .maybeSingle()
+        if (room?.workspace_id) resolvedWorkspaceId = room.workspace_id as string
+      }
+      if (!resolvedWorkspaceId) {
+        return NextResponse.json({ error: 'Board has no workspace' }, { status: 404 })
+      }
+
+      const { data: workspace } = await admin
+        .from('workspaces')
+        .select('owner_id')
+        .eq('id', resolvedWorkspaceId)
+        .single()
+
+      let canWrite = workspace?.owner_id === userId
+      if (!canWrite) {
+        const { data: membership } = await admin
+          .from('workspace_members')
+          .select('user_id')
+          .eq('workspace_id', resolvedWorkspaceId)
+          .eq('user_id', userId)
+          .maybeSingle()
+        canWrite = membership != null
+      }
+      if (!canWrite) {
+        canWrite = await isSuperadmin(userId, admin)
+      }
+      if (!canWrite) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+
+      authorId = userId
+      const { data: userProfile } = await admin
+        .from('user_profiles')
+        .select('full_name')
         .eq('user_id', userId)
         .maybeSingle()
-      canWrite = membership != null
-    }
-    if (!canWrite) {
-      canWrite = await isSuperadmin(userId, admin)
-    }
-    if (!canWrite) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      const profileName = userProfile?.full_name?.trim() || null
+      authorName = profileName || session.user.email?.split('@')[0] || 'Anonymous'
     }
 
     // Reply: the parent must exist and belong to THIS board.
@@ -262,15 +317,6 @@ export async function POST(
       }
     }
 
-    // author_name from profile (mirrors POST /api/boards).
-    const { data: userProfile } = await admin
-      .from('user_profiles')
-      .select('full_name')
-      .eq('user_id', userId)
-      .maybeSingle()
-    const profileName = userProfile?.full_name?.trim() || null
-    const authorName = profileName || session.user.email?.split('@')[0] || 'Anonymous'
-
     const commentId = `bc-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
     const { data: inserted, error: insertError } = await admin
       .from('board_comments')
@@ -282,7 +328,8 @@ export async function POST(
         anchor_x: hasParent ? null : anchorX,
         anchor_y: hasParent ? null : anchorY,
         body: body.trim(),
-        author_id: userId,
+        author_id: authorId,
+        guest_token_id: guestTokenId,
         author_name: authorName,
       })
       .select()

@@ -9,6 +9,16 @@ interface ShareModalProps {
   onClose: () => void
 }
 
+interface GuestTokenItem {
+  id: string
+  label: string
+  createdAt: string | null
+  expiresAt: string | null
+  revoked: boolean
+  canComment: boolean
+  canTrace: boolean
+}
+
 type LoadState = 'loading' | 'ok' | 'error'
 
 export default function ShareModal({ studioId, onClose }: ShareModalProps) {
@@ -17,6 +27,16 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
   const [copied, setCopied] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
   const handleCloseRef = useRef<() => void>(() => {})
+
+  // Guest critics (owner only). Hidden unless the guest-tokens API returns 200.
+  const [guestVisible, setGuestVisible] = useState(false)
+  const [guestTokens, setGuestTokens] = useState<GuestTokenItem[]>([])
+  const [newLabel, setNewLabel] = useState('')
+  const [newExpiry, setNewExpiry] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createdUrl, setCreatedUrl] = useState<string | null>(null)
+  const [guestError, setGuestError] = useState<string | null>(null)
+  const [copiedGuest, setCopiedGuest] = useState(false)
 
   const handleClose = () => {
     setIsVisible(false)
@@ -60,6 +80,80 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
       console.error('Failed to copy:', err)
+      toast.error('Failed to copy link')
+    }
+  }
+
+  // Load guest links — a 403 means the viewer isn't the owner, so the whole
+  // guest-critics section stays hidden.
+  useEffect(() => {
+    let cancelled = false
+    const loadGuests = async () => {
+      try {
+        const res = await fetch(`/api/rooms/${studioId}/guest-tokens`)
+        if (cancelled) return
+        if (!res.ok) { setGuestVisible(false); return }
+        const data = await res.json()
+        setGuestTokens(data.tokens || [])
+        setGuestVisible(true)
+      } catch {
+        if (!cancelled) setGuestVisible(false)
+      }
+    }
+    loadGuests()
+    return () => { cancelled = true }
+  }, [studioId])
+
+  const createGuestLink = async () => {
+    const label = newLabel.trim()
+    if (!label || creating) return
+    setCreating(true)
+    setGuestError(null)
+    setCreatedUrl(null)
+    try {
+      const res = await fetch(`/api/rooms/${studioId}/guest-tokens`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label, expiresAt: newExpiry || null }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setGuestError(data?.error || 'Failed to create link')
+        return
+      }
+      setGuestTokens((prev) => [data.token, ...prev])
+      setCreatedUrl(data.critUrl)
+      setNewLabel('')
+      setNewExpiry('')
+    } catch {
+      setGuestError('Failed to create link')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const revokeGuestLink = async (id: string) => {
+    try {
+      const res = await fetch(`/api/rooms/${studioId}/guest-tokens`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tokenId: id }),
+      })
+      if (res.ok) {
+        setGuestTokens((prev) => prev.map((t) => (t.id === id ? { ...t, revoked: true } : t)))
+      }
+    } catch {
+      toast.error('Failed to revoke link')
+    }
+  }
+
+  const copyGuestUrl = async () => {
+    if (!createdUrl) return
+    try {
+      await navigator.clipboard.writeText(createdUrl)
+      setCopiedGuest(true)
+      setTimeout(() => setCopiedGuest(false), 2000)
+    } catch {
       toast.error('Failed to copy link')
     }
   }
@@ -180,6 +274,83 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
                 <strong>📱 Anyone with this link</strong> can view your studio in 3D.
               </p>
             </div>
+
+            {/* Guest critics — owner-only named, expiring links that can comment + trace */}
+            {guestVisible && (
+              <div className="mt-5 pt-5 border-t border-gray-200">
+                <h3 className="text-sm font-bold text-gray-900 mb-1">🎓 Guest critics</h3>
+                <p className="text-xs text-gray-500 mb-3">
+                  Named, no-account links that can comment and trace on this room. Set an optional expiry, or revoke anytime.
+                </p>
+
+                <div className="flex flex-col gap-2 mb-3">
+                  <input
+                    value={newLabel}
+                    onChange={(e) => setNewLabel(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') createGuestLink() }}
+                    placeholder="Critic name / label"
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      value={newExpiry}
+                      onChange={(e) => setNewExpiry(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      title="Optional expiry date"
+                    />
+                    <button
+                      onClick={createGuestLink}
+                      disabled={!newLabel.trim() || creating}
+                      className="px-4 py-2 bg-[#4444ff] text-white rounded-lg text-sm font-medium hover:bg-[#3333ee] disabled:opacity-40 whitespace-nowrap"
+                    >
+                      {creating ? 'Creating…' : 'Create link'}
+                    </button>
+                  </div>
+                  {guestError && <p className="text-xs text-red-600">{guestError}</p>}
+                </div>
+
+                {createdUrl && (
+                  <div className="mb-3 p-2.5 bg-green-50 border border-green-100 rounded-lg">
+                    <p className="text-[11px] text-green-800 mb-1.5 font-medium">Link created — copy it now (it won’t be shown again):</p>
+                    <div className="flex gap-2">
+                      <div className="flex-1 px-2 py-1.5 bg-white border border-green-200 rounded font-mono text-[11px] text-gray-800 truncate">{createdUrl}</div>
+                      <button
+                        onClick={copyGuestUrl}
+                        className={`px-3 py-1.5 rounded text-xs font-medium whitespace-nowrap ${copiedGuest ? 'bg-green-500 text-white' : 'bg-[#4444ff] text-white hover:bg-[#3333ee]'}`}
+                      >
+                        {copiedGuest ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {guestTokens.length === 0 && (
+                    <p className="text-xs text-gray-400">No guest links yet.</p>
+                  )}
+                  {guestTokens.map((t) => (
+                    <div key={t.id} className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-gray-50 rounded-lg border border-gray-100">
+                      <div className="min-w-0">
+                        <p className={`text-xs font-medium truncate ${t.revoked ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{t.label}</p>
+                        <p className="text-[10px] text-gray-500">
+                          {t.expiresAt ? `Expires ${new Date(t.expiresAt).toLocaleDateString()}` : 'No expiry'}
+                          {t.revoked ? ' · revoked' : ''}
+                        </p>
+                      </div>
+                      {!t.revoked && (
+                        <button
+                          onClick={() => revokeGuestLink(t.id)}
+                          className="text-[11px] text-red-600 hover:text-red-800 flex-shrink-0 font-medium"
+                        >
+                          Revoke
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="mt-4 pt-4 border-t border-gray-200">
               <p className="text-xs text-gray-500 text-center">
