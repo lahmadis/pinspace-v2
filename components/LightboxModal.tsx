@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { Comment, Board } from '@/types'
 import { validateLinkUrl } from '@/lib/linkUrl'
+import { useImageViewport } from '@/components/useImageViewport'
 import { ExternalLink } from 'lucide-react'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 
@@ -115,6 +116,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const [savingLink, setSavingLink] = useState(false)
   const linkSaveInFlightRef = useRef(false)
 
+  // Single-image zoom/pan + image-rect measurement (Phase A.2). Only the
+  // single-image branch below consumes it; PDF/compare are untouched.
+  const viewport = useImageViewport()
+  const { reset: resetViewport, scaleRef: viewportScaleRef } = viewport
+
   const isOpen = board !== null
   const [profileFullName, setProfileFullName] = useState<string | null>(null)
   const authorName = profileFullName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Anonymous'
@@ -183,6 +189,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     // [POSTRACE] board the lightbox renders on (re)open — linkOverride is reset
     // here, so what shows is board.linkUrl unless re-saved this session.
     if (board) postrace('lightbox BOARD MOUNT/CHANGE', board.id, `board.linkUrl=${JSON.stringify(board.linkUrl)} (linkOverride reset to null)`)
+    // Reset zoom/pan whenever the board changes (covers arrow-key navigation).
+    resetViewport()
     setEditingAuthorName(false)
     setAuthorNameInput('')
     setDisplayedAuthorName(null)
@@ -207,6 +215,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // While zoomed, ESC first resets zoom; only close once at fit.
+        if (viewportScaleRef.current > 1) {
+          resetViewport()
+          return
+        }
         if (isPresentMode) {
           if (isComparePresentMode) {
             handleClose()
@@ -225,7 +238,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, hasPrev, hasNext, isPresentMode, isComparePresentMode, onNavigate])
+  }, [isOpen, hasPrev, hasNext, isPresentMode, isComparePresentMode, onNavigate, resetViewport, viewportScaleRef])
 
   const handleSaveAuthorName = useCallback(async () => {
     if (authorSaveInFlightRef.current || !board) {
@@ -931,13 +944,57 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 </div>
               </div>
             ) : (
-              <img
-                src={imageUrl}
-                alt={board.title}
-                className={`max-w-full max-h-full object-contain ${isPresentMode ? 'rounded-none shadow-none w-full h-full' : 'rounded-lg shadow-2xl'}`}
-                style={{ transform: `rotate(${board.position?.rotation ?? 0}rad)`, transition: 'transform 0.3s ease' }}
-                onClick={(e) => e.stopPropagation()}
-              />
+              <div
+                ref={viewport.containerRef}
+                className="relative w-full h-full flex items-center justify-center overflow-hidden"
+                style={{ touchAction: 'none' }}
+                onPointerDown={viewport.onPointerDown}
+                onPointerMove={viewport.onPointerMove}
+                onPointerUp={viewport.onPointerUp}
+                onPointerCancel={viewport.onPointerCancel}
+                onDoubleClick={viewport.onDoubleClick}
+                onClick={(e) => {
+                  // Click on empty letterbox space closes (preserves the prior
+                  // click-outside-image behavior); clicks on the image are
+                  // stopped on the <img> below so they never reach here.
+                  if (e.target === e.currentTarget) {
+                    e.stopPropagation()
+                    handleClose()
+                  }
+                }}
+              >
+                <img
+                  ref={viewport.imgRef}
+                  src={imageUrl}
+                  alt={board.title}
+                  draggable={false}
+                  onLoad={viewport.onImageLoad}
+                  className={`max-w-full max-h-full object-contain select-none ${isPresentMode ? 'rounded-none shadow-none w-full h-full' : 'rounded-lg shadow-2xl'}`}
+                  style={{
+                    // Compose pan (screen px) + zoom + the existing rotate() so
+                    // rotation is preserved exactly (dead data at 0 today).
+                    transform: `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.scale}) rotate(${board.position?.rotation ?? 0}rad)`,
+                    transformOrigin: 'center center',
+                    transition: viewport.isInteracting ? 'none' : 'transform 0.15s ease',
+                    cursor: viewport.scale > 1 ? (viewport.isInteracting ? 'grabbing' : 'grab') : 'default',
+                    willChange: 'transform',
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                />
+                {viewport.isZoomed && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); viewport.reset() }}
+                    className="absolute bottom-4 left-4 z-30 px-3 py-1.5 rounded-lg text-xs font-medium text-white/90 hover:text-white bg-black/50 hover:bg-black/70 border border-white/20 backdrop-blur-sm transition-colors flex items-center gap-1.5"
+                    title="Reset zoom"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 9L4 4m0 0v4m0-4h4M15 9l5-5m0 0v4m0-4h-4M9 15l-5 5m0 0v-4m0 4h4m6-4l5 5m0 0v-4m0 4h-4" />
+                    </svg>
+                    Reset zoom
+                  </button>
+                )}
+              </div>
             )
           ) : (
             <div className="text-center text-gray-500">
