@@ -103,6 +103,30 @@ export interface Comment {
   createdAt: string
 }
 
+/**
+ * Phase A.1 critique layer: an anchored, threaded comment on a board. Distinct
+ * from the unanchored `Comment` (lightbox panel) — do not conflate. A root pin
+ * carries anchorX/anchorY (fraction 0..1 of the image's intrinsic dimensions)
+ * and parentId null; a reply carries parentId and null anchors. Maps to the
+ * board_comments table (migration 028). Author is either an account user
+ * (authorId) or a guest critic (guestTokenId) — never neither (DB CHECK).
+ */
+export interface BoardComment {
+  id: string
+  boardId: string
+  roomId: string
+  parentId: string | null
+  anchorX: number | null
+  anchorY: number | null
+  body: string
+  authorId: string | null
+  guestTokenId: string | null
+  authorName: string
+  resolved: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 export interface WorkspaceMember {
   userId: string
   name: string
