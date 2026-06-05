@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { Comment, Board } from '@/types'
+import { Comment, Board, BoardComment } from '@/types'
 import { validateLinkUrl } from '@/lib/linkUrl'
 import { useImageViewport } from '@/components/useImageViewport'
 import { ExternalLink } from 'lucide-react'
@@ -121,6 +121,33 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const viewport = useImageViewport()
   const { reset: resetViewport, scaleRef: viewportScaleRef } = viewport
 
+  // ---- Anchored callouts (Phase A.3) -------------------------------------
+  // A NEW overlay system, fully separate from the legacy unanchored comment
+  // panel above. Uses the board-comments API (A.1) and the viewport mapping
+  // functions (A.2). No realtime this phase — fetched on board open only.
+  const [boardComments, setBoardComments] = useState<BoardComment[]>([])
+  const [calloutError, setCalloutError] = useState<string | null>(null)
+  const [calloutMode, setCalloutMode] = useState(false)            // placing a new pin
+  const [composer, setComposer] = useState<{ fx: number; fy: number } | null>(null)
+  const [composerText, setComposerText] = useState('')
+  const [composerPosting, setComposerPosting] = useState(false)
+  const [activeThreadRootId, setActiveThreadRootId] = useState<string | null>(null)
+  const [replyText, setReplyText] = useState('')
+  const [replyPosting, setReplyPosting] = useState(false)
+  const [showResolved, setShowResolved] = useState(true)
+  const [editingCalloutId, setEditingCalloutId] = useState<string | null>(null)
+  const [editingCalloutText, setEditingCalloutText] = useState('')
+  const [savingCalloutId, setSavingCalloutId] = useState<string | null>(null)
+  const [deletingCalloutId, setDeletingCalloutId] = useState<string | null>(null)
+  // Refs mirror open-state so the global keydown handler can read them without
+  // re-subscribing on every keystroke / pin click.
+  const calloutModeRef = useRef(false)
+  const composerOpenRef = useRef(false)
+  const activeThreadRef = useRef(false)
+  useEffect(() => { calloutModeRef.current = calloutMode }, [calloutMode])
+  useEffect(() => { composerOpenRef.current = composer != null }, [composer])
+  useEffect(() => { activeThreadRef.current = activeThreadRootId != null }, [activeThreadRootId])
+
   const isOpen = board !== null
   const [profileFullName, setProfileFullName] = useState<string | null>(null)
   const authorName = profileFullName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Anonymous'
@@ -198,6 +225,16 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     setEditingLink(false)
     setLinkInput('')
     setLinkError(null)
+    // Reset the callout overlay on every board change (covers arrow nav).
+    setCalloutMode(false)
+    setComposer(null)
+    setComposerText('')
+    setActiveThreadRootId(null)
+    setReplyText('')
+    setEditingCalloutId(null)
+    setEditingCalloutText('')
+    setCalloutError(null)
+    setBoardComments([])
     if (!board) {
       setComments([])
       setNewComment('')
@@ -207,6 +244,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       return
     }
     fetchComments()
+    fetchBoardComments()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board?.id])
 
@@ -215,7 +253,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // While zoomed, ESC first resets zoom; only close once at fit.
+        // Callout overlays close first, in priority order, before anything else.
+        if (composerOpenRef.current) { setComposer(null); setComposerText(''); return }
+        if (activeThreadRef.current) { setActiveThreadRootId(null); return }
+        if (calloutModeRef.current) { setCalloutMode(false); return }
+        // While zoomed, ESC then resets zoom; only close once at fit.
         if (viewportScaleRef.current > 1) {
           resetViewport()
           return
@@ -361,6 +403,213 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     } finally {
       setLoading(false)
     }
+  }
+
+  // ---- Callout (anchored board-comment) handlers -------------------------
+  const fetchBoardComments = async () => {
+    if (!board) return
+    // No board-comments API for demo/sample boards — skip cleanly.
+    if (isDemoMode || board.id.startsWith('sample-')) {
+      setBoardComments([])
+      return
+    }
+    try {
+      setCalloutError(null)
+      const res = await fetch(`/api/boards/${board.id}/board-comments`, { credentials: 'include' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setCalloutError(
+          res.status === 401 || res.status === 403 ? 'Sign in to view callouts'
+            : (data?.error || 'Failed to load callouts')
+        )
+        setBoardComments([])
+        return
+      }
+      setBoardComments(data.comments || [])
+    } catch (err) {
+      console.error('Error fetching callouts:', err)
+      setCalloutError('Failed to load callouts')
+      setBoardComments([])
+    }
+  }
+
+  // Create a root pin at an image-fraction anchor. Optimistic, reconciled with
+  // the server row on success.
+  const handleSubmitCallout = async () => {
+    if (!board || !composer || composerPosting) return
+    const text = composerText.trim()
+    if (!text) return
+    if (!user) { setCalloutError('Sign in to add a callout'); return }
+    const fx = composer.fx
+    const fy = composer.fy
+    const tempId = `temp-bc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const optimistic: BoardComment = {
+      id: tempId, boardId: board.id, roomId: '', parentId: null,
+      anchorX: fx, anchorY: fy, body: text,
+      authorId: user.id, guestTokenId: null, authorName,
+      resolved: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    }
+    setComposerPosting(true)
+    setCalloutError(null)
+    setBoardComments((prev) => [...prev, optimistic])
+    try {
+      const res = await fetch(`/api/boards/${board.id}/board-comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ anchorX: fx, anchorY: fy, body: text }),
+        credentials: 'include',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.comment) {
+        setBoardComments((prev) => prev.filter((c) => c.id !== tempId))
+        setCalloutError(data?.error || 'Failed to add callout')
+        return
+      }
+      setBoardComments((prev) => prev.map((c) => (c.id === tempId ? data.comment : c)))
+      setComposer(null)
+      setComposerText('')
+      setActiveThreadRootId(data.comment.id)
+    } catch (err) {
+      console.error('Error adding callout:', err)
+      setBoardComments((prev) => prev.filter((c) => c.id !== tempId))
+      setCalloutError('Failed to add callout')
+    } finally {
+      setComposerPosting(false)
+    }
+  }
+
+  // Reply to a root thread (no anchors). Optimistic.
+  const handleSubmitReply = async (rootId: string) => {
+    if (!board || replyPosting) return
+    const text = replyText.trim()
+    if (!text) return
+    if (!user) { setCalloutError('Sign in to reply'); return }
+    const tempId = `temp-bc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const optimistic: BoardComment = {
+      id: tempId, boardId: board.id, roomId: '', parentId: rootId,
+      anchorX: null, anchorY: null, body: text,
+      authorId: user.id, guestTokenId: null, authorName,
+      resolved: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    }
+    setReplyPosting(true)
+    setCalloutError(null)
+    setBoardComments((prev) => [...prev, optimistic])
+    try {
+      const res = await fetch(`/api/boards/${board.id}/board-comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parentId: rootId, body: text }),
+        credentials: 'include',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.comment) {
+        setBoardComments((prev) => prev.filter((c) => c.id !== tempId))
+        setCalloutError(data?.error || 'Failed to reply')
+        return
+      }
+      setBoardComments((prev) => prev.map((c) => (c.id === tempId ? data.comment : c)))
+      setReplyText('')
+    } catch (err) {
+      console.error('Error replying to callout:', err)
+      setBoardComments((prev) => prev.filter((c) => c.id !== tempId))
+      setCalloutError('Failed to reply')
+    } finally {
+      setReplyPosting(false)
+    }
+  }
+
+  const handleEditCallout = async (id: string) => {
+    const text = editingCalloutText.trim()
+    if (!text || savingCalloutId) return
+    setSavingCalloutId(id)
+    setCalloutError(null)
+    try {
+      const res = await fetch(`/api/board-comments/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: text }),
+        credentials: 'include',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.comment) {
+        setCalloutError(data?.error || 'Failed to edit callout')
+        return
+      }
+      setBoardComments((prev) => prev.map((c) => (c.id === id ? data.comment : c)))
+      setEditingCalloutId(null)
+      setEditingCalloutText('')
+    } catch (err) {
+      console.error('Error editing callout:', err)
+      setCalloutError('Failed to edit callout')
+    } finally {
+      setSavingCalloutId(null)
+    }
+  }
+
+  // Delete a callout. If it's a root, its replies cascade server-side; mirror
+  // that locally by dropping the root + any replies.
+  const handleDeleteCallout = async (id: string) => {
+    if (deletingCalloutId) return
+    setDeletingCalloutId(id)
+    setCalloutError(null)
+    try {
+      const res = await fetch(`/api/board-comments/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setCalloutError(data?.error || 'Failed to delete callout')
+        return
+      }
+      setBoardComments((prev) => prev.filter((c) => c.id !== id && c.parentId !== id))
+      if (activeThreadRootId === id) setActiveThreadRootId(null)
+    } catch (err) {
+      console.error('Error deleting callout:', err)
+      setCalloutError('Failed to delete callout')
+    } finally {
+      setDeletingCalloutId(null)
+    }
+  }
+
+  const handleToggleResolved = async (rootId: string, nextResolved: boolean) => {
+    setCalloutError(null)
+    // Optimistic flip.
+    setBoardComments((prev) => prev.map((c) => (c.id === rootId ? { ...c, resolved: nextResolved } : c)))
+    try {
+      const res = await fetch(`/api/board-comments/${rootId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resolved: nextResolved }),
+        credentials: 'include',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.comment) {
+        // Roll back.
+        setBoardComments((prev) => prev.map((c) => (c.id === rootId ? { ...c, resolved: !nextResolved } : c)))
+        setCalloutError(data?.error || 'Failed to update callout')
+        return
+      }
+      setBoardComments((prev) => prev.map((c) => (c.id === rootId ? data.comment : c)))
+    } catch (err) {
+      console.error('Error resolving callout:', err)
+      setBoardComments((prev) => prev.map((c) => (c.id === rootId ? { ...c, resolved: !nextResolved } : c)))
+      setCalloutError('Failed to update callout')
+    }
+  }
+
+  // Convert a click on the capture layer (which fills the viewport container)
+  // into an image fraction and open the composer there. Ignores clicks that
+  // land in the letterbox (outside the image bounds).
+  const handleCalloutPlace = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const rect = e.currentTarget.getBoundingClientRect()
+    const frac = viewport.containerPointToImageFraction(e.clientX - rect.left, e.clientY - rect.top)
+    if (!frac) return
+    if (frac.x < 0 || frac.x > 1 || frac.y < 0 || frac.y > 1) return
+    setComposer({ fx: frac.x, fy: frac.y })
+    setComposerText('')
+    setCalloutMode(false)
   }
 
   const handlePost = async () => {
@@ -564,6 +813,22 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const openVideo = () => {
     if (resolvedLinkUrl) window.open(resolvedLinkUrl, '_blank', 'noopener,noreferrer')
   }
+
+  // ---- Callout derivations (recomputed each render so pins track zoom/pan) --
+  const isInstructor = currentUserRole === 'instructor'
+  const rootCallouts = boardComments.filter((c) => c.parentId == null)
+  const calloutNumber = new Map(rootCallouts.map((r, i) => [r.id, i + 1] as const))
+  const visibleRoots = showResolved ? rootCallouts : rootCallouts.filter((r) => !r.resolved)
+  const repliesFor = (rootId: string) =>
+    boardComments
+      .filter((c) => c.parentId === rootId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  const activeRoot = activeThreadRootId
+    ? rootCallouts.find((r) => r.id === activeThreadRootId) ?? null
+    : null
+  const isCalloutAuthor = (c: BoardComment) => !!user && c.authorId === user.id
+  // Callouts only make sense on a single raster image the viewport can map.
+  const calloutsEnabled = !isPDF && compareBoards.length <= 1 && !isDemoMode && !board.id.startsWith('sample-')
 
   return (
     <div 
@@ -772,6 +1037,33 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 <path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M20 8V6a2 2 0 00-2-2h-2M20 16v2a2 2 0 002 2h-2M14 6v12" />
               </svg>
               <span>Present</span>
+            </button>
+          )}
+
+          {/* Add Callout toggle — enters placement mode for an anchored pin */}
+          {calloutsEnabled && user && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setComposer(null)
+                setCalloutMode((m) => !m)
+              }}
+              className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                calloutMode
+                  ? 'border-pink-300 bg-pink-500/30 text-white'
+                  : 'border-white/20 bg-white/5 text-white/90 hover:bg-white/15'
+              }`}
+              title={calloutMode ? 'Click the image to place a callout (Esc to cancel)' : 'Add a callout pin to the image'}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <span>{calloutMode ? 'Placing…' : 'Add callout'}</span>
+              {rootCallouts.length > 0 && (
+                <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-semibold bg-white/20 rounded-full">
+                  {rootCallouts.length}
+                </span>
+              )}
             </button>
           )}
 
@@ -994,6 +1286,126 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                     Reset zoom
                   </button>
                 )}
+
+                {/* ---- Anchored callout overlay (single-image, non-present) ---- */}
+                {!isPresentMode && calloutsEnabled && (
+                  <>
+                    {/* Pins — pass-through layer except on the pins themselves.
+                        Positions are re-derived from the viewport mapping every
+                        render, so pins track zoom/pan; pin size is fixed px so
+                        they don't scale with the image. */}
+                    <div className="absolute inset-0 z-10 pointer-events-none">
+                      {visibleRoots.map((root) => {
+                        if (root.anchorX == null || root.anchorY == null) return null
+                        const pt = viewport.imageFractionToContainerPoint(root.anchorX, root.anchorY)
+                        if (!pt) return null
+                        const n = calloutNumber.get(root.id)
+                        const isActive = activeThreadRootId === root.id
+                        return (
+                          <button
+                            key={root.id}
+                            type="button"
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => { e.stopPropagation(); setActiveThreadRootId(root.id) }}
+                            className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 w-7 h-7 rounded-full border-2 text-[11px] font-bold flex items-center justify-center shadow-md transition-transform hover:scale-110 ${
+                              root.resolved
+                                ? 'bg-slate-500/70 border-white/70 text-white/90 opacity-50'
+                                : 'bg-pink-500 border-white text-white'
+                            } ${isActive ? 'ring-2 ring-white scale-110' : ''}`}
+                            style={{ left: `${pt.x}px`, top: `${pt.y}px` }}
+                            title={root.resolved ? 'Resolved callout' : 'Open callout thread'}
+                          >
+                            {n}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {/* Placement capture layer — intercepts the next click and
+                        suppresses drag-to-pan / double-click zoom while active. */}
+                    {calloutMode && (
+                      <div
+                        className="absolute inset-0 z-20 cursor-crosshair"
+                        onClick={handleCalloutPlace}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                      />
+                    )}
+
+                    {/* Inline composer anchored at the chosen point */}
+                    {composer && (() => {
+                      const pt = viewport.imageFractionToContainerPoint(composer.fx, composer.fy)
+                      if (!pt) return null
+                      return (
+                        <div
+                          className="absolute z-30 pointer-events-auto"
+                          style={{ left: `${pt.x}px`, top: `${pt.y}px`, transform: 'translate(-50%, 12px)' }}
+                          onClick={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="w-64 bg-white rounded-xl shadow-2xl border border-gray-200 p-3">
+                            <textarea
+                              value={composerText}
+                              onChange={(e) => setComposerText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); handleSubmitCallout() }
+                              }}
+                              autoFocus
+                              rows={3}
+                              placeholder="Add a callout…"
+                              disabled={composerPosting}
+                              className="w-full px-2.5 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-400 resize-none bg-white text-gray-800 placeholder:text-gray-400"
+                            />
+                            <div className="flex items-center justify-end gap-2 mt-2">
+                              <button
+                                onClick={() => { setComposer(null); setComposerText('') }}
+                                disabled={composerPosting}
+                                className="px-2.5 py-1.5 text-[11px] font-semibold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={handleSubmitCallout}
+                                disabled={!composerText.trim() || composerPosting}
+                                className="px-2.5 py-1.5 text-[11px] font-semibold rounded-md bg-pink-600 text-white hover:bg-pink-500 disabled:opacity-40"
+                              >
+                                {composerPosting ? 'Adding…' : 'Add callout'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Control strip — count + show-resolved filter + errors */}
+                    {(rootCallouts.length > 0 || calloutError) && (
+                      <div
+                        className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-auto flex items-center gap-2"
+                        onClick={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                      >
+                        {rootCallouts.length > 0 && (
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/70 backdrop-blur-md border border-white/15 text-white text-[11px] font-medium">
+                            <span>{rootCallouts.length} callout{rootCallouts.length === 1 ? '' : 's'}</span>
+                            <button
+                              type="button"
+                              onClick={() => setShowResolved((v) => !v)}
+                              className="flex items-center gap-1.5 text-[11px] text-white/90 hover:text-white"
+                              title="Toggle resolved callouts"
+                            >
+                              <span className={`w-3 h-3 rounded-sm border flex items-center justify-center text-[8px] leading-none ${showResolved ? 'bg-pink-500 border-pink-500 text-white' : 'border-white/40 text-transparent'}`}>✓</span>
+                              Show resolved
+                            </button>
+                          </div>
+                        )}
+                        {calloutError && (
+                          <div className="px-3 py-1.5 rounded-full bg-red-600/85 text-white text-[11px] font-medium">{calloutError}</div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )
           ) : (
@@ -1208,6 +1620,151 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         </div>
         ) : null}
       </div>
+
+      {/* ---- Callout thread panel (separate from the legacy comment panel) ---- */}
+      {!isPresentMode && activeRoot && (
+        <div
+          className="fixed top-24 right-4 z-40 w-[320px] max-h-[70vh] bg-white rounded-2xl shadow-[0_18px_60px_rgba(15,23,42,0.45)] border border-gray-200 flex flex-col overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-pink-500 text-white text-[11px] font-bold">
+                {calloutNumber.get(activeRoot.id)}
+              </span>
+              <h3 className="text-sm font-semibold text-gray-900 truncate">
+                Callout{activeRoot.resolved ? ' · Resolved' : ''}
+              </h3>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {(isCalloutAuthor(activeRoot) || isInstructor) && (
+                <button
+                  onClick={() => handleToggleResolved(activeRoot.id, !activeRoot.resolved)}
+                  className={`px-2 py-1 text-[11px] font-semibold rounded-md border transition-colors ${
+                    activeRoot.resolved
+                      ? 'border-gray-300 text-gray-600 hover:bg-gray-100'
+                      : 'border-green-300 text-green-700 hover:bg-green-50'
+                  }`}
+                  title={activeRoot.resolved ? 'Reopen this callout' : 'Mark resolved'}
+                >
+                  {activeRoot.resolved ? 'Reopen' : 'Resolve'}
+                </button>
+              )}
+              <button
+                onClick={() => setActiveThreadRootId(null)}
+                className="w-7 h-7 flex items-center justify-center rounded-md text-gray-500 hover:bg-gray-100"
+                aria-label="Close thread"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Root + replies, chronological */}
+          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5">
+            {[activeRoot, ...repliesFor(activeRoot.id)].map((c) => {
+              const isRoot = c.parentId == null
+              const canEdit = isCalloutAuthor(c)
+              const canDelete = isCalloutAuthor(c) || isInstructor
+              const editing = editingCalloutId === c.id
+              return (
+                <div
+                  key={c.id}
+                  className={`rounded-xl border p-2.5 ${isRoot ? 'bg-pink-50/60 border-pink-100' : 'bg-gray-50 border-gray-100 ml-3'}`}
+                >
+                  <div className="flex items-baseline justify-between gap-2 mb-1">
+                    <span className="text-[11px] font-semibold text-gray-900 truncate">{c.authorName}</span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className="text-[10px] text-gray-500 whitespace-nowrap">{formatTimestamp(c.createdAt)}</span>
+                      {canEdit && !editing && (
+                        <button
+                          onClick={() => { setEditingCalloutId(c.id); setEditingCalloutText(c.body) }}
+                          className="text-[10px] text-indigo-600 hover:text-indigo-800"
+                          title="Edit"
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          onClick={() => handleDeleteCallout(c.id)}
+                          disabled={deletingCalloutId === c.id}
+                          className="text-[10px] text-red-600 hover:text-red-800 disabled:opacity-50"
+                          title={isRoot ? 'Delete callout (and replies)' : 'Delete reply'}
+                        >
+                          {deletingCalloutId === c.id ? '…' : 'Delete'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {editing ? (
+                    <div className="space-y-1.5">
+                      <textarea
+                        value={editingCalloutText}
+                        onChange={(e) => setEditingCalloutText(e.target.value)}
+                        rows={2}
+                        disabled={savingCalloutId === c.id}
+                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-400 resize-none bg-white text-gray-800"
+                      />
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleEditCallout(c.id)}
+                          disabled={!editingCalloutText.trim() || savingCalloutId === c.id}
+                          className="px-2 py-1 text-[10px] font-semibold rounded-md bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40"
+                        >
+                          {savingCalloutId === c.id ? 'Saving…' : 'Save'}
+                        </button>
+                        <button
+                          onClick={() => { setEditingCalloutId(null); setEditingCalloutText('') }}
+                          disabled={savingCalloutId === c.id}
+                          className="px-2 py-1 text-[10px] font-semibold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-800 leading-relaxed whitespace-pre-wrap">{c.body}</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Reply composer */}
+          <div className="flex-shrink-0 border-t border-gray-200 px-3 py-2.5 bg-gray-50">
+            {user ? (
+              <div className="space-y-2">
+                <textarea
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); handleSubmitReply(activeRoot.id) }
+                  }}
+                  rows={2}
+                  placeholder="Reply…"
+                  disabled={replyPosting}
+                  className="w-full px-2.5 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-400 resize-none bg-white text-gray-800 placeholder:text-gray-400"
+                />
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => handleSubmitReply(activeRoot.id)}
+                    disabled={!replyText.trim() || replyPosting}
+                    className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-pink-600 text-white hover:bg-pink-500 disabled:opacity-40"
+                  >
+                    {replyPosting ? 'Replying…' : 'Reply'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[11px] text-gray-500 text-center py-1">Sign in to reply</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Navigation Hint (simplified in present mode) */}
       <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-slate-900/65 border border-white/10 backdrop-blur-md rounded-full text-white text-xs sm:text-sm">
