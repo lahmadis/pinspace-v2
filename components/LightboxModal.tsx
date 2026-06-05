@@ -3,10 +3,18 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { Comment, Board, BoardComment } from '@/types'
+import { Comment, Board, BoardComment, BoardTrace, TraceStroke } from '@/types'
 import { validateLinkUrl } from '@/lib/linkUrl'
 import { useImageViewport } from '@/components/useImageViewport'
+import { toast } from '@/lib/toast'
 import { ExternalLink } from 'lucide-react'
+
+// Trace ink palette + brush widths (width = fraction of image width).
+const TRACE_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6']
+const TRACE_WIDTHS: Array<{ label: string; value: number }> = [
+  { label: 'Thin', value: 0.004 },
+  { label: 'Thick', value: 0.01 },
+]
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 
 // TEMP diagnostic — always-on tracing of the lightbox link read/write path.
@@ -156,6 +164,28 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   useEffect(() => { composerOpenRef.current = composer != null }, [composer])
   useEffect(() => { activeThreadRef.current = activeThreadRootId != null }, [activeThreadRootId])
 
+  // ---- Trace layer (Phase A.4) -------------------------------------------
+  // Per-author freehand drawing over the board image. Same accessibility gate
+  // as callouts (calloutsAccessible). Strokes live in image-fraction coords and
+  // render through the A.2 viewport mapping, so they stay glued at any zoom/pan.
+  const [boardTraces, setBoardTraces] = useState<BoardTrace[]>([])   // every author's layer
+  const [traceMode, setTraceMode] = useState(false)                  // drawing active
+  const [myStrokes, setMyStrokes] = useState<TraceStroke[]>([])      // local authoritative copy of MY strokes
+  const [drawingPoints, setDrawingPoints] = useState<[number, number][] | null>(null) // in-progress stroke
+  const [hiddenTraceAuthors, setHiddenTraceAuthors] = useState<Set<string>>(new Set())
+  const [traceColor, setTraceColor] = useState(TRACE_COLORS[0])
+  const [traceWidth, setTraceWidth] = useState(TRACE_WIDTHS[0].value)
+  const [pendingClearTrace, setPendingClearTrace] = useState(false)
+  const [tracesLoaded, setTracesLoaded] = useState(false)
+  const traceCanvasRef = useRef<HTMLCanvasElement>(null)
+  const traceModeRef = useRef(false)
+  const saveTimerRef = useRef<number | null>(null)
+  const traceSaveFailedRef = useRef(false)
+  const tracesInitedForBoardRef = useRef<string | null>(null)
+  useEffect(() => { traceModeRef.current = traceMode }, [traceMode])
+  // Clear any pending debounced save on unmount.
+  useEffect(() => () => { if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current) }, [])
+
   const isOpen = board !== null
   const [profileFullName, setProfileFullName] = useState<string | null>(null)
   const authorName = profileFullName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Anonymous'
@@ -245,6 +275,17 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     setCalloutsAccessible(false)
     setCommentsAccessible(false)
     setBoardComments([])
+    // Reset the trace layer on board change.
+    setTraceMode(false)
+    setBoardTraces([])
+    setMyStrokes([])
+    setDrawingPoints(null)
+    setHiddenTraceAuthors(new Set())
+    setPendingClearTrace(false)
+    setTracesLoaded(false)
+    tracesInitedForBoardRef.current = null
+    traceSaveFailedRef.current = false
+    if (saveTimerRef.current) { window.clearTimeout(saveTimerRef.current); saveTimerRef.current = null }
     if (!board) {
       setComments([])
       setNewComment('')
@@ -255,6 +296,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     }
     fetchComments()
     fetchBoardComments()
+    fetchBoardTraces()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board?.id])
 
@@ -263,7 +305,9 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // Callout overlays close first, in priority order, before anything else.
+        // Tracing mode closes first, then the callout/zoom/close chain.
+        if (traceModeRef.current) { setTraceMode(false); return }
+        // Callout overlays close next, in priority order.
         if (composerOpenRef.current) { setComposer(null); setComposerText(''); return }
         if (activeThreadRef.current) { setActiveThreadRootId(null); return }
         if (calloutModeRef.current) { setCalloutMode(false); return }
@@ -645,6 +689,202 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     setComposerText('')
     setCalloutMode(false)
   }
+
+  // ---- Trace handlers ----------------------------------------------------
+  const fetchBoardTraces = async () => {
+    if (!board) return
+    if (isDemoMode || board.id.startsWith('sample-')) {
+      setBoardTraces([])
+      setTracesLoaded(true)
+      return
+    }
+    try {
+      const res = await fetch(`/api/boards/${board.id}/traces`, { credentials: 'include' })
+      // 401/403 (non-member) degrades silently — the layer is gated on
+      // calloutsAccessible, which the board-comments fetch already resolved.
+      if (res.status === 401 || res.status === 403) {
+        setBoardTraces([])
+        setTracesLoaded(true)
+        return
+      }
+      const data = await res.json().catch(() => ({}))
+      setBoardTraces(res.ok ? (data.traces || []) : [])
+      setTracesLoaded(true)
+    } catch {
+      setBoardTraces([])
+      setTracesLoaded(true)
+    }
+  }
+
+  // Persist MY trace (debounced via scheduleSaveTrace). Optimistic: on failure
+  // we keep local strokes and toast once so nothing is lost.
+  const putTrace = async (strokes: TraceStroke[]) => {
+    if (!board || !user) return
+    try {
+      const res = await fetch(`/api/boards/${board.id}/traces`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strokes, authorColor: traceColor }),
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        if (!traceSaveFailedRef.current) {
+          traceSaveFailedRef.current = true
+          toast.error('Couldn’t save your trace — your drawing is kept locally.')
+        }
+        return
+      }
+      traceSaveFailedRef.current = false
+    } catch {
+      if (!traceSaveFailedRef.current) {
+        traceSaveFailedRef.current = true
+        toast.error('Couldn’t save your trace — your drawing is kept locally.')
+      }
+    }
+  }
+
+  const scheduleSaveTrace = (strokes: TraceStroke[]) => {
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = window.setTimeout(() => { void putTrace(strokes) }, 600)
+  }
+
+  const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
+
+  const handleTracePointerDown = (e: React.PointerEvent) => {
+    if (!traceMode) return
+    e.stopPropagation()
+    const canvas = traceCanvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const frac = viewport.containerPointToImageFraction(e.clientX - rect.left, e.clientY - rect.top)
+    if (!frac) return
+    try { (e.target as Element).setPointerCapture(e.pointerId) } catch { /* noop */ }
+    setDrawingPoints([[clamp01(frac.x), clamp01(frac.y)]])
+  }
+
+  const handleTracePointerMove = (e: React.PointerEvent) => {
+    if (!traceMode || !drawingPoints) return
+    const canvas = traceCanvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const frac = viewport.containerPointToImageFraction(e.clientX - rect.left, e.clientY - rect.top)
+    if (!frac) return
+    setDrawingPoints((prev) => (prev ? [...prev, [clamp01(frac.x), clamp01(frac.y)]] : prev))
+  }
+
+  const handleTracePointerUp = (e: React.PointerEvent) => {
+    if (!traceMode) return
+    try { (e.target as Element).releasePointerCapture(e.pointerId) } catch { /* noop */ }
+    if (drawingPoints && drawingPoints.length > 0) {
+      const stroke: TraceStroke = { color: traceColor, width: traceWidth, points: drawingPoints }
+      const next = [...myStrokes, stroke]
+      setMyStrokes(next)
+      scheduleSaveTrace(next)
+    }
+    setDrawingPoints(null)
+  }
+
+  const handleTraceUndo = () => {
+    if (myStrokes.length === 0) return
+    const next = myStrokes.slice(0, -1)
+    setMyStrokes(next)
+    scheduleSaveTrace(next)
+  }
+
+  const handleTraceClear = async () => {
+    setPendingClearTrace(false)
+    setMyStrokes([])
+    if (saveTimerRef.current) { window.clearTimeout(saveTimerRef.current); saveTimerRef.current = null }
+    if (user) setBoardTraces((prev) => prev.filter((t) => t.authorId !== user.id))
+    if (!board || !user) return
+    try {
+      const res = await fetch(`/api/boards/${board.id}/traces`, { method: 'DELETE', credentials: 'include' })
+      if (!res.ok && !traceSaveFailedRef.current) {
+        traceSaveFailedRef.current = true
+        toast.error('Couldn’t clear your trace.')
+      } else if (res.ok) {
+        traceSaveFailedRef.current = false
+      }
+    } catch {
+      // Local already cleared; leave it cleared.
+    }
+  }
+
+  // Initialize MY local strokes from my server row, once per board, after BOTH
+  // the traces have loaded and the client user id is known (cookie auth means
+  // the fetch can resolve before client `user` hydrates).
+  useEffect(() => {
+    if (!board || !user?.id || !tracesLoaded) return
+    if (tracesInitedForBoardRef.current === board.id) return
+    const mine = boardTraces.find((t) => t.authorId === user.id)
+    setMyStrokes(mine && Array.isArray(mine.strokes) ? mine.strokes : [])
+    if (mine?.authorColor) setTraceColor(mine.authorColor)
+    tracesInitedForBoardRef.current = board.id
+  }, [board, boardTraces, user?.id, tracesLoaded])
+
+  // Redraw the trace canvas. Points map through imageFractionToContainerPoint
+  // each call, so strokes stay glued to the image at any zoom/pan. Stroke width
+  // is scaled by the rendered image width so it tracks zoom too.
+  const mapFracToPt = viewport.imageFractionToContainerPoint
+  const redrawTraces = useCallback(() => {
+    const canvas = traceCanvasRef.current
+    if (!canvas) return
+    const parent = canvas.parentElement
+    if (!parent) return
+    const w = parent.clientWidth
+    const h = parent.clientHeight
+    if (w <= 0 || h <= 0) return
+    const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1
+    const bw = Math.round(w * dpr)
+    const bh = Math.round(h * dpr)
+    if (canvas.width !== bw || canvas.height !== bh) { canvas.width = bw; canvas.height = bh }
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+    const p0 = mapFracToPt(0, 0)
+    const p1 = mapFracToPt(1, 0)
+    if (!p0 || !p1) return
+    const imgW = Math.max(1, p1.x - p0.x)
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    const drawStroke = (s: TraceStroke) => {
+      if (!s.points || s.points.length === 0) return
+      ctx.strokeStyle = s.color
+      ctx.fillStyle = s.color
+      ctx.lineWidth = Math.max(1, s.width * imgW)
+      if (s.points.length === 1) {
+        const pt = mapFracToPt(s.points[0][0], s.points[0][1])
+        if (pt) { ctx.beginPath(); ctx.arc(pt.x, pt.y, ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fill() }
+        return
+      }
+      ctx.beginPath()
+      s.points.forEach((p, i) => {
+        const pt = mapFracToPt(p[0], p[1])
+        if (!pt) return
+        if (i === 0) ctx.moveTo(pt.x, pt.y)
+        else ctx.lineTo(pt.x, pt.y)
+      })
+      ctx.stroke()
+    }
+    const myKey = user?.id ?? 'me'
+    for (const t of boardTraces) {
+      if (user?.id && t.authorId === user.id) continue // mine drawn from myStrokes
+      if (hiddenTraceAuthors.has(t.authorId ?? t.guestTokenId ?? t.id)) continue
+      ;(Array.isArray(t.strokes) ? t.strokes : []).forEach(drawStroke)
+    }
+    if (!hiddenTraceAuthors.has(myKey)) {
+      myStrokes.forEach(drawStroke)
+      if (drawingPoints && drawingPoints.length) {
+        drawStroke({ color: traceColor, width: traceWidth, points: drawingPoints })
+      }
+    }
+  }, [mapFracToPt, boardTraces, myStrokes, drawingPoints, hiddenTraceAuthors, traceColor, traceWidth, user?.id])
+
+  // Redraw on stroke/layer changes AND on every zoom/pan transform change.
+  useEffect(() => {
+    redrawTraces()
+  }, [redrawTraces, viewport.scale, viewport.offsetX, viewport.offsetY])
 
   const handlePost = async () => {
     if (!board || !newComment.trim() || posting) return
@@ -1081,6 +1321,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               onClick={(e) => {
                 e.stopPropagation()
                 setComposer(null)
+                setTraceMode(false)
                 setCalloutMode((m) => !m)
               }}
               className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
@@ -1099,6 +1340,29 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   {rootCallouts.length}
                 </span>
               )}
+            </button>
+          )}
+
+          {/* Trace toggle — freehand drawing over the board (members only) */}
+          {calloutsEnabled && user && calloutsAccessible && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setCalloutMode(false)
+                setComposer(null)
+                setTraceMode((m) => !m)
+              }}
+              className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                traceMode
+                  ? 'border-amber-300 bg-amber-500/30 text-white'
+                  : 'border-white/20 bg-white/5 text-white/90 hover:bg-white/15'
+              }`}
+              title={traceMode ? 'Stop tracing (Esc)' : 'Draw a trace over the board'}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
+              </svg>
+              <span>{traceMode ? 'Tracing…' : 'Trace'}</span>
             </button>
           )}
 
@@ -1330,6 +1594,20 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                     get no pins, capture layer, composer, or control strip. */}
                 {!isPresentMode && calloutsEnabled && calloutsAccessible && (
                   <>
+                    {/* Trace canvas — renders every visible author's strokes.
+                        While tracing it captures pointer events (suppressing pan
+                        + double-click zoom) so the user can draw; otherwise it's
+                        pass-through and sits beneath the pins. */}
+                    <canvas
+                      ref={traceCanvasRef}
+                      className={`absolute inset-0 w-full h-full ${traceMode ? 'z-30 cursor-crosshair pointer-events-auto' : 'z-[5] pointer-events-none'}`}
+                      onPointerDown={handleTracePointerDown}
+                      onPointerMove={handleTracePointerMove}
+                      onPointerUp={handleTracePointerUp}
+                      onPointerCancel={handleTracePointerUp}
+                      onDoubleClick={(e) => { if (traceMode) e.stopPropagation() }}
+                    />
+
                     {/* Pins — pass-through layer except on the pins themselves.
                         Positions are re-derived from the viewport mapping every
                         render, so pins track zoom/pan; pin size is fixed px so
@@ -1441,6 +1719,105 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         )}
                         {calloutError && (
                           <div className="px-3 py-1.5 rounded-full bg-red-600/85 text-white text-[11px] font-medium">{calloutError}</div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Trace layers control — toggle each author's layer on/off */}
+                    {(() => {
+                      const layers: Array<{ key: string; name: string; color: string }> = []
+                      const myKey = user?.id ?? 'me'
+                      if (myStrokes.length > 0) layers.push({ key: myKey, name: `${authorName} (you)`, color: traceColor })
+                      for (const t of boardTraces) {
+                        if (user?.id && t.authorId === user.id) continue
+                        layers.push({ key: t.authorId ?? t.guestTokenId ?? t.id, name: t.authorName, color: t.authorColor ?? '#94a3b8' })
+                      }
+                      if (layers.length === 0) return null
+                      return (
+                        <div
+                          className="absolute top-3 right-3 z-40 pointer-events-auto w-44 rounded-xl bg-slate-900/80 backdrop-blur-md border border-white/15 p-2"
+                          onClick={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                        >
+                          <div className="text-[10px] uppercase tracking-wide text-white/60 px-1 pb-1">Trace layers</div>
+                          <div className="space-y-0.5 max-h-40 overflow-y-auto">
+                            {layers.map((l) => {
+                              const hidden = hiddenTraceAuthors.has(l.key)
+                              return (
+                                <button
+                                  key={l.key}
+                                  onClick={() => setHiddenTraceAuthors((prev) => {
+                                    const n = new Set(prev)
+                                    if (n.has(l.key)) n.delete(l.key); else n.add(l.key)
+                                    return n
+                                  })}
+                                  className="w-full flex items-center gap-2 px-1.5 py-1 rounded hover:bg-white/10 text-left"
+                                  title={hidden ? 'Show layer' : 'Hide layer'}
+                                >
+                                  <span className="w-3 h-3 rounded-full flex-shrink-0 border border-white/30" style={{ backgroundColor: l.color, opacity: hidden ? 0.25 : 1 }} />
+                                  <span className={`text-[11px] truncate flex-1 ${hidden ? 'text-white/40 line-through' : 'text-white/90'}`}>{l.name}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Trace tool strip — colors, widths, undo, clear */}
+                    {traceMode && (
+                      <div
+                        className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-full bg-slate-900/85 backdrop-blur-md border border-white/15"
+                        onClick={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                      >
+                        {TRACE_COLORS.map((c) => (
+                          <button
+                            key={c}
+                            onClick={() => setTraceColor(c)}
+                            className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 ${traceColor === c ? 'border-white' : 'border-transparent'}`}
+                            style={{ backgroundColor: c }}
+                            title="Ink color"
+                            aria-label={`Ink color ${c}`}
+                          />
+                        ))}
+                        <span className="w-px h-5 bg-white/20" />
+                        {TRACE_WIDTHS.map((w) => (
+                          <button
+                            key={w.value}
+                            onClick={() => setTraceWidth(w.value)}
+                            className={`px-2 py-1 rounded text-[10px] font-medium ${traceWidth === w.value ? 'bg-white/25 text-white' : 'text-white/70 hover:text-white'}`}
+                            title={`${w.label} brush`}
+                          >
+                            {w.label}
+                          </button>
+                        ))}
+                        <span className="w-px h-5 bg-white/20" />
+                        <button
+                          onClick={handleTraceUndo}
+                          disabled={myStrokes.length === 0}
+                          className="px-2 py-1 rounded text-[10px] font-medium text-white/80 hover:text-white disabled:opacity-40"
+                          title="Undo last stroke"
+                        >
+                          Undo
+                        </button>
+                        {pendingClearTrace ? (
+                          <button
+                            onClick={handleTraceClear}
+                            className="px-2 py-1 rounded text-[10px] font-semibold bg-red-600 text-white hover:bg-red-500"
+                            title="Confirm — clear your whole trace"
+                          >
+                            Confirm clear
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => { setPendingClearTrace(true); window.setTimeout(() => setPendingClearTrace(false), 4000) }}
+                            disabled={myStrokes.length === 0}
+                            className="px-2 py-1 rounded text-[10px] font-medium text-white/80 hover:text-white disabled:opacity-40"
+                            title="Clear my trace"
+                          >
+                            Clear
+                          </button>
                         )}
                       </div>
                     )}

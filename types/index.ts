@@ -127,6 +127,36 @@ export interface BoardComment {
   updatedAt: string
 }
 
+/**
+ * Phase A.4 trace layer: one freehand stroke. color = CSS color; width = stroke
+ * width as a FRACTION of the image width (so it scales with zoom like the
+ * points); points = [x, y] pairs, each a fraction 0..1 of the image's intrinsic
+ * dimensions (same anchor space as BoardComment).
+ */
+export interface TraceStroke {
+  color: string
+  width: number
+  points: [number, number][]
+}
+
+/**
+ * Phase A.4: a single author's drawing layer over a board. One row per
+ * (board, author) — maps to the board_traces table (migration 028). Author is
+ * an account user (authorId) or a guest critic (guestTokenId).
+ */
+export interface BoardTrace {
+  id: string
+  boardId: string
+  roomId: string
+  authorId: string | null
+  guestTokenId: string | null
+  authorName: string
+  authorColor: string | null
+  strokes: TraceStroke[]
+  createdAt: string
+  updatedAt: string
+}
+
 export interface WorkspaceMember {
   userId: string
   name: string
