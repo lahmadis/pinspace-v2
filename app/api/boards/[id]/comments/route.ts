@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoBoards, transformDemoBoard, DEMO_STUDIOS } from '@/lib/mockData'
 import { getSampleComments } from '@/lib/sampleData'
-import { isSuperadmin, isNetworkPublished } from '@/lib/auth/superadmin'
+import { isSuperadmin } from '@/lib/auth/superadmin'
 
 export const dynamic = 'force-dynamic'
 
@@ -73,77 +73,40 @@ export async function GET(
 
     const { data: workspace } = await serviceSupabase
       .from('workspaces')
-      .select('owner_id, is_public, published_at')
+      .select('owner_id')
       .eq('id', resolvedWorkspaceId)
       .single()
 
-    const isPublicWorkspace = workspace?.is_public && workspace?.published_at != null
-
-    if (isPublicWorkspace) {
-      // Public workspace: anyone can read comments (no auth required)
-      const { data: publicComments, error: publicError } = await serviceSupabase
-        .from('comments')
-        .select('*')
-        .eq('board_id', boardId)
-        .order('created_at', { ascending: false })
-
-      if (publicError) {
-        console.error('Error fetching comments with service role:', publicError)
-        return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
-      }
-
-      const transformedComments = (publicComments || []).map((c) => ({
-        id: c.id,
-        boardId: c.board_id,
-        authorId: c.author_id,
-        authorName: c.author_name,
-        content: c.text,
-        createdAt: c.created_at,
-      }))
-      return NextResponse.json({ comments: transformedComments })
-    }
-
-    // Private workspace: enforce access in app code, then read with the
-    // service role — mirroring the POST and the public branch above. We can't
-    // rely on supabaseServer() RLS here: the comments SELECT policy nests a
-    // SELECT FROM workspaces, and workspaces has no membership-based SELECT
-    // policy, so a non-owner member gets an empty result and their own saved
-    // comments disappear on refresh. Owner OR workspace_members row is the
-    // boundary (same check the POST uses); true non-members are rejected.
+    // Phase A.3.2: comments are PRIVATE to the room's workspace — there is no
+    // public read path (matching board-comments GET). Require a session, then
+    // authorize as workspace owner OR member OR superadmin; everyone else gets
+    // 403. We return 403 (not 401) for the no-session case so a logged-out
+    // visitor of a board whose IMAGE they can legitimately see is not bounced
+    // into a login flow just because the comment layer is hidden.
     const supabase = supabaseServer()
     const {
       data: { session },
     } = await supabase.auth.getSession()
     const userId = session?.user?.id
     if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Platform superadmin: READ-ONLY access to network-published content, in
-    // addition to owner/member. Verified server-side via service role; scoped
-    // strictly to published-to-network content. (This is the GET/read path
-    // only — comment create/edit/delete keep their existing author checks.)
-    const superadminViewer = await isSuperadmin(userId, serviceSupabase)
-    const networkPublished =
-      superadminViewer &&
-      (await isNetworkPublished(serviceSupabase, {
-        roomId: board.room_id,
-        workspaceId: resolvedWorkspaceId,
-      }))
-
-    if (!(superadminViewer && networkPublished)) {
-      const isOwner = workspace?.owner_id === userId
-      if (!isOwner) {
-        const { data: membership } = await serviceSupabase
-          .from('workspace_members')
-          .select('user_id')
-          .eq('workspace_id', resolvedWorkspaceId)
-          .eq('user_id', userId)
-          .maybeSingle()
-        if (!membership) {
-          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-        }
-      }
+    let allowed = workspace?.owner_id === userId
+    if (!allowed) {
+      const { data: membership } = await serviceSupabase
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', resolvedWorkspaceId)
+        .eq('user_id', userId)
+        .maybeSingle()
+      allowed = membership != null
+    }
+    if (!allowed) {
+      allowed = await isSuperadmin(userId, serviceSupabase)
+    }
+    if (!allowed) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const { data: comments, error } = await serviceSupabase
@@ -259,26 +222,29 @@ export async function POST(
       return NextResponse.json({ error: 'Board has no workspace' }, { status: 404 })
     }
 
-    // For private workspaces, require membership/ownership before writing.
+    // Phase A.3.2: writes require session + owner OR member OR superadmin —
+    // no public short-circuit (matching the GET gate).
     const { data: workspace } = await admin
       .from('workspaces')
-      .select('owner_id, is_public, published_at')
+      .select('owner_id')
       .eq('id', resolvedWorkspaceId)
       .single()
 
-    const isPublicWorkspace = workspace?.is_public && workspace?.published_at != null
-    if (!isPublicWorkspace) {
-      const isOwner = workspace?.owner_id === userId
+    let canWrite = workspace?.owner_id === userId
+    if (!canWrite) {
       const { data: membership } = await admin
         .from('workspace_members')
         .select('user_id')
         .eq('workspace_id', resolvedWorkspaceId)
         .eq('user_id', userId)
         .maybeSingle()
-
-      if (!isOwner && !membership) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      }
+      canWrite = membership != null
+    }
+    if (!canWrite) {
+      canWrite = await isSuperadmin(userId, admin)
+    }
+    if (!canWrite) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     // Insert comment with service role after explicit authorization.

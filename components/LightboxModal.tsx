@@ -88,6 +88,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Mirrors calloutsAccessible: legacy comments are now private to workspace
+  // members too. false until a non-403 fetch confirms access; gates the
+  // Comments button + panel so public/unauthenticated viewers see nothing.
+  const [commentsAccessible, setCommentsAccessible] = useState(false)
   const [newComment, setNewComment] = useState('')
   const [posting, setPosting] = useState(false)
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
@@ -239,6 +243,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     setEditingCalloutText('')
     setCalloutError(null)
     setCalloutsAccessible(false)
+    setCommentsAccessible(false)
     setBoardComments([])
     if (!board) {
       setComments([])
@@ -388,21 +393,33 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         : `/api/boards/${board.id}/comments`
       const response = await fetch(url, { credentials: 'include' })
 
+      // Comments are private to workspace members. A 401/403 (public or
+      // unauthenticated viewer) degrades silently — the Comments button/panel
+      // are hidden via commentsAccessible; no error is shown.
+      if (response.status === 401 || response.status === 403) {
+        setCommentsAccessible(false)
+        setComments([])
+        setError(null)
+        return
+      }
       const data = await response.json().catch(() => ({}))
       if (!response.ok) {
         const message = data?.error === 'Board not found'
           ? 'Board not found'
-          : response.status === 403 || response.status === 401
-            ? 'Sign in to view comments'
-            : (data?.details || data?.error || 'Failed to load comments')
+          : (data?.details || data?.error || 'Failed to load comments')
+        // Genuine error (not an access denial): keep the panel visible to show it.
+        setCommentsAccessible(true)
         setError(message)
         setComments([])
         return
       }
 
       setComments(data.comments || [])
+      setCommentsAccessible(true)
     } catch (err) {
       console.error('Error fetching comments:', err)
+      // Transient failure (not an access denial): keep the panel available.
+      setCommentsAccessible(true)
       setError('Failed to load comments')
       setComments([])
     } finally {
@@ -1085,7 +1102,9 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             </button>
           )}
 
-          {/* Comments Toggle */}
+          {/* Comments Toggle — hidden unless the viewer has comment access
+              (workspace member); private to members per Phase A.3.2. */}
+          {commentsAccessible && (
           <button
             onClick={(e) => {
               e.stopPropagation()
@@ -1101,6 +1120,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               </span>
             )}
           </button>
+          )}
 
           {/* Close Button */}
           <button
@@ -1436,8 +1456,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           )}
         </div>
 
-        {/* Right Side - Comment Panel (hidden in present mode) */}
-        {!isPresentMode && commentsOpen ? (
+        {/* Right Side - Comment Panel (hidden in present mode; members only) */}
+        {!isPresentMode && commentsOpen && commentsAccessible ? (
         <div 
           className="w-full lg:w-[340px] xl:w-[380px] bg-white/95 backdrop-blur-md flex flex-col shadow-[0_18px_60px_rgba(15,23,42,0.35)] border-l border-gray-200"
           onClick={(e) => e.stopPropagation()}

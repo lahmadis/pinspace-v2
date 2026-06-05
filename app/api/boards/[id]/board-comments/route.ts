@@ -10,10 +10,8 @@ export const dynamic = 'force-dynamic'
 // exposed on public/published access like the board image is):
 //   GET  → session required; workspace owner OR member OR superadmin, else 403.
 //          No public path. (Phase A.5 will add a guest_token path here.)
-//   POST → session required; owner/member on private workspaces. NOTE: the
-//          public-workspace branch still permits any authenticated user to
-//          create a callout — an intentional, separately-tracked asymmetry vs
-//          GET (left as-is this phase).
+//   POST → same gate as GET: session required; owner OR member OR superadmin.
+//          No public short-circuit. (Phase A.5 will add a guest_token path.)
 // All reads/writes go through the service-role client after explicit app-code
 // checks (no new RLS policies — table is service-role-only).
 
@@ -224,25 +222,29 @@ export async function POST(
       return NextResponse.json({ error: 'Board has no room' }, { status: 404 })
     }
 
+    // Phase A.3.2: writes match the GET gate exactly — owner OR member OR
+    // superadmin, no public short-circuit.
     const { data: workspace } = await admin
       .from('workspaces')
-      .select('owner_id, is_public, published_at')
+      .select('owner_id')
       .eq('id', resolvedWorkspaceId)
       .single()
 
-    const isPublicWorkspace = workspace?.is_public && workspace?.published_at != null
-    if (!isPublicWorkspace) {
-      const isOwner = workspace?.owner_id === userId
+    let canWrite = workspace?.owner_id === userId
+    if (!canWrite) {
       const { data: membership } = await admin
         .from('workspace_members')
         .select('user_id')
         .eq('workspace_id', resolvedWorkspaceId)
         .eq('user_id', userId)
         .maybeSingle()
-
-      if (!isOwner && !membership) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      }
+      canWrite = membership != null
+    }
+    if (!canWrite) {
+      canWrite = await isSuperadmin(userId, admin)
+    }
+    if (!canWrite) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     // Reply: the parent must exist and belong to THIS board.
