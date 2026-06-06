@@ -17,7 +17,7 @@ import { Board, FloorTable } from '@/types'
 import WallSystem from './WallSystem'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { CameraController, type FollowPose } from './CameraController'
+import { CameraController, type FollowPose, type LaserState } from './CameraController'
 import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
 import { WallDropZone } from '@/components/3d/WallDropZone'
@@ -127,6 +127,15 @@ interface StudioRoomProps {
   isFollowing?: boolean
   /** Latest received presenter camera pose (written per broadcast message). */
   followPoseRef?: React.MutableRefObject<FollowPose | null>
+  /**
+   * Phase B.3: laser pointer. isLaserActive = the local presenter is holding the
+   * laser key (broadcasts + suspends own orbit). laserRef = latest received laser
+   * position for followers to render. laserColor = the presenter's deterministic
+   * dot color.
+   */
+  isLaserActive?: boolean
+  laserRef?: React.MutableRefObject<LaserState | null>
+  laserColor?: string
 }
 
 function SceneContent({
@@ -531,6 +540,108 @@ function PresenterCamBroadcast({
     })
   })
   return null
+}
+
+/**
+ * Phase B.3: presenter laser broadcaster. Lives inside <Canvas>. While the
+ * presenter holds the laser key (isLaserActive) and is not in edit mode, it
+ * raycasts the live pointer against the scene and broadcasts the world hit point
+ * over the "laser" event at ≤15Hz (throttled, not per mousemove). Sends a single
+ * { off:true } when pointing stops. Read-only raycast against existing meshes;
+ * no state, no logging. (The laser dot mesh sets raycast=null so it's skipped.)
+ */
+function PresenterLaserBroadcast({
+  liveChannelRef,
+  isPresenter,
+  isLaserActive,
+  editingWall,
+}: {
+  liveChannelRef?: React.MutableRefObject<ReturnType<typeof supabase.channel> | null>
+  isPresenter: boolean
+  isLaserActive: boolean
+  editingWall: number | null
+}) {
+  const { camera, scene, raycaster, pointer } = useThree()
+  const sinceLastSend = useRef(0)
+  const wasActive = useRef(false)
+  useFrame((_state, delta) => {
+    const channel = liveChannelRef?.current
+    const active = isPresenter && isLaserActive && editingWall === null
+    if (active && channel) {
+      sinceLastSend.current += delta
+      if (sinceLastSend.current >= 1 / 15) {
+        sinceLastSend.current = 0
+        raycaster.setFromCamera(pointer, camera)
+        const hit = raycaster.intersectObjects(scene.children, true)[0]
+        if (hit) {
+          const r = (n: number) => Math.round(n * 1000) / 1000
+          channel.send({
+            type: 'broadcast',
+            event: 'laser',
+            payload: { p: [r(hit.point.x), r(hit.point.y), r(hit.point.z)] },
+          })
+        }
+      }
+    }
+    if (!active && wasActive.current && channel) {
+      channel.send({ type: 'broadcast', event: 'laser', payload: { off: true } })
+    }
+    wasActive.current = active
+  })
+  return null
+}
+
+/**
+ * Phase B.3: laser dot, rendered for FOLLOWERS (the presenter's own laserRef
+ * stays null — self:false on the channel). Reads the latest pose ref in useFrame
+ * and smooth-lerps a bright dot toward it. raycast=null so it never intercepts
+ * clicks (followers can still click boards / open the lightbox). depthTest off +
+ * high renderOrder keep it visible without z-fighting. Hidden on { off } (null
+ * ref) or after ~2s with no new packet (seq unchanged), e.g. a presenter drop.
+ */
+function LaserPointer({
+  laserRef,
+  color,
+}: {
+  laserRef?: React.MutableRefObject<LaserState | null>
+  color: string
+}) {
+  const meshRef = useRef<THREE.Mesh>(null)
+  const lastSeq = useRef(-1)
+  const idleSeconds = useRef(0)
+  const target = useRef(new THREE.Vector3())
+  const hasTarget = useRef(false)
+  useFrame((_state, delta) => {
+    const mesh = meshRef.current
+    if (!mesh) return
+    const data = laserRef?.current
+    if (!data) {
+      mesh.visible = false
+      hasTarget.current = false
+      return
+    }
+    if (data.seq !== lastSeq.current) {
+      lastSeq.current = data.seq
+      idleSeconds.current = 0
+      target.current.set(data.p[0], data.p[1], data.p[2])
+      hasTarget.current = true
+    } else {
+      idleSeconds.current += delta
+    }
+    if (!hasTarget.current || idleSeconds.current > 2) {
+      mesh.visible = false
+      return
+    }
+    mesh.visible = true
+    const alpha = 1 - Math.exp(-delta * 18)
+    mesh.position.lerp(target.current, alpha)
+  })
+  return (
+    <mesh ref={meshRef} visible={false} renderOrder={999} raycast={() => null}>
+      <sphereGeometry args={[1.8, 16, 16]} />
+      <meshBasicMaterial color={color} toneMapped={false} transparent opacity={0.95} depthTest={false} />
+    </mesh>
+  )
 }
 
 export default function StudioRoom(props: StudioRoomProps) {
@@ -1075,6 +1186,11 @@ export default function StudioRoom(props: StudioRoomProps) {
   }
 
   const handleLightboxOpen = (board: Board) => {
+    // Phase B.3: while the presenter is laser-pointing, clicks are "pointing",
+    // not "open this board" — swallow them so a point-drag doesn't pop the
+    // lightbox. Only the presenter ever has isLaserActive; followers are
+    // unaffected and can still open boards.
+    if (props.isLaserActive) return
     setCommentPanelBoard(null)
     if (shiftPressedRef.current) {
       setCompareBoardIds((prev) =>
@@ -1784,6 +1900,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             onTransitionComplete={handleCameraTransitionComplete}
             isFollowing={props.isFollowing}
             followPoseRef={props.followPoseRef}
+            isLaserPointing={!!props.isLaserActive}
           />
           <PresenterCamBroadcast
             liveChannelRef={props.liveChannelRef}
@@ -1791,6 +1908,13 @@ export default function StudioRoom(props: StudioRoomProps) {
             editingWall={editingWall}
             orbitControlsRef={orbitControlsRef}
           />
+          <PresenterLaserBroadcast
+            liveChannelRef={props.liveChannelRef}
+            isPresenter={!!props.isPresenter}
+            isLaserActive={!!props.isLaserActive}
+            editingWall={editingWall}
+          />
+          <LaserPointer laserRef={props.laserRef} color={props.laserColor ?? '#22d3ee'} />
           <SceneContent
             {...props}
             orbitControlsRef={orbitControlsRef}

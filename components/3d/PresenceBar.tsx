@@ -19,11 +19,26 @@ export interface PresentUser {
 }
 
 /** Deterministic avatar color from a user id, so a given user is always the same hue. */
-function colorFor(userId: string): string {
+export function colorFor(userId: string): string {
   const palette = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444', '#3b82f6']
   let hash = 0
   for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) >>> 0
   return palette[hash % palette.length]
+}
+
+/**
+ * Phase B.3: a friendly display name. When the only name we have is an email
+ * (full_name/name missing), show the local part (e.g. "lahmadis@wit.edu" →
+ * "lahmadis", separators → spaces) instead of the full address. Non-email names
+ * pass through unchanged. Pure presentation — does not touch presence data.
+ */
+export function friendlyName(raw: string | null | undefined): string {
+  const name = (raw ?? '').trim()
+  if (!name) return 'Someone'
+  const at = name.indexOf('@')
+  if (at <= 0) return name // not email-like → use as-is
+  const local = name.slice(0, at).replace(/[._-]+/g, ' ').trim()
+  return local || name
 }
 
 function initialsFor(fullName: string): string {
@@ -62,16 +77,19 @@ export default function PresenceBar({
       aria-label={`${others.length} other ${others.length === 1 ? 'person' : 'people'} editing this room`}
     >
       <div className="flex -space-x-2">
-        {shown.map((u) => (
-          <div
-            key={u.userId}
-            title={u.fullName}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white ring-2 ring-white/40"
-            style={{ backgroundColor: colorFor(u.userId) }}
-          >
-            {initialsFor(u.fullName)}
-          </div>
-        ))}
+        {shown.map((u) => {
+          const display = friendlyName(u.fullName)
+          return (
+            <div
+              key={u.userId}
+              title={display}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white ring-2 ring-white/40"
+              style={{ backgroundColor: colorFor(u.userId) }}
+            >
+              {initialsFor(display)}
+            </div>
+          )
+        })}
         {overflow > 0 && (
           <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white bg-gray-500 ring-2 ring-white/40">
             +{overflow}

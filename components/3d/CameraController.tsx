@@ -20,6 +20,16 @@ export interface FollowPose {
   t: [number, number, number]
 }
 
+/**
+ * Phase B.3: latest laser-pointer world position for followers to render. `seq`
+ * bumps per received packet so the renderer can detect staleness via frame
+ * deltas (no Date.now in the frame loop). Null = laser off / never started.
+ */
+export interface LaserState {
+  p: [number, number, number]
+  seq: number
+}
+
 interface CameraControllerProps {
   orbitControlsRef?: React.RefObject<unknown> | null
   editingWall: number | null
@@ -32,6 +42,8 @@ interface CameraControllerProps {
   isFollowing?: boolean
   /** Phase B.2: latest received presenter pose (read in the frame loop, never via state). */
   followPoseRef?: React.MutableRefObject<FollowPose | null>
+  /** Phase B.3: presenter is actively laser-pointing — suspend their orbit ("pointing mode"). */
+  isLaserPointing?: boolean
 }
 
 export function CameraController({ 
@@ -44,6 +56,7 @@ export function CameraController({
   onTransitionComplete,
   isFollowing = false,
   followPoseRef,
+  isLaserPointing = false,
 }: CameraControllerProps) {
   const { camera } = useThree()
   const SWOOSH_DURATION_SECONDS = 0.95
@@ -298,12 +311,14 @@ export function CameraController({
       camera.up.set(0, 1, 0)
     }
 
-    // Control arbitration: editing wins over following; the swoosh suspends both.
-    // While following, OrbitControls input is disabled so the user can't fight
-    // the followed camera (Escape / "Stop following" detaches upstream, which
-    // flips isFollowing and re-enables input on the next frame — so there is no
-    // way to get stuck disabled).
-    controls.enabled = editingWall === null && !isAnimating.current && !isFollowing
+    // Control arbitration: editing wins over following; the swoosh suspends both;
+    // and the presenter's laser "pointing mode" (B.3) also suspends orbit so a
+    // point-drag doesn't rotate the camera. While following, OrbitControls input
+    // is disabled so the user can't fight the followed camera. Escape / "Stop
+    // following" (follow) and releasing L (laser) flip their flags and re-enable
+    // input on the next frame — so there is no way to get stuck disabled.
+    controls.enabled =
+      editingWall === null && !isAnimating.current && !isFollowing && !isLaserPointing
     const c = controls as { enableDamping?: boolean }
     c.enableDamping = false
     controls.update()

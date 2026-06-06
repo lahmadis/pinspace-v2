@@ -7,8 +7,8 @@ import Link from 'next/link'
 import { Board } from '@/types'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
-import PresenceBar, { type PresentUser } from '@/components/3d/PresenceBar'
-import type { FollowPose } from '@/components/3d/CameraController'
+import PresenceBar, { type PresentUser, friendlyName, colorFor } from '@/components/3d/PresenceBar'
+import type { FollowPose, LaserState } from '@/components/3d/CameraController'
 import { ArrowLeft, Share2, Settings, Box, ChevronDown, Menu, X, Presentation } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
@@ -103,6 +103,11 @@ export default function StudioPage() {
   const liveChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const followPoseRef = useRef<FollowPose | null>(null)
   const [isFollowing, setIsFollowing] = useState(false)
+  // Phase B.3: laser pointer. laserRef holds only the latest received laser pose
+  // (written per "laser" message — never setState). isLaserActive = the local
+  // presenter is holding the laser key (low-frequency UI state).
+  const laserRef = useRef<LaserState | null>(null)
+  const [isLaserActive, setIsLaserActive] = useState(false)
 
   const isDemo = searchParams?.get('demo') === 'true'
 
@@ -545,6 +550,10 @@ export default function StudioPage() {
       config: { broadcast: { self: false } },
     })
     liveChannelRef.current = channel
+    // Phase B.3: monotonic seq so the laser renderer can tell a fresh packet from
+    // a repeat and time out a stale pointer via frame deltas (no Date.now in the
+    // frame loop). Lives in the effect closure; resets per room.
+    let laserSeq = 0
     channel
       .on('broadcast', { event: 'cam' }, (msg: { payload?: FollowPose }) => {
         const payload = msg.payload
@@ -552,11 +561,21 @@ export default function StudioPage() {
           followPoseRef.current = payload
         }
       })
+      .on('broadcast', { event: 'laser' }, (msg: { payload?: { p?: [number, number, number]; off?: boolean } }) => {
+        const payload = msg.payload
+        if (!payload || payload.off || !Array.isArray(payload.p)) {
+          laserRef.current = null
+          return
+        }
+        laserSeq += 1
+        laserRef.current = { p: payload.p, seq: laserSeq }
+      })
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
       liveChannelRef.current = null
       followPoseRef.current = null
+      laserRef.current = null
     }
   }, [roomId, isDemo])
 
@@ -639,6 +658,38 @@ export default function StudioPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [isFollowing])
 
+  // Phase B.3: laser pointer is a HOLD gesture — holding "L" while presenting
+  // (and not typing) turns the cursor into a laser; releasing it stops. Only the
+  // presenter can point. Bound only while presenting; cleanup also clears the
+  // flag if presenting ends mid-hold (the broadcaster then sends one { off }).
+  useEffect(() => {
+    if (!isPresenter) return
+    const isTypingTarget = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (!t) return false
+      return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable
+    }
+    const down = (e: KeyboardEvent) => {
+      if ((e.key === 'l' || e.key === 'L') && !e.repeat && !isTypingTarget(e)) {
+        setIsLaserActive(true)
+      }
+    }
+    const up = (e: KeyboardEvent) => {
+      if (e.key === 'l' || e.key === 'L') setIsLaserActive(false)
+    }
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+      setIsLaserActive(false)
+    }
+  }, [isPresenter])
+
+  // Phase B.3: deterministic dot color for the active presenter (same palette as
+  // PresenceBar avatars). Irrelevant when nobody is presenting (dot stays hidden).
+  const laserColor = presenter ? colorFor(presenter.userId) : '#22d3ee'
+
   const handleReconfigureWalls = () => {
     setFloorEditorMode('walls')
     setFloorEditorOpen(true)
@@ -706,14 +757,14 @@ export default function StudioPage() {
           role="status"
         >
           <Presentation className="w-4 h-4 text-white" />
-          <span className="text-white/90 text-xs font-medium">{presenter!.fullName} is presenting</span>
+          <span className="text-white/90 text-xs font-medium">{friendlyName(presenter!.fullName)} is presenting</span>
           {/* Phase B.2: follow toggle. Default is following; break away to orbit
               freely (also via Escape), or rejoin. */}
           <button
             onClick={() => setIsFollowing((v) => !v)}
             className="ml-1 px-2 py-0.5 rounded-md bg-white/15 hover:bg-white/25 text-white text-xs font-medium transition-colors"
           >
-            {isFollowing ? 'Stop following' : `Follow ${presenter!.fullName}`}
+            {isFollowing ? 'Stop following' : `Follow ${friendlyName(presenter!.fullName)}`}
           </button>
         </div>
       )}
@@ -892,7 +943,7 @@ export default function StudioPage() {
                 >
                   <Presentation className="w-4 h-4" />
                   {someoneElsePresenting
-                    ? `${presenter!.fullName} is presenting`
+                    ? `${friendlyName(presenter!.fullName)} is presenting`
                     : isPresenter
                       ? 'Stop presenting'
                       : 'Present'}
@@ -972,7 +1023,7 @@ export default function StudioPage() {
                       >
                         <Presentation className="w-4 h-4 text-blue-600" />
                         {someoneElsePresenting
-                          ? `${presenter!.fullName} is presenting`
+                          ? `${friendlyName(presenter!.fullName)} is presenting`
                           : isPresenter
                             ? 'Stop presenting'
                             : 'Present'}
@@ -1006,6 +1057,9 @@ export default function StudioPage() {
             isPresenter={isPresenter}
             isFollowing={isFollowing}
             followPoseRef={followPoseRef}
+            isLaserActive={isLaserActive}
+            laserRef={laserRef}
+            laserColor={laserColor}
             onWallConfigChange={(config) => {
               setWallConfig(config)
               persistWallConfig(config)
