@@ -15,7 +15,7 @@ import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import PresenceBar, { type PresentUser, friendlyName, colorFor } from '@/components/3d/PresenceBar'
 import { LaserPointer } from '@/components/3d/LaserPointer'
-import type { FollowPose, LaserState, LbViewport, LbCursorState } from '@/components/3d/CameraController'
+import type { FollowPose, LaserState, LbViewport, LbCursorState, CritDirtySignal } from '@/components/3d/CameraController'
 import { Presentation } from 'lucide-react'
 
 interface WallDimensions {
@@ -217,6 +217,8 @@ export default function CritPage() {
   const [isFollowing, setIsFollowing] = useState(false)
   // Board the presenter has open in the lightbox (null = closed), from "lb".
   const [followLightboxBoardId, setFollowLightboxBoardId] = useState<string | null>(null)
+  // Phase B.5: debounced peer trace/callout-edit signal → LightboxModal refetch.
+  const [critDirty, setCritDirty] = useState<CritDirtySignal | null>(null)
   // Realtime channels + the per-message refs consumed in frame loops (NEVER
   // setState per message — same discipline as the member page).
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
@@ -409,6 +411,10 @@ export default function CritPage() {
     liveChannelRef.current = channel
     let laserSeq = 0
     let lbCursorSeq = 0
+    // Phase B.5: crit-dirty debounce state (per-channel-lifetime closure).
+    let critDirtySeq = 0
+    let critDirtyPending: { boardId: string; trace: boolean; callout: boolean } | null = null
+    let critDirtyTimer: ReturnType<typeof setTimeout> | null = null
     channel
       .on('broadcast', { event: 'cam' }, (msg: { payload?: FollowPose }) => {
         const p = msg.payload
@@ -439,6 +445,26 @@ export default function CritPage() {
         lbCursorSeq += 1
         lbCursorRef.current = { cx: p.cx, cy: p.cy, seq: lbCursorSeq }
       })
+      // Phase B.5: a peer (member or guest) saved a trace/callout — debounce and
+      // hand to LightboxModal to refetch via the guest-token path. Guests both
+      // send (from LightboxModal saves) and receive crit-dirty; this does not
+      // touch the cam/laser/lb broadcast rule.
+      .on('broadcast', { event: 'crit-dirty' }, (msg: { payload?: { boardId?: string; kind?: 'trace' | 'callout' } }) => {
+        const p = msg.payload
+        if (!p?.boardId || (p.kind !== 'trace' && p.kind !== 'callout')) return
+        if (!critDirtyPending || critDirtyPending.boardId !== p.boardId) {
+          critDirtyPending = { boardId: p.boardId, trace: false, callout: false }
+        }
+        if (p.kind === 'trace') critDirtyPending.trace = true
+        else critDirtyPending.callout = true
+        if (critDirtyTimer) clearTimeout(critDirtyTimer)
+        critDirtyTimer = setTimeout(() => {
+          critDirtyTimer = null
+          const pend = critDirtyPending
+          critDirtyPending = null
+          if (pend) { critDirtySeq += 1; setCritDirty({ ...pend, seq: critDirtySeq }) }
+        }, 500)
+      })
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
@@ -447,6 +473,7 @@ export default function CritPage() {
       laserRef.current = null
       lbViewportRef.current = null
       lbCursorRef.current = null
+      if (critDirtyTimer) clearTimeout(critDirtyTimer)
     }
   }, [roomId])
 
@@ -755,6 +782,7 @@ export default function CritPage() {
         viewportTargetRef={lbViewportRef}
         lbCursorRef={lbCursorRef}
         cursorColor={laserColor}
+        critDirty={critDirty}
       />
     </div>
   )

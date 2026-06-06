@@ -54,6 +54,19 @@ export interface LbCursorState {
   seq: number
 }
 
+/**
+ * Phase B.5: debounced "a peer changed traces/callouts on this board" signal.
+ * Built on the page from incoming "crit-dirty" broadcasts (ref + debounce); the
+ * lightbox refetches the matching kind(s) for boardId when seq changes. boardId
+ * lets the lightbox ignore signals for a board it isn't showing.
+ */
+export interface CritDirtySignal {
+  boardId: string
+  trace: boolean
+  callout: boolean
+  seq: number
+}
+
 interface CameraControllerProps {
   orbitControlsRef?: React.RefObject<unknown> | null
   editingWall: number | null

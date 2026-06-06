@@ -65,6 +65,8 @@ interface LightboxModalProps {
   lbCursorRef?: React.MutableRefObject<{ cx: number; cy: number; seq: number } | null>
   /** Phase B.3.2: presenter's deterministic color for the lightbox cursor dot (matches the 3D dot). */
   cursorColor?: string
+  /** Phase B.5: debounced peer-edit signal — refetch traces/callouts for boardId when seq changes. */
+  critDirty?: { boardId: string; trace: boolean; callout: boolean; seq: number } | null
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -112,7 +114,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee' }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -167,6 +169,17 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // imperatively in the smooth-apply loop.
   const presenterCursorFracRef = useRef<{ cx: number; cy: number } | null>(null)
   const lbCursorDotRef = useRef<HTMLDivElement>(null)
+  // Phase B.5: last crit-dirty seq we refetched for, so deferred re-runs don't refetch twice.
+  const handledCritSeqRef = useRef(0)
+
+  // Phase B.5: ping peers (members + guests) that this board's traces/callouts
+  // changed, so their open lightbox refetches. Fire-and-forget on the shared
+  // studio-live channel after a successful save; no logging.
+  const sendCritDirty = (kind: 'trace' | 'callout') => {
+    const ch = liveChannelRef?.current
+    if (!ch || !board) return
+    ch.send({ type: 'broadcast', event: 'crit-dirty', payload: { boardId: board.id, kind } })
+  }
 
   // ---- Anchored callouts (Phase A.3) -------------------------------------
   // A NEW overlay system, fully separate from the legacy unanchored comment
@@ -598,6 +611,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       setComposer(null)
       setComposerText('')
       setActiveThreadRootId(data.comment.id)
+      sendCritDirty('callout')
     } catch (err) {
       console.error('Error adding callout:', err)
       setBoardComments((prev) => prev.filter((c) => c.id !== tempId))
@@ -638,6 +652,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       }
       setBoardComments((prev) => prev.map((c) => (c.id === tempId ? data.comment : c)))
       setReplyText('')
+      sendCritDirty('callout')
     } catch (err) {
       console.error('Error replying to callout:', err)
       setBoardComments((prev) => prev.filter((c) => c.id !== tempId))
@@ -667,6 +682,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       setBoardComments((prev) => prev.map((c) => (c.id === id ? data.comment : c)))
       setEditingCalloutId(null)
       setEditingCalloutText('')
+      sendCritDirty('callout')
     } catch (err) {
       console.error('Error editing callout:', err)
       setCalloutError('Failed to edit callout')
@@ -694,6 +710,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       }
       setBoardComments((prev) => prev.filter((c) => c.id !== id && c.parentId !== id))
       if (activeThreadRootId === id) setActiveThreadRootId(null)
+      sendCritDirty('callout')
     } catch (err) {
       console.error('Error deleting callout:', err)
       setCalloutError('Failed to delete callout')
@@ -721,6 +738,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         return
       }
       setBoardComments((prev) => prev.map((c) => (c.id === rootId ? data.comment : c)))
+      sendCritDirty('callout')
     } catch (err) {
       console.error('Error resolving callout:', err)
       setBoardComments((prev) => prev.map((c) => (c.id === rootId ? { ...c, resolved: !nextResolved } : c)))
@@ -787,6 +805,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         return
       }
       traceSaveFailedRef.current = false
+      sendCritDirty('trace')
     } catch {
       if (!traceSaveFailedRef.current) {
         traceSaveFailedRef.current = true
@@ -856,6 +875,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         toast.error('Couldn’t clear your trace.')
       } else if (res.ok) {
         traceSaveFailedRef.current = false
+        sendCritDirty('trace')
       }
     } catch {
       // Local already cleared; leave it cleared.
@@ -1070,6 +1090,26 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [viewportDriven, isOpen, getViewportFraction, applyViewportFraction, viewportTargetRef, viewportImageFractionToContainerPoint, lbCursorRef])
+
+  // Phase B.5: a peer changed traces/callouts on a board. The page debounced the
+  // "crit-dirty" pings into this signal; here we refetch the matching kind(s) via
+  // the EXISTING fetch path (member API or guest-token API, same fns used on open)
+  // — but only for the board we're showing. Deferred while local work is in flight
+  // so a refetch can't clobber it: an active stroke (drawingPoints), or an in-
+  // flight callout post/reply/edit/delete. These are in the deps, so when they
+  // clear the effect re-runs and handles the pending signal. Trace refetch is
+  // itself non-clobbering — my own strokes live in myStrokes (gated by
+  // tracesInitedForBoardRef, untouched by fetchBoardTraces); in-progress reply
+  // text / composer are separate state, also untouched by fetchBoardComments.
+  useEffect(() => {
+    if (!critDirty || !board || critDirty.boardId !== board.id) return
+    if (handledCritSeqRef.current === critDirty.seq) return
+    if (drawingPoints !== null || composerPosting || replyPosting || savingCalloutId || deletingCalloutId) return
+    handledCritSeqRef.current = critDirty.seq
+    if (critDirty.trace) fetchBoardTraces()
+    if (critDirty.callout) fetchBoardComments()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [critDirty, board?.id, drawingPoints !== null, composerPosting, replyPosting, savingCalloutId, deletingCalloutId])
 
   const handlePost = async () => {
     if (!board || !newComment.trim() || posting) return
