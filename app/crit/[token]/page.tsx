@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
@@ -12,6 +12,11 @@ import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
 import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
+import PresenceBar, { type PresentUser, friendlyName, colorFor } from '@/components/3d/PresenceBar'
+import { LaserPointer } from '@/components/3d/LaserPointer'
+import type { FollowPose, LaserState, LbViewport } from '@/components/3d/CameraController'
+import { Presentation } from 'lucide-react'
 
 interface WallDimensions {
   height: number
@@ -41,14 +46,27 @@ function getControls(ref: React.RefObject<unknown>): OrbitControlsType | null {
   return r as OrbitControlsType
 }
 
-function CrispOrbitRestore({ orbitControlsRef }: { orbitControlsRef: React.RefObject<unknown> }) {
+function CrispOrbitRestore({
+  orbitControlsRef,
+  isFollowing = false,
+  followPoseRef,
+}: {
+  orbitControlsRef: React.RefObject<unknown>
+  /** Phase B.4: guest auto-follows the presenter's camera. */
+  isFollowing?: boolean
+  /** Phase B.4: latest "cam" pose (read in the frame loop, never via state). */
+  followPoseRef?: React.MutableRefObject<FollowPose | null>
+}) {
   const { camera } = useThree()
   const restoreOnNextFrame = useRef(false)
   const positionOnEnd = useRef(new THREE.Vector3())
   const targetOnEnd = useRef(new THREE.Vector3())
   const endListenerAdded = useRef(false)
+  // Phase B.4: reusable scratch vectors for the follow lerp (no per-frame alloc).
+  const followPosVec = useRef(new THREE.Vector3())
+  const followTargetVec = useRef(new THREE.Vector3())
 
-  useFrame(() => {
+  useFrame((_state, delta) => {
     const controls = getControls(orbitControlsRef)
     if (!controls) return
 
@@ -72,6 +90,23 @@ function CrispOrbitRestore({ orbitControlsRef }: { orbitControlsRef: React.RefOb
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(controls as any).screenSpacePanning = true
 
+    // Phase B.4: follow the presenter's broadcast camera (same ref+lerp pattern as
+    // the member CameraController). Lerp toward the latest pose so ~10Hz packets
+    // render continuously. While following, OrbitControls input is disabled so the
+    // guest can't fight the followed camera; Escape / "Stop following" flips
+    // isFollowing and re-enables input next frame — no stuck-disabled state.
+    const pose = followPoseRef?.current
+    if (isFollowing && pose) {
+      const alpha = 1 - Math.exp(-delta * 10)
+      followPosVec.current.set(pose.p[0], pose.p[1], pose.p[2])
+      followTargetVec.current.set(pose.t[0], pose.t[1], pose.t[2])
+      camera.position.lerp(followPosVec.current, alpha)
+      controls.target.lerp(followTargetVec.current, alpha)
+      camera.lookAt(controls.target)
+      camera.up.set(0, 1, 0)
+    }
+    controls.enabled = !isFollowing
+
     controls.update()
 
     if (restoreOnNextFrame.current) {
@@ -84,7 +119,15 @@ function CrispOrbitRestore({ orbitControlsRef }: { orbitControlsRef: React.RefOb
   return null
 }
 
-function CritViewCameraControls({ wallConfig }: { wallConfig: WallConfig | null }) {
+function CritViewCameraControls({
+  wallConfig,
+  isFollowing = false,
+  followPoseRef,
+}: {
+  wallConfig: WallConfig | null
+  isFollowing?: boolean
+  followPoseRef?: React.MutableRefObject<FollowPose | null>
+}) {
   const orbitControlsRef = useRef<OrbitControlsType | null>(null)
   const maxWallWidth = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.width)) : 8
   const maxWallHeight = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.height)) : 8
@@ -117,7 +160,11 @@ function CritViewCameraControls({ wallConfig }: { wallConfig: WallConfig | null 
 
   return (
     <>
-      <CrispOrbitRestore orbitControlsRef={orbitControlsRef} />
+      <CrispOrbitRestore
+        orbitControlsRef={orbitControlsRef}
+        isFollowing={isFollowing}
+        followPoseRef={followPoseRef}
+      />
       <OrbitControls
         ref={orbitControlsRef}
         enableDamping={false}
@@ -159,6 +206,39 @@ export default function CritPage() {
   const shiftPressedRef = useRef(false)
   const compareBoardIdsRef = useRef<string[]>([])
   const boardsRef = useRef<Board[]>([])
+
+  // ---- Phase B.4: live-crit spectator (read-only) ----
+  // The room id (added to state so the realtime effects can key on it; the load
+  // effect previously kept it as a local var only).
+  const [roomId, setRoomId] = useState<string | null>(null)
+  // Other people in the room (members + guests), from studio-presence.
+  const [presentUsers, setPresentUsers] = useState<PresentUser[]>([])
+  // Auto-follow the presenter's camera/lightbox; break away with Escape / button.
+  const [isFollowing, setIsFollowing] = useState(false)
+  // Board the presenter has open in the lightbox (null = closed), from "lb".
+  const [followLightboxBoardId, setFollowLightboxBoardId] = useState<string | null>(null)
+  // Realtime channels + the per-message refs consumed in frame loops (NEVER
+  // setState per message — same discipline as the member page).
+  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const liveChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const followPoseRef = useRef<FollowPose | null>(null)
+  const laserRef = useRef<LaserState | null>(null)
+  const lbViewportRef = useRef<LbViewport | null>(null)
+
+  // This guest's own presence id, so PresenceBar excludes self.
+  const currentUserId = guest?.tokenId ? `guest:${guest.tokenId}` : null
+
+  // Active presenter, derived from presence — guests can NEVER be presenter
+  // (ignored by key prefix even if a malformed payload claims isPresenting).
+  const presenter = useMemo(() => {
+    let best: PresentUser | null = null
+    for (const u of presentUsers) {
+      if (!u.userId || u.userId.startsWith('guest:') || !u.isPresenting) continue
+      if (!best || (u.joinedAt ?? Infinity) < (best.joinedAt ?? Infinity)) best = u
+    }
+    return best ? { userId: best.userId, fullName: best.fullName } : null
+  }, [presentUsers])
+  const laserColor = presenter ? colorFor(presenter.userId) : '#22d3ee'
 
   const nameStorageKey = `crit-guest-name-${token}`
 
@@ -219,6 +299,7 @@ export default function CritPage() {
         setBoards(data.boards || [])
         const workspaceId: string | null = data.room?.workspaceId ?? null
         const roomId: string | null = data.room?.id ?? null
+        setRoomId(roomId)
         setRoomName(data.room?.name ?? null)
         const g: GuestInfo | null = data.guest ?? null
         setGuest(g)
@@ -264,6 +345,130 @@ export default function CritPage() {
     document.title = roomName ? `${roomName} – Guest critique` : 'Guest critique – PinSpace'
   }, [roomName])
 
+  // Phase B.4: presence. Track this guest on the SAME studio-presence channel
+  // members use, keyed guest:<tokenId>, isPresenting:false (guests can't present).
+  // Anon client works — presence is a public channel (no auth/RLS). Only once the
+  // room is loaded and a name is entered. removeChannel on cleanup.
+  useEffect(() => {
+    if (!isSupabaseConfigured || !roomId || loadState !== 'ok') return
+    const tokenId = guest?.tokenId
+    if (!tokenId || !guestName) return
+    let cancelled = false
+    const myId = `guest:${tokenId}`
+    const channel = supabase.channel(`studio-presence:${roomId}`, {
+      config: { presence: { key: myId } },
+    })
+    presenceChannelRef.current = channel
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState() as Record<
+          string,
+          Array<{ userId?: string; fullName?: string; currentWallIndex?: number | null; isPresenting?: boolean; joinedAt?: number }>
+        >
+        const flat: PresentUser[] = Object.values(state)
+          .flat()
+          .map((m) => ({
+            userId: m.userId ?? '',
+            fullName: m.fullName ?? 'Someone',
+            wallIndex: m.currentWallIndex ?? null,
+            isPresenting: m.isPresenting ?? false,
+            joinedAt: m.joinedAt,
+          }))
+        if (!cancelled) setPresentUsers(flat)
+      })
+      .subscribe(async (status: string) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            userId: myId,
+            fullName: `${guestName} (guest)`,
+            joinedAt: Date.now(),
+            isGuest: true,
+            isPresenting: false,
+          })
+        }
+      })
+    return () => {
+      cancelled = true
+      supabase.removeChannel(channel)
+      presenceChannelRef.current = null
+      setPresentUsers([])
+    }
+  }, [roomId, guest?.tokenId, guestName, loadState])
+
+  // Phase B.4: live channel (broadcast only) — receive the presenter's camera
+  // ("cam"), cursor ("laser"), and lightbox follow ("lb"/"lbv"). RECEIVE ONLY:
+  // this page never sends on studio-live (guests are read-only spectators). Each
+  // high-frequency stream writes a ref (never setState); "lb" is a discrete
+  // open/close event so setState is correct there. Refs nulled on cleanup.
+  useEffect(() => {
+    if (!isSupabaseConfigured || !roomId) return
+    const channel = supabase.channel(`studio-live:${roomId}`, {
+      config: { broadcast: { self: false } },
+    })
+    liveChannelRef.current = channel
+    let laserSeq = 0
+    channel
+      .on('broadcast', { event: 'cam' }, (msg: { payload?: FollowPose }) => {
+        const p = msg.payload
+        if (p && Array.isArray(p.p) && Array.isArray(p.t)) followPoseRef.current = p
+      })
+      .on('broadcast', { event: 'laser' }, (msg: { payload?: { p?: [number, number, number]; off?: boolean } }) => {
+        const p = msg.payload
+        if (!p || p.off || !Array.isArray(p.p)) { laserRef.current = null; return }
+        laserSeq += 1
+        laserRef.current = { p: p.p, seq: laserSeq }
+      })
+      .on('broadcast', { event: 'lb' }, (msg: { payload?: { boardId?: string; off?: boolean } }) => {
+        const p = msg.payload
+        setFollowLightboxBoardId(p && !p.off && p.boardId ? p.boardId : null)
+      })
+      .on('broadcast', { event: 'lbv' }, (msg: { payload?: { z?: number; cx?: number; cy?: number } }) => {
+        const p = msg.payload
+        if (!p || typeof p.z !== 'number' || typeof p.cx !== 'number' || typeof p.cy !== 'number') return
+        lbViewportRef.current = { z: p.z, cx: p.cx, cy: p.cy }
+      })
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+      liveChannelRef.current = null
+      followPoseRef.current = null
+      laserRef.current = null
+      lbViewportRef.current = null
+    }
+  }, [roomId])
+
+  // Phase B.4: auto-follow whenever a presenter exists; reset when they stop.
+  // Keyed on the presenter id so a new presenter re-arms, while a manual break-away
+  // (which only flips isFollowing) stays detached for the current presenter.
+  const followTargetId = presenter ? presenter.userId : null
+  useEffect(() => {
+    setIsFollowing(followTargetId !== null)
+  }, [followTargetId])
+
+  // Break-away: Escape detaches the following guest so they can orbit freely.
+  useEffect(() => {
+    if (!isFollowing) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsFollowing(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isFollowing])
+
+  // Phase B.4: lightbox follow — while following, mirror the presenter's open
+  // board into the guest lightbox (open via the boards the guest token already
+  // fetched — never the member API). Close when the presenter closes.
+  useEffect(() => {
+    if (!isFollowing) return
+    const id = followLightboxBoardId
+    if (!id) { setSelectedBoard(null); return }
+    setSelectedBoard((prev) => {
+      if (prev?.id === id) return prev
+      const next = boards.find((b) => b.id === id)
+      return next ?? prev
+    })
+  }, [isFollowing, followLightboxBoardId, boards])
+
   const handleEnterName = () => {
     const name = nameInput.trim()
     if (!name) return
@@ -273,6 +478,9 @@ export default function CritPage() {
   }
 
   const handleBoardClick = (board: Board) => {
+    // Phase B.4: while following, the lightbox is presenter-driven — block manual
+    // open so it can't fight the follow stream. Break away (Escape) to interact.
+    if (isFollowing) return
     if (shiftPressedRef.current) {
       setCompareBoardIds((prev) =>
         prev.includes(board.id)
@@ -398,6 +606,26 @@ export default function CritPage() {
         </div>
       </div>
 
+      {/* Phase B.4: who else is here (members + other guests; self excluded). */}
+      <PresenceBar users={presentUsers} currentUserId={currentUserId} />
+      {/* Phase B.4: presenter indicator + follow toggle. A guest is never the
+          presenter, so any presenter is "someone else" — always show the banner. */}
+      {presenter && (
+        <div
+          className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3 py-2 bg-white/10 backdrop-blur-md rounded-xl shadow-lg border border-white/20"
+          role="status"
+        >
+          <Presentation className="w-4 h-4 text-white" />
+          <span className="text-white/90 text-xs font-medium">{friendlyName(presenter.fullName)} is presenting</span>
+          <button
+            onClick={() => setIsFollowing((v) => !v)}
+            className="ml-1 px-2 py-0.5 rounded-md bg-white/15 hover:bg-white/25 text-white text-xs font-medium transition-colors"
+          >
+            {isFollowing ? 'Stop following' : `Follow ${friendlyName(presenter.fullName)}`}
+          </button>
+        </div>
+      )}
+
       <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10 bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full shadow-lg border border-gray-200">
         <p className="text-sm text-gray-700">
           <span className="font-semibold">💬 Click boards</span> to review
@@ -476,7 +704,13 @@ export default function CritPage() {
           />
         ))}
 
-        <CritViewCameraControls wallConfig={wallConfig} />
+        <CritViewCameraControls
+          wallConfig={wallConfig}
+          isFollowing={isFollowing}
+          followPoseRef={followPoseRef}
+        />
+        {/* Phase B.4: presenter cursor dot (identical to the member view). */}
+        <LaserPointer laserRef={laserRef} color={laserColor} />
       </Canvas>
 
       <LightboxModal
@@ -499,6 +733,13 @@ export default function CritPage() {
         guestTokenId={guest?.tokenId ?? null}
         guestCanComment={!!guest?.canComment}
         guestCanTrace={!!guest?.canTrace}
+        // Phase B.4: lightbox follow. isPresenter is hardwired false — a guest
+        // never broadcasts "lbv". While following with a board open, the viewport
+        // is presenter-driven (local zoom/pan disabled); break-away restores it.
+        liveChannelRef={liveChannelRef}
+        isPresenter={false}
+        viewportDriven={isFollowing && selectedBoard !== null}
+        viewportTargetRef={lbViewportRef}
       />
     </div>
   )

@@ -647,7 +647,9 @@ export default function StudioPage() {
   const presenter = useMemo(() => {
     let best: PresentUser | null = null
     for (const u of presentUsers) {
-      if (!u.userId || !u.isPresenting) continue
+      // Phase B.4: guests (key "guest:<tokenId>") spectate live crit but can NEVER
+      // present — ignore them here even if a malformed payload claims isPresenting.
+      if (!u.userId || u.userId.startsWith('guest:') || !u.isPresenting) continue
       if (!best || (u.joinedAt ?? Infinity) < (best.joinedAt ?? Infinity)) best = u
     }
     return best ? { userId: best.userId, fullName: best.fullName } : null
