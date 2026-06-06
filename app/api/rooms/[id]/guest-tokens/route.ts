@@ -56,14 +56,7 @@ export async function POST(
   const label = typeof body.label === 'string' ? body.label.trim() : ''
   if (!label) return NextResponse.json({ error: 'label is required' }, { status: 400 })
 
-  let expiresAt: string | null = null
-  if (body.expiresAt != null && body.expiresAt !== '') {
-    const d = new Date(body.expiresAt)
-    if (Number.isNaN(d.getTime())) {
-      return NextResponse.json({ error: 'expiresAt must be a valid ISO timestamp' }, { status: 400 })
-    }
-    expiresAt = d.toISOString()
-  }
+  // Guest links never expire (Phase A.5): revoke is the only way to end access.
   const canComment = body.canComment !== false
   const canTrace = body.canTrace !== false
 
@@ -79,7 +72,7 @@ export async function POST(
       label: label.slice(0, 120),
       can_comment: canComment,
       can_trace: canTrace,
-      expires_at: expiresAt,
+      expires_at: null,
       created_by: auth.userId,
     })
     .select()
@@ -96,7 +89,6 @@ export async function POST(
       id: inserted.id,
       label: inserted.label,
       createdAt: inserted.created_at,
-      expiresAt: inserted.expires_at,
       revoked: inserted.revoked,
       canComment: inserted.can_comment,
       canTrace: inserted.can_trace,
@@ -119,7 +111,7 @@ export async function GET(
 
   const { data: tokens, error } = await admin
     .from('guest_tokens')
-    .select('id, label, created_at, expires_at, revoked, can_comment, can_trace')
+    .select('id, label, created_at, revoked, can_comment, can_trace')
     .eq('room_id', roomId)
     .order('created_at', { ascending: false })
 
@@ -133,7 +125,6 @@ export async function GET(
       id: t.id,
       label: t.label,
       createdAt: t.created_at,
-      expiresAt: t.expires_at,
       revoked: t.revoked,
       canComment: t.can_comment,
       canTrace: t.can_trace,
@@ -171,6 +162,42 @@ export async function PATCH(
   if (error) {
     console.error('Failed to revoke guest token:', error)
     return NextResponse.json({ error: 'Failed to revoke guest link' }, { status: 500 })
+  }
+
+  return NextResponse.json({ success: true })
+}
+
+// DELETE — permanently remove a guest token row by id (owner only). Any callouts
+// or traces the guest authored SURVIVE: their guest_token_id FK is ON DELETE SET
+// NULL and the rows render from the stored author_name (see migration 029).
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const roomId = params.id
+  const auth = await requireSession()
+  if ('error' in auth) return auth.error
+  const admin = supabaseServiceRole()
+  const gate = await requireRoomOwner(admin, roomId, auth.userId)
+  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status })
+
+  const tokenId = request.nextUrl.searchParams.get('tokenId')
+  if (!tokenId) return NextResponse.json({ error: 'tokenId is required' }, { status: 400 })
+
+  // The token must belong to this room (prevents cross-room deletion).
+  const { data: tok } = await admin
+    .from('guest_tokens')
+    .select('id, room_id')
+    .eq('id', tokenId)
+    .maybeSingle()
+  if (!tok || tok.room_id !== roomId) {
+    return NextResponse.json({ error: 'Guest link not found' }, { status: 404 })
+  }
+
+  const { error } = await admin.from('guest_tokens').delete().eq('id', tokenId)
+  if (error) {
+    console.error('Failed to delete guest token:', error)
+    return NextResponse.json({ error: 'Failed to delete guest link' }, { status: 500 })
   }
 
   return NextResponse.json({ success: true })
