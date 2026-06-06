@@ -12,6 +12,10 @@ export interface PresentUser {
   fullName: string
   /** Wall index this user is currently editing (0-based), or null when not in a wall. */
   wallIndex?: number | null
+  /** Whether this user is currently presenting (Phase B.1 live-crit presenter state). */
+  isPresenting?: boolean
+  /** ms-epoch the user was last (re-)tracked; used to break presenter ties. */
+  joinedAt?: number
 }
 
 /** Deterministic avatar color from a user id, so a given user is always the same hue. */

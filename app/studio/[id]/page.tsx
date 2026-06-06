@@ -8,7 +8,7 @@ import { Board } from '@/types'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
 import PresenceBar, { type PresentUser } from '@/components/3d/PresenceBar'
-import { ArrowLeft, Share2, Settings, Box, ChevronDown, Menu, X } from 'lucide-react'
+import { ArrowLeft, Share2, Settings, Box, ChevronDown, Menu, X, Presentation } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import { DEFAULT_WALL_CONFIG, type WallConfig } from '@/lib/wallLayout'
@@ -132,7 +132,9 @@ export default function StudioPage() {
   // Presence channel + identity, hoisted so the re-track effect can update the
   // user's wall meta without tearing down and re-subscribing the channel.
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
-  const presenceMetaRef = useRef<{ userId: string; fullName: string } | null>(null)
+  // isPresenting lives here (not in React state) so the wall-change re-track
+  // effect preserves it via `...meta` instead of wiping it. Phase B.1.
+  const presenceMetaRef = useRef<{ userId: string; fullName: string; isPresenting: boolean } | null>(null)
   const presenceSubscribedRef = useRef(false)
 
   const isDemo = searchParams?.get('demo') === 'true'
@@ -526,7 +528,7 @@ export default function StudioPage() {
         user.email ||
         'Someone'
       setCurrentUserId(user.id)
-      presenceMetaRef.current = { userId: user.id, fullName }
+      presenceMetaRef.current = { userId: user.id, fullName, isPresenting: false }
 
       const channel = supabase.channel(`studio-presence:${roomId}`, {
         config: { presence: { key: user.id } },
@@ -536,7 +538,13 @@ export default function StudioPage() {
         .on('presence', { event: 'sync' }, () => {
           const state = channel.presenceState() as Record<
             string,
-            Array<{ userId?: string; fullName?: string; currentWallIndex?: number | null }>
+            Array<{
+              userId?: string
+              fullName?: string
+              currentWallIndex?: number | null
+              isPresenting?: boolean
+              joinedAt?: number
+            }>
           >
           const flat: PresentUser[] = Object.values(state)
             .flat()
@@ -544,18 +552,23 @@ export default function StudioPage() {
               userId: m.userId ?? '',
               fullName: m.fullName ?? 'Someone',
               wallIndex: m.currentWallIndex ?? null,
+              isPresenting: m.isPresenting ?? false,
+              joinedAt: m.joinedAt,
             }))
           setPresentUsers(flat)
         })
         .subscribe(async (status: string) => {
           if (status === 'SUBSCRIBED') {
             presenceSubscribedRef.current = true
-            // Track with the latest wall (read from ref to avoid a stale closure).
+            // Track with the latest wall + presenter flag (read from refs to
+            // avoid a stale closure, and so a Present toggle that fired before
+            // SUBSCRIBED is preserved here).
             await channel.track({
               userId: user.id,
               fullName,
               joinedAt: Date.now(),
               currentWallIndex: currentWallIndexRef.current,
+              isPresenting: presenceMetaRef.current?.isPresenting ?? false,
             })
           }
         })
@@ -583,6 +596,25 @@ export default function StudioPage() {
     ch.track({ ...meta, joinedAt: Date.now(), currentWallIndex })
   }, [currentWallIndex, isDemo])
 
+  // Phase B.1: toggle the local user's presenter flag. Updates the meta ref
+  // (so wall re-tracks preserve it) and re-tracks in place on the existing
+  // channel — the same pattern as the wall-index change, no channel teardown.
+  // No-op until presence is subscribed (and never fires in demo, where the
+  // presence effect returns early and the refs stay null/false).
+  const setPresenting = useCallback((value: boolean) => {
+    const meta = presenceMetaRef.current
+    if (!meta) return
+    presenceMetaRef.current = { ...meta, isPresenting: value }
+    const ch = presenceChannelRef.current
+    if (ch && presenceSubscribedRef.current) {
+      ch.track({
+        ...presenceMetaRef.current,
+        joinedAt: Date.now(),
+        currentWallIndex: currentWallIndexRef.current,
+      })
+    }
+  }, [])
+
   // Walls currently occupied by OTHER users (exclude self) — drives the 3D highlight.
   const othersEditingWalls = useMemo(() => {
     const s = new Set<number>()
@@ -593,6 +625,23 @@ export default function StudioPage() {
     }
     return s
   }, [presentUsers, currentUserId])
+
+  // Phase B.1: the single active presenter, derived from presence. If more than
+  // one user somehow has isPresenting (brief race — the UI otherwise prevents
+  // it), the lowest joinedAt wins so everyone agrees on the same presenter.
+  // Returns null when nobody is presenting (incl. after a presenter disconnects,
+  // since their presence row — and the flag — leaves the synced state).
+  const presenter = useMemo(() => {
+    let best: PresentUser | null = null
+    for (const u of presentUsers) {
+      if (!u.userId || !u.isPresenting) continue
+      if (!best || (u.joinedAt ?? Infinity) < (best.joinedAt ?? Infinity)) best = u
+    }
+    return best ? { userId: best.userId, fullName: best.fullName } : null
+  }, [presentUsers])
+
+  const isPresenter = !!presenter && presenter.userId === currentUserId
+  const someoneElsePresenting = !!presenter && presenter.userId !== currentUserId
 
   const handleReconfigureWalls = () => {
     setFloorEditorMode('walls')
@@ -652,6 +701,18 @@ export default function StudioPage() {
     <>
       <DemoBanner />
       {!isDemo && <PresenceBar users={presentUsers} currentUserId={currentUserId} />}
+      {/* Phase B.1: presenter indicator. Shown to everyone except the presenter
+          (they get the "Stop presenting" button). Sits just below PresenceBar;
+          style kept consistent with it. */}
+      {!isDemo && someoneElsePresenting && (
+        <div
+          className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3 py-2 bg-white/10 backdrop-blur-md rounded-xl shadow-lg border border-white/20"
+          role="status"
+        >
+          <Presentation className="w-4 h-4 text-white" />
+          <span className="text-white/90 text-xs font-medium">{presenter!.fullName} is presenting</span>
+        </div>
+      )}
       {/* Archive banner */}
       {isArchived && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-indigo-600 text-white text-sm font-medium text-center py-2 px-4">
@@ -808,6 +869,31 @@ export default function StudioPage() {
                   Reconfigure Walls
                 </button>
               )}
+
+              {/* Present toggle (Phase B.1). Three states: nobody presenting →
+                  "Present"; you are presenter → "Stop presenting"; someone else
+                  presenting → disabled "{name} is presenting". Hidden in demo
+                  (presence is inert there). */}
+              {!isDemo && (
+                <button
+                  onClick={() => setPresenting(!isPresenter)}
+                  disabled={someoneElsePresenting}
+                  className={`px-4 py-2.5 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2 ${
+                    someoneElsePresenting
+                      ? 'bg-white/5 opacity-60 cursor-not-allowed'
+                      : isPresenter
+                        ? 'bg-blue-600 hover:bg-blue-500'
+                        : 'bg-white/10 hover:bg-white/20'
+                  }`}
+                >
+                  <Presentation className="w-4 h-4" />
+                  {someoneElsePresenting
+                    ? `${presenter!.fullName} is presenting`
+                    : isPresenter
+                      ? 'Stop presenting'
+                      : 'Present'}
+                </button>
+              )}
             </div>
           )}
 
@@ -865,6 +951,27 @@ export default function StudioPage() {
                       >
                         <Settings className="w-4 h-4 text-indigo-600" />
                         Reconfigure Walls
+                      </button>
+                    )}
+                    {/* Present toggle (Phase B.1) — same three states as the
+                        desktop button. Disabled when another user is presenting. */}
+                    {!isDemo && (
+                      <button
+                        role="menuitem"
+                        onClick={() => { if (!someoneElsePresenting) { setShowStudioMenu(false); setPresenting(!isPresenter) } }}
+                        disabled={someoneElsePresenting}
+                        className={`w-full text-left px-4 py-3 text-sm font-medium flex items-center gap-2 border-t border-gray-100 ${
+                          someoneElsePresenting
+                            ? 'text-gray-400 cursor-not-allowed'
+                            : 'text-gray-900 hover:bg-gray-50'
+                        }`}
+                      >
+                        <Presentation className="w-4 h-4 text-blue-600" />
+                        {someoneElsePresenting
+                          ? `${presenter!.fullName} is presenting`
+                          : isPresenter
+                            ? 'Stop presenting'
+                            : 'Present'}
                       </button>
                     )}
                   </div>
