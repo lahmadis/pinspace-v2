@@ -15,7 +15,7 @@ import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import PresenceBar, { type PresentUser, friendlyName, colorFor } from '@/components/3d/PresenceBar'
 import { LaserPointer } from '@/components/3d/LaserPointer'
-import type { FollowPose, LaserState, LbViewport } from '@/components/3d/CameraController'
+import type { FollowPose, LaserState, LbViewport, LbCursorState } from '@/components/3d/CameraController'
 import { Presentation } from 'lucide-react'
 
 interface WallDimensions {
@@ -224,6 +224,7 @@ export default function CritPage() {
   const followPoseRef = useRef<FollowPose | null>(null)
   const laserRef = useRef<LaserState | null>(null)
   const lbViewportRef = useRef<LbViewport | null>(null)
+  const lbCursorRef = useRef<LbCursorState | null>(null)
 
   // This guest's own presence id, so PresenceBar excludes self.
   const currentUserId = guest?.tokenId ? `guest:${guest.tokenId}` : null
@@ -407,6 +408,7 @@ export default function CritPage() {
     })
     liveChannelRef.current = channel
     let laserSeq = 0
+    let lbCursorSeq = 0
     channel
       .on('broadcast', { event: 'cam' }, (msg: { payload?: FollowPose }) => {
         const p = msg.payload
@@ -427,6 +429,16 @@ export default function CritPage() {
         if (!p || typeof p.z !== 'number' || typeof p.cx !== 'number' || typeof p.cy !== 'number') return
         lbViewportRef.current = { z: p.z, cx: p.cx, cy: p.cy }
       })
+      // Phase B.3.2: presenter pointer over the lightbox image (~15Hz). Ref-only.
+      .on('broadcast', { event: 'lbc' }, (msg: { payload?: { cx?: number; cy?: number; off?: boolean } }) => {
+        const p = msg.payload
+        if (!p || p.off || typeof p.cx !== 'number' || typeof p.cy !== 'number') {
+          lbCursorRef.current = null
+          return
+        }
+        lbCursorSeq += 1
+        lbCursorRef.current = { cx: p.cx, cy: p.cy, seq: lbCursorSeq }
+      })
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
@@ -434,6 +446,7 @@ export default function CritPage() {
       followPoseRef.current = null
       laserRef.current = null
       lbViewportRef.current = null
+      lbCursorRef.current = null
     }
   }, [roomId])
 
@@ -740,6 +753,8 @@ export default function CritPage() {
         isPresenter={false}
         viewportDriven={isFollowing && selectedBoard !== null}
         viewportTargetRef={lbViewportRef}
+        lbCursorRef={lbCursorRef}
+        cursorColor={laserColor}
       />
     </div>
   )

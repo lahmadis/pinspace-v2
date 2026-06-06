@@ -61,6 +61,10 @@ interface LightboxModalProps {
   viewportDriven?: boolean
   /** Latest received presenter viewport (written per "lbv" message; smooth-applied, never via state). */
   viewportTargetRef?: React.MutableRefObject<{ z: number; cx: number; cy: number } | null>
+  /** Phase B.3.2: latest received presenter pointer-over-image (written per "lbc" message; positioned imperatively, never via state). */
+  lbCursorRef?: React.MutableRefObject<{ cx: number; cy: number; seq: number } | null>
+  /** Phase B.3.2: presenter's deterministic color for the lightbox cursor dot (matches the 3D dot). */
+  cursorColor?: string
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -108,7 +112,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee' }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -156,7 +160,13 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     getViewportFraction,
     applyViewportFraction,
     setInteractionEnabled,
+    imageFractionToContainerPoint: viewportImageFractionToContainerPoint,
   } = viewport
+  // Phase B.3.2: presenter pointer-over-image (image fraction or null=off), read
+  // by the lbc broadcast interval; and the follower's 2D dot div, positioned
+  // imperatively in the smooth-apply loop.
+  const presenterCursorFracRef = useRef<{ cx: number; cy: number } | null>(null)
+  const lbCursorDotRef = useRef<HTMLDivElement>(null)
 
   // ---- Anchored callouts (Phase A.3) -------------------------------------
   // A NEW overlay system, fully separate from the legacy unanchored comment
@@ -957,6 +967,52 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     return () => window.clearInterval(id)
   }, [isPresenter, isOpen, board, compareBoards.length, liveChannelRef, getViewportFraction])
 
+  // Phase B.3.2 — presenter pointer-over-image tracking. Wired onto the image
+  // container's pointer handlers (below); writes the latest image-fraction (or
+  // null when over the letterbox / off the image) into a ref. No-op for non-
+  // presenters. The lbc interval reads this ref.
+  const handlePresenterCursorMove = (e: React.PointerEvent) => {
+    if (!isPresenter) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const frac = viewport.containerPointToImageFraction(e.clientX - rect.left, e.clientY - rect.top)
+    presenterCursorFracRef.current =
+      frac && frac.x >= 0 && frac.x <= 1 && frac.y >= 0 && frac.y <= 1
+        ? { cx: frac.x, cy: frac.y }
+        : null
+  }
+  const handlePresenterCursorLeave = () => {
+    if (!isPresenter) return
+    presenterCursorFracRef.current = null
+  }
+
+  // Presenter: broadcast the pointer position over the image (~15Hz) as a sibling
+  // "lbc" event so followers render a 2D cursor dot. Sends continuously while over
+  // the image (so a still pointer stays visible — same as the 3D cursor) and one
+  // { off:true } when it leaves. Single raster image only. channel.send only; no
+  // setState, no logging.
+  useEffect(() => {
+    if (!isPresenter || !isOpen || !board) return
+    const url = board.fullImageUrl || board.thumbnailUrl
+    if (url?.toLowerCase().endsWith('.pdf') || compareBoards.length > 1) return
+    const channel = liveChannelRef?.current
+    if (!channel) return
+    let wasOff = false
+    const tick = () => {
+      const f = presenterCursorFracRef.current
+      if (!f) {
+        if (wasOff) return
+        wasOff = true
+        channel.send({ type: 'broadcast', event: 'lbc', payload: { off: true } })
+        return
+      }
+      wasOff = false
+      const r = (n: number) => Math.round(n * 1000) / 1000
+      channel.send({ type: 'broadcast', event: 'lbc', payload: { cx: r(f.cx), cy: r(f.cy) } })
+    }
+    const id = window.setInterval(tick, 66)
+    return () => window.clearInterval(id)
+  }, [isPresenter, isOpen, board, compareBoards.length, liveChannelRef])
+
   // Follower: while the viewport is presenter-driven, disable local zoom/pan.
   // Restored on break-away / not-following / unmount.
   useEffect(() => {
@@ -973,14 +1029,37 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     if (!viewportDriven || !isOpen) return
     let raf = 0
     let lastTs = 0
+    let cursorSeqSeen = -1
+    let cursorIdle = 0
     const tick = (ts: number) => {
       raf = requestAnimationFrame(tick)
-      const target = viewportTargetRef?.current
-      if (!target) { lastTs = ts; return }
-      const cur = getViewportFraction()
-      if (!cur) { lastTs = ts; return }
       const dt = lastTs ? Math.min((ts - lastTs) / 1000, 0.1) : 0
       lastTs = ts
+
+      // Phase B.3.2: position the presenter cursor dot over the image, mapped
+      // through the follower's CURRENT (mid-lerp) viewport transform so it lands
+      // on the same drawing spot at any zoom. Imperative (no setState). Hidden on
+      // null ref (off image / closed) or ~2s stale (same rule as the 3D dot).
+      const dot = lbCursorDotRef.current
+      if (dot) {
+        const c = lbCursorRef?.current
+        if (c && c.seq !== cursorSeqSeen) { cursorSeqSeen = c.seq; cursorIdle = 0 }
+        else cursorIdle += dt
+        const pt = c ? viewportImageFractionToContainerPoint(c.cx, c.cy) : null
+        if (c && cursorIdle <= 2 && pt) {
+          dot.style.left = `${pt.x}px`
+          dot.style.top = `${pt.y}px`
+          dot.style.display = 'block'
+        } else {
+          dot.style.display = 'none'
+        }
+      }
+
+      // Viewport lerp toward the presenter's framing (unchanged from B.3.1).
+      const target = viewportTargetRef?.current
+      if (!target) return
+      const cur = getViewportFraction()
+      if (!cur) return
       const dz = target.z - cur.z
       const dcx = target.cx - cur.cx
       const dcy = target.cy - cur.cy
@@ -990,7 +1069,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [viewportDriven, isOpen, getViewportFraction, applyViewportFraction, viewportTargetRef])
+  }, [viewportDriven, isOpen, getViewportFraction, applyViewportFraction, viewportTargetRef, viewportImageFractionToContainerPoint, lbCursorRef])
 
   const handlePost = async () => {
     if (!board || !newComment.trim() || posting) return
@@ -1650,9 +1729,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 className="relative w-full h-full flex items-center justify-center overflow-hidden"
                 style={{ touchAction: 'none' }}
                 onPointerDown={viewport.onPointerDown}
-                onPointerMove={viewport.onPointerMove}
+                onPointerMove={(e) => { viewport.onPointerMove(e); handlePresenterCursorMove(e) }}
                 onPointerUp={viewport.onPointerUp}
                 onPointerCancel={viewport.onPointerCancel}
+                onPointerLeave={handlePresenterCursorLeave}
                 onDoubleClick={viewport.onDoubleClick}
                 onClick={(e) => {
                   // Click on empty letterbox space closes (preserves the prior
@@ -1694,6 +1774,24 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                     </svg>
                     Reset zoom
                   </button>
+                )}
+
+                {/* Phase B.3.2: presenter cursor dot (followers only). Positioned
+                    imperatively each frame in the smooth-apply loop; pointer-events
+                    none so it never intercepts clicks. */}
+                {viewportDriven && (
+                  <div
+                    ref={lbCursorDotRef}
+                    className="absolute z-20 rounded-full pointer-events-none"
+                    style={{
+                      display: 'none',
+                      width: 12,
+                      height: 12,
+                      background: cursorColor,
+                      transform: 'translate(-50%, -50%)',
+                      boxShadow: '0 0 0 2px rgba(255,255,255,0.75)',
+                    }}
+                  />
                 )}
 
                 {/* ---- Anchored callout overlay (single-image, non-present) ----

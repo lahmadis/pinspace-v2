@@ -42,6 +42,18 @@ export interface LbViewport {
   cy: number
 }
 
+/**
+ * Phase B.3.2: presenter pointer over the lightbox image, for the follower 2D
+ * cursor dot. cx,cy = image fraction (0..1) — same space as LbViewport — so the
+ * follower maps it through their own viewport transform. seq bumps per packet so
+ * the renderer detects staleness via frame deltas (no Date.now in the loop).
+ */
+export interface LbCursorState {
+  cx: number
+  cy: number
+  seq: number
+}
+
 interface CameraControllerProps {
   orbitControlsRef?: React.RefObject<unknown> | null
   editingWall: number | null

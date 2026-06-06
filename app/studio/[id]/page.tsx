@@ -8,7 +8,7 @@ import { Board } from '@/types'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
 import PresenceBar, { type PresentUser, friendlyName, colorFor } from '@/components/3d/PresenceBar'
-import type { FollowPose, LaserState, LbViewport } from '@/components/3d/CameraController'
+import type { FollowPose, LaserState, LbViewport, LbCursorState } from '@/components/3d/CameraController'
 import { ArrowLeft, Share2, Settings, Box, ChevronDown, Menu, X, Presentation } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
@@ -112,6 +112,8 @@ export default function StudioPage() {
   // viewport (written per "lbv" message — never setState).
   const [followLightboxBoardId, setFollowLightboxBoardId] = useState<string | null>(null)
   const lbViewportRef = useRef<LbViewport | null>(null)
+  // Phase B.3.2: latest presenter pointer-over-image (per "lbc" — never setState).
+  const lbCursorRef = useRef<LbCursorState | null>(null)
 
   const isDemo = searchParams?.get('demo') === 'true'
 
@@ -558,6 +560,7 @@ export default function StudioPage() {
     // a repeat and time out a stale pointer via frame deltas (no Date.now in the
     // frame loop). Lives in the effect closure; resets per room.
     let laserSeq = 0
+    let lbCursorSeq = 0
     channel
       .on('broadcast', { event: 'cam' }, (msg: { payload?: FollowPose }) => {
         const payload = msg.payload
@@ -588,6 +591,17 @@ export default function StudioPage() {
         if (!payload || typeof payload.z !== 'number' || typeof payload.cx !== 'number' || typeof payload.cy !== 'number') return
         lbViewportRef.current = { z: payload.z, cx: payload.cx, cy: payload.cy }
       })
+      // Phase B.3.2: presenter pointer over the lightbox image (~15Hz). Ref-only
+      // (seq for staleness); LightboxModal positions the 2D dot in its frame loop.
+      .on('broadcast', { event: 'lbc' }, (msg: { payload?: { cx?: number; cy?: number; off?: boolean } }) => {
+        const payload = msg.payload
+        if (!payload || payload.off || typeof payload.cx !== 'number' || typeof payload.cy !== 'number') {
+          lbCursorRef.current = null
+          return
+        }
+        lbCursorSeq += 1
+        lbCursorRef.current = { cx: payload.cx, cy: payload.cy, seq: lbCursorSeq }
+      })
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
@@ -595,6 +609,7 @@ export default function StudioPage() {
       followPoseRef.current = null
       laserRef.current = null
       lbViewportRef.current = null
+      lbCursorRef.current = null
     }
   }, [roomId, isDemo])
 
@@ -1054,6 +1069,7 @@ export default function StudioPage() {
             laserColor={laserColor}
             followLightboxBoardId={followLightboxBoardId}
             lbViewportRef={lbViewportRef}
+            lbCursorRef={lbCursorRef}
             onWallConfigChange={(config) => {
               setWallConfig(config)
               persistWallConfig(config)

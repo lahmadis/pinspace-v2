@@ -52,7 +52,8 @@ export function LaserPointer({
   })
   return (
     <mesh ref={meshRef} visible={false} renderOrder={999} raycast={() => null}>
-      <sphereGeometry args={[1.8, 16, 16]} />
+      {/* Phase B.3.2: dot radius reduced to 2/3 of the original 1.8 (one-third smaller). */}
+      <sphereGeometry args={[1.2, 16, 16]} />
       <meshBasicMaterial color={color} toneMapped={false} transparent opacity={0.95} depthTest={false} />
     </mesh>
   )

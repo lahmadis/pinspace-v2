@@ -17,7 +17,7 @@ import { Board, FloorTable } from '@/types'
 import WallSystem from './WallSystem'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { CameraController, type FollowPose, type LaserState, type LbViewport } from './CameraController'
+import { CameraController, type FollowPose, type LaserState, type LbViewport, type LbCursorState } from './CameraController'
 import { LaserPointer } from './LaserPointer'
 import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
@@ -143,6 +143,8 @@ interface StudioRoomProps {
    */
   followLightboxBoardId?: string | null
   lbViewportRef?: React.MutableRefObject<LbViewport | null>
+  /** Phase B.3.2: latest received presenter pointer-over-image (forwarded to LightboxModal). */
+  lbCursorRef?: React.MutableRefObject<LbCursorState | null>
 }
 
 function SceneContent({
@@ -1985,6 +1987,8 @@ export default function StudioRoom(props: StudioRoomProps) {
       isPresenter={!!props.isPresenter}
       viewportDriven={!!props.isFollowing && lightboxBoard !== null}
       viewportTargetRef={props.lbViewportRef}
+      lbCursorRef={props.lbCursorRef}
+      cursorColor={props.laserColor ?? '#22d3ee'}
       onLinkSaved={(boardId, linkUrl) => {
         // Persisted server-side already; mirror into the local boards cache so
         // a later reopen reads the fresh link, and into the open snapshot so
