@@ -12,7 +12,6 @@ import { ArrowLeft, Share2, Settings, Box, ChevronDown, Menu, X, Presentation } 
 import { supabase } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import { DEFAULT_WALL_CONFIG, type WallConfig } from '@/lib/wallLayout'
-import { isBoardReconciling } from '@/lib/pendingBoardReconcile'
 
 type RealtimeBoardPayload = {
   eventType: 'INSERT' | 'UPDATE' | 'DELETE'
@@ -25,51 +24,6 @@ type RealtimeBoardPayload = {
 const postrace = (...args: unknown[]) => {
   // eslint-disable-next-line no-console
   console.log('[POSTRACE]', new Date().toISOString(), ...args)
-}
-
-function transformBoardRow(row: Record<string, unknown>): Board {
-  return {
-    id: row.id as string,
-    studioId: row.workspace_id as string,
-    workspaceId: row.workspace_id as string,
-    studentName: row.student_name as string,
-    studentEmail: row.student_email as string | undefined,
-    title: row.title as string,
-    description: row.description as string | undefined,
-    thumbnailUrl: row.thumbnail_url as string,
-    fullImageUrl: row.full_image_url as string,
-    tags: (row.tags as string[]) || [],
-    uploadedAt: new Date(row.uploaded_at as string),
-    position:
-      row.position_wall_index != null && row.position_x != null && row.position_y != null
-        ? {
-            wallIndex: Number(row.position_wall_index),
-            x: Number(row.position_x),
-            y: Number(row.position_y),
-            width: row.position_width != null ? Number(row.position_width) : undefined,
-            height: row.position_height != null ? Number(row.position_height) : undefined,
-            side: String(row.position_side || '').trim().toLowerCase() === 'back' ? 'back' : 'front',
-            rotation: row.position_rotation != null ? Number(row.position_rotation) : 0,
-          }
-        : undefined,
-    position_rotation: row.position_rotation != null ? Number(row.position_rotation) : 0,
-    ownerId: row.owner_id as string,
-    ownerName: row.owner_name as string,
-    ownerColor: row.owner_color as string | undefined,
-    originalWidth: row.original_width as number | undefined,
-    originalHeight: row.original_height as number | undefined,
-    aspectRatio: row.aspect_ratio ? parseFloat(row.aspect_ratio as string) : undefined,
-    physicalWidth: row.physical_width ? parseFloat(row.physical_width as string) : undefined,
-    physicalHeight: row.physical_height ? parseFloat(row.physical_height as string) : undefined,
-    boardWidthIn: row.board_width_in != null ? Number(row.board_width_in) : undefined,
-    boardHeightIn: row.board_height_in != null ? Number(row.board_height_in) : undefined,
-    // FIX 1: realtime mapping previously omitted link_url, so every realtime
-    // UPDATE wholesale-REPLACE wrote linkUrl=undefined, wiping a saved video
-    // link (and parent-sync's server-authoritative linkUrl then propagated the
-    // wipe). Mirror the GET /api/boards serializer (route.ts) which maps
-    // link_url -> linkUrl; keep the two in sync when adding columns.
-    linkUrl: (row.link_url as string | null) ?? undefined,
-  }
 }
 
 const StudioRoom = dynamic(
@@ -131,6 +85,10 @@ export default function StudioPage() {
   currentWallIndexRef.current = currentWallIndex
   // Presence channel + identity, hoisted so the re-track effect can update the
   // user's wall meta without tearing down and re-subscribing the channel.
+  // Debounce timer for realtime-driven board refetch. A realtime boards
+  // INSERT/UPDATE coalesces into one GET on this timer (see the boards channel
+  // below); cleared on that effect's cleanup.
+  const boardsRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   // isPresenting lives here (not in React state) so the wall-change re-track
   // effect preserves it via `...meta` instead of wiping it. Phase B.1.
@@ -437,55 +395,31 @@ export default function StudioPage() {
             'postgres_changes',
             { event: '*', schema: 'public', table: 'boards', filter: `room_id=eq.${roomId}` },
             (payload: RealtimeBoardPayload) => {
-              const _row = payload.new as Record<string, unknown>
-              postrace('realtime', payload.eventType, `id=${_row?.id ?? (payload.old as { id?: string })?.id}`, `upload_status=${_row?.upload_status}`, `serverPos wall=${_row?.position_wall_index} (${_row?.position_x},${_row?.position_y})[${_row?.position_width}x${_row?.position_height}] side=${_row?.position_side}`, `link_url=${JSON.stringify(_row?.link_url)}`)
-              if (payload.eventType === 'INSERT') {
-                // /api/upload first INSERTs a placeholder row with empty
-                // thumbnail_url/full_image_url and upload_status='pending',
-                // then UPDATEs it with the real URLs. Picking up the INSERT
-                // here would clobber the local state that useBoardState's
-                // sync effect already populated from the upload response,
-                // forcing a Save&Exit refresh to recover. Skip placeholders;
-                // the UPDATE handler below picks up the row when it goes
-                // 'pending' → 'complete'.
-                const newRow = payload.new as Record<string, unknown>
-                if (newRow.upload_status === 'pending') { postrace('realtime INSERT skipped (pending placeholder)', newRow.id); return }
-                const incoming = transformBoardRow(newRow)
-                // FIX 2d: this client's own in-flight upload is about to reconcile
-                // its temp board into this real id (replaceTempBoard). Appending
-                // here would put the id in the array twice until the swap lands.
-                if (isBoardReconciling(incoming.id)) { postrace('realtime INSERT skipped (locally reconciling)', incoming.id); return }
-                setBoards((prev) => {
-                  // Skip if we already have this board (optimistic upload by this user)
-                  if (prev.some((b) => b.id === incoming.id)) { postrace('realtime INSERT skipped (already present)', incoming.id); return prev }
-                  postrace('realtime INSERT -> parent setBoards APPEND', incoming.id, `pos=${incoming.position ? `(${incoming.position.x},${incoming.position.y})` : 'none'}`)
-                  return [...prev, incoming]
-                })
-              } else if (payload.eventType === 'UPDATE') {
-                const newRow = payload.new as Record<string, unknown>
-                // Still a placeholder — ignore until it goes complete.
-                if (newRow.upload_status === 'pending') { postrace('realtime UPDATE skipped (pending placeholder)', newRow.id); return }
-                const updated = transformBoardRow(newRow)
-                setBoards((prev) => {
-                  const exists = prev.some((b) => b.id === updated.id)
-                  if (exists) {
-                    const before = prev.find((b) => b.id === updated.id)
-                    postrace('realtime UPDATE -> parent setBoards REPLACE (wholesale)', updated.id, `pos ${before?.position ? `(${before.position.x},${before.position.y})` : 'none'} -> ${updated.position ? `(${updated.position.x},${updated.position.y})` : 'none'}`, `link ${JSON.stringify(before?.linkUrl)} -> ${JSON.stringify(updated.linkUrl)}`)
-                    return prev.map((b) => (b.id === updated.id ? updated : b))
-                  }
-                  // 'pending' → 'complete' transition. Other users who never
-                  // saw the placeholder get the row here for the first time.
-                  // FIX 2d: but if this client is mid-reconcile for the id, the
-                  // local swap will add it — don't append a second copy.
-                  if (isBoardReconciling(updated.id)) { postrace('realtime UPDATE append skipped (locally reconciling)', updated.id); return prev }
-                  postrace('realtime UPDATE -> parent setBoards APPEND (first sight)', updated.id, `pos=${updated.position ? `(${updated.position.x},${updated.position.y})` : 'none'}`)
-                  return [...prev, updated]
-                })
-              } else if (payload.eventType === 'DELETE') {
+              // A realtime INSERT/UPDATE can carry an INTERMEDIATE upload
+              // snapshot: a new board is INSERTed at center (50/50) with a
+              // default size, and its real placement/size lands in a LATER PUT.
+              // Mapping payload.new straight into state therefore renders that
+              // stale snapshot until a refresh. Instead, debounce a refetch
+              // through the GET path (handleBoardUpdate) so we render the
+              // COMMITTED row — identical to a hard refresh. That GET ->
+              // setBoards -> useBoardState parent-sync route is the same one the
+              // uploader's own post-upload refresh already uses, so its
+              // ACTIVE_WALL_OWNERSHIP / optimistic-hold / temp-board guards keep
+              // shielding an in-progress upload and an actively-edited wall.
+              if (payload.eventType === 'DELETE') {
+                // DELETE stays inline — payload.old.id is final and sufficient.
                 const deletedId = (payload.old as { id?: string }).id
                 postrace('realtime DELETE -> parent setBoards FILTER', deletedId)
                 if (deletedId) setBoards((prev) => prev.filter((b) => b.id !== deletedId))
+                return
               }
+              // INSERT/UPDATE: coalesce a burst (the INSERT-then-PUT pair, and
+              // multi-page PDF uploads) into a single ~400ms-debounced refetch.
+              if (boardsRefetchTimerRef.current) clearTimeout(boardsRefetchTimerRef.current)
+              boardsRefetchTimerRef.current = setTimeout(() => {
+                boardsRefetchTimerRef.current = null
+                void handleBoardUpdate()
+              }, 400)
             }
           )
           .subscribe(handleStatus)
@@ -505,6 +439,10 @@ export default function StudioPage() {
 
     return () => {
       controller.abort()
+      if (boardsRefetchTimerRef.current) {
+        clearTimeout(boardsRefetchTimerRef.current)
+        boardsRefetchTimerRef.current = null
+      }
       if (channel) supabase.removeChannel(channel)
       if (commentsChannel) supabase.removeChannel(commentsChannel)
     }
