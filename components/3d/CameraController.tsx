@@ -12,6 +12,14 @@ function getControls(ref: React.RefObject<unknown> | null | undefined): OrbitCon
   return r as OrbitControlsType
 }
 
+/** Phase B.2: presenter camera pose, broadcast over the studio-live channel. */
+export interface FollowPose {
+  /** Camera world position [x, y, z]. */
+  p: [number, number, number]
+  /** OrbitControls target [x, y, z]. */
+  t: [number, number, number]
+}
+
 interface CameraControllerProps {
   orbitControlsRef?: React.RefObject<unknown> | null
   editingWall: number | null
@@ -20,6 +28,10 @@ interface CameraControllerProps {
   wallDimensions?: { width: number; height: number } | null // Wall dimensions in feet
   transitionKey?: number
   onTransitionComplete?: () => void
+  /** Phase B.2: when true, the local user follows the presenter's camera. */
+  isFollowing?: boolean
+  /** Phase B.2: latest received presenter pose (read in the frame loop, never via state). */
+  followPoseRef?: React.MutableRefObject<FollowPose | null>
 }
 
 export function CameraController({ 
@@ -29,7 +41,9 @@ export function CameraController({
   wallRotation,
   wallDimensions,
   transitionKey = 0,
-  onTransitionComplete 
+  onTransitionComplete,
+  isFollowing = false,
+  followPoseRef,
 }: CameraControllerProps) {
   const { camera } = useThree()
   const SWOOSH_DURATION_SECONDS = 0.95
@@ -78,6 +92,10 @@ export function CameraController({
   const restoreOnNextFrame = useRef(false)
   const positionOnEnd = useRef(new THREE.Vector3())
   const targetOnEnd = useRef(new THREE.Vector3())
+
+  // Phase B.2: reusable scratch vectors for the follow lerp (no per-frame alloc).
+  const followPosVec = useRef(new THREE.Vector3())
+  const followTargetVec = useRef(new THREE.Vector3())
   const editingWallRef = useRef(editingWall)
   editingWallRef.current = editingWall
 
@@ -264,7 +282,28 @@ export function CameraController({
       }
     }
 
-    controls.enabled = editingWall === null && !isAnimating.current
+    // Phase B.2: follow the presenter's broadcast camera. Editing and the swoosh
+    // animation take priority (gated below), so following resumes after a swoosh
+    // and never overrides edit framing. Lerp toward the latest pose so ~10Hz
+    // packets render continuously instead of snapping.
+    const followingNow = isFollowing && editingWall === null && !isAnimating.current
+    const pose = followPoseRef?.current
+    if (followingNow && pose) {
+      const alpha = 1 - Math.exp(-delta * 10)
+      followPosVec.current.set(pose.p[0], pose.p[1], pose.p[2])
+      followTargetVec.current.set(pose.t[0], pose.t[1], pose.t[2])
+      camera.position.lerp(followPosVec.current, alpha)
+      controls.target.lerp(followTargetVec.current, alpha)
+      camera.lookAt(controls.target)
+      camera.up.set(0, 1, 0)
+    }
+
+    // Control arbitration: editing wins over following; the swoosh suspends both.
+    // While following, OrbitControls input is disabled so the user can't fight
+    // the followed camera (Escape / "Stop following" detaches upstream, which
+    // flips isFollowing and re-enables input on the next frame — so there is no
+    // way to get stuck disabled).
+    controls.enabled = editingWall === null && !isAnimating.current && !isFollowing
     const c = controls as { enableDamping?: boolean }
     c.enableDamping = false
     controls.update()

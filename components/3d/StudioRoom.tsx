@@ -17,7 +17,7 @@ import { Board, FloorTable } from '@/types'
 import WallSystem from './WallSystem'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { CameraController } from './CameraController'
+import { CameraController, type FollowPose } from './CameraController'
 import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
 import { WallDropZone } from '@/components/3d/WallDropZone'
@@ -115,6 +115,18 @@ interface StudioRoomProps {
    * and shows the conflict toast.
    */
   onWallConfigConflict?: (latest: Record<string, unknown> & { version?: number }) => void
+  /**
+   * Phase B.2: follow-presenter camera sync (ephemeral broadcast). The page owns
+   * the studio-live channel + state and threads these through.
+   */
+  /** Live broadcast channel for presenter camera packets. */
+  liveChannelRef?: React.MutableRefObject<ReturnType<typeof supabase.channel> | null>
+  /** True when the local user is the active presenter (broadcasts its camera). */
+  isPresenter?: boolean
+  /** True when the local user is following the presenter's camera. */
+  isFollowing?: boolean
+  /** Latest received presenter camera pose (written per broadcast message). */
+  followPoseRef?: React.MutableRefObject<FollowPose | null>
 }
 
 function SceneContent({
@@ -474,6 +486,51 @@ function SceneContent({
 
     </>
   )
+}
+
+/**
+ * Phase B.2: presenter camera broadcaster. Rendered inside <Canvas> as a sibling
+ * of CameraController. When the local user is the presenter AND not in edit mode,
+ * it sends the camera pose + OrbitControls target (~10Hz) over the live broadcast
+ * channel. Pure side-effect in useFrame — no state, no logging. self:false on the
+ * channel means the presenter never receives (or follows) its own packets.
+ */
+function PresenterCamBroadcast({
+  liveChannelRef,
+  isPresenter,
+  editingWall,
+  orbitControlsRef,
+}: {
+  liveChannelRef?: React.MutableRefObject<ReturnType<typeof supabase.channel> | null>
+  isPresenter: boolean
+  editingWall: number | null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  orbitControlsRef: React.RefObject<any>
+}) {
+  const { camera } = useThree()
+  const sinceLastSend = useRef(0)
+  useFrame((_state, delta) => {
+    if (!isPresenter || editingWall !== null) return
+    const channel = liveChannelRef?.current
+    if (!channel) return
+    sinceLastSend.current += delta
+    if (sinceLastSend.current < 0.1) return
+    sinceLastSend.current = 0
+    const controls = orbitControlsRef.current?.get
+      ? orbitControlsRef.current.get()
+      : orbitControlsRef.current
+    const target = controls?.target
+    const r = (n: number) => Math.round(n * 1000) / 1000
+    channel.send({
+      type: 'broadcast',
+      event: 'cam',
+      payload: {
+        p: [r(camera.position.x), r(camera.position.y), r(camera.position.z)],
+        t: target ? [r(target.x), r(target.y), r(target.z)] : [0, 0, 0],
+      },
+    })
+  })
+  return null
 }
 
 export default function StudioRoom(props: StudioRoomProps) {
@@ -1725,6 +1782,14 @@ export default function StudioRoom(props: StudioRoomProps) {
             wallDimensions={editingWallDimensions}
             transitionKey={cameraTransitionKey}
             onTransitionComplete={handleCameraTransitionComplete}
+            isFollowing={props.isFollowing}
+            followPoseRef={props.followPoseRef}
+          />
+          <PresenterCamBroadcast
+            liveChannelRef={props.liveChannelRef}
+            isPresenter={!!props.isPresenter}
+            editingWall={editingWall}
+            orbitControlsRef={orbitControlsRef}
           />
           <SceneContent
             {...props}

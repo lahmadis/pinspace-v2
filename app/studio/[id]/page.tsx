@@ -8,8 +8,9 @@ import { Board } from '@/types'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
 import PresenceBar, { type PresentUser } from '@/components/3d/PresenceBar'
+import type { FollowPose } from '@/components/3d/CameraController'
 import { ArrowLeft, Share2, Settings, Box, ChevronDown, Menu, X, Presentation } from 'lucide-react'
-import { supabase } from '@/lib/supabase/client'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import { DEFAULT_WALL_CONFIG, type WallConfig } from '@/lib/wallLayout'
 
@@ -94,6 +95,14 @@ export default function StudioPage() {
   // effect preserves it via `...meta` instead of wiping it. Phase B.1.
   const presenceMetaRef = useRef<{ userId: string; fullName: string; isPresenting: boolean } | null>(null)
   const presenceSubscribedRef = useRef(false)
+  // Phase B.2: follow-presenter camera sync over an ephemeral broadcast channel.
+  // liveChannelRef holds the studio-live:${roomId} channel; followPoseRef holds
+  // ONLY the latest received pose (written per broadcast message — never via
+  // setState; CameraController reads the ref in its frame loop). isFollowing is
+  // low-frequency UI state.
+  const liveChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const followPoseRef = useRef<FollowPose | null>(null)
+  const [isFollowing, setIsFollowing] = useState(false)
 
   const isDemo = searchParams?.get('demo') === 'true'
 
@@ -523,6 +532,34 @@ export default function StudioPage() {
     }
   }, [roomId, isDemo])
 
+  // Phase B.2: ephemeral live channel for presenter camera broadcast. Broadcast
+  // only — no presence, no postgres_changes. self:false so the presenter never
+  // receives (or follows) its own packets. Incoming "cam" payloads are written
+  // straight into followPoseRef (latest pose only); CameraController consumes the
+  // ref in its frame loop. NEVER setState per message, no logging. Mirrors the
+  // presence-channel lifecycle: keyed [roomId, isDemo], held in a ref, removed in
+  // cleanup.
+  useEffect(() => {
+    if (isDemo || !roomId || !isSupabaseConfigured) return
+    const channel = supabase.channel(`studio-live:${roomId}`, {
+      config: { broadcast: { self: false } },
+    })
+    liveChannelRef.current = channel
+    channel
+      .on('broadcast', { event: 'cam' }, (msg: { payload?: FollowPose }) => {
+        const payload = msg.payload
+        if (payload && Array.isArray(payload.p) && Array.isArray(payload.t)) {
+          followPoseRef.current = payload
+        }
+      })
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+      liveChannelRef.current = null
+      followPoseRef.current = null
+    }
+  }, [roomId, isDemo])
+
   // Re-broadcast the local user's active wall when it changes — updates presence
   // meta in place (no re-subscribe). Guarded on SUBSCRIBED; the subscribe handler
   // sends the initial value.
@@ -580,6 +617,27 @@ export default function StudioPage() {
 
   const isPresenter = !!presenter && presenter.userId === currentUserId
   const someoneElsePresenting = !!presenter && presenter.userId !== currentUserId
+
+  // Phase B.2: auto-follow. Defaults ON when a non-self presenter starts and
+  // resets when the presenter clears/disconnects or it becomes us. Keyed on the
+  // presenter's id so a NEW presenter re-arms follow, while a manual break-away
+  // (which only flips isFollowing, not the id) stays detached for that presenter.
+  const followTargetId = someoneElsePresenting ? presenter!.userId : null
+  useEffect(() => {
+    setIsFollowing(followTargetId !== null)
+  }, [followTargetId])
+
+  // Break-away: Escape detaches a following viewer so they can orbit freely.
+  // Bound only while following; flipping isFollowing re-enables OrbitControls on
+  // the next frame (see CameraController arbitration).
+  useEffect(() => {
+    if (!isFollowing) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsFollowing(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isFollowing])
 
   const handleReconfigureWalls = () => {
     setFloorEditorMode('walls')
@@ -649,6 +707,14 @@ export default function StudioPage() {
         >
           <Presentation className="w-4 h-4 text-white" />
           <span className="text-white/90 text-xs font-medium">{presenter!.fullName} is presenting</span>
+          {/* Phase B.2: follow toggle. Default is following; break away to orbit
+              freely (also via Escape), or rejoin. */}
+          <button
+            onClick={() => setIsFollowing((v) => !v)}
+            className="ml-1 px-2 py-0.5 rounded-md bg-white/15 hover:bg-white/25 text-white text-xs font-medium transition-colors"
+          >
+            {isFollowing ? 'Stop following' : `Follow ${presenter!.fullName}`}
+          </button>
         </div>
       )}
       {/* Archive banner */}
@@ -936,6 +1002,10 @@ export default function StudioPage() {
             onWallConfigConflict={handleWallConfigConflict}
             onEditingWallChange={setCurrentWallIndex}
             othersEditingWalls={othersEditingWalls}
+            liveChannelRef={liveChannelRef}
+            isPresenter={isPresenter}
+            isFollowing={isFollowing}
+            followPoseRef={followPoseRef}
             onWallConfigChange={(config) => {
               setWallConfig(config)
               persistWallConfig(config)
