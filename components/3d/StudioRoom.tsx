@@ -17,7 +17,7 @@ import { Board, FloorTable } from '@/types'
 import WallSystem from './WallSystem'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { CameraController, type FollowPose, type LaserState } from './CameraController'
+import { CameraController, type FollowPose, type LaserState, type LbViewport } from './CameraController'
 import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
 import { WallDropZone } from '@/components/3d/WallDropZone'
@@ -128,14 +128,20 @@ interface StudioRoomProps {
   /** Latest received presenter camera pose (written per broadcast message). */
   followPoseRef?: React.MutableRefObject<FollowPose | null>
   /**
-   * Phase B.3: laser pointer. isLaserActive = the local presenter is holding the
-   * laser key (broadcasts + suspends own orbit). laserRef = latest received laser
-   * position for followers to render. laserColor = the presenter's deterministic
-   * dot color.
+   * Phase B.3.1: presenter cursor. laserRef = latest received cursor world
+   * position for followers to render; laserColor = the presenter's deterministic
+   * dot color. (Broadcast is always-on while presenting — no activation flag.)
    */
-  isLaserActive?: boolean
   laserRef?: React.MutableRefObject<LaserState | null>
   laserColor?: string
+  /**
+   * Phase B.3.1: lightbox follow. followLightboxBoardId = the board the presenter
+   * currently has open in the lightbox (null = closed), driving the follower's
+   * lightbox while in follow mode. lbViewportRef = latest received presenter
+   * lightbox viewport (written per "lbv" message; smooth-applied by LightboxModal).
+   */
+  followLightboxBoardId?: string | null
+  lbViewportRef?: React.MutableRefObject<LbViewport | null>
 }
 
 function SceneContent({
@@ -543,30 +549,46 @@ function PresenterCamBroadcast({
 }
 
 /**
- * Phase B.3: presenter laser broadcaster. Lives inside <Canvas>. While the
- * presenter holds the laser key (isLaserActive) and is not in edit mode, it
+ * Phase B.3.1: presenter cursor broadcaster (replaces the B.3 hold-L laser).
+ * Lives inside <Canvas>. While presenting and NOT in edit mode, it passively
  * raycasts the live pointer against the scene and broadcasts the world hit point
- * over the "laser" event at ≤15Hz (throttled, not per mousemove). Sends a single
- * { off:true } when pointing stops. Read-only raycast against existing meshes;
- * no state, no logging. (The laser dot mesh sets raycast=null so it's skipped.)
+ * over the "laser" event at ≤15Hz (throttled). It does NOT gate on any key and
+ * does NOT suppress the presenter's own orbit/clicks — it is pure observation.
+ * Sends a single { off:true } when the pointer leaves the canvas (incl. when the
+ * presenter opens the lightbox, whose DOM overlay steals the pointer — so the 3D
+ * dot is never shown over the lightbox) or when presenting stops. Read-only
+ * raycast against existing meshes; no state, no logging. (The dot mesh sets
+ * raycast=null so it's skipped.)
  */
-function PresenterLaserBroadcast({
+function PresenterCursorBroadcast({
   liveChannelRef,
   isPresenter,
-  isLaserActive,
   editingWall,
 }: {
   liveChannelRef?: React.MutableRefObject<ReturnType<typeof supabase.channel> | null>
   isPresenter: boolean
-  isLaserActive: boolean
   editingWall: number | null
 }) {
-  const { camera, scene, raycaster, pointer } = useThree()
+  const { camera, scene, raycaster, pointer, gl } = useThree()
   const sinceLastSend = useRef(0)
   const wasActive = useRef(false)
+  const pointerOverRef = useRef(false)
+  // Track whether the pointer is over the canvas so we can stop broadcasting (and
+  // emit one {off}) the moment it leaves — e.g. onto the lightbox/toolbar overlay.
+  useEffect(() => {
+    const el = gl.domElement
+    const onEnter = () => { pointerOverRef.current = true }
+    const onLeave = () => { pointerOverRef.current = false }
+    el.addEventListener('pointerenter', onEnter)
+    el.addEventListener('pointerleave', onLeave)
+    return () => {
+      el.removeEventListener('pointerenter', onEnter)
+      el.removeEventListener('pointerleave', onLeave)
+    }
+  }, [gl])
   useFrame((_state, delta) => {
     const channel = liveChannelRef?.current
-    const active = isPresenter && isLaserActive && editingWall === null
+    const active = isPresenter && editingWall === null && pointerOverRef.current
     if (active && channel) {
       sinceLastSend.current += delta
       if (sinceLastSend.current >= 1 / 15) {
@@ -1186,11 +1208,11 @@ export default function StudioRoom(props: StudioRoomProps) {
   }
 
   const handleLightboxOpen = (board: Board) => {
-    // Phase B.3: while the presenter is laser-pointing, clicks are "pointing",
-    // not "open this board" — swallow them so a point-drag doesn't pop the
-    // lightbox. Only the presenter ever has isLaserActive; followers are
-    // unaffected and can still open boards.
-    if (props.isLaserActive) return
+    // Phase B.3.1: while in follow mode the lightbox is presenter-driven, so a
+    // follower can't manually open one (it would fight the follow stream). They
+    // break away (Escape / Stop following) first to regain control. Only
+    // followers have isFollowing; the presenter and detached viewers open freely.
+    if (props.isFollowing) return
     setCommentPanelBoard(null)
     if (shiftPressedRef.current) {
       setCompareBoardIds((prev) =>
@@ -1218,6 +1240,42 @@ export default function StudioRoom(props: StudioRoomProps) {
     if (nextIdx < 0 || nextIdx >= localBoards.length) return
     setLightboxBoard(localBoards[nextIdx])
   }
+
+  // Phase B.3.1: presenter broadcasts lightbox open/close/navigate as "lb" so
+  // followers mirror it. { boardId } on open/switch, { off:true } on close. Only
+  // the presenter sends; self:false stops any echo. Discrete UI event (not a
+  // per-frame stream), so a setState-free ref dedupe is all that's needed.
+  const prevLbBroadcastRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!props.isPresenter) return
+    const channel = props.liveChannelRef?.current
+    if (!channel) return
+    const id = lightboxBoard?.id ?? null
+    if (id === prevLbBroadcastRef.current) return
+    prevLbBroadcastRef.current = id
+    channel.send({
+      type: 'broadcast',
+      event: 'lb',
+      payload: id ? { boardId: id } : { off: true },
+    })
+  }, [props.isPresenter, props.liveChannelRef, lightboxBoard])
+
+  // Phase B.3.1: follower mirror — while in follow mode, the presenter's open
+  // board (followLightboxBoardId, from the page's "lb" handler) drives the local
+  // lightbox: open/switch to it, or close when the presenter closes. Manual open
+  // is blocked while following (handleLightboxOpen), so this is authoritative.
+  // When follow ends (break-away), this effect early-returns and leaves whatever
+  // is open under the user's own control — restoring normal interaction.
+  useEffect(() => {
+    if (!props.isFollowing) return
+    const id = props.followLightboxBoardId ?? null
+    if (!id) { setLightboxBoard(null); return }
+    setLightboxBoard((prev) => {
+      if (prev?.id === id) return prev
+      const next = localBoards.find((b) => b.id === id)
+      return next ?? prev
+    })
+  }, [props.isFollowing, props.followLightboxBoardId, localBoards])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1900,7 +1958,6 @@ export default function StudioRoom(props: StudioRoomProps) {
             onTransitionComplete={handleCameraTransitionComplete}
             isFollowing={props.isFollowing}
             followPoseRef={props.followPoseRef}
-            isLaserPointing={!!props.isLaserActive}
           />
           <PresenterCamBroadcast
             liveChannelRef={props.liveChannelRef}
@@ -1908,10 +1965,9 @@ export default function StudioRoom(props: StudioRoomProps) {
             editingWall={editingWall}
             orbitControlsRef={orbitControlsRef}
           />
-          <PresenterLaserBroadcast
+          <PresenterCursorBroadcast
             liveChannelRef={props.liveChannelRef}
             isPresenter={!!props.isPresenter}
-            isLaserActive={!!props.isLaserActive}
             editingWall={editingWall}
           />
           <LaserPointer laserRef={props.laserRef} color={props.laserColor ?? '#22d3ee'} />
@@ -1973,6 +2029,10 @@ export default function StudioRoom(props: StudioRoomProps) {
       onNavigate={handleLightboxNavigate}
       isEditMode={!props.isArchived}
       currentUserRole={props.currentUserRole ?? null}
+      liveChannelRef={props.liveChannelRef}
+      isPresenter={!!props.isPresenter}
+      viewportDriven={!!props.isFollowing && lightboxBoard !== null}
+      viewportTargetRef={props.lbViewportRef}
       onLinkSaved={(boardId, linkUrl) => {
         // Persisted server-side already; mirror into the local boards cache so
         // a later reopen reads the fresh link, and into the open snapshot so

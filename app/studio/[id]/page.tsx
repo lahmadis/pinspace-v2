@@ -8,7 +8,7 @@ import { Board } from '@/types'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
 import PresenceBar, { type PresentUser, friendlyName, colorFor } from '@/components/3d/PresenceBar'
-import type { FollowPose, LaserState } from '@/components/3d/CameraController'
+import type { FollowPose, LaserState, LbViewport } from '@/components/3d/CameraController'
 import { ArrowLeft, Share2, Settings, Box, ChevronDown, Menu, X, Presentation } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
@@ -103,11 +103,15 @@ export default function StudioPage() {
   const liveChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const followPoseRef = useRef<FollowPose | null>(null)
   const [isFollowing, setIsFollowing] = useState(false)
-  // Phase B.3: laser pointer. laserRef holds only the latest received laser pose
-  // (written per "laser" message — never setState). isLaserActive = the local
-  // presenter is holding the laser key (low-frequency UI state).
+  // Phase B.3.1: presenter cursor — laserRef holds only the latest received
+  // cursor pose (written per "laser" message — never setState).
   const laserRef = useRef<LaserState | null>(null)
-  const [isLaserActive, setIsLaserActive] = useState(false)
+  // Phase B.3.1: lightbox follow. followLightboxBoardId = the board the presenter
+  // has open in the lightbox (null = closed), set from "lb" — drives the
+  // follower's lightbox while following. lbViewportRef = latest presenter lightbox
+  // viewport (written per "lbv" message — never setState).
+  const [followLightboxBoardId, setFollowLightboxBoardId] = useState<string | null>(null)
+  const lbViewportRef = useRef<LbViewport | null>(null)
 
   const isDemo = searchParams?.get('demo') === 'true'
 
@@ -570,12 +574,27 @@ export default function StudioPage() {
         laserSeq += 1
         laserRef.current = { p: payload.p, seq: laserSeq }
       })
+      // Phase B.3.1: presenter opened/closed/switched their lightbox. Low-frequency
+      // discrete event, so setState is correct here (drives the follower's modal);
+      // gated downstream by isFollowing (ignored entirely when not following).
+      .on('broadcast', { event: 'lb' }, (msg: { payload?: { boardId?: string; off?: boolean } }) => {
+        const payload = msg.payload
+        setFollowLightboxBoardId(payload && !payload.off && payload.boardId ? payload.boardId : null)
+      })
+      // Phase B.3.1: presenter lightbox viewport (~10Hz). Ref-only — never setState;
+      // LightboxModal smooth-applies it while following.
+      .on('broadcast', { event: 'lbv' }, (msg: { payload?: { z?: number; cx?: number; cy?: number } }) => {
+        const payload = msg.payload
+        if (!payload || typeof payload.z !== 'number' || typeof payload.cx !== 'number' || typeof payload.cy !== 'number') return
+        lbViewportRef.current = { z: payload.z, cx: payload.cx, cy: payload.cy }
+      })
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
       liveChannelRef.current = null
       followPoseRef.current = null
       laserRef.current = null
+      lbViewportRef.current = null
     }
   }, [roomId, isDemo])
 
@@ -658,36 +677,8 @@ export default function StudioPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [isFollowing])
 
-  // Phase B.3: laser pointer is a HOLD gesture — holding "L" while presenting
-  // (and not typing) turns the cursor into a laser; releasing it stops. Only the
-  // presenter can point. Bound only while presenting; cleanup also clears the
-  // flag if presenting ends mid-hold (the broadcaster then sends one { off }).
-  useEffect(() => {
-    if (!isPresenter) return
-    const isTypingTarget = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null
-      if (!t) return false
-      return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable
-    }
-    const down = (e: KeyboardEvent) => {
-      if ((e.key === 'l' || e.key === 'L') && !e.repeat && !isTypingTarget(e)) {
-        setIsLaserActive(true)
-      }
-    }
-    const up = (e: KeyboardEvent) => {
-      if (e.key === 'l' || e.key === 'L') setIsLaserActive(false)
-    }
-    window.addEventListener('keydown', down)
-    window.addEventListener('keyup', up)
-    return () => {
-      window.removeEventListener('keydown', down)
-      window.removeEventListener('keyup', up)
-      setIsLaserActive(false)
-    }
-  }, [isPresenter])
-
-  // Phase B.3: deterministic dot color for the active presenter (same palette as
-  // PresenceBar avatars). Irrelevant when nobody is presenting (dot stays hidden).
+  // Phase B.3.1: deterministic cursor-dot color for the active presenter (same
+  // palette as PresenceBar avatars). Irrelevant when nobody is presenting.
   const laserColor = presenter ? colorFor(presenter.userId) : '#22d3ee'
 
   const handleReconfigureWalls = () => {
@@ -1057,9 +1048,10 @@ export default function StudioPage() {
             isPresenter={isPresenter}
             isFollowing={isFollowing}
             followPoseRef={followPoseRef}
-            isLaserActive={isLaserActive}
             laserRef={laserRef}
             laserColor={laserColor}
+            followLightboxBoardId={followLightboxBoardId}
+            lbViewportRef={lbViewportRef}
             onWallConfigChange={(config) => {
               setWallConfig(config)
               persistWallConfig(config)

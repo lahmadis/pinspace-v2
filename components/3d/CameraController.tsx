@@ -30,6 +30,18 @@ export interface LaserState {
   seq: number
 }
 
+/**
+ * Phase B.3.1: lightbox viewport for presenter→follower sync. z = zoom (scale
+ * relative to the contain-fit base); cx,cy = image fraction (0..1) at the
+ * container center. Resolution-independent, so followers with a different
+ * window size reproduce the same framing.
+ */
+export interface LbViewport {
+  z: number
+  cx: number
+  cy: number
+}
+
 interface CameraControllerProps {
   orbitControlsRef?: React.RefObject<unknown> | null
   editingWall: number | null
@@ -42,8 +54,6 @@ interface CameraControllerProps {
   isFollowing?: boolean
   /** Phase B.2: latest received presenter pose (read in the frame loop, never via state). */
   followPoseRef?: React.MutableRefObject<FollowPose | null>
-  /** Phase B.3: presenter is actively laser-pointing — suspend their orbit ("pointing mode"). */
-  isLaserPointing?: boolean
 }
 
 export function CameraController({ 
@@ -56,7 +66,6 @@ export function CameraController({
   onTransitionComplete,
   isFollowing = false,
   followPoseRef,
-  isLaserPointing = false,
 }: CameraControllerProps) {
   const { camera } = useThree()
   const SWOOSH_DURATION_SECONDS = 0.95
@@ -311,14 +320,13 @@ export function CameraController({
       camera.up.set(0, 1, 0)
     }
 
-    // Control arbitration: editing wins over following; the swoosh suspends both;
-    // and the presenter's laser "pointing mode" (B.3) also suspends orbit so a
-    // point-drag doesn't rotate the camera. While following, OrbitControls input
-    // is disabled so the user can't fight the followed camera. Escape / "Stop
-    // following" (follow) and releasing L (laser) flip their flags and re-enable
-    // input on the next frame — so there is no way to get stuck disabled.
-    controls.enabled =
-      editingWall === null && !isAnimating.current && !isFollowing && !isLaserPointing
+    // Control arbitration: editing wins over following; the swoosh suspends both.
+    // While following, OrbitControls input is disabled so the user can't fight the
+    // followed camera (Escape / "Stop following" detaches upstream, which flips
+    // isFollowing and re-enables input on the next frame — no stuck-disabled
+    // state). The presenter cursor (B.3.1) is passive observation and does NOT
+    // suppress the presenter's own controls.
+    controls.enabled = editingWall === null && !isAnimating.current && !isFollowing
     const c = controls as { enableDamping?: boolean }
     c.enableDamping = false
     controls.update()

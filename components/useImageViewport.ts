@@ -56,6 +56,12 @@ export interface ImageViewport {
   imageFractionToContainerPoint: (fx: number, fy: number) => Point | null
   /** container point → image fraction (0..1), at the current transform. */
   containerPointToImageFraction: (px: number, py: number) => Point | null
+  /** Phase B.3.1: current viewport as { z=scale, cx,cy=fraction at container center }, or null if unmeasured. */
+  getViewportFraction: () => { z: number; cx: number; cy: number } | null
+  /** Phase B.3.1: drive the viewport so fraction (cx,cy) sits at the container center at scale z. */
+  applyViewportFraction: (z: number, cx: number, cy: number) => void
+  /** Phase B.3.1: enable/disable local zoom/pan input (followers disable while driven). */
+  setInteractionEnabled: (enabled: boolean) => void
 }
 
 export function useImageViewport(maxScale: number = DEFAULT_MAX_SCALE): ImageViewport {
@@ -69,6 +75,10 @@ export function useImageViewport(maxScale: number = DEFAULT_MAX_SCALE): ImageVie
   const baseRef = useRef<Rect | null>(null)          // painted rect at scale 1, container-local
   const viewRef = useRef({ scale: 1, x: 0, y: 0 })   // mirror of scale/offset for imperative handlers
   const scaleRef = useRef(1)
+  // Phase B.3.1: when false, all local zoom/pan input is ignored. Set false on a
+  // follower while their lightbox viewport is driven by the presenter; the
+  // viewport is then moved only via applyViewportFraction (below).
+  const interactionEnabledRef = useRef(true)
 
   const pointersRef = useRef<Map<number, Point>>(new Map())
   const panLastRef = useRef<Point | null>(null)
@@ -158,7 +168,7 @@ export function useImageViewport(maxScale: number = DEFAULT_MAX_SCALE): ImageVie
   // a native non-passive listener so preventDefault actually stops page scroll
   // (React's synthetic onWheel is passive).
   const handleWheel = useCallback((e: WheelEvent) => {
-    if (!baseRef.current) return
+    if (!baseRef.current || !interactionEnabledRef.current) return
     e.preventDefault()
     const p = toContainerPoint(e.clientX, e.clientY)
     if (!p) return
@@ -208,7 +218,7 @@ export function useImageViewport(maxScale: number = DEFAULT_MAX_SCALE): ImageVie
   const reset = useCallback(() => { applyView(1, 0, 0) }, [applyView])
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
-    if (!baseRef.current) return
+    if (!baseRef.current || !interactionEnabledRef.current) return
     const p = toContainerPoint(e.clientX, e.clientY)
     if (!p) return
     pointersRef.current.set(e.pointerId, p)
@@ -228,6 +238,7 @@ export function useImageViewport(maxScale: number = DEFAULT_MAX_SCALE): ImageVie
   }, [])
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!interactionEnabledRef.current) return
     if (!pointersRef.current.has(e.pointerId)) return
     const p = toContainerPoint(e.clientX, e.clientY)
     if (!p) return
@@ -265,7 +276,7 @@ export function useImageViewport(maxScale: number = DEFAULT_MAX_SCALE): ImageVie
   }, [])
 
   const onDoubleClick = useCallback((e: React.MouseEvent) => {
-    if (!baseRef.current) return
+    if (!baseRef.current || !interactionEnabledRef.current) return
     const p = toContainerPoint(e.clientX, e.clientY)
     if (!p) return
     if (viewRef.current.scale > 1) reset()
@@ -288,6 +299,47 @@ export function useImageViewport(maxScale: number = DEFAULT_MAX_SCALE): ImageVie
     const cx = base.left + base.width / 2 + x
     const cy = base.top + base.height / 2 + y
     return { x: (px - cx) / (base.width * s) + 0.5, y: (py - cy) / (base.height * s) + 0.5 }
+  }, [])
+
+  // Phase B.3.1: express/consume the viewport in a resolution-independent way for
+  // presenter→follower sync. `z` = scale (relative to the contain-fit base, so it
+  // means the same "zoomed in 2x" on any container size); `cx,cy` = the image
+  // fraction (0..1) currently under the container center. Followers reproduce the
+  // same framing regardless of their own container dimensions.
+  const getViewportFraction = useCallback((): { z: number; cx: number; cy: number } | null => {
+    const el = containerElRef.current
+    const base = baseRef.current
+    if (!el || !base) return null
+    const cw = el.clientWidth
+    const ch = el.clientHeight
+    if (cw <= 0 || ch <= 0 || base.width <= 0 || base.height <= 0) return null
+    const { scale: s, x, y } = viewRef.current
+    const cx0 = base.left + base.width / 2 + x
+    const cy0 = base.top + base.height / 2 + y
+    return {
+      z: s,
+      cx: (cw / 2 - cx0) / (base.width * s) + 0.5,
+      cy: (ch / 2 - cy0) / (base.height * s) + 0.5,
+    }
+  }, [])
+
+  // Inverse of getViewportFraction: place image fraction (cx,cy) at the container
+  // center at scale z. Routes through applyView so the result is clamped +
+  // constrained exactly like local interaction.
+  const applyViewportFraction = useCallback((z: number, cx: number, cy: number) => {
+    const el = containerElRef.current
+    const base = baseRef.current
+    if (!el || !base) return
+    const cw = el.clientWidth
+    const ch = el.clientHeight
+    const s = clamp(z, MIN_SCALE, maxScale)
+    const x = cw / 2 - (base.left + base.width / 2) - (cx - 0.5) * base.width * s
+    const y = ch / 2 - (base.top + base.height / 2) - (cy - 0.5) * base.height * s
+    applyView(s, x, y)
+  }, [applyView, maxScale])
+
+  const setInteractionEnabled = useCallback((enabled: boolean) => {
+    interactionEnabledRef.current = enabled
   }, [])
 
   // Belt-and-suspenders teardown on unmount. The callback ref also detaches
@@ -321,5 +373,8 @@ export function useImageViewport(maxScale: number = DEFAULT_MAX_SCALE): ImageVie
     onDoubleClick,
     imageFractionToContainerPoint,
     containerPointToImageFraction,
+    getViewportFraction,
+    applyViewportFraction,
+    setInteractionEnabled,
   }
 }

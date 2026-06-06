@@ -52,6 +52,15 @@ interface LightboxModalProps {
   /** Capabilities from the guest token. */
   guestCanComment?: boolean
   guestCanTrace?: boolean
+  // ---- Lightbox follow (Phase B.3.1) — member studio page only ----
+  /** Live broadcast channel (shared studio-live). Presenter broadcasts "lbv". */
+  liveChannelRef?: React.MutableRefObject<ReturnType<typeof supabase.channel> | null>
+  /** When true, this client is the presenter — broadcast its lightbox viewport. */
+  isPresenter?: boolean
+  /** When true, this client is a follower whose viewport is driven by the presenter (local zoom/pan disabled). */
+  viewportDriven?: boolean
+  /** Latest received presenter viewport (written per "lbv" message; smooth-applied, never via state). */
+  viewportTargetRef?: React.MutableRefObject<{ z: number; cx: number; cy: number } | null>
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -99,7 +108,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -141,7 +150,13 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // Single-image zoom/pan + image-rect measurement (Phase A.2). Only the
   // single-image branch below consumes it; PDF/compare are untouched.
   const viewport = useImageViewport()
-  const { reset: resetViewport, scaleRef: viewportScaleRef } = viewport
+  const {
+    reset: resetViewport,
+    scaleRef: viewportScaleRef,
+    getViewportFraction,
+    applyViewportFraction,
+    setInteractionEnabled,
+  } = viewport
 
   // ---- Anchored callouts (Phase A.3) -------------------------------------
   // A NEW overlay system, fully separate from the legacy unanchored comment
@@ -916,6 +931,66 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   useEffect(() => {
     redrawTraces()
   }, [redrawTraces, viewport.scale, viewport.offsetX, viewport.offsetY])
+
+  // ---- Lightbox follow (Phase B.3.1) -------------------------------------
+  // Presenter: broadcast the lightbox viewport (~10Hz, only when changed) so
+  // followers mirror zoom/pan. The first interval tick (≤100ms) syncs newly-
+  // opened followers. Single raster image only — PDFs/compare have no viewport.
+  // channel.send only; no setState, no logging.
+  useEffect(() => {
+    if (!isPresenter || !isOpen || !board) return
+    const url = board.fullImageUrl || board.thumbnailUrl
+    if (url?.toLowerCase().endsWith('.pdf') || compareBoards.length > 1) return
+    const channel = liveChannelRef?.current
+    if (!channel) return
+    let lastZ = NaN, lastCx = NaN, lastCy = NaN
+    const tick = () => {
+      const v = getViewportFraction()
+      if (!v) return
+      const r = (n: number) => Math.round(n * 1000) / 1000
+      const z = r(v.z), cx = r(v.cx), cy = r(v.cy)
+      if (z === lastZ && cx === lastCx && cy === lastCy) return
+      lastZ = z; lastCx = cx; lastCy = cy
+      channel.send({ type: 'broadcast', event: 'lbv', payload: { z, cx, cy } })
+    }
+    const id = window.setInterval(tick, 100)
+    return () => window.clearInterval(id)
+  }, [isPresenter, isOpen, board, compareBoards.length, liveChannelRef, getViewportFraction])
+
+  // Follower: while the viewport is presenter-driven, disable local zoom/pan.
+  // Restored on break-away / not-following / unmount.
+  useEffect(() => {
+    setInteractionEnabled(!viewportDriven)
+    return () => setInteractionEnabled(true)
+  }, [viewportDriven, setInteractionEnabled])
+
+  // Follower: smooth-apply the presenter's viewport. Per-"lbv"-message writes
+  // land in viewportTargetRef (page handler); here we lerp the local viewport
+  // toward it each frame so 10Hz packets render continuously. applyViewportFraction
+  // (→ setState) fires ONLY while actually converging, then idles — so there is
+  // no per-message and no steady-state per-frame setState. Frame-rate-independent.
+  useEffect(() => {
+    if (!viewportDriven || !isOpen) return
+    let raf = 0
+    let lastTs = 0
+    const tick = (ts: number) => {
+      raf = requestAnimationFrame(tick)
+      const target = viewportTargetRef?.current
+      if (!target) { lastTs = ts; return }
+      const cur = getViewportFraction()
+      if (!cur) { lastTs = ts; return }
+      const dt = lastTs ? Math.min((ts - lastTs) / 1000, 0.1) : 0
+      lastTs = ts
+      const dz = target.z - cur.z
+      const dcx = target.cx - cur.cx
+      const dcy = target.cy - cur.cy
+      if (Math.abs(dz) < 1e-3 && Math.abs(dcx) < 1e-4 && Math.abs(dcy) < 1e-4) return
+      const a = 1 - Math.exp(-dt * 12)
+      applyViewportFraction(cur.z + dz * a, cur.cx + dcx * a, cur.cy + dcy * a)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [viewportDriven, isOpen, getViewportFraction, applyViewportFraction, viewportTargetRef])
 
   const handlePost = async () => {
     if (!board || !newComment.trim() || posting) return
