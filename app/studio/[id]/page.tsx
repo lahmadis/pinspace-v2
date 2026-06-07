@@ -90,6 +90,10 @@ export default function StudioPage() {
   // INSERT/UPDATE coalesces into one GET on this timer (see the boards channel
   // below); cleared on that effect's cleanup.
   const boardsRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Phase B.5.2: monotonic id for board refetches. Only the latest-issued fetch
+  // may commit to state — discards out-of-order resolutions (e.g. the first
+  // upload's pre-PUT center snapshot landing after the committed-placement read).
+  const boardsFetchSeqRef = useRef(0)
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   // isPresenting lives here (not in React state) so the wall-change re-track
   // effect preserves it via `...meta` instead of wiping it. Phase B.1.
@@ -437,6 +441,9 @@ export default function StudioPage() {
                 const deletedId = (payload.old as { id?: string }).id
                 postrace('realtime DELETE -> parent setBoards FILTER', deletedId)
                 if (deletedId) setBoards((prev) => prev.filter((b) => b.id !== deletedId))
+                // Phase B.5.2: ping guest spectators (no postgres_changes for
+                // them) to refetch via their token path. Fire-and-forget.
+                liveChannelRef.current?.send({ type: 'broadcast', event: 'boards-dirty', payload: {} })
                 return
               }
               // INSERT/UPDATE: coalesce a burst (the INSERT-then-PUT pair, and
@@ -445,6 +452,9 @@ export default function StudioPage() {
               boardsRefetchTimerRef.current = setTimeout(() => {
                 boardsRefetchTimerRef.current = null
                 void handleBoardUpdate()
+                // Phase B.5.2: same-timer ping so guest spectators refetch the
+                // committed boards via their token path (covers upload/move/resize).
+                liveChannelRef.current?.send({ type: 'broadcast', event: 'boards-dirty', payload: {} })
               }, 400)
             }
           )
@@ -761,10 +771,18 @@ export default function StudioPage() {
 
   const handleBoardUpdate = async () => {
     // Reload boards after update — scoped to the room, not the workspace.
+    // Phase B.5.2: sequence-guard the refetch. The first upload's cold-path
+    // INSERT(center)->PUT(placement) gap can exceed the 400ms debounce, so a
+    // fetch reads the pre-PUT center snapshot while a later fetch reads the
+    // committed placement. Without this guard, out-of-order resolution lets the
+    // stale snapshot win as the final setBoards with nothing to correct it (the
+    // board never converges until refresh). Only the latest-issued fetch commits.
+    const seq = ++boardsFetchSeqRef.current
     try {
       const response = await fetch(`/api/boards?roomId=${studioId}`)
       if (response.ok) {
         const data = await response.json()
+        if (seq !== boardsFetchSeqRef.current) return // superseded by a newer refetch
         setBoards(data.boards || [])
       }
     } catch (error) {

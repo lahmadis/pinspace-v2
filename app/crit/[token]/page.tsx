@@ -231,6 +231,13 @@ export default function CritPage() {
   const laserRef = useRef<LaserState | null>(null)
   const lbViewportRef = useRef<LbViewport | null>(null)
   const lbCursorRef = useRef<LbCursorState | null>(null)
+  // Phase B.5.2: guest board live-sync. Guests get no postgres_changes (no auth
+  // session; RLS filters the events), so members ping "boards-dirty" on the
+  // studio-live channel and we debounce a refetch via the guest-token boards path
+  // — same serializer as the initial load. Sequence-guarded so an out-of-order
+  // resolution can't leave a stale (pre-commit) board snapshot.
+  const boardsRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const boardsFetchSeqRef = useRef(0)
 
   // This guest's own presence id, so PresenceBar excludes self.
   const currentUserId = guest?.tokenId ? `guest:${guest.tokenId}` : null
@@ -494,6 +501,28 @@ export default function CritPage() {
         const e = traceStreamRef.current.get(`${p.boardId}|${p.authorKey}`)
         if (e && e.live) { e.completed.push(e.live); e.live = null }
       })
+      // Phase B.5.2: a member changed the room's boards (upload/move/resize/delete).
+      // Debounce a refetch via the guest-token boards path — guests get no
+      // postgres_changes. Ref/timer only here; the setState happens in the
+      // sequence-guarded fetch resolution, not per message.
+      .on('broadcast', { event: 'boards-dirty' }, () => {
+        if (boardsRefetchTimerRef.current) clearTimeout(boardsRefetchTimerRef.current)
+        boardsRefetchTimerRef.current = setTimeout(() => {
+          boardsRefetchTimerRef.current = null
+          const seq = ++boardsFetchSeqRef.current
+          void (async () => {
+            try {
+              const res = await fetch(`/api/crit/${token}/boards`, { cache: 'no-store' })
+              if (!res.ok) return
+              const data = await res.json()
+              if (seq !== boardsFetchSeqRef.current) return // superseded by a newer refetch
+              setBoards(data.boards || [])
+            } catch {
+              // Best-effort live sync; the initial load + manual refresh remain.
+            }
+          })()
+        }, 400)
+      })
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
@@ -504,6 +533,10 @@ export default function CritPage() {
       lbCursorRef.current = null
       traceStreamRef.current.clear()
       if (critDirtyTimer) clearTimeout(critDirtyTimer)
+      if (boardsRefetchTimerRef.current) {
+        clearTimeout(boardsRefetchTimerRef.current)
+        boardsRefetchTimerRef.current = null
+      }
     }
   }, [roomId])
 
