@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase/client'
 import { Comment, Board, BoardComment, BoardTrace, TraceStroke } from '@/types'
 import { validateLinkUrl } from '@/lib/linkUrl'
 import { useImageViewport } from '@/components/useImageViewport'
+import type { TraceStreamEntry } from '@/components/3d/CameraController'
 import { toast } from '@/lib/toast'
 import { ExternalLink } from 'lucide-react'
 
@@ -67,6 +68,8 @@ interface LightboxModalProps {
   cursorColor?: string
   /** Phase B.5: debounced peer-edit signal — refetch traces/callouts for boardId when seq changes. */
   critDirty?: { boardId: string; trace: boolean; callout: boolean; seq: number } | null
+  /** Phase B.5.1: shared map of peers' in-progress (ephemeral) trace strokes, keyed `${boardId}|${authorKey}`. Written by the page's trace-pt/trace-end handlers; rendered here. */
+  traceStreamRef?: React.MutableRefObject<Map<string, TraceStreamEntry>>
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -114,7 +117,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -230,6 +233,14 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const saveTimerRef = useRef<number | null>(null)
   const traceSaveFailedRef = useRef(false)
   const tracesInitedForBoardRef = useRef<string | null>(null)
+  // Phase B.5.1: live trace streaming (ephemeral). liveStrokeRef mirrors the
+  // current stroke's points synchronously (drawingPoints is async state);
+  // streamSentCountRef tracks how many points were already broadcast (delta
+  // sends); lastStreamTsRef throttles to ~10Hz. Additive — the debounced SAVE
+  // path is unchanged.
+  const liveStrokeRef = useRef<[number, number][]>([])
+  const streamSentCountRef = useRef(0)
+  const lastStreamTsRef = useRef(0)
   useEffect(() => { traceModeRef.current = traceMode }, [traceMode])
   // Clear any pending debounced save on unmount.
   useEffect(() => () => { if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current) }, [])
@@ -821,6 +832,28 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
   const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
 
+  // Phase B.5.1: live trace streaming. authorKey matches the persisted layer key
+  // (member: user id; guest: guest-token id) so the receiver clears the ephemeral
+  // overlay once this author's saved layer refetches. Fire-and-forget; no logging.
+  const traceAuthorKey = (): string | null => (isGuest ? (guestTokenId ?? null) : (user?.id ?? null))
+  const streamTracePts = (pts: [number, number][]) => {
+    const ch = liveChannelRef?.current
+    const authorKey = traceAuthorKey()
+    if (!ch || !board || !authorKey || pts.length === 0) return
+    const r = (n: number) => Math.round(n * 1000) / 1000
+    ch.send({
+      type: 'broadcast',
+      event: 'trace-pt',
+      payload: { boardId: board.id, authorKey, color: traceColor, pts: pts.map((p) => [r(p[0]), r(p[1])]) },
+    })
+  }
+  const streamTraceEnd = () => {
+    const ch = liveChannelRef?.current
+    const authorKey = traceAuthorKey()
+    if (!ch || !board || !authorKey) return
+    ch.send({ type: 'broadcast', event: 'trace-end', payload: { boardId: board.id, authorKey } })
+  }
+
   const handleTracePointerDown = (e: React.PointerEvent) => {
     if (!traceMode) return
     e.stopPropagation()
@@ -830,7 +863,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     const frac = viewport.containerPointToImageFraction(e.clientX - rect.left, e.clientY - rect.top)
     if (!frac) return
     try { (e.target as Element).setPointerCapture(e.pointerId) } catch { /* noop */ }
-    setDrawingPoints([[clamp01(frac.x), clamp01(frac.y)]])
+    const pt: [number, number] = [clamp01(frac.x), clamp01(frac.y)]
+    // Reset the stream buffer for the new stroke (B.5.1).
+    liveStrokeRef.current = [pt]
+    streamSentCountRef.current = 0
+    lastStreamTsRef.current = 0
+    setDrawingPoints([pt])
   }
 
   const handleTracePointerMove = (e: React.PointerEvent) => {
@@ -840,7 +878,19 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     const rect = canvas.getBoundingClientRect()
     const frac = viewport.containerPointToImageFraction(e.clientX - rect.left, e.clientY - rect.top)
     if (!frac) return
-    setDrawingPoints((prev) => (prev ? [...prev, [clamp01(frac.x), clamp01(frac.y)]] : prev))
+    const pt: [number, number] = [clamp01(frac.x), clamp01(frac.y)]
+    // Stream the new points (delta) at ~10Hz so peers see the stroke as it's drawn (B.5.1).
+    liveStrokeRef.current.push(pt)
+    const now = Date.now()
+    if (now - lastStreamTsRef.current >= 100) {
+      lastStreamTsRef.current = now
+      const delta = liveStrokeRef.current.slice(streamSentCountRef.current)
+      if (delta.length) {
+        streamTracePts(delta)
+        streamSentCountRef.current = liveStrokeRef.current.length
+      }
+    }
+    setDrawingPoints((prev) => (prev ? [...prev, pt] : prev))
   }
 
   const handleTracePointerUp = (e: React.PointerEvent) => {
@@ -852,6 +902,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       setMyStrokes(next)
       scheduleSaveTrace(next)
     }
+    // Flush any unsent tail of the just-finished stroke, then mark it ended (B.5.1).
+    const tail = liveStrokeRef.current.slice(streamSentCountRef.current)
+    if (tail.length) streamTracePts(tail)
+    if (liveStrokeRef.current.length) streamTraceEnd()
+    liveStrokeRef.current = []
+    streamSentCountRef.current = 0
     setDrawingPoints(null)
   }
 
@@ -955,12 +1011,81 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         drawStroke({ color: traceColor, width: traceWidth, points: drawingPoints })
       }
     }
-  }, [mapFracToPt, boardTraces, myStrokes, drawingPoints, hiddenTraceAuthors, traceColor, traceWidth, user?.id, isGuest, guestTokenId])
+    // Phase B.5.1: peers' in-progress (ephemeral) strokes, streamed live before
+    // their save lands. Drawn on top of the persisted layer; cleared per author
+    // once their saved layer refetches (so no duplication). Never draw my own
+    // (self:false means I don't receive it anyway) or a hidden author. Width
+    // isn't streamed — use the default for the preview; the refetch converges
+    // it to the real width.
+    const stream = traceStreamRef?.current
+    if (stream && board) {
+      const STREAM_WIDTH = TRACE_WIDTHS[0].value
+      for (const e of stream.values()) {
+        if (e.boardId !== board.id || e.authorKey === myKey) continue
+        if (hiddenTraceAuthors.has(e.authorKey)) continue
+        const color = e.color || '#94a3b8'
+        for (const pts of e.completed) drawStroke({ color, width: STREAM_WIDTH, points: pts })
+        if (e.live && e.live.length) drawStroke({ color, width: STREAM_WIDTH, points: e.live })
+      }
+    }
+  }, [mapFracToPt, boardTraces, myStrokes, drawingPoints, hiddenTraceAuthors, traceColor, traceWidth, user?.id, isGuest, guestTokenId, board?.id, traceStreamRef])
 
   // Redraw on stroke/layer changes AND on every zoom/pan transform change.
+  // Phase B.5.1 (BUG 2): also key on calloutsAccessible + tracesLoaded. The trace
+  // <canvas> only mounts behind the calloutsAccessible gate, and redrawTraces
+  // early-returns on a null canvas / unmeasured image. A trace (re)fetch can set
+  // boardTraces before the canvas is mounted (open/follow race); without these
+  // deps no redraw re-fires when the canvas later mounts, so the layer stayed
+  // blank until a layer toggle. These deps fire a redraw on mount/load so a
+  // refetched author appears without toggling.
   useEffect(() => {
     redrawTraces()
-  }, [redrawTraces, viewport.scale, viewport.offsetX, viewport.offsetY])
+  }, [redrawTraces, viewport.scale, viewport.offsetX, viewport.offsetY, calloutsAccessible, tracesLoaded])
+
+  // Phase B.5.1: latest redrawTraces, read by the streaming frame loop without
+  // restarting it on every stroke/layer change.
+  const redrawTracesRef = useRef(redrawTraces)
+  redrawTracesRef.current = redrawTraces
+
+  // Phase B.5.1: while peers are mid-stroke, drive the trace canvas from a frame
+  // loop so streamed (ephemeral) strokes paint live — no setState per message.
+  // Idle (no redraw) when there's no ephemeral activity for this board; one final
+  // redraw fires when the last ephemeral clears so the persisted layer shows clean.
+  useEffect(() => {
+    if (!isOpen) return
+    let raf = 0
+    let hadEphemeral = false
+    const tick = () => {
+      raf = requestAnimationFrame(tick)
+      const stream = traceStreamRef?.current
+      let hasEphemeral = false
+      if (stream && board) {
+        for (const e of stream.values()) {
+          if (e.boardId === board.id && ((e.live?.length ?? 0) > 0 || e.completed.length > 0)) {
+            hasEphemeral = true
+            break
+          }
+        }
+      }
+      if (hasEphemeral || hadEphemeral) redrawTracesRef.current()
+      hadEphemeral = hasEphemeral
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [isOpen, board?.id, traceStreamRef])
+
+  // Phase B.5.1: once a refetch's persisted layer includes an author, drop their
+  // ephemeral overlay — the saved strokes supersede it (convergence, no
+  // duplication). Keyed on boardTraces so it runs after each (re)fetch; ref
+  // mutation only (no setState). The frame loop above repaints the result.
+  useEffect(() => {
+    const stream = traceStreamRef?.current
+    if (!stream || !board) return
+    const present = new Set(boardTraces.map((t) => t.authorId ?? t.guestTokenId ?? t.id))
+    for (const [k, e] of stream) {
+      if (e.boardId === board.id && present.has(e.authorKey)) stream.delete(k)
+    }
+  }, [boardTraces, board?.id, traceStreamRef])
 
   // ---- Lightbox follow (Phase B.3.1) -------------------------------------
   // Presenter: broadcast the lightbox viewport (~10Hz, only when changed) so

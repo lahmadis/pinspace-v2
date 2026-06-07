@@ -67,6 +67,23 @@ export interface CritDirtySignal {
   seq: number
 }
 
+/**
+ * Phase B.5.1: one peer's in-progress (ephemeral) trace strokes, streamed live
+ * via "trace-pt"/"trace-end" before the debounced save lands. Keyed in the page
+ * by `${boardId}|${authorKey}`; rendered on the trace canvas and cleared once the
+ * author's persisted layer refetches (the saved version converges silently).
+ * Points are image fractions (0..1), same space as stored traces.
+ */
+export interface TraceStreamEntry {
+  boardId: string
+  authorKey: string
+  color: string
+  /** Completed streamed strokes (each got a trace-end). */
+  completed: [number, number][][]
+  /** The stroke currently being drawn (null between strokes). */
+  live: [number, number][] | null
+}
+
 interface CameraControllerProps {
   orbitControlsRef?: React.RefObject<unknown> | null
   editingWall: number | null

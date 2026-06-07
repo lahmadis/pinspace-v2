@@ -17,7 +17,7 @@ import { Board, FloorTable } from '@/types'
 import WallSystem from './WallSystem'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { CameraController, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal } from './CameraController'
+import { CameraController, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry } from './CameraController'
 import { LaserPointer } from './LaserPointer'
 import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
@@ -147,6 +147,8 @@ interface StudioRoomProps {
   lbCursorRef?: React.MutableRefObject<LbCursorState | null>
   /** Phase B.5: debounced peer trace/callout-edit signal (forwarded to LightboxModal). */
   critDirty?: CritDirtySignal | null
+  /** Phase B.5.1: shared ephemeral trace-stream map (forwarded to LightboxModal). */
+  traceStreamRef?: React.MutableRefObject<Map<string, TraceStreamEntry>>
 }
 
 function SceneContent({
@@ -1992,6 +1994,7 @@ export default function StudioRoom(props: StudioRoomProps) {
       lbCursorRef={props.lbCursorRef}
       cursorColor={props.laserColor ?? '#22d3ee'}
       critDirty={props.critDirty}
+      traceStreamRef={props.traceStreamRef}
       onLinkSaved={(boardId, linkUrl) => {
         // Persisted server-side already; mirror into the local boards cache so
         // a later reopen reads the fresh link, and into the open snapshot so

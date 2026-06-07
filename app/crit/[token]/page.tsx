@@ -15,7 +15,7 @@ import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import PresenceBar, { type PresentUser, friendlyName, colorFor } from '@/components/3d/PresenceBar'
 import { LaserPointer } from '@/components/3d/LaserPointer'
-import type { FollowPose, LaserState, LbViewport, LbCursorState, CritDirtySignal } from '@/components/3d/CameraController'
+import type { FollowPose, LaserState, LbViewport, LbCursorState, CritDirtySignal, TraceStreamEntry } from '@/components/3d/CameraController'
 import { Presentation } from 'lucide-react'
 
 interface WallDimensions {
@@ -219,6 +219,10 @@ export default function CritPage() {
   const [followLightboxBoardId, setFollowLightboxBoardId] = useState<string | null>(null)
   // Phase B.5: debounced peer trace/callout-edit signal → LightboxModal refetch.
   const [critDirty, setCritDirty] = useState<CritDirtySignal | null>(null)
+  // Phase B.5.1: peers' in-progress trace strokes (ephemeral), keyed
+  // `${boardId}|${authorKey}`. Written by trace-pt/trace-end handlers (no
+  // setState); LightboxModal renders them live and clears on refetch.
+  const traceStreamRef = useRef<Map<string, TraceStreamEntry>>(new Map())
   // Realtime channels + the per-message refs consumed in frame loops (NEVER
   // setState per message — same discipline as the member page).
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
@@ -465,6 +469,31 @@ export default function CritPage() {
           if (pend) { critDirtySeq += 1; setCritDirty({ ...pend, seq: critDirtySeq }) }
         }, 500)
       })
+      // Phase B.5.1: live trace streaming (ephemeral). Append delta points to the
+      // author's in-progress stroke; trace-end finalizes it. Ref writes only — no
+      // setState; LightboxModal renders from the ref each frame and clears on save.
+      .on('broadcast', { event: 'trace-pt' }, (msg: { payload?: { boardId?: string; authorKey?: string; color?: string; pts?: [number, number][] } }) => {
+        const p = msg.payload
+        if (!p?.boardId || !p.authorKey || !Array.isArray(p.pts)) return
+        const map = traceStreamRef.current
+        const key = `${p.boardId}|${p.authorKey}`
+        let e = map.get(key)
+        if (!e) {
+          e = { boardId: p.boardId, authorKey: p.authorKey, color: typeof p.color === 'string' ? p.color : '#94a3b8', completed: [], live: null }
+          map.set(key, e)
+        }
+        if (typeof p.color === 'string') e.color = p.color
+        if (!e.live) e.live = []
+        for (const pt of p.pts) {
+          if (Array.isArray(pt) && pt.length === 2 && typeof pt[0] === 'number' && typeof pt[1] === 'number') e.live.push([pt[0], pt[1]])
+        }
+      })
+      .on('broadcast', { event: 'trace-end' }, (msg: { payload?: { boardId?: string; authorKey?: string } }) => {
+        const p = msg.payload
+        if (!p?.boardId || !p.authorKey) return
+        const e = traceStreamRef.current.get(`${p.boardId}|${p.authorKey}`)
+        if (e && e.live) { e.completed.push(e.live); e.live = null }
+      })
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
@@ -473,6 +502,7 @@ export default function CritPage() {
       laserRef.current = null
       lbViewportRef.current = null
       lbCursorRef.current = null
+      traceStreamRef.current.clear()
       if (critDirtyTimer) clearTimeout(critDirtyTimer)
     }
   }, [roomId])
@@ -783,6 +813,7 @@ export default function CritPage() {
         lbCursorRef={lbCursorRef}
         cursorColor={laserColor}
         critDirty={critDirty}
+        traceStreamRef={traceStreamRef}
       />
     </div>
   )
