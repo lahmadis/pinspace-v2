@@ -109,44 +109,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
-  try {
-    const searchParams = request.nextUrl.searchParams
-    const boardId = searchParams.get('boardId')
-
-    if (!boardId) {
-      return NextResponse.json({ error: 'boardId required' }, { status: 400 })
-    }
-
-    // Use service role for GET so public workspace viewers can read comments without auth
-    const db = supabaseServiceRole()
-
-    // Fetch comments from Supabase
-    const { data: comments, error } = await db
-      .from('comments')
-      .select('*')
-      .eq('board_id', boardId)
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.error('Error fetching comments:', error)
-      return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
-    }
-
-    // Transform to frontend format
-    const transformedComments = (comments || []).map((c) => ({
-      id: c.id,
-      boardId: c.board_id,
-      authorName: c.author_name,
-      authorEmail: c.author_email || '',
-      content: c.text,
-      type: 'review', // Default type for compatibility
-      createdAt: c.created_at,
-    }))
-
-    return NextResponse.json({ comments: transformedComments })
-  } catch (error) {
-    console.error('Error fetching comments:', error)
-    return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
-  }
-}
+// SECURITY (audit pass 1): the former GET handler here was unauthenticated and
+// returned comment text + author_email for any boardId. It had no client callers
+// (all reads go through /api/boards/[id]/comments, which is session-gated and
+// omits email), so it was removed. POST stays — it enforces session + access.

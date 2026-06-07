@@ -87,7 +87,8 @@ export async function GET(request: NextRequest) {
       name: w.name,
       description: w.description,
       studioId: w.id, // For backward compatibility
-      inviteCode: w.invite_code,
+      // SECURITY (audit pass 1): invite_code intentionally omitted — this is an
+      // unauthenticated public endpoint and the code is a join credential.
       isPublic: w.is_public,
       publishedAt: w.published_at,
       networkMetadata: w.network_metadata,

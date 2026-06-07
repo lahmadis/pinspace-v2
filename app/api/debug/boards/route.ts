@@ -11,6 +11,12 @@ function isAdmin(email: string | undefined): boolean {
 // Debug endpoint to inspect and fix board positions (admin-only)
 export async function GET(request: NextRequest) {
   try {
+    // SECURITY (audit pass 1): debug data-inspection/mutation tools — available
+    // in local development only. 404 in any non-dev environment (the admin gate
+    // below still applies in dev).
+    if (process.env.NODE_ENV !== 'development') {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
     const supabase = supabaseServer()
     const {
       data: { session },
@@ -86,6 +92,12 @@ export async function GET(request: NextRequest) {
 // POST endpoint to update a board's wallIndex (admin-only)
 export async function POST(request: NextRequest) {
   try {
+    // SECURITY (audit pass 1): debug data-inspection/mutation tools — available
+    // in local development only. 404 in any non-dev environment (the admin gate
+    // below still applies in dev).
+    if (process.env.NODE_ENV !== 'development') {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
     const supabase = supabaseServer()
     const {
       data: { session },

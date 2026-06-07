@@ -41,17 +41,14 @@ export async function POST(
     return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
   }
 
+  // SECURITY (audit pass 1): minting a public /share link exposes the room's
+  // boards to anyone with the URL, so it's owner-only — matching the guest-token
+  // rule. (Members were previously allowed; existing links are unaffected.)
   if (ws.owner_id !== userId) {
-    const { data: membership } = await admin
-      .from('workspace_members')
-      .select('user_id')
-      .eq('workspace_id', room.workspace_id)
-      .eq('user_id', userId)
-      .maybeSingle()
-
-    if (!membership) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    return NextResponse.json(
+      { error: 'Only the workspace owner can create a share link' },
+      { status: 403 }
+    )
   }
 
   const { data: existing } = await admin

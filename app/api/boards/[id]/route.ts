@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase/server'
+import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 
 export async function GET(
   request: NextRequest,
@@ -40,13 +40,36 @@ export async function GET(
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
 
+    // SECURITY (audit pass 1): student_email is private — expose it only to the
+    // workspace owner or a member, matching the list serializer's "unmasked only
+    // for owner/member" rule. The board itself is read via RLS above (which also
+    // admits org/public viewers), so without this an org member or a public-board
+    // viewer would receive the student's email. Owner/member is resolved via the
+    // service role (RLS has no membership SELECT on workspaces).
+    const accessDb = supabaseServiceRole()
+    const { data: ws } = await accessDb
+      .from('workspaces')
+      .select('owner_id')
+      .eq('id', board.workspace_id)
+      .maybeSingle()
+    let isOwnerOrMember = ws?.owner_id === userId
+    if (!isOwnerOrMember) {
+      const { data: membership } = await accessDb
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', board.workspace_id)
+        .eq('user_id', userId)
+        .maybeSingle()
+      isOwnerOrMember = membership != null
+    }
+
     // Transform to frontend format
     const transformedBoard = {
       id: board.id,
       studioId: board.workspace_id, // Keep for backward compatibility
       workspaceId: board.workspace_id,
       studentName: board.student_name,
-      studentEmail: board.student_email,
+      studentEmail: isOwnerOrMember ? board.student_email : undefined,
       title: board.title,
       description: board.description,
       thumbnailUrl: board.thumbnail_url,

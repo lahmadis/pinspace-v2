@@ -51,7 +51,11 @@ export async function POST(req: NextRequest) {
     const ageRange = body?.age_range?.trim() || null
     const year = body?.year?.trim() || null
     const major = body?.major?.trim() || null
-    const institutionId = body?.institution_id || null
+    // SECURITY (audit pass 1): organization_id is NOT accepted here. Org
+    // membership is a trust boundary (it grants org-wide read access via RLS +
+    // app checks), so it is set ONLY by the email-domain-verified claim-domain
+    // flow (/api/user-profile/claim-domain). Any institution_id in the body is
+    // ignored — a client can no longer self-assert org membership.
     const howHeard = body?.how_heard?.trim() || null
     // full_name is optional; validate only when a non-empty value is supplied.
     let fullName: string | null = null
@@ -74,7 +78,6 @@ export async function POST(req: NextRequest) {
       age_range: ageRange || null,
       year: year || null,
       major: major || null,
-      organization_id: institutionId || null,
       how_heard: howHeard || null,
       full_name: fullName || null,
       role: role || null,
