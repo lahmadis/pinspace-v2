@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 
+// Wall-config is read live by guests/returning viewers; never cache it (mirror
+// the boards routes' force-dynamic + no-store). A stale default layout drops
+// boards that sit on non-default wall indices.
+export const dynamic = 'force-dynamic'
+
 const CONFIG_BUCKET = 'board-images'
 const CONFIG_PREFIX = 'wall-configs'
 
@@ -66,6 +71,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   const { id } = params
   const roomId = request.nextUrl.searchParams.get('roomId')
 
+  // Every GET response carries Cache-Control: no-store so a browser/CDN never
+  // serves a stale wall layout (matches /api/crit/[token]/boards).
+  const jsonNoStore = (body: unknown, init?: { status?: number }) => {
+    const res = NextResponse.json(body, init)
+    res.headers.set('Cache-Control', 'no-store')
+    return res
+  }
+
   // Sample studios get a static default zigzag config (read-only, never POSTed).
   if (id.startsWith('sample-studio-')) {
     const defaultConfig = {
@@ -78,7 +91,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         { height: 10, width: 20 },
       ]
     }
-    return NextResponse.json({ exists: true, config: defaultConfig, version: 0 }, { status: 200 })
+    return jsonNoStore({ exists: true, config: defaultConfig, version: 0 }, { status: 200 })
   }
 
   // Per-room read first when roomId is supplied; fall back to the legacy
@@ -88,20 +101,20 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   if (roomId) {
     const perRoom = await readConfigAt(configPath(id, roomId))
     if (perRoom) {
-      return NextResponse.json({ exists: true, config: perRoom.config, version: perRoom.version }, { status: 200 })
+      return jsonNoStore({ exists: true, config: perRoom.config, version: perRoom.version }, { status: 200 })
     }
     const legacy = await readConfigAt(configPath(id, null))
     if (legacy) {
-      return NextResponse.json({ exists: true, config: legacy.config, version: legacy.version }, { status: 200 })
+      return jsonNoStore({ exists: true, config: legacy.config, version: legacy.version }, { status: 200 })
     }
-    return NextResponse.json({ exists: false, config: null, version: 0 }, { status: 200 })
+    return jsonNoStore({ exists: false, config: null, version: 0 }, { status: 200 })
   }
 
   const stored = await readConfigAt(configPath(id, null))
   if (stored) {
-    return NextResponse.json({ exists: true, config: stored.config, version: stored.version }, { status: 200 })
+    return jsonNoStore({ exists: true, config: stored.config, version: stored.version }, { status: 200 })
   }
-  return NextResponse.json({ exists: false, config: null, version: 0 }, { status: 200 })
+  return jsonNoStore({ exists: false, config: null, version: 0 }, { status: 200 })
 }
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {

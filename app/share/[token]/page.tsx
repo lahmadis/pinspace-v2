@@ -219,7 +219,7 @@ export default function SharePage() {
             const configUrl = roomId
               ? `/api/studios/${workspaceId}/wall-config?roomId=${encodeURIComponent(roomId)}`
               : `/api/studios/${workspaceId}/wall-config`
-            const configRes = await fetch(configUrl)
+            const configRes = await fetch(configUrl, { cache: 'no-store' })
             if (!cancelled && configRes.ok) {
               const configData = await configRes.json()
               if (configData?.config) resolvedConfig = configData.config

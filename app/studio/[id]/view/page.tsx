@@ -231,7 +231,7 @@ export default function StudioViewPage() {
         const configUrl = isDemo
           ? `/api/studios/${wsKey}/wall-config?roomId=${encodeURIComponent(studioId)}&demo=true`
           : `/api/studios/${wsKey}/wall-config?roomId=${encodeURIComponent(studioId)}`
-        const resConfig = await fetch(configUrl)
+        const resConfig = await fetch(configUrl, { cache: 'no-store' })
         if (cancelled) return
         if (resConfig.ok) {
           const data = await resConfig.json()
