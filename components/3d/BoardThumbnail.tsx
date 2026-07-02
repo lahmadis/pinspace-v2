@@ -7,6 +7,7 @@ import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { PDFTextureMaterial } from './PDFTexture'
 import { useBoardTexture } from './useBoardTexture'
+import { useDisposableGeometry } from './useDisposableGeometry'
 import VideoBadge from './VideoBadge'
 
 interface BoardThumbnailProps {
@@ -110,6 +111,18 @@ export default function BoardThumbnail({ board, position, width, height, onClick
     }
   })
 
+  // Source geometries for the outline edges, memoized on size and disposed when
+  // the size changes / on unmount (R3F never disposes a geometry passed inline as
+  // an <edgesGeometry> constructor arg).
+  const skeletonEdgeGeometry = useDisposableGeometry(
+    () => new THREE.PlaneGeometry(width, height),
+    [width, height],
+  )
+  const frameEdgeGeometry = useDisposableGeometry(
+    () => new THREE.PlaneGeometry(width + 0.03, height + 0.03),
+    [width, height],
+  )
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleClick = (e: any) => {
     if (onClick) {
@@ -170,7 +183,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
         <lineSegments position={[0, 0, 0.003]}>
           <edgesGeometry
             attach="geometry"
-            args={[new THREE.PlaneGeometry(width, height)]}
+            args={[skeletonEdgeGeometry]}
           />
           <lineBasicMaterial attach="material" color="#94a3b8" transparent opacity={0.5} />
         </lineSegments>
@@ -208,7 +221,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           <lineSegments position={[0, 0, 0.002]}>
             <edgesGeometry
               attach="geometry"
-              args={[new THREE.PlaneGeometry(width + 0.03, height + 0.03)]}
+              args={[frameEdgeGeometry]}
             />
             <lineBasicMaterial attach="material" color="#6366f1" linewidth={3} />
           </lineSegments>

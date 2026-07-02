@@ -172,7 +172,7 @@ export function useImageViewport(maxScale: number = DEFAULT_MAX_SCALE): ImageVie
     e.preventDefault()
     const p = toContainerPoint(e.clientX, e.clientY)
     if (!p) return
-    const intensity = e.ctrlKey ? 0.02 : 0.0015
+    const intensity = e.ctrlKey ? 0.02 : 0.005
     const factor = Math.exp(-e.deltaY * intensity)
     zoomAtPoint(viewRef.current.scale * factor, p.x, p.y)
   }, [zoomAtPoint])

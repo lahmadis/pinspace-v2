@@ -3,6 +3,14 @@ import React, { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 
+/**
+ * The room's resting camera FOV — the single source of truth shared between the
+ * <PerspectiveCamera> in StudioRoom and the exit swoosh below, so exiting edit
+ * mode restores the exact FOV the room loads with (rather than leaving it at the
+ * edit-mode value). StudioRoom imports this for its camera's `fov` prop.
+ */
+export const ROOM_DEFAULT_FOV = 50
+
 function getControls(ref: React.RefObject<unknown> | null | undefined): OrbitControlsType | null {
   const r = ref?.current
   if (!r) return null
@@ -266,7 +274,7 @@ export function CameraController({
         returnPosition.clone(),
         returnTarget.clone(),
         fromFov,
-        35,
+        ROOM_DEFAULT_FOV,
         false
       )
     }

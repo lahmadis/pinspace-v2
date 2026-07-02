@@ -16,6 +16,7 @@ import { useBoardTexture } from './useBoardTexture'
 import { toast } from '@/lib/toast'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
 import VideoBadge from './VideoBadge'
+import { useDisposableGeometry } from './useDisposableGeometry'
 
 interface DraggableBoardProps {
   board: Board
@@ -833,6 +834,17 @@ if (e.intersections && e.intersections.length > 0) {
 
   devLog(`🧱 DraggableBoard on wall: wallRotation=${wallRotation.toFixed(2)}, side=${boardSide}, boardZ=${boardZ}`)
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
+  // Source geometries for the outline edges, memoized on size and disposed when
+  // the size changes / on unmount. Building these inline in <edgesGeometry args>
+  // leaked one geometry per pointer-move during a corner resize.
+  const boardEdgeGeometry = useDisposableGeometry(
+    () => new THREE.BoxGeometry(boardWidth, boardHeight, BOARD_THICKNESS),
+    [boardWidth, boardHeight],
+  )
+  const selectedEdgeGeometry = useDisposableGeometry(
+    () => new THREE.BoxGeometry(boardWidth + 0.3, boardHeight + 0.3, BOARD_THICKNESS + 0.02),
+    [boardWidth, boardHeight],
+  )
   const hasImage = board.fullImageUrl || board.thumbnailUrl
   const imageUrl = board.fullImageUrl || board.thumbnailUrl || ''
   const isPDF = imageUrl.toLowerCase().endsWith('.pdf')
@@ -935,7 +947,7 @@ if (e.intersections && e.intersections.length > 0) {
 
         {/* Border edges for the box geometry - no raycast so mesh gets pointer events at edges/corners */}
         <lineSegments position={[0, 0, 0]} raycast={() => null}>
-          <edgesGeometry args={[new THREE.BoxGeometry(boardWidth, boardHeight, BOARD_THICKNESS)]} />
+          <edgesGeometry args={[boardEdgeGeometry]} />
           <lineBasicMaterial 
             color={
               isSelected
@@ -951,7 +963,7 @@ if (e.intersections && e.intersections.length > 0) {
         {/* Additional thicker border for selected state - no raycast so mesh gets pointer events */}
         {isSelected && (
           <lineSegments position={[0, 0, 0]} raycast={() => null}>
-            <edgesGeometry args={[new THREE.BoxGeometry(boardWidth + 0.3, boardHeight + 0.3, BOARD_THICKNESS + 0.02)]} />
+            <edgesGeometry args={[selectedEdgeGeometry]} />
             <lineBasicMaterial color="#4444ff" linewidth={3} />
           </lineSegments>
         )}
@@ -1023,7 +1035,7 @@ if (e.intersections && e.intersections.length > 0) {
                 transform: 'translate(-50%, -50%)'
               }}
             >
-              ��
+              🔒
             </Html>
 
             {/* Tooltip */}
