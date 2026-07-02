@@ -278,7 +278,17 @@ export async function PUT(request: NextRequest) {
     // Prepare update data for Supabase
     const updateData: Record<string, unknown> = {}
 
-    if (board.position) {
+    if (board.position === null) {
+      // Explicit clear (un-place): the client sends `position: null` to remove a
+      // board from its wall. Absent/undefined still means "don't touch position"
+      // (else-if below), so author-only / link-only PUTs never wipe placement.
+      updateData.position_wall_index = null
+      updateData.position_x = null
+      updateData.position_y = null
+      updateData.position_width = null
+      updateData.position_height = null
+      updateData.position_side = null
+    } else if (board.position) {
       updateData.position_wall_index = board.position.wallIndex
       updateData.position_x = board.position.x.toString()
       updateData.position_y = board.position.y.toString()

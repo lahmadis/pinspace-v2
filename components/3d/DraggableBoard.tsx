@@ -17,6 +17,7 @@ import { toast } from '@/lib/toast'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
 import VideoBadge from './VideoBadge'
 import { useDisposableGeometry } from './useDisposableGeometry'
+import { enqueueBoardWrite } from '@/lib/boardPositionWriteQueue'
 
 interface DraggableBoardProps {
   board: Board
@@ -785,9 +786,13 @@ if (e.intersections && e.intersections.length > 0) {
         board.id.startsWith('demo-') ||
         board.id.startsWith('sample-')
       if (!isMockBoard) {
-        fetch(`/api/boards/${board.id}/position`, {
+        // Serialize per board (shared chain with the move PUT) so a resize and a
+        // move for the same board can't commit out of order. keepalive lets the
+        // save survive a navigation right after the gesture.
+        enqueueBoardWrite(board.id, () => fetch(`/api/boards/${board.id}/position`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
           body: JSON.stringify({
             wallIndex: _wallIndex,
             x: apiX,
@@ -797,7 +802,7 @@ if (e.intersections && e.intersections.length > 0) {
             boardHeightIn: sz.height,
             side,
           }),
-        })
+        }))
           .then(res => {
             if (!res.ok) throw new Error(`HTTP ${res.status}`)
             // Size was applied optimistically above (Phase 5), so success is

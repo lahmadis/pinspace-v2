@@ -1153,7 +1153,9 @@ export default function StudioRoom(props: StudioRoomProps) {
               fetch('/api/boards', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...board, position: undefined }),
+                // Explicit null (not undefined) so the PUT route actually clears
+                // the position columns; undefined/absent still means "don't touch".
+                body: JSON.stringify({ ...board, position: null }),
               })
             )
           )

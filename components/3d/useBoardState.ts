@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Board } from '@/types'
 import { toast } from '@/lib/toast'
 import { markBoardReconciling } from '@/lib/pendingBoardReconcile'
+import { enqueueBoardWrite } from '@/lib/boardPositionWriteQueue'
 
 const isDev = process.env.NODE_ENV === 'development'
 const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
@@ -553,13 +554,20 @@ export function useBoardState(
         api: { x: apiX, y: apiY, width: apiWidth, height: apiHeight }
       })
       
-      // Create board object without position, then add it explicitly
+      // Create board object without position, then add it explicitly. Also drop
+      // `comments` — an unbounded array the PUT route never reads — so the
+      // keepalive body stays well under the 64KB keepalive budget when Save &
+      // Exit fires one PUT per board in parallel.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { position: _position, ...boardWithoutPosition } = board
+      const { position: _position, comments: _comments, ...boardWithoutPosition } = board
       
-      const response = await fetch('/api/boards', {
+      // Serialize per board so rapid successive writes for the SAME board commit
+      // in issue order (different boards stay parallel). keepalive lets an in-
+      // flight save survive Save & Exit navigating away.
+      const response = await enqueueBoardWrite(boardId, () => fetch('/api/boards', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
         body: JSON.stringify({
           ...boardWithoutPosition,
           workspaceId: board.studioId,
@@ -578,7 +586,7 @@ export function useBoardState(
             side: positionSide,
           }
         })
-      })
+      }))
       
       if (!response.ok) {
         postrace('updateBoardPosition PUT FAILED -> ROLLBACK', boardId, `status=${response.status}`)
