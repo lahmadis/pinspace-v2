@@ -451,7 +451,23 @@ function SceneContent({
         // Wider rooms (or more connected walls) push the camera back more.
         const distanceScale = ((maxWallWidthInches * layoutFactor) / baseWidthInches) || 1
         const minDistance = 80 * distanceScale       // Pull camera back a bit more by default
-        const maxDistance = 1200 * distanceScale     // Allow zooming further out for very long rooms
+        // Zoom-out cap, scaled to room size like minDistance so a board's
+        // on-screen size at full zoom-out stays ~constant across rooms. ~5.5x
+        // the initial framing distance (110 * distanceScale): far enough for a
+        // whole-room overview, close enough that boards stay comfortably
+        // visible instead of shrinking to specks. Previously 1200 * — far
+        // enough that large rooms overran the camera's far plane and boards
+        // vanished on zoom-out (see cameraFar below).
+        const maxDistance = 600 * distanceScale
+        // Far clip plane must clear the farthest board when fully dollied out:
+        // the camera sits maxDistance from the target and the farthest wall can
+        // be up to the room's footprint (maxWallWidthInches * layoutFactor)
+        // beyond it. The camera previously set no far, falling back to the
+        // three.js default (2000), which maxDistance overran in larger rooms —
+        // that clipping is exactly what made boards disappear on zoom-out. The
+        // +1000 buffers vertical extent and diagonal slack. minDistance / pan /
+        // zoom intensity are unchanged; this only widens the frustum's far end.
+        const cameraFar = maxDistance + maxWallWidthInches * layoutFactor + 1000
 
         // Aim slightly above mid-wall (where boards typically sit) so zoom goes toward the walls, not the floor.
         const targetHeight = Math.max(60, Math.min(maxWallHeightInches * 0.65, maxWallHeightInches)) || 60
@@ -478,10 +494,11 @@ function SceneContent({
         return (
           <>
             {/* Set up the camera first so OrbitControls always receives a valid camera instance */}
-            <PerspectiveCamera 
-              makeDefault 
+            <PerspectiveCamera
+              makeDefault
               position={[cameraX, cameraHeight, cameraZ]}
               fov={ROOM_DEFAULT_FOV}
+              far={cameraFar}
             />
 
             <OrbitControls 
