@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from '@/lib/toast'
@@ -9,6 +9,21 @@ import { useAuthSession } from '@/hooks/useAuthSession'
 import { useAccountMode } from '@/lib/useAccountMode'
 import { useProfile } from '@/lib/ProfileContext'
 import PublishConfirmModal, { NetworkMetadata } from '@/components/PublishConfirmModal'
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  rectSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import {
   ArrowLeft,
   Settings,
@@ -21,6 +36,7 @@ import {
   Globe,
   ChevronRight,
   Network,
+  GripVertical,
 } from 'lucide-react'
 
 export default function WorkspaceRoomsPage() {
@@ -48,6 +64,30 @@ export default function WorkspaceRoomsPage() {
   const [publishModalRoom, setPublishModalRoom] = useState<Room | null>(null)
   const [networkSettingsOpen, setNetworkSettingsOpen] = useState(false)
   const [bannerDismissed, setBannerDismissed] = useState(false)
+
+  // --- Drag-to-reorder (owner only) ----------------------------------------
+  // `orderedRooms` is the local, reorderable copy the grid renders from, so a
+  // drag can reorder instantly without a server round-trip. We reconcile it
+  // from workspace.rooms DURING render (flash-free, unlike a post-paint
+  // effect): whenever the server list reference changes we keep the owner's
+  // current local order if the room SET is unchanged — so an optimistic
+  // reorder or a publish-toggle re-render doesn't clobber it — and otherwise
+  // adopt the server order (first load, room added/removed). Either way we pull
+  // fresh per-room fields (e.g. isPublished) from the server copy.
+  const [orderedRooms, setOrderedRooms] = useState<Room[]>([])
+  const [syncedRooms, setSyncedRooms] = useState<Room[] | null>(null)
+  const sourceRooms = workspace?.rooms ?? null
+  if (sourceRooms !== syncedRooms) {
+    const source = sourceRooms ?? []
+    const byId = new Map(source.map((r) => [r.id, r] as const))
+    const sameSet =
+      orderedRooms.length === source.length && orderedRooms.every((r) => byId.has(r.id))
+    setOrderedRooms(sameSet ? orderedRooms.map((r) => byId.get(r.id) ?? r) : source)
+    setSyncedRooms(sourceRooms)
+  }
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  )
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
@@ -209,6 +249,38 @@ export default function WorkspaceRoomsPage() {
     }
   }
 
+  // Optimistic reorder FIRST, then persist in the background — mirrors
+  // flipRoomPublish's optimistic-with-rollback. On success we deliberately do
+  // NOT await fetchWorkspace: the local order already matches what we wrote, so
+  // a refetch would only flash the list through a server round-trip (T2).
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = orderedRooms.findIndex((r) => r.id === active.id)
+    const newIndex = orderedRooms.findIndex((r) => r.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    const previous = orderedRooms
+    const next = arrayMove(orderedRooms, oldIndex, newIndex)
+    setOrderedRooms(next)
+
+    fetch(`/api/workspaces/${workspaceId}/rooms/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderedRoomIds: next.map((r) => r.id) }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          throw new Error(data?.error || 'Failed to reorder rooms')
+        }
+      })
+      .catch((e) => {
+        setOrderedRooms(previous)
+        toast.error(e instanceof Error ? e.message : 'Failed to reorder rooms')
+      })
+  }
+
   const saveNetworkMetadata = async (metadata: NetworkMetadata): Promise<boolean> => {
     try {
       const res = await fetch(`/api/workspaces/${workspaceId}/network-metadata`, {
@@ -304,8 +376,24 @@ export default function WorkspaceRoomsPage() {
     )
   }
 
-  const rooms = workspace.rooms ?? []
   const instructorName = workspace.members.find(m => m.role === 'instructor')?.name ?? null
+  // Reorder UI is an owner-only power. `createdBy` is the workspace owner_id.
+  const isOwner = workspace.createdBy === user?.id
+
+  // Shared per-card handlers/flags. Per-room props (room, isEditing, isBusy)
+  // are supplied at each call site.
+  const cardHandlers: RoomCardHandlers = {
+    editingRoomName,
+    setEditingRoomName,
+    onSaveRename: handleRenameRoom,
+    onCancelEdit: () => { setEditingRoomId(null); setEditingRoomName('') },
+    onStartEdit: (r) => { setEditingRoomId(r.id); setEditingRoomName(r.name) },
+    canRename,
+    canShowPublish: accountMode !== 'personal' && canPublish,
+    isInstructor,
+    onTogglePublish: (r) => { handleTogglePublish(r) },
+    onRequestDelete: (r) => setRoomToDelete(r),
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -394,120 +482,46 @@ export default function WorkspaceRoomsPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {rooms.map((room) => {
-            const isEditing = editingRoomId === room.id
-            const isBusy = roomBusy === room.id
-            return (
+          {/* Room cards. Owners get drag-to-reorder (each card carries its own
+              handle); everyone else gets the same cards statically. The Add
+              Room card stays OUTSIDE the sortable context (S3) so it never
+              participates in reordering. */}
+          {isOwner ? (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={orderedRooms.map((r) => r.id)}
+                strategy={rectSortingStrategy}
+              >
+                {orderedRooms.map((room) => (
+                  <SortableRoomCard
+                    key={room.id}
+                    room={room}
+                    isEditing={editingRoomId === room.id}
+                    isBusy={roomBusy === room.id}
+                    {...cardHandlers}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+          ) : (
+            orderedRooms.map((room) => (
               <div
                 key={room.id}
-                className="group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+                className="relative group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
               >
-                {/* Card body — entire card is the click target unless we're inline editing */}
-                {isEditing ? (
-                  <div className="p-6">
-                    <div className="flex items-center gap-2 mb-4">
-                      <input
-                        type="text"
-                        value={editingRoomName}
-                        maxLength={100}
-                        onChange={(e) => setEditingRoomName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleRenameRoom(room)
-                          if (e.key === 'Escape') { setEditingRoomId(null); setEditingRoomName('') }
-                        }}
-                        disabled={isBusy}
-                        autoFocus
-                        className="flex-1 px-3 py-1.5 border border-indigo-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                      <button
-                        onClick={() => handleRenameRoom(room)}
-                        disabled={isBusy}
-                        className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-50"
-                        aria-label="Save name"
-                      >
-                        <Check className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => { setEditingRoomId(null); setEditingRoomName('') }}
-                        disabled={isBusy}
-                        className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg disabled:opacity-50"
-                        aria-label="Cancel"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <Link
-                    href={`/studio/${room.id}`}
-                    className="block p-6 cursor-pointer"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-                        <DoorOpen className="w-5 h-5 text-indigo-600" />
-                      </div>
-                      {room.isPublished && (
-                        <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-md text-xs font-medium flex items-center gap-1">
-                          <Globe className="w-3 h-3" />
-                          Published
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-1.5 group-hover:text-indigo-700 transition-colors">
-                      {room.name}
-                    </h3>
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-gray-500">
-                        {(room.boardCount ?? 0)} {(room.boardCount ?? 0) === 1 ? 'board' : 'boards'}
-                      </p>
-                      <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
-                    </div>
-                  </Link>
-                )}
-
-                {/* Edit affordances. Visible on hover so they don't crowd the
-                    card. Hover effects suppressed when editing. Rename is open
-                    to any member (Phase 10); publish + delete stay owner-only. */}
-                {canRename && !isEditing && (
-                  <div className="px-6 pb-4 flex items-center justify-end gap-1 -mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {accountMode !== 'personal' && canPublish && (
-                      <button
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleTogglePublish(room) }}
-                        disabled={isBusy}
-                        className={`p-1.5 rounded-lg disabled:opacity-50 ${
-                          room.isPublished
-                            ? 'text-green-700 hover:text-gray-700 hover:bg-gray-50'
-                            : 'text-gray-500 hover:text-green-700 hover:bg-green-50'
-                        }`}
-                        aria-label={room.isPublished ? 'Unpublish room' : 'Publish to Wentworth'}
-                        title={room.isPublished ? 'Unpublish' : 'Publish to Wentworth'}
-                      >
-                        <Globe className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    <button
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingRoomId(room.id); setEditingRoomName(room.name) }}
-                      disabled={isBusy}
-                      className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-50"
-                      aria-label="Rename room"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    {isInstructor && (
-                      <button
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRoomToDelete(room) }}
-                        disabled={isBusy}
-                        className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
-                        aria-label="Delete room"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                )}
+                <RoomCardInner
+                  room={room}
+                  isEditing={editingRoomId === room.id}
+                  isBusy={roomBusy === room.id}
+                  {...cardHandlers}
+                />
               </div>
-            )
-          })}
+            ))
+          )}
 
           {/* Add Room card — owner/instructor on class workspaces; any member on shared projects */}
           {canAddRoom && (
@@ -559,7 +573,7 @@ export default function WorkspaceRoomsPage() {
           )}
         </div>
 
-        {rooms.length === 0 && !canAddRoom && (
+        {orderedRooms.length === 0 && !canAddRoom && (
           <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
               <DoorOpen className="w-8 h-8 text-gray-600" />
@@ -646,6 +660,194 @@ export default function WorkspaceRoomsPage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// Handlers/flags shared by every room card, independent of which room. The
+// parent builds one of these and spreads it into each card.
+type RoomCardHandlers = {
+  editingRoomName: string
+  setEditingRoomName: (v: string) => void
+  onSaveRename: (room: Room) => void
+  onCancelEdit: () => void
+  onStartEdit: (room: Room) => void
+  canRename: boolean
+  canShowPublish: boolean
+  isInstructor: boolean
+  onTogglePublish: (room: Room) => void
+  onRequestDelete: (room: Room) => void
+}
+
+type RoomCardProps = RoomCardHandlers & {
+  room: Room
+  isEditing: boolean
+  isBusy: boolean
+}
+
+// Presentational card innards (the Link/inline-edit block + the hover
+// affordances row). Rendered inside whichever outer wrapper the caller
+// provides — a sortable div for owners, a plain div for everyone else — so the
+// card markup lives in exactly one place.
+function RoomCardInner({
+  room,
+  isEditing,
+  isBusy,
+  editingRoomName,
+  setEditingRoomName,
+  onSaveRename,
+  onCancelEdit,
+  onStartEdit,
+  canRename,
+  canShowPublish,
+  isInstructor,
+  onTogglePublish,
+  onRequestDelete,
+}: RoomCardProps) {
+  return (
+    <>
+      {/* Card body — the Link is the click target unless we're inline editing */}
+      {isEditing ? (
+        <div className="p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <input
+              type="text"
+              value={editingRoomName}
+              maxLength={100}
+              onChange={(e) => setEditingRoomName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSaveRename(room)
+                if (e.key === 'Escape') onCancelEdit()
+              }}
+              disabled={isBusy}
+              autoFocus
+              className="flex-1 px-3 py-1.5 border border-indigo-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <button
+              onClick={() => onSaveRename(room)}
+              disabled={isBusy}
+              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-50"
+              aria-label="Save name"
+            >
+              <Check className="w-4 h-4" />
+            </button>
+            <button
+              onClick={onCancelEdit}
+              disabled={isBusy}
+              className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg disabled:opacity-50"
+              aria-label="Cancel"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <Link
+          href={`/studio/${room.id}`}
+          className="block p-6 cursor-pointer"
+        >
+          <div className="flex items-start justify-between mb-3">
+            <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+              <DoorOpen className="w-5 h-5 text-indigo-600" />
+            </div>
+            {room.isPublished && (
+              <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-md text-xs font-medium flex items-center gap-1">
+                <Globe className="w-3 h-3" />
+                Published
+              </span>
+            )}
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-1.5 group-hover:text-indigo-700 transition-colors">
+            {room.name}
+          </h3>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500">
+              {(room.boardCount ?? 0)} {(room.boardCount ?? 0) === 1 ? 'board' : 'boards'}
+            </p>
+            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+          </div>
+        </Link>
+      )}
+
+      {/* Edit affordances. Visible on hover so they don't crowd the card.
+          Hover effects suppressed when editing. Rename is open to any member
+          (Phase 10); publish + delete stay owner-only. */}
+      {canRename && !isEditing && (
+        <div className="px-6 pb-4 flex items-center justify-end gap-1 -mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          {canShowPublish && (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTogglePublish(room) }}
+              disabled={isBusy}
+              className={`p-1.5 rounded-lg disabled:opacity-50 ${
+                room.isPublished
+                  ? 'text-green-700 hover:text-gray-700 hover:bg-gray-50'
+                  : 'text-gray-500 hover:text-green-700 hover:bg-green-50'
+              }`}
+              aria-label={room.isPublished ? 'Unpublish room' : 'Publish to Wentworth'}
+              title={room.isPublished ? 'Unpublish' : 'Publish to Wentworth'}
+            >
+              <Globe className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onStartEdit(room) }}
+            disabled={isBusy}
+            className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-50"
+            aria-label="Rename room"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          {isInstructor && (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRequestDelete(room) }}
+              disabled={isBusy}
+              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
+              aria-label="Delete room"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+// Owner-only sortable wrapper. The drag handle is the ONLY draggable surface
+// (S2) — the rest of the card stays a working Link. The handle sits in the
+// left padding gutter (vertically centered) and carries a higher z-index, so
+// its pointer events never reach the underlying Link and it doesn't overlap the
+// Link's content. Hidden while inline-renaming to avoid an accidental drag.
+function SortableRoomCard(props: RoomCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: props.room.id })
+
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : undefined,
+    zIndex: isDragging ? 20 : undefined,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="relative group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+    >
+      {!props.isEditing && (
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="absolute left-1 top-1/2 -translate-y-1/2 z-20 p-1 rounded-md text-gray-300 hover:text-gray-600 hover:bg-gray-100 cursor-grab active:cursor-grabbing touch-none"
+          aria-label={`Drag to reorder ${props.room.name}`}
+          title="Drag to reorder"
+        >
+          <GripVertical className="w-4 h-4" />
+        </button>
+      )}
+      <RoomCardInner {...props} />
     </div>
   )
 }

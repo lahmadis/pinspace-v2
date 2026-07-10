@@ -67,6 +67,7 @@ export async function GET(
       .select('id, name, display_order, is_published, published_at, created_at')
       .eq('workspace_id', workspaceId)
       .order('display_order', { ascending: true })
+      .order('created_at', { ascending: true })
 
     // Per-room board counts for the rooms list page. One query, grouped client-
     // side. Excludes pending uploads to match what the studio actually shows.
