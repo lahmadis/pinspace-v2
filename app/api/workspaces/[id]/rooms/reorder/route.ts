@@ -97,17 +97,25 @@ export async function POST(
       )
     }
 
-    // Atomic bulk write: upsert on the primary key, sending only id +
-    // display_order. Every id already exists (validated above) so each row hits
-    // ON CONFLICT DO UPDATE — name/workspace_id are untouched because they're
-    // not in the payload. defaultToNull:false keeps that intent explicit.
-    const rows = ordered.map((id, index) => ({ id, display_order: index }))
-    const { error: upsertError } = await admin
-      .from('rooms')
-      .upsert(rows, { onConflict: 'id', defaultToNull: false })
-    if (upsertError) {
-      console.error('Error reordering rooms:', upsertError)
-      return NextResponse.json({ error: 'Failed to reorder rooms' }, { status: 500 })
+    // Per-row UPDATEs — deliberately NOT an upsert. rooms.name and
+    // rooms.workspace_id are NOT NULL; a partial-column upsert ({id,
+    // display_order}) evaluates its INSERT path's constraints even when every
+    // row already conflicts, so it fails with a NOT NULL violation (surfaces as
+    // a 500). An UPDATE only ever touches display_order and never has an insert
+    // path. N is small and this route is owner-only, so sequential writes —
+    // scoped by workspace_id as defense-in-depth on top of the set-equality
+    // validation above — are both safe and cheap.
+    for (let index = 0; index < ordered.length; index++) {
+      const id = ordered[index]
+      const { error: updateError } = await admin
+        .from('rooms')
+        .update({ display_order: index })
+        .eq('id', id)
+        .eq('workspace_id', workspaceId)
+      if (updateError) {
+        console.error('Error reordering rooms:', updateError, { id, index })
+        return NextResponse.json({ error: 'Failed to reorder rooms' }, { status: 500 })
+      }
     }
 
     // Return the new ordered list so the client can reconcile if it wants.
