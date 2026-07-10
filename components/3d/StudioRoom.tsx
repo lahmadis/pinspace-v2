@@ -21,7 +21,9 @@ import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, t
 import { LaserPointer } from './LaserPointer'
 import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
+import { DraggableText } from './DraggableText'
 import { WallDropZone } from '@/components/3d/WallDropZone'
+import type { WallTextItem } from '@/lib/wallLayout'
 import RightCommentPanel from '@/components/RightCommentPanel'
 import LightboxModal from '@/components/LightboxModal'
 import { useBoardState } from './useBoardState'
@@ -182,6 +184,10 @@ function SceneContent({
   onBoardClick,
   editingWallSide,
   tables,
+  textItems,
+  selectedTextId,
+  onTextSelect,
+  onTextDragEnd,
   onFloorClick,
   onTableModelClick,
   orbitControlsRef,
@@ -214,6 +220,10 @@ function SceneContent({
   onBoardClick?: (board: Board) => void
   editingWallSide: 'front' | 'back'
   tables: FloorTable[]
+  textItems: WallTextItem[]
+  selectedTextId: string | null
+  onTextSelect: (id: string | null) => void
+  onTextDragEnd: (id: string, x: number, y: number) => void
   onFloorClick?: () => void
   onTableModelClick?: (modelUrl: string) => void
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -297,7 +307,9 @@ function SceneContent({
       
       <WallSystem
         boards={localBoards}
-        wallConfig={wallConfig}
+        // Merge live text items into the config so saved labels render in the
+        // normal 3D room (WallSystem reads wallConfig.textItems).
+        wallConfig={{ ...wallConfig, textItems }}
         onWallClick={onWallClick}
         onWallHover={onWallHover}
         editingWall={editingWall}
@@ -423,9 +435,29 @@ function SceneContent({
               )
             })
           })()}
+
+          {/* Free-floating wall text labels for the wall being edited. Drag to
+              reposition; the parent commits (x,y) into the blob on pointer-up.
+              Other walls' labels render statically via WallSystem. */}
+          {textItems
+            .filter((t) => t.wallIndex === editingWall && (t.side ?? 'front') === editingWallSide)
+            .map((t) => (
+              <DraggableText
+                key={t.id}
+                item={t}
+                wallPosition={editingWallPosition}
+                wallRotation={editingWallRotation}
+                wallBaseRotationForCoords={editingWallBaseRotation}
+                wallDimensions={editingWallDimensions}
+                side={editingWallSide}
+                isSelected={selectedTextId === t.id}
+                onSelect={onTextSelect}
+                onDragEnd={onTextDragEnd}
+              />
+            ))}
         </>
       )}
-      
+
       {/* Calculate camera controls based on wall dimensions */}
       {(() => {
         // Find the largest wall dimensions (in feet)
@@ -712,6 +744,17 @@ export default function StudioRoom(props: StudioRoomProps) {
     }))
   }, [])
   const [tables, setTables] = useState<FloorTable[]>(() => sanitizeTables((props.wallConfig as { tables?: FloorTable[] }).tables))
+  // Free-floating wall text labels (blob-persisted, mirror the `tables` shape).
+  const [textItems, setTextItems] = useState<WallTextItem[]>(() => {
+    const raw = (props.wallConfig as { textItems?: WallTextItem[] }).textItems
+    return Array.isArray(raw) ? raw : []
+  })
+  // Ref mirror so persist helpers read the latest items without a stale closure.
+  const textItemsRef = useRef<WallTextItem[]>(textItems)
+  useEffect(() => { textItemsRef.current = textItems }, [textItems])
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null)
+  // Debounce timer for text-content typing (coalesces keystrokes into one save).
+  const textPersistTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [placedBoards3D, setPlacedBoards3D] = useState<Map<string, {
     x: number;
     y: number;
@@ -766,6 +809,19 @@ export default function StudioRoom(props: StudioRoomProps) {
     setTables(sanitizeTables(configTables))
   }, [props.studioId, props.wallConfig, sanitizeTables])
 
+  // Sync text items when the wall config loads or studio changes (mirror
+  // tables). On a 409 reload the parent hands back the server blob, which flows
+  // through here — last-writer-wins, same coarse behavior as tables.
+  useEffect(() => {
+    const raw = (props.wallConfig as { textItems?: WallTextItem[] }).textItems
+    setTextItems(Array.isArray(raw) ? raw : [])
+  }, [props.studioId, props.wallConfig])
+
+  // Clear text selection when leaving wall-edit mode.
+  useEffect(() => {
+    if (editingWall === null) setSelectedTextId(null)
+  }, [editingWall])
+
   // Floor click no longer opens editor; use header "Place 3D model" button instead
 
   // Open model in overlay (same page). Never pass blob URLs to viewer (they fail to fetch).
@@ -787,7 +843,9 @@ export default function StudioRoom(props: StudioRoomProps) {
           (url.startsWith('/') && !url.startsWith('//')))
       return { ...t, modelUrl: isPersistable ? url : undefined }
     })
-    const payload = { ...props.wallConfig, tables: tablesToSave }
+    // Include textItems so a floor/geometry save writes the FULL blob and never
+    // drops the wall text (the POST replaces the stored object wholesale).
+    const payload = { ...props.wallConfig, tables: tablesToSave, textItems }
     // Phase 2a: wall-config is per-room. The endpoint path segment still uses
     // the workspace id (the route's auth check loads `workspaces.owner_id` by
     // that id); the room id is appended as a query param so the route reads
@@ -850,7 +908,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         }
       }
     })()
-  }, [props.studioId, props.workspaceId, props.wallConfig, props.wallVersionRef, props.onWallConfigConflict, tables])
+  }, [props.studioId, props.workspaceId, props.wallConfig, props.wallVersionRef, props.onWallConfigConflict, tables, textItems])
 
   /**
    * Wall indices for the floor editor's board-safety guard. Just the indices —
@@ -921,7 +979,9 @@ export default function StudioRoom(props: StudioRoomProps) {
             (url.startsWith('/') && !url.startsWith('//')))
         return { ...t, modelUrl: isPersistable ? url : undefined }
       })
-      const payload = { ...nextConfig, tables: tablesToSave }
+      // Include textItems so this wall-delete persist writes the FULL blob and
+      // never drops the wall text.
+      const payload = { ...nextConfig, tables: tablesToSave, textItems }
       const wsKey = props.workspaceId ?? props.studioId
       const roomId = props.studioId
       const body = JSON.stringify({
@@ -958,7 +1018,147 @@ export default function StudioRoom(props: StudioRoomProps) {
         return { ok: false }
       }
     },
-    [tables, props.studioId, props.workspaceId, props.wallVersionRef, props.onWallConfigConflict]
+    [tables, textItems, props.studioId, props.workspaceId, props.wallVersionRef, props.onWallConfigConflict]
+  )
+
+  /**
+   * Persist the CURRENT blob with the given text items, through the SAME
+   * versioned wall-config POST tables/geometry use (baseVersion → 409 →
+   * onWallConfigConflict). keepalive so a save survives a navigation right
+   * after the gesture — this is the write DELETE/remove goes through, so it is
+   * naturally safe (it does NOT copy the non-keepalive un-place clear at the
+   * boards path). We include `tables` too so a text save never wipes tables.
+   */
+  const persistTextItemsNow = useCallback(
+    (items: WallTextItem[]) => {
+      if (textPersistTimer.current) {
+        clearTimeout(textPersistTimer.current)
+        textPersistTimer.current = null
+      }
+      const tablesToSave = tables.map((t) => {
+        const url = t.modelUrl ?? ''
+        const isBlob = url.startsWith('blob:')
+        const isPersistable =
+          !isBlob &&
+          (url.startsWith('http://') ||
+            url.startsWith('https://') ||
+            (url.startsWith('/') && !url.startsWith('//')))
+        return { ...t, modelUrl: isPersistable ? url : undefined }
+      })
+      const payload = { ...props.wallConfig, tables: tablesToSave, textItems: items }
+      const wsKey = props.workspaceId ?? props.studioId
+      const roomId = props.studioId
+      const body = JSON.stringify({ baseVersion: props.wallVersionRef?.current ?? 0, config: payload })
+      const saveOnce = async (): Promise<'ok' | 'conflict'> => {
+        const res = await fetch(`/api/studios/${wsKey}/wall-config?roomId=${encodeURIComponent(roomId)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body,
+        })
+        if (res.status === 409) {
+          const data = await res.json().catch(() => ({} as { latest?: Record<string, unknown> & { version?: number } }))
+          if (data.latest && props.onWallConfigConflict) props.onWallConfigConflict(data.latest)
+          return 'conflict'
+        }
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({} as { error?: string }))
+          throw new Error(data.error || `HTTP ${res.status}`)
+        }
+        const data = await res.json().catch(() => ({} as { version?: number }))
+        if (typeof data.version === 'number' && props.wallVersionRef) props.wallVersionRef.current = data.version
+        return 'ok'
+      }
+      ;(async () => {
+        try {
+          if ((await saveOnce()) === 'conflict') return
+        } catch (firstError) {
+          try {
+            if ((await saveOnce()) === 'conflict') return
+          } catch (secondError) {
+            console.error('Failed to save wall text', { firstError, secondError })
+            toast.error('Could not save text. Please try again.')
+          }
+        }
+      })()
+    },
+    [tables, props.wallConfig, props.workspaceId, props.studioId, props.wallVersionRef, props.onWallConfigConflict]
+  )
+
+  // Debounced variant for content typing — coalesces keystrokes into one POST.
+  const persistTextItemsDebounced = useCallback(
+    (items: WallTextItem[]) => {
+      if (textPersistTimer.current) clearTimeout(textPersistTimer.current)
+      textPersistTimer.current = setTimeout(() => persistTextItemsNow(items), 500)
+    },
+    [persistTextItemsNow]
+  )
+
+  const genTextId = () =>
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `text-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+
+  // Drop a new label at the center of the wall being edited, select it, persist.
+  const handleAddText = useCallback(() => {
+    if (editingWall === null) return
+    const item: WallTextItem = {
+      id: genTextId(),
+      wallIndex: editingWall,
+      x: 0,
+      y: 0,
+      text: 'Text',
+      fontSize: 12,
+      side: editingWallSide ?? 'front',
+    }
+    const next = [...textItemsRef.current, item]
+    textItemsRef.current = next
+    setTextItems(next)
+    setSelectedTextId(item.id)
+    persistTextItemsNow(next)
+  }, [editingWall, editingWallSide, persistTextItemsNow])
+
+  const handleTextPositionChange = useCallback(
+    (id: string, x: number, y: number) => {
+      const next = textItemsRef.current.map((t) => (t.id === id ? { ...t, x, y } : t))
+      textItemsRef.current = next
+      setTextItems(next)
+      persistTextItemsNow(next)
+    },
+    [persistTextItemsNow]
+  )
+
+  const handleTextContentChange = useCallback(
+    (id: string, text: string) => {
+      const next = textItemsRef.current.map((t) => (t.id === id ? { ...t, text } : t))
+      textItemsRef.current = next
+      setTextItems(next)
+      persistTextItemsDebounced(next)
+    },
+    [persistTextItemsDebounced]
+  )
+
+  const handleTextFontSizeChange = useCallback(
+    (id: string, fontSize: number) => {
+      const next = textItemsRef.current.map((t) => (t.id === id ? { ...t, fontSize } : t))
+      textItemsRef.current = next
+      setTextItems(next)
+      persistTextItemsNow(next)
+    },
+    [persistTextItemsNow]
+  )
+
+  // Remove = drop from textItems and save the blob via the keepalive POST above
+  // (NOT a bespoke fetch, and NOT the non-keepalive un-place clear pattern).
+  const handleRemoveText = useCallback(
+    (id: string) => {
+      const next = textItemsRef.current.filter((t) => t.id !== id)
+      textItemsRef.current = next
+      setTextItems(next)
+      setSelectedTextId((prev) => (prev === id ? null : prev))
+      persistTextItemsNow(next)
+    },
+    [persistTextItemsNow]
   )
 
   // Keep placedBoards3D in sync with boardPositions (e.g. after undo/redo)
@@ -1913,7 +2113,79 @@ export default function StudioRoom(props: StudioRoomProps) {
         onBoardSelect={handleBoardSelect}
         onBoardDragStart={handleBoardDragStart}
       />
-      
+
+      {/* Wall text controls — additive overlay (does NOT modify
+          EditModeOverlay). Sits under the "Add Your Board" button while a wall
+          is being edited. "Add text" drops a label at wall center; selecting a
+          label reveals its content field, font-size stepper, and Remove. */}
+      {showEditUI && editingWall !== null && (
+        <div className="fixed left-6 top-48 z-50 flex flex-col gap-2 w-56">
+          <button
+            onClick={handleAddText}
+            className="px-4 py-2 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-lg text-sm font-medium flex items-center justify-center gap-2"
+          >
+            <span className="text-lg leading-none text-indigo-600">＋</span>
+            Add text
+          </button>
+
+          {(() => {
+            const sel = textItems.find((t) => t.id === selectedTextId && t.wallIndex === editingWall)
+            if (!sel) return null
+            return (
+              <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-3 flex flex-col gap-2">
+                <label className="text-xs font-medium text-gray-500">Text</label>
+                <input
+                  value={sel.text}
+                  onChange={(e) => handleTextContentChange(sel.id, e.target.value)}
+                  placeholder="Label text"
+                  maxLength={200}
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <label className="text-xs font-medium text-gray-500 mt-1">Font size (in)</label>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => handleTextFontSizeChange(sel.id, Math.max(2, Math.round(sel.fontSize) - 2))}
+                    className="px-2 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50"
+                    aria-label="Decrease font size"
+                  >
+                    −
+                  </button>
+                  <span className="w-9 text-center text-sm tabular-nums">{Math.round(sel.fontSize)}</span>
+                  <button
+                    onClick={() => handleTextFontSizeChange(sel.id, Math.min(96, Math.round(sel.fontSize) + 2))}
+                    className="px-2 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50"
+                    aria-label="Increase font size"
+                  >
+                    ＋
+                  </button>
+                  <div className="flex gap-1 ml-1">
+                    {[6, 12, 24, 48].map((sz) => (
+                      <button
+                        key={sz}
+                        onClick={() => handleTextFontSizeChange(sel.id, sz)}
+                        className={`px-1.5 py-1 rounded text-xs border ${
+                          Math.round(sel.fontSize) === sz
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        {sz}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleRemoveText(sel.id)}
+                  className="mt-1 px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded text-sm hover:bg-red-100 transition-colors"
+                >
+                  Remove text
+                </button>
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
       <div className="w-full h-screen">
         <Canvas 
           shadows 
@@ -1975,10 +2247,14 @@ export default function StudioRoom(props: StudioRoomProps) {
           onBoardClick={(board: unknown) => handleLightboxOpen(board as Board)}
             selectedBoardId={selectedBoardId}
             setSelectedBoardId={setSelectedBoardId}
-            onDeselect={() => setSelectedBoardId(null)}
+            onDeselect={() => { setSelectedBoardId(null); setSelectedTextId(null) }}
             isWorkspaceMember={isWorkspaceMember}
             editingWallSide={editingWallSide}
             tables={tables}
+            textItems={textItems}
+            selectedTextId={selectedTextId}
+            onTextSelect={setSelectedTextId}
+            onTextDragEnd={handleTextPositionChange}
             onFloorClick={undefined}
             onTableModelClick={handleTableModelClick}
           />

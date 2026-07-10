@@ -3,6 +3,8 @@
  * 1 unit = 1 inch.
  */
 
+import type { FloorTable } from '@/types'
+
 export interface WallDimensions {
   height: number
   width: number
@@ -17,11 +19,38 @@ export interface WallTransformOverride {
   rotationY: number
 }
 
+/**
+ * A free-floating text label placed on a wall. Persisted in the wall-config
+ * blob (NOT the DB / boards table). x/y use the SAME convention as boards:
+ * normalized wall-relative, center anchor, clamped to [-0.5, 0.5]. fontSize is
+ * in inches (1 unit = 1 inch, matching the scene scale).
+ */
+export interface WallTextItem {
+  id: string
+  wallIndex: number
+  x: number
+  y: number
+  text: string
+  fontSize: number
+  side: 'front' | 'back'
+}
+
 export interface WallConfig {
   walls: WallDimensions[]
   layoutType: LayoutType
   /** When set, wall positions/rotations use these overrides instead of layout math. */
   customTransforms?: WallTransformOverride[]
+  /**
+   * Fields below are part of the persisted wall-config blob but not the
+   * geometry math. They were previously merged in ad-hoc at save time; typed
+   * here so the stored shape is discoverable in one place.
+   */
+  /** Free-floating wall text labels (blob-persisted, not DB rows). */
+  textItems?: WallTextItem[]
+  /** Floor models/tables persisted alongside geometry. */
+  tables?: FloorTable[]
+  /** Optimistic-concurrency version stamped by the wall-config store. */
+  version?: number
 }
 
 /**

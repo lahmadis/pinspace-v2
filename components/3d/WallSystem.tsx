@@ -1,10 +1,11 @@
 'use client'
 
 import * as THREE from 'three'
+import { Text } from '@react-three/drei'
 import { Board } from '@/types'
 import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
-import { getWallTransformResolved, calculateFloorBounds } from '@/lib/wallLayout'
+import { getWallTransformResolved, calculateFloorBounds, type WallTextItem } from '@/lib/wallLayout'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
 
 interface WallDimensions {
@@ -17,6 +18,8 @@ type LayoutType = 'zigzag' | 'square' | 'linear' | 'lshape'
 interface WallConfig {
   walls: WallDimensions[]
   layoutType: LayoutType
+  /** Free-floating wall text labels, read from the wall-config blob. */
+  textItems?: WallTextItem[]
 }
 
 interface WallSystemProps {
@@ -240,6 +243,42 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
                 />
               )
             })}
+
+            {/* Free-floating wall text labels (blob-persisted). Positioned by
+                the SAME normalized→world convention as boards. Hidden on the
+                wall currently being edited (DraggableText takes over there),
+                matching how BoardThumbnails are hidden above. */}
+            {(wallConfig.textItems ?? [])
+              .filter((t) => {
+                if (t.wallIndex !== wallIndex) return false
+                if (editUIActive && editingWall === wallIndex) return false
+                return true
+              })
+              .map((t) => {
+                const textX = t.x * transform.width
+                const textY = t.y * transform.height
+                const isBack = t.side === 'back'
+                // Match the board Z offsets (wall half-depth = 3), a hair
+                // further out so labels never z-fight with a board on the same
+                // wall.
+                const TEXT_SURFACE_OFFSET = 3
+                const textZ = isBack ? -(TEXT_SURFACE_OFFSET + 0.25) : TEXT_SURFACE_OFFSET + 0.25
+                return (
+                  <Text
+                    key={t.id}
+                    position={[textX, textY, textZ]}
+                    // Back labels face into the back room so they read correctly.
+                    rotation={isBack ? [0, Math.PI, 0] : [0, 0, 0]}
+                    fontSize={t.fontSize}
+                    color="#111827"
+                    anchorX="center"
+                    anchorY="middle"
+                    maxWidth={transform.width}
+                  >
+                    {t.text || ' '}
+                  </Text>
+                )
+              })}
           </group>
         )
       })}
