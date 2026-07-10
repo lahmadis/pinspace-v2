@@ -37,6 +37,7 @@ import {
   ChevronRight,
   Network,
   GripVertical,
+  UserPlus,
 } from 'lucide-react'
 
 export default function WorkspaceRoomsPage() {
@@ -64,6 +65,16 @@ export default function WorkspaceRoomsPage() {
   const [publishModalRoom, setPublishModalRoom] = useState<Room | null>(null)
   const [networkSettingsOpen, setNetworkSettingsOpen] = useState(false)
   const [bannerDismissed, setBannerDismissed] = useState(false)
+
+  // Enroll-students-by-email (class owner only)
+  const [enrollOpen, setEnrollOpen] = useState(false)
+  const [enrollText, setEnrollText] = useState('')
+  const [enrollBusy, setEnrollBusy] = useState(false)
+  const [enrollResult, setEnrollResult] = useState<{
+    enrolled: { email: string; name: string | null }[]
+    alreadyMember: string[]
+    notFound: string[]
+  } | null>(null)
 
   // --- Drag-to-reorder (owner only) ----------------------------------------
   // `orderedRooms` is the local, reorderable copy the grid renders from, so a
@@ -279,6 +290,42 @@ export default function WorkspaceRoomsPage() {
         setOrderedRooms(previous)
         toast.error(e instanceof Error ? e.message : 'Failed to reorder rooms')
       })
+  }
+
+  const handleEnrollStudents = async () => {
+    // Accept comma- or newline-separated emails. The server re-normalizes
+    // (trim/lowercase/dedupe/cap) and is the source of truth for validation.
+    const emails = enrollText.split(/[\n,]/).map((e) => e.trim()).filter(Boolean)
+    if (emails.length === 0) {
+      toast.error('Enter at least one email address')
+      return
+    }
+    try {
+      setEnrollBusy(true)
+      const res = await fetch(`/api/workspaces/${workspaceId}/members/enroll`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emails }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to add students')
+      const result = {
+        enrolled: Array.isArray(data.enrolled) ? data.enrolled : [],
+        alreadyMember: Array.isArray(data.alreadyMember) ? data.alreadyMember : [],
+        notFound: Array.isArray(data.notFound) ? data.notFound : [],
+      }
+      setEnrollResult(result)
+      setEnrollText('')
+      if (result.enrolled.length > 0) {
+        toast.success(`Added ${result.enrolled.length} student${result.enrolled.length === 1 ? '' : 's'}`)
+        // Refresh the member list. Not a hot path — a refetch is fine here.
+        await fetchWorkspace()
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to add students')
+    } finally {
+      setEnrollBusy(false)
+    }
   }
 
   const saveNetworkMetadata = async (metadata: NetworkMetadata): Promise<boolean> => {
@@ -582,6 +629,88 @@ export default function WorkspaceRoomsPage() {
             <p className="text-sm text-gray-500 max-w-sm mx-auto">
               The instructor hasn&apos;t set up any rooms in this workspace yet. Check back later.
             </p>
+          </div>
+        )}
+
+        {/* Add students by email — class owner only. Enrolls students who
+            already have a PinSpace account into workspace_members (which is
+            what actually grants room access; org membership alone does not). */}
+        {isOwner && workspace.type === 'class' && (
+          <div className="mt-12 bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <UserPlus className="w-5 h-5 text-indigo-600" />
+                  Add students
+                </h2>
+                <p className="text-sm text-gray-500 mt-1 max-w-xl">
+                  Enroll students by email. They must already have a PinSpace account —
+                  anyone without one is listed below so you can ask them to sign up first.
+                </p>
+              </div>
+              {!enrollOpen && (
+                <button
+                  onClick={() => { setEnrollOpen(true); setEnrollResult(null) }}
+                  className="shrink-0 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center gap-2"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Add students
+                </button>
+              )}
+            </div>
+
+            {enrollOpen && (
+              <div className="mt-4">
+                <textarea
+                  value={enrollText}
+                  onChange={(e) => setEnrollText(e.target.value)}
+                  rows={4}
+                  placeholder={'Paste student emails, separated by commas or new lines\ne.g. jane@wit.edu, john@wit.edu'}
+                  disabled={enrollBusy}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                />
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={handleEnrollStudents}
+                    disabled={enrollBusy || !enrollText.trim()}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm disabled:opacity-50"
+                  >
+                    {enrollBusy ? 'Adding…' : 'Add students'}
+                  </button>
+                  <button
+                    onClick={() => { setEnrollOpen(false); setEnrollText('') }}
+                    disabled={enrollBusy}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {enrollResult && (
+              <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <p className="text-sm font-medium text-gray-900">
+                  {enrollResult.enrolled.length} enrolled
+                  <span className="text-gray-400"> · </span>
+                  {enrollResult.alreadyMember.length} already in
+                  <span className="text-gray-400"> · </span>
+                  {enrollResult.notFound.length} have no account yet
+                </p>
+                {enrollResult.notFound.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                      No account yet — ask them to sign up first
+                    </p>
+                    <ul className="text-sm text-gray-700 space-y-0.5">
+                      {enrollResult.notFound.map((email) => (
+                        <li key={email} className="font-mono text-xs break-all">{email}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
