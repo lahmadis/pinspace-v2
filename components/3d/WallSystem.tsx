@@ -69,15 +69,19 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
         castShadow
       >
         <boxGeometry args={[floorBounds.floorWidth, floorThickness, floorBounds.floorDepth]} />
-        <meshStandardMaterial 
-          color="#D8DEFF" // very light, white-leaning blue for floor
-          roughness={0.9}
+        <meshStandardMaterial
+          color="#FAF9F6" // lightest surface — floor reads as the ground plane
+          roughness={0.92}
           metalness={0.0}
         />
       </mesh>
 
       {wallConfig.walls.map((wall, wallIndex) => {
         const transform = getTransform(wallIndex)
+        // Per-surface value separation so lighting reads without cranking the
+        // rig: floor lightest (above), walls facing ±Z ("back") a mid tone,
+        // walls facing ±X ("side") slightly darker. Keyed off wall orientation.
+        const wallColor = Math.abs(Math.sin(transform.rotationY)) > 0.5 ? '#DEDBD5' : '#ECEAE5'
         // Faint glow when another user is editing this wall (presence).
         const isOthersEditing = othersEditingWalls?.has(wallIndex) ?? false
         // Hide thumbnails on the editing wall ONLY once the edit UI has fully taken over
@@ -123,7 +127,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
             <mesh castShadow receiveShadow renderOrder={0}>
               <boxGeometry args={[transform.width, transform.height, 6]} />
               <meshStandardMaterial
-                color="#D8DEFF" // very light, white-leaning blue for walls
+                color={wallColor} // neutral gallery wall; back/side value-separated
                 roughness={0.85} // Slight sheen for subtle depth
                 metalness={0.0}
                 depthWrite={true}
@@ -143,36 +147,36 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
               receiveShadow
             >
               <boxGeometry args={[0.2, transform.height, 0.2]} />
-              <meshStandardMaterial 
-                color="#B3C4FF" // slightly darker blue for side edge shadows
+              <meshStandardMaterial
+                color="#CFCBC4" // neutral warm-gray edge shadow (side)
                 roughness={0.9}
                 metalness={0.0}
               />
             </mesh>
 
             {/* Right edge shadow */}
-            <mesh 
-              position={[transform.width / 2 - 0.1, 0, 2.1]} 
-              castShadow 
+            <mesh
+              position={[transform.width / 2 - 0.1, 0, 2.1]}
+              castShadow
               receiveShadow
             >
               <boxGeometry args={[0.2, transform.height, 0.2]} />
-              <meshStandardMaterial 
-                color="#B3C4FF" // slightly darker blue for side edge shadows
+              <meshStandardMaterial
+                color="#CFCBC4" // neutral warm-gray edge shadow (side)
                 roughness={0.9}
                 metalness={0.0}
               />
             </mesh>
 
             {/* Top edge shadow */}
-            <mesh 
-              position={[0, transform.height / 2 - 0.1, 2.1]} 
-              castShadow 
+            <mesh
+              position={[0, transform.height / 2 - 0.1, 2.1]}
+              castShadow
               receiveShadow
             >
               <boxGeometry args={[transform.width, 0.2, 0.2]} />
-              <meshStandardMaterial 
-                color="#A1B2FF" // darker blue for top edge shadow
+              <meshStandardMaterial
+                color="#C4C0B9" // neutral warm-gray edge shadow (top, a touch darker)
                 roughness={0.9}
                 metalness={0.0}
               />
