@@ -27,11 +27,11 @@ const postrace = (...args: unknown[]) => {
   console.log('[POSTRACE]', new Date().toISOString(), ...args)
 }
 
-// Neutral, seam-free studio backdrop — a very light warm gray with a subtle
-// radial vignette so the space reads as ambient depth. Shared by the live scene
-// container and the loading/error screens so there's no periwinkle flash.
-const STUDIO_BG =
-  'radial-gradient(120% 90% at 50% 34%, #F6F5F3 0%, #F1F0ED 52%, #E5E3DF 100%)'
+// Studio backdrop — the periwinkle/lavender the room palette is designed
+// against. Shared by the live scene container and the loading/error screens.
+// The 3D <Canvas> is transparent (no scene.background), so this CSS color shows
+// through as the single, seam-free backdrop.
+const STUDIO_BG = '#B3B3FF'
 
 const StudioRoom = dynamic(
   () => import(/* webpackChunkName: "StudioRoom" */ '@/components/3d/StudioRoom'),
@@ -40,8 +40,8 @@ const StudioRoom = dynamic(
     loading: () => (
     <div className="w-full h-screen flex items-center justify-center" style={{ background: STUDIO_BG }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-gray-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 font-medium">Loading 3D Studio...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
+          <p className="text-white/90 font-medium">Loading 3D Studio...</p>
         </div>
     </div>
   ),
@@ -800,8 +800,8 @@ export default function StudioPage() {
     return (
       <div className="w-full h-screen flex items-center justify-center" style={{ background: STUDIO_BG }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-gray-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 font-medium">Loading Studio...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
+          <p className="text-white/90 font-medium">Loading Studio...</p>
         </div>
       </div>
     )
@@ -811,18 +811,18 @@ export default function StudioPage() {
     return (
       <div className="w-full h-screen flex items-center justify-center" style={{ background: STUDIO_BG }}>
         <div className="text-center">
-          <p className="text-gray-900 font-semibold text-lg mb-2">Failed to load boards</p>
-          <p className="text-gray-500 text-sm mb-6">Check your connection and try again.</p>
+          <p className="text-white font-semibold text-lg mb-2">Failed to load boards</p>
+          <p className="text-white/70 text-sm mb-6">Check your connection and try again.</p>
           <div className="flex gap-3 justify-center">
             <button
               onClick={() => { setBoardsError(false); setIsLoading(true); setRetryCount(c => c + 1) }}
-              className="px-5 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-500 transition-colors"
+              className="px-5 py-2 bg-white text-indigo-600 rounded-lg font-medium hover:bg-white/90 transition-colors"
             >
               Retry
             </button>
             <button
               onClick={() => router.push('/dashboard')}
-              className="px-5 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors"
+              className="px-5 py-2 bg-white/20 text-white rounded-lg font-medium hover:bg-white/30 transition-colors"
             >
               Dashboard
             </button>
@@ -841,7 +841,7 @@ export default function StudioPage() {
           style kept consistent with it. */}
       {!isDemo && someoneElsePresenting && (
         <div
-          className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3 py-2 bg-slate-900/70 backdrop-blur-md rounded-xl shadow-lg border border-white/15"
+          className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3 py-2 bg-white/10 backdrop-blur-md rounded-xl shadow-lg border border-white/20"
           role="status"
         >
           <Presentation className="w-4 h-4 text-white" />
@@ -873,13 +873,18 @@ export default function StudioPage() {
         <div
           className="relative w-full h-screen overflow-hidden"
           style={{
-            // Near-neutral warm gray with a subtle radial vignette so the space
-            // reads as ambient depth, not flat fill. The 3D <Canvas> is
-            // transparent (no scene.background), so this is the single,
-            // seam-free backdrop; the room + boards are the only real color.
+            // Lavender/periwinkle backdrop. The 3D <Canvas> is transparent (no
+            // scene.background), so this CSS color + the soft glow below show
+            // through as the single, seam-free backdrop.
             background: STUDIO_BG,
           }}
         >
+          {/* Animated gradient background effects */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)' }}></div>
+            <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)', animationDelay: '1s' }}></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(102, 102, 255, 0.1)' }}></div>
+          </div>
 
           {/* Top Left - Logo and breadcrumb. Hidden in wall edit mode. */}
           {!isEditMode && (

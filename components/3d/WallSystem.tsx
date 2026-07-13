@@ -70,7 +70,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
       >
         <boxGeometry args={[floorBounds.floorWidth, floorThickness, floorBounds.floorDepth]} />
         <meshStandardMaterial
-          color="#FAF9F6" // lightest surface — floor reads as the ground plane
+          color="#F0F1F8" // lightest surface — cool near-white so it reads as the ground plane against the lavender backdrop
           roughness={0.92}
           metalness={0.0}
         />
@@ -78,10 +78,12 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
 
       {wallConfig.walls.map((wall, wallIndex) => {
         const transform = getTransform(wallIndex)
-        // Per-surface value separation so lighting reads without cranking the
-        // rig: floor lightest (above), walls facing ±Z ("back") a mid tone,
-        // walls facing ±X ("side") slightly darker. Keyed off wall orientation.
-        const wallColor = Math.abs(Math.sin(transform.rotationY)) > 0.5 ? '#DEDBD5' : '#ECEAE5'
+        // Per-surface value separation so the room reads with depth against the
+        // lavender backdrop without cranking the rig: floor lightest (above),
+        // walls facing ±Z ("back") a mid tone, walls facing ±X ("side") clearly
+        // darker. Cool/lavender-tinted (not warm gray) so the room harmonizes
+        // with the periwinkle background instead of reading like warm cardboard.
+        const wallColor = Math.abs(Math.sin(transform.rotationY)) > 0.5 ? '#CBCDE1' : '#DEDFEE'
         // Faint glow when another user is editing this wall (presence).
         const isOthersEditing = othersEditingWalls?.has(wallIndex) ?? false
         // Hide thumbnails on the editing wall ONLY once the edit UI has fully taken over
@@ -127,7 +129,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
             <mesh castShadow receiveShadow renderOrder={0}>
               <boxGeometry args={[transform.width, transform.height, 6]} />
               <meshStandardMaterial
-                color={wallColor} // neutral gallery wall; back/side value-separated
+                color={wallColor} // cool lavender-tinted wall; back/side value-separated
                 roughness={0.85} // Slight sheen for subtle depth
                 metalness={0.0}
                 depthWrite={true}
@@ -148,7 +150,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
             >
               <boxGeometry args={[0.2, transform.height, 0.2]} />
               <meshStandardMaterial
-                color="#CFCBC4" // neutral warm-gray edge shadow (side)
+                color="#C4C6DA" // soft cool edge shadow (side) — low contrast so face seams stay gentle
                 roughness={0.9}
                 metalness={0.0}
               />
@@ -162,7 +164,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
             >
               <boxGeometry args={[0.2, transform.height, 0.2]} />
               <meshStandardMaterial
-                color="#CFCBC4" // neutral warm-gray edge shadow (side)
+                color="#C4C6DA" // soft cool edge shadow (side) — low contrast so face seams stay gentle
                 roughness={0.9}
                 metalness={0.0}
               />
@@ -176,7 +178,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
             >
               <boxGeometry args={[transform.width, 0.2, 0.2]} />
               <meshStandardMaterial
-                color="#C4C0B9" // neutral warm-gray edge shadow (top, a touch darker)
+                color="#BDBFD4" // soft cool edge shadow (top, a touch darker)
                 roughness={0.9}
                 metalness={0.0}
               />
@@ -190,7 +192,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
             >
               <boxGeometry args={[transform.width, 0.2, 0.2]} />
               <meshStandardMaterial 
-                color="#E0E0DB" // Darker for bottom shadow
+                color="#D8DAE9" // soft cool bottom edge (subtle)
                 roughness={0.9}
                 metalness={0.0}
               />

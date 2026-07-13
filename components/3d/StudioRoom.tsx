@@ -290,8 +290,8 @@ function SceneContent({
           key angled from above-front for soft falloff down the walls. No shadow
           map (kept cheap) — grounding comes from <ContactShadows> and the
           per-surface value separation in WallSystem. */}
-      <ambientLight intensity={0.65} />
-      <directionalLight position={[18, 26, 14]} intensity={0.7} color="#fffdf9" />
+      <ambientLight intensity={0.62} />
+      <directionalLight position={[18, 26, 14]} intensity={0.8} color="#ffffff" />
 
       {/* Soft contact shadow so the room sits on a surface instead of floating.
           Renders its own shadow pass (independent of the WebGL shadow map). */}
