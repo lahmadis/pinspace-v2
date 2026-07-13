@@ -18,12 +18,6 @@ const TRACE_WIDTHS: Array<{ label: string; value: number }> = [
 ]
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 
-// TEMP diagnostic — always-on tracing of the lightbox link read/write path.
-const postrace = (...args: unknown[]) => {
-  // eslint-disable-next-line no-console
-  console.log('[POSTRACE]', new Date().toISOString(), ...args)
-}
-
 interface LightboxModalProps {
   board: Board | null
   allBoards: Board[] // For navigation
@@ -33,7 +27,7 @@ interface LightboxModalProps {
   onNavigate: (direction: 'prev' | 'next') => void
   /** True when rendered on the edit-mode studio page; enables inline author name editing. */
   isEditMode?: boolean
-  /** Role of the currently authenticated user in this workspace. Instructor sees email. */
+  /** Role of the currently authenticated user in this workspace. Instructors may resolve/delete any callout. */
   currentUserRole?: 'instructor' | 'student' | null
   /**
    * Called after a video link save persists (PUT ok). The parent uses it to
@@ -319,9 +313,6 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   }, [isOpen, autoEnterPresentCompare, compareBoards.length])
 
   useEffect(() => {
-    // [POSTRACE] board the lightbox renders on (re)open — linkOverride is reset
-    // here, so what shows is board.linkUrl unless re-saved this session.
-    if (board) postrace('lightbox BOARD MOUNT/CHANGE', board.id, `board.linkUrl=${JSON.stringify(board.linkUrl)} (linkOverride reset to null)`)
     // Reset zoom/pan whenever the board changes (covers arrow-key navigation).
     resetViewport()
     setEditingAuthorName(false)
@@ -444,14 +435,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       return
     }
     const { value, error } = validateLinkUrl(linkInput)
-    postrace('handleSaveLink', board.id, `input=${JSON.stringify(linkInput)} validated=${JSON.stringify(value)} validationError=${JSON.stringify(error)}`)
     if (error) {
       setLinkError(error)
       return
     }
     const current = linkOverride ? linkOverride.value : board.linkUrl ?? null
     if (value === current) {
-      postrace('handleSaveLink NO-OP (value === current)', board.id, `value=${JSON.stringify(value)}`)
       setEditingLink(false)
       setLinkError(null)
       return
@@ -471,22 +460,18 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         }),
         credentials: 'include',
       })
-      postrace('handleSaveLink PUT RESPONSE', board.id, `status=${res.status} ok=${res.ok}`)
       if (res.ok) {
         setLinkOverride({ value })
         setEditingLink(false)
         // Push the persisted value up so the parent's boards cache (and the
         // open-lightbox snapshot) stay current — otherwise reopening the
         // lightbox re-reads a stale board and the link disappears until refresh.
-        postrace('handleSaveLink CALLING onLinkSaved', board.id, `value=${JSON.stringify(value)} hasCallback=${!!onLinkSaved}`)
         onLinkSaved?.(board.id, value)
       } else {
         const data = await res.json().catch(() => ({}))
-        postrace('handleSaveLink PUT FAILED', board.id, `status=${res.status} error=${JSON.stringify(data?.error)}`)
         setLinkError(data?.error || 'Failed to save link.')
       }
-    } catch (e) {
-      postrace('handleSaveLink PUT THREW', board.id, String(e))
+    } catch {
       setLinkError('Failed to save link.')
     } finally {
       linkSaveInFlightRef.current = false
@@ -1455,6 +1440,32 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // Callouts only make sense on a single raster image the viewport can map.
   const calloutsEnabled = !isPDF && compareBoards.length <= 1 && !isDemoMode && !board.id.startsWith('sample-')
 
+  // ---- Header / tool-dock derivations (Pass A: layout only) --------------
+  // Nav counter "03 / 05" from the existing index/total; null when the current
+  // board isn't in allBoards (e.g. a compare selection) so no state is invented.
+  const navCounter =
+    currentIndex >= 0 && allBoards.length > 0
+      ? `${String(currentIndex + 1).padStart(2, '0')} / ${String(allBoards.length).padStart(2, '0')}`
+      : null
+  // Title-block "sheet size" from the board's physical dimensions, when present.
+  const sheetSize =
+    board.physicalWidth && board.physicalHeight && board.physicalWidth > 0 && board.physicalHeight > 0
+      ? `${Math.round(board.physicalWidth)}×${Math.round(board.physicalHeight)} IN`
+      : null
+  // Zoom controls surface the EXISTING viewport hook — step scale about the
+  // current center via getViewportFraction→applyViewportFraction (which clamps
+  // to MIN_SCALE..maxScale internally). Fit = reset. No zoom math reimplemented.
+  const ZOOM_STEP = 1.4
+  const MAX_ZOOM = 8 // mirrors useImageViewport DEFAULT_MAX_SCALE (called with no arg)
+  const stepZoom = (dir: 1 | -1) => {
+    const v = getViewportFraction()
+    if (!v) return
+    applyViewportFraction(v.z * (dir > 0 ? ZOOM_STEP : 1 / ZOOM_STEP), v.cx, v.cy)
+  }
+  const zoomPct = Math.round(viewport.scale * 100)
+  const atMinZoom = viewport.scale <= 1.001
+  const atMaxZoom = viewport.scale >= MAX_ZOOM - 0.001
+
   return (
     <div 
       className={`fixed inset-0 bg-slate-950/85 z-50 transition-opacity duration-300 ${
@@ -1464,18 +1475,14 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     >
       {/* Top Header Bar (hidden in present mode) */}
       {!isPresentMode && (
-      <div className="absolute top-3 left-3 right-3 h-16 rounded-2xl bg-slate-900/75 backdrop-blur-xl border border-slate-700/70 shadow-[0_10px_30px_rgba(2,6,23,0.45)] flex items-center justify-between px-4 sm:px-5 z-20">
-        {/* Board Title */}
+      <div className="absolute top-3 left-3 right-3 rounded-2xl bg-slate-900/75 backdrop-blur-xl border border-slate-700/70 shadow-[0_10px_30px_rgba(2,6,23,0.45)] flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5 z-20">
+        {/* Title block — title + author · sheet size (title-block feel) */}
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] uppercase tracking-[0.16em] text-slate-300/70 mb-0.5">
-            Uploaded Board
-          </p>
           <h2 className="text-slate-50 font-semibold text-sm sm:text-[15px] truncate">
             {compareBoards.length > 1 ? `Compare selection (${compareBoards.length})` : board.title}
           </h2>
           {(() => {
             const resolvedName = displayedAuthorName ?? board.studentName ?? 'Unknown'
-            const showEmail = isEditMode && currentUserRole === 'instructor' && board.studentEmail
 
             if (isEditMode && editingAuthorName) {
               return (
@@ -1502,129 +1509,35 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             }
 
             return (
-              <p
-                className={`text-[11px] text-slate-300/90 truncate mt-0.5 flex items-center gap-1 ${isEditMode ? 'group/author cursor-pointer hover:text-white' : ''}`}
-                onClick={isEditMode ? () => {
-                  setAuthorNameInput(resolvedName === 'Unknown' ? '' : resolvedName)
-                  setEditingAuthorName(true)
-                } : undefined}
-              >
-                <span>Author: {resolvedName}</span>
-                {isEditMode && (
-                  <svg className="w-3 h-3 opacity-0 group-hover/author:opacity-60 transition-opacity flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
-                  </svg>
-                )}
-                {showEmail && (
-                  <span className="text-slate-400 ml-0.5">· {board.studentEmail}</span>
+              <p className="text-[11px] text-slate-300/90 truncate mt-0.5 flex items-center gap-1.5">
+                <span
+                  className={`inline-flex items-center gap-1 ${isEditMode ? 'group/author cursor-pointer hover:text-white' : ''}`}
+                  onClick={isEditMode ? () => {
+                    setAuthorNameInput(resolvedName === 'Unknown' ? '' : resolvedName)
+                    setEditingAuthorName(true)
+                  } : undefined}
+                >
+                  {resolvedName}
+                  {isEditMode && (
+                    <svg className="w-3 h-3 opacity-0 group-hover/author:opacity-60 transition-opacity flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
+                    </svg>
+                  )}
+                </span>
+                {sheetSize && (
+                  <span className="font-mono uppercase tracking-wider text-[10px] text-slate-400/80 flex-shrink-0">· {sheetSize}</span>
                 )}
               </p>
             )
           })()}
-          {/* Link editor (edit mode only) */}
-          {isEditMode && (
-            <div className="mt-0.5" onClick={(e) => e.stopPropagation()}>
-              {editingLink ? (
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={linkInput}
-                      onChange={(e) => {
-                        setLinkInput(e.target.value)
-                        if (linkError) setLinkError(null)
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') { e.preventDefault(); handleSaveLink() }
-                        else if (e.key === 'Escape') { setEditingLink(false); setLinkError(null) }
-                      }}
-                      autoFocus
-                      disabled={savingLink}
-                      placeholder="https://..."
-                      className="text-[11px] text-slate-900 bg-white/95 border border-indigo-400 rounded px-1.5 py-0.5 w-52 sm:w-64 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
-                    />
-                    <button
-                      onClick={handleSaveLink}
-                      disabled={savingLink}
-                      className="text-[11px] px-2 py-0.5 rounded bg-indigo-500 text-white hover:bg-indigo-400 disabled:opacity-60"
-                    >
-                      {savingLink ? 'Saving…' : 'Save'}
-                    </button>
-                    <button
-                      onClick={() => { setEditingLink(false); setLinkError(null) }}
-                      disabled={savingLink}
-                      className="text-[11px] px-2 py-0.5 rounded bg-white/10 text-white/80 hover:bg-white/20 disabled:opacity-60"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                  {linkError && <p className="text-[10px] text-red-300">{linkError}</p>}
-                </div>
-              ) : (
-                <button
-                  onClick={() => { setLinkInput(resolvedLinkUrl ?? ''); setEditingLink(true); setLinkError(null) }}
-                  className="text-[11px] text-slate-300/90 hover:text-white inline-flex items-center gap-1"
-                >
-                  <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 010-5.656l3-3a4 4 0 015.656 5.656l-1.5 1.5" />
-                  </svg>
-                  <span>{resolvedLinkUrl ? 'Edit link' : 'Add link'}</span>
-                </button>
-              )}
-            </div>
-          )}
         </div>
 
-        {/* Navigation + Close */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* Open link — visible to everyone when a link is attached */}
-          {resolvedLinkUrl && (
+        {/* Actions — nav · Present (primary) · secondary · close */}
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          {/* Nav cluster: chevron · counter · chevron (single responsive treatment) */}
+          <div className="flex items-center gap-1">
             <button
-              onClick={(e) => { e.stopPropagation(); openVideo() }}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors"
-              title="Open link in a new tab"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span>Open link</span>
-            </button>
-          )}
-          {/* Previous */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onNavigate('prev')
-            }}
-            disabled={!hasPrev}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-              <path d="M15 19l-7-7 7-7"></path>
-            </svg>
-            <span>Previous</span>
-          </button>
-
-          {/* Next */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onNavigate('next')
-            }}
-            disabled={!hasNext}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          >
-            <span>Next</span>
-            <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-              <path d="M9 5l7 7-7 7"></path>
-            </svg>
-          </button>
-
-          {/* Compact arrow-only buttons on small screens */}
-          <div className="flex sm:hidden items-center gap-1.5">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onNavigate('prev')
-              }}
+              onClick={(e) => { e.stopPropagation(); onNavigate('prev') }}
               disabled={!hasPrev}
               className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               aria-label="Previous"
@@ -1633,11 +1546,13 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 <path d="M15 19l-7-7 7-7"></path>
               </svg>
             </button>
+            {navCounter && (
+              <span className="px-1 text-[11px] font-mono tabular-nums text-slate-300/80 select-none whitespace-nowrap">
+                {navCounter}
+              </span>
+            )}
             <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onNavigate('next')
-              }}
+              onClick={(e) => { e.stopPropagation(); onNavigate('next') }}
               disabled={!hasNext}
               className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               aria-label="Next"
@@ -1648,114 +1563,144 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             </button>
           </div>
 
-          {/* Present - full screen board only */}
+          {/* Present — PRIMARY (filled accent). Full-screen board only. */}
           {compareBoards.length <= 1 && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
                 setIsPresentMode(true)
               }}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors"
+              className="flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold bg-indigo-500 text-white hover:bg-indigo-400 border border-indigo-400/50 shadow-sm transition-colors"
               title="Present (board fills screen)"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
                 <path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M20 8V6a2 2 0 00-2-2h-2M20 16v2a2 2 0 002 2h-2M14 6v12" />
               </svg>
-              <span>Present</span>
+              <span className="hidden sm:inline">Present</span>
             </button>
           )}
 
-          {/* Add Callout toggle — enters placement mode for an anchored pin.
-              Hidden unless the viewer has comment access (member or guest critic). */}
-          {calloutsEnabled && calloutsAccessible && canComment && (
+          {/* Open link — viewer-facing icon button when a link is attached */}
+          {resolvedLinkUrl && (
+            <button
+              onClick={(e) => { e.stopPropagation(); openVideo() }}
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors"
+              title="Open link in a new tab"
+              aria-label="Open link in a new tab"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {/* Add / Edit link — compact icon button that opens the existing editor (edit mode only) */}
+          {isEditMode && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                setComposer(null)
-                setTraceMode(false)
-                setCalloutMode((m) => !m)
+                if (editingLink) { setEditingLink(false); setLinkError(null) }
+                else { setLinkInput(resolvedLinkUrl ?? ''); setEditingLink(true); setLinkError(null) }
               }}
-              className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                calloutMode
-                  ? 'border-pink-300 bg-pink-500/30 text-white'
+              className={`w-8 h-8 flex items-center justify-center rounded-full border transition-colors ${
+                editingLink
+                  ? 'border-indigo-300 bg-indigo-500/30 text-white'
                   : 'border-white/20 bg-white/5 text-white/90 hover:bg-white/15'
               }`}
-              title={calloutMode ? 'Click the image to place a callout (Esc to cancel)' : 'Add a callout pin to the image'}
+              title={resolvedLinkUrl ? 'Edit link' : 'Add link'}
+              aria-label={resolvedLinkUrl ? 'Edit link' : 'Add link'}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 010-5.656l3-3a4 4 0 015.656 5.656l-1.5 1.5" />
               </svg>
-              <span>{calloutMode ? 'Placing…' : 'Add callout'}</span>
-              {rootCallouts.length > 0 && (
-                <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-semibold bg-white/20 rounded-full">
-                  {rootCallouts.length}
+            </button>
+          )}
+
+          {/* Comments — legacy panel toggle (icon + count badge). Members only. */}
+          {commentsAccessible && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setCommentsOpen(prev => !prev)
+              }}
+              className={`relative w-8 h-8 flex items-center justify-center rounded-full border transition-colors ${
+                commentsOpen
+                  ? 'border-indigo-300 bg-indigo-500/30 text-white'
+                  : 'border-white/20 bg-white/5 text-white/90 hover:bg-white/15'
+              }`}
+              title="Toggle comments panel"
+              aria-label="Toggle comments panel"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.3-3.9A7.6 7.6 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              {comments.length > 0 && (
+                <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 text-[10px] font-semibold bg-indigo-500 text-white rounded-full border border-slate-900">
+                  {comments.length}
                 </span>
               )}
             </button>
           )}
 
-          {/* Trace toggle — freehand drawing over the board (member or guest critic) */}
-          {calloutsEnabled && calloutsAccessible && canTrace && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setCalloutMode(false)
-                setComposer(null)
-                setTraceMode((m) => !m)
-              }}
-              className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                traceMode
-                  ? 'border-amber-300 bg-amber-500/30 text-white'
-                  : 'border-white/20 bg-white/5 text-white/90 hover:bg-white/15'
-              }`}
-              title={traceMode ? 'Stop tracing (Esc)' : 'Draw a trace over the board'}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
-              </svg>
-              <span>{traceMode ? 'Tracing…' : 'Trace'}</span>
-            </button>
-          )}
-
-          {/* Comments Toggle — hidden unless the viewer has comment access
-              (workspace member); private to members per Phase A.3.2. */}
-          {commentsAccessible && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setCommentsOpen(prev => !prev)
-            }}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors"
-            title="Toggle comments panel"
-          >
-            <span>Comments</span>
-            {comments.length > 0 && (
-              <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-semibold bg-white/20 rounded-full">
-                {comments.length}
-              </span>
-            )}
-          </button>
-          )}
-
-          {/* Close Button */}
+          {/* Close */}
           <button
             onClick={handleClose}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 border border-white/30 transition-colors"
             aria-label="Close"
           >
-            <svg 
-              className="w-3.5 h-3.5 text-white" 
-              fill="none" 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              strokeWidth="2" 
-              viewBox="0 0 24 24" 
+            <svg
+              className="w-3.5 h-3.5 text-white"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
               stroke="currentColor"
             >
               <path d="M6 18L18 6M6 6l12 12"></path>
             </svg>
           </button>
         </div>
+
+        {/* Link editor popover — the EXISTING editor, moved out of the title column.
+            Opens under the Add/Edit-link icon button; all handlers preserved. */}
+        {isEditMode && editingLink && (
+          <div className="absolute right-4 top-full mt-2 z-30" onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-col gap-1 rounded-xl bg-slate-900/90 backdrop-blur-xl border border-slate-700/70 shadow-[0_10px_30px_rgba(2,6,23,0.45)] p-2">
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={linkInput}
+                  onChange={(e) => {
+                    setLinkInput(e.target.value)
+                    if (linkError) setLinkError(null)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); handleSaveLink() }
+                    else if (e.key === 'Escape') { setEditingLink(false); setLinkError(null) }
+                  }}
+                  autoFocus
+                  disabled={savingLink}
+                  placeholder="https://..."
+                  className="text-[11px] text-slate-900 bg-white/95 border border-indigo-400 rounded px-1.5 py-0.5 w-52 sm:w-64 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+                />
+                <button
+                  onClick={handleSaveLink}
+                  disabled={savingLink}
+                  className="text-[11px] px-2 py-0.5 rounded bg-indigo-500 text-white hover:bg-indigo-400 disabled:opacity-60"
+                >
+                  {savingLink ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  onClick={() => { setEditingLink(false); setLinkError(null) }}
+                  disabled={savingLink}
+                  className="text-[11px] px-2 py-0.5 rounded bg-white/10 text-white/80 hover:bg-white/20 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+              </div>
+              {linkError && <p className="text-[10px] text-red-300">{linkError}</p>}
+            </div>
+          </div>
+        )}
       </div>
       )}
 
@@ -1927,19 +1872,6 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   }}
                   onClick={(e) => e.stopPropagation()}
                 />
-                {viewport.isZoomed && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); viewport.reset() }}
-                    className="absolute bottom-4 left-4 z-30 px-3 py-1.5 rounded-lg text-xs font-medium text-white/90 hover:text-white bg-black/50 hover:bg-black/70 border border-white/20 backdrop-blur-sm transition-colors flex items-center gap-1.5"
-                    title="Reset zoom"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 9L4 4m0 0v4m0-4h4M15 9l5-5m0 0v4m0-4h-4M9 15l-5 5m0 0v-4m0 4h4m6-4l5 5m0 0v-4m0 4h-4" />
-                    </svg>
-                    Reset zoom
-                  </button>
-                )}
 
                 {/* Phase B.3.2: presenter cursor dot (followers only). Positioned
                     imperatively each frame in the smooth-apply loop; pointer-events
@@ -1957,6 +1889,120 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       boxShadow: '0 0 0 2px rgba(255,255,255,0.75)',
                     }}
                   />
+                )}
+
+                {/* Tool dock — floating bottom-center over the image. Holds the
+                    callout/trace tools (moved out of the header, handlers/gates
+                    unchanged) plus zoom controls that surface the EXISTING
+                    viewport hook. Hidden in present mode (same gate as header).
+                    pointer-events isolated so it never starts a pan/zoom. */}
+                {!isPresentMode && (
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
+                    <div
+                      className="pointer-events-auto flex items-center gap-1 px-2 py-1.5 rounded-full bg-slate-900/85 backdrop-blur-md border border-white/15 shadow-[0_10px_30px_rgba(2,6,23,0.45)]"
+                      onClick={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                    >
+                      {/* Add callout — existing button, same handler / mutual-exclusion / gate / badge */}
+                      {calloutsEnabled && calloutsAccessible && canComment && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setComposer(null)
+                            setTraceMode(false)
+                            setCalloutMode((m) => !m)
+                          }}
+                          className={`flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium border transition-colors ${
+                            calloutMode
+                              ? 'border-pink-300 bg-pink-500/30 text-white'
+                              : 'border-white/15 bg-white/5 text-white/90 hover:bg-white/15'
+                          }`}
+                          title={calloutMode ? 'Click the image to place a callout (Esc to cancel)' : 'Add a callout pin to the image'}
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                          <span className="hidden sm:inline">{calloutMode ? 'Placing…' : 'Add callout'}</span>
+                          {rootCallouts.length > 0 && (
+                            <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-semibold bg-white/20 rounded-full">
+                              {rootCallouts.length}
+                            </span>
+                          )}
+                        </button>
+                      )}
+
+                      {/* Trace — existing button, same handler / mutual-exclusion / gate / state */}
+                      {calloutsEnabled && calloutsAccessible && canTrace && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setCalloutMode(false)
+                            setComposer(null)
+                            setTraceMode((m) => !m)
+                          }}
+                          className={`flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium border transition-colors ${
+                            traceMode
+                              ? 'border-amber-300 bg-amber-500/30 text-white'
+                              : 'border-white/15 bg-white/5 text-white/90 hover:bg-white/15'
+                          }`}
+                          title={traceMode ? 'Stop tracing (Esc)' : 'Draw a trace over the board'}
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
+                          </svg>
+                          <span className="hidden sm:inline">{traceMode ? 'Tracing…' : 'Trace'}</span>
+                        </button>
+                      )}
+
+                      {/* Separator — only when a tool button is present */}
+                      {calloutsEnabled && calloutsAccessible && (canComment || canTrace) && (
+                        <span className="w-px h-5 bg-white/15 mx-0.5" />
+                      )}
+
+                      {/* Zoom out (steps the existing viewport hook) */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); stepZoom(-1) }}
+                        disabled={atMinZoom}
+                        className="w-8 h-8 flex items-center justify-center rounded-full text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        title="Zoom out"
+                        aria-label="Zoom out"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
+                        </svg>
+                      </button>
+
+                      {/* Zoom % readout */}
+                      <span className="w-11 text-center text-[11px] font-mono tabular-nums text-white/85 select-none">
+                        {zoomPct}%
+                      </span>
+
+                      {/* Zoom in (steps the existing viewport hook) */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); stepZoom(1) }}
+                        disabled={atMaxZoom}
+                        className="w-8 h-8 flex items-center justify-center rounded-full text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        title="Zoom in"
+                        aria-label="Zoom in"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                      </button>
+
+                      {/* Fit — replaces the removed bottom-left Reset zoom button (viewport.reset) */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); resetViewport() }}
+                        disabled={atMinZoom}
+                        className="flex items-center h-8 px-3 rounded-full text-[11px] font-medium text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        title="Fit to screen"
+                        aria-label="Fit to screen"
+                      >
+                        Fit
+                      </button>
+                    </div>
+                  </div>
                 )}
 
                 {/* ---- Anchored callout overlay (single-image, non-present) ----
@@ -2137,10 +2183,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       )
                     })()}
 
-                    {/* Trace tool strip — colors, widths, undo, clear */}
+                    {/* Trace tool strip — colors, widths, undo, clear.
+                        Stacked directly ABOVE the tool dock (bottom-20) so the two
+                        never overlap and neither collides with the ESC hint. */}
                     {traceMode && (
                       <div
-                        className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-full bg-slate-900/85 backdrop-blur-md border border-white/15"
+                        className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-full bg-slate-900/85 backdrop-blur-md border border-white/15"
                         onClick={(e) => e.stopPropagation()}
                         onPointerDown={(e) => e.stopPropagation()}
                       >
@@ -2556,8 +2604,16 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         </div>
       )}
 
-      {/* Navigation Hint (simplified in present mode) */}
-      <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-slate-900/65 border border-white/10 backdrop-blur-md rounded-full text-white text-xs sm:text-sm">
+      {/* Navigation Hint (simplified in present mode). Fades out ~5s after open
+          (CSS animation, forwards); re-shows on board change / present toggle via
+          the remount key. Sits at bottom-3 so it clears the tool dock. The ESC
+          key handling itself is untouched. */}
+      <style>{`@keyframes lbHintFade { to { opacity: 0; visibility: hidden; } }`}</style>
+      <div
+        key={`${board.id}-${isPresentMode}`}
+        className="absolute bottom-3 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-slate-900/65 border border-white/10 backdrop-blur-md rounded-full text-white text-xs sm:text-sm pointer-events-none"
+        style={{ animation: 'lbHintFade 600ms ease 5s forwards' }}
+      >
         {isPresentMode ? (
           <>
             Press <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">ESC</kbd> to exit present
