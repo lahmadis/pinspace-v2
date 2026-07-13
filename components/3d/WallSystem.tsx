@@ -69,21 +69,15 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
         castShadow
       >
         <boxGeometry args={[floorBounds.floorWidth, floorThickness, floorBounds.floorDepth]} />
-        <meshStandardMaterial
-          color="#F0F1F8" // lightest surface — cool near-white so it reads as the ground plane against the lavender backdrop
-          roughness={0.92}
+        <meshStandardMaterial 
+          color="#D8DEFF" // very light, white-leaning blue for floor
+          roughness={0.9}
           metalness={0.0}
         />
       </mesh>
 
       {wallConfig.walls.map((wall, wallIndex) => {
         const transform = getTransform(wallIndex)
-        // Per-surface value separation so the room reads with depth against the
-        // lavender backdrop without cranking the rig: floor lightest (above),
-        // walls facing ±Z ("back") a mid tone, walls facing ±X ("side") clearly
-        // darker. Cool/lavender-tinted (not warm gray) so the room harmonizes
-        // with the periwinkle background instead of reading like warm cardboard.
-        const wallColor = Math.abs(Math.sin(transform.rotationY)) > 0.5 ? '#CBCDE1' : '#DEDFEE'
         // Faint glow when another user is editing this wall (presence).
         const isOthersEditing = othersEditingWalls?.has(wallIndex) ?? false
         // Hide thumbnails on the editing wall ONLY once the edit UI has fully taken over
@@ -129,7 +123,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
             <mesh castShadow receiveShadow renderOrder={0}>
               <boxGeometry args={[transform.width, transform.height, 6]} />
               <meshStandardMaterial
-                color={wallColor} // cool lavender-tinted wall; back/side value-separated
+                color="#D8DEFF" // very light, white-leaning blue for walls
                 roughness={0.85} // Slight sheen for subtle depth
                 metalness={0.0}
                 depthWrite={true}
@@ -149,36 +143,36 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
               receiveShadow
             >
               <boxGeometry args={[0.2, transform.height, 0.2]} />
-              <meshStandardMaterial
-                color="#C4C6DA" // soft cool edge shadow (side) — low contrast so face seams stay gentle
+              <meshStandardMaterial 
+                color="#B3C4FF" // slightly darker blue for side edge shadows
                 roughness={0.9}
                 metalness={0.0}
               />
             </mesh>
 
             {/* Right edge shadow */}
-            <mesh
-              position={[transform.width / 2 - 0.1, 0, 2.1]}
-              castShadow
+            <mesh 
+              position={[transform.width / 2 - 0.1, 0, 2.1]} 
+              castShadow 
               receiveShadow
             >
               <boxGeometry args={[0.2, transform.height, 0.2]} />
-              <meshStandardMaterial
-                color="#C4C6DA" // soft cool edge shadow (side) — low contrast so face seams stay gentle
+              <meshStandardMaterial 
+                color="#B3C4FF" // slightly darker blue for side edge shadows
                 roughness={0.9}
                 metalness={0.0}
               />
             </mesh>
 
             {/* Top edge shadow */}
-            <mesh
-              position={[0, transform.height / 2 - 0.1, 2.1]}
-              castShadow
+            <mesh 
+              position={[0, transform.height / 2 - 0.1, 2.1]} 
+              castShadow 
               receiveShadow
             >
               <boxGeometry args={[transform.width, 0.2, 0.2]} />
-              <meshStandardMaterial
-                color="#BDBFD4" // soft cool edge shadow (top, a touch darker)
+              <meshStandardMaterial 
+                color="#A1B2FF" // darker blue for top edge shadow
                 roughness={0.9}
                 metalness={0.0}
               />
@@ -192,7 +186,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
             >
               <boxGeometry args={[transform.width, 0.2, 0.2]} />
               <meshStandardMaterial 
-                color="#D8DAE9" // soft cool bottom edge (subtle)
+                color="#E0E0DB" // Darker for bottom shadow
                 roughness={0.9}
                 metalness={0.0}
               />

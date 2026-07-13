@@ -27,18 +27,12 @@ const postrace = (...args: unknown[]) => {
   console.log('[POSTRACE]', new Date().toISOString(), ...args)
 }
 
-// Studio backdrop — the periwinkle/lavender the room palette is designed
-// against. Shared by the live scene container and the loading/error screens.
-// The 3D <Canvas> is transparent (no scene.background), so this CSS color shows
-// through as the single, seam-free backdrop.
-const STUDIO_BG = '#B3B3FF'
-
 const StudioRoom = dynamic(
   () => import(/* webpackChunkName: "StudioRoom" */ '@/components/3d/StudioRoom'),
   {
     ssr: false,
     loading: () => (
-    <div className="w-full h-screen flex items-center justify-center" style={{ background: STUDIO_BG }}>
+    <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
           <p className="text-white/90 font-medium">Loading 3D Studio...</p>
@@ -798,7 +792,7 @@ export default function StudioPage() {
 
   if (isLoading) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: STUDIO_BG }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
           <p className="text-white/90 font-medium">Loading Studio...</p>
@@ -809,7 +803,7 @@ export default function StudioPage() {
 
   if (boardsError) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: STUDIO_BG }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
         <div className="text-center">
           <p className="text-white font-semibold text-lg mb-2">Failed to load boards</p>
           <p className="text-white/70 text-sm mb-6">Check your connection and try again.</p>
@@ -870,15 +864,7 @@ export default function StudioPage() {
       )}
 
       {wallConfig && (
-        <div
-          className="relative w-full h-screen overflow-hidden"
-          style={{
-            // Lavender/periwinkle backdrop. The 3D <Canvas> is transparent (no
-            // scene.background), so this CSS color + the soft glow below show
-            // through as the single, seam-free backdrop.
-            background: STUDIO_BG,
-          }}
-        >
+        <div className="relative w-full h-screen overflow-hidden" style={{ background: '#B3B3FF' }}>
           {/* Animated gradient background effects */}
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
             <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)' }}></div>
@@ -892,11 +878,10 @@ export default function StudioPage() {
             // workspace + room breadcrumb pill drops to a second line on
             // narrow viewports instead of running off the right edge.
             <div className="fixed top-4 left-4 z-40 flex flex-wrap items-center gap-2.5 max-w-[calc(100vw-2rem)] sm:flex-nowrap sm:max-w-none">
-              {/* PinSpace Logo - links to home. Fixed height + centered padding
-                  so it aligns with the breadcrumb pill beside it. */}
+              {/* PinSpace Logo - links to home */}
               <button
                 onClick={() => router.push('/')}
-                className="h-10 px-4 inline-flex items-center bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-colors font-semibold text-[15px] backdrop-blur-sm border border-white/10"
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
               >
                 PinSpace
               </button>
@@ -907,7 +892,7 @@ export default function StudioPage() {
                   to a plain "← Dashboard" button while metadata is loading
                   or in demo mode (no workspace context). */}
               {workspaceName && workspaceId ? (
-                <div className="h-10 px-3.5 bg-slate-900/70 hover:bg-slate-900/80 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/15 transition-colors flex items-center gap-2 text-sm font-medium relative">
+                <div className="px-3 py-2 bg-white/10 hover:bg-white/15 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-colors flex items-center gap-2 text-sm font-medium relative">
                   <button
                     onClick={() => router.push(`/workspace/${workspaceId}`)}
                     className="hover:underline"
@@ -977,7 +962,7 @@ export default function StudioPage() {
               ) : (
                 <button
                   onClick={() => router.push('/dashboard')}
-                  className="h-10 px-4 bg-slate-900/70 hover:bg-slate-900/80 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/15 transition-colors font-medium text-sm inline-flex items-center gap-2"
+                  className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   Dashboard
@@ -990,71 +975,61 @@ export default function StudioPage() {
               Phones get the hamburger panel right below; the `hidden sm:flex`
               switch swaps the two without changing handlers. */}
           {!isEditMode && (
-            // One grouped toolbar (single dark-glass surface) instead of four
-            // floating pills. Hierarchy: Present = primary (filled); Place 3D
-            // model + Walls = secondary ghost buttons; Share = quiet icon.
-            // Dark glass keeps the white text readable over the light backdrop.
-            // Every handler is unchanged from the old pills.
-            <div className="hidden sm:flex fixed top-4 right-4 z-40 items-center gap-1 p-1 bg-slate-900/70 backdrop-blur-md rounded-xl shadow-lg shadow-slate-900/20 border border-white/15">
-              {/* Share — quiet icon button (least important action) */}
+            <div className="hidden sm:flex fixed top-4 right-4 z-40 flex-nowrap justify-end items-center gap-2.5">
+              {/* Share button */}
               <button
                 onClick={() => setShowShareModal(true)}
-                title="Share"
-                aria-label="Share"
-                className="w-9 h-9 flex items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300 font-medium text-sm flex items-center gap-2 backdrop-blur-sm border border-white/10"
               >
                 <Share2 className="w-4 h-4" />
+                Share
               </button>
-
-              {/* Divider before the secondary group (only when it exists) */}
-              {!isArchived && <span className="w-px h-5 bg-white/15 mx-0.5" />}
 
               {/* Place 3D model - open floor editor to add tables and upload/position models */}
               {!isArchived && (
                 <button
                   onClick={() => { setFloorEditorMode('tables'); setFloorEditorOpen(true) }}
-                  className="flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-medium text-white/90 hover:bg-white/10 transition-colors"
+                  className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
                 >
                   <Box className="w-4 h-4" />
                   Place 3D model
                 </button>
               )}
 
-              {/* Reconfigure walls */}
+              {/* Reconfigure button */}
               {!isArchived && (
                 <button
                   onClick={handleReconfigureWalls}
-                  className="flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-medium text-white/90 hover:bg-white/10 transition-colors"
+                  className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
                 >
                   <Settings className="w-4 h-4" />
-                  Walls
+                  Reconfigure Walls
                 </button>
               )}
 
-              {/* Present toggle (Phase B.1) — PRIMARY (filled, loudest). Three
-                  states: nobody presenting → "Present"; you are presenter →
-                  "Stop presenting"; someone else presenting → disabled
-                  "{name} is presenting". Hidden in demo (presence is inert). */}
+              {/* Present toggle (Phase B.1). Three states: nobody presenting →
+                  "Present"; you are presenter → "Stop presenting"; someone else
+                  presenting → disabled "{name} is presenting". Hidden in demo
+                  (presence is inert there). */}
               {!isDemo && (
-                <>
-                  <span className="w-px h-5 bg-white/15 mx-0.5" />
-                  <button
-                    onClick={() => setPresenting(!isPresenter)}
-                    disabled={someoneElsePresenting}
-                    className={`flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold transition-colors ${
-                      someoneElsePresenting
-                        ? 'bg-white/5 text-white/50 cursor-not-allowed'
-                        : 'bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-500/30'
-                    }`}
-                  >
-                    <Presentation className="w-4 h-4" />
-                    {someoneElsePresenting
-                      ? `${friendlyName(presenter!.fullName)} is presenting`
+                <button
+                  onClick={() => setPresenting(!isPresenter)}
+                  disabled={someoneElsePresenting}
+                  className={`px-4 py-2.5 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2 ${
+                    someoneElsePresenting
+                      ? 'bg-white/5 opacity-60 cursor-not-allowed'
                       : isPresenter
-                        ? 'Stop presenting'
-                        : 'Present'}
-                  </button>
-                </>
+                        ? 'bg-blue-600 hover:bg-blue-500'
+                        : 'bg-white/10 hover:bg-white/20'
+                  }`}
+                >
+                  <Presentation className="w-4 h-4" />
+                  {someoneElsePresenting
+                    ? `${friendlyName(presenter!.fullName)} is presenting`
+                    : isPresenter
+                      ? 'Stop presenting'
+                      : 'Present'}
+                </button>
               )}
             </div>
           )}
@@ -1112,7 +1087,7 @@ export default function StudioPage() {
                         className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
                       >
                         <Settings className="w-4 h-4 text-indigo-600" />
-                        Walls
+                        Reconfigure Walls
                       </button>
                     )}
                     {/* Present toggle (Phase B.1) — same three states as the

@@ -11,7 +11,7 @@ const postrace = (...args: unknown[]) => {
 }
 
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
-import { OrbitControls, PerspectiveCamera, ContactShadows } from '@react-three/drei'
+import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { supabase } from '@/lib/supabase/client'
 import { Board, FloorTable } from '@/types'
 import WallSystem from './WallSystem'
@@ -24,7 +24,6 @@ import { DraggableBoard } from './DraggableBoard'
 import { DraggableText } from './DraggableText'
 import { WallDropZone } from '@/components/3d/WallDropZone'
 import type { WallTextItem } from '@/lib/wallLayout'
-import { calculateFloorBounds } from '@/lib/wallLayout'
 import RightCommentPanel from '@/components/RightCommentPanel'
 import LightboxModal from '@/components/LightboxModal'
 import { useBoardState } from './useBoardState'
@@ -269,46 +268,43 @@ function SceneContent({
 
   // Removed aggressive wheel clamping; let OrbitControls zoom to cursor naturally
   
-  // Contact-shadow footprint: derived from the same floor bounds WallSystem
-  // uses, so the grounding shadow tracks the room's size/position. Baked once
-  // (frames=1) and re-baked only when the wall geometry changes (via key), so
-  // it stays cheap while the camera orbits.
-  const groundBounds = calculateFloorBounds(wallConfig)
-  const groundShadowSpan = Math.max(groundBounds.floorWidth, groundBounds.floorDepth) * 1.6
-  const groundShadowKey = `${wallConfig.layoutType}|${wallConfig.walls
-    .map((w) => `${w.width}x${w.height}`)
-    .join(',')}|${(wallConfig.customTransforms ?? [])
-    .map((t) => `${Math.round(t.x)}_${Math.round(t.z)}_${t.rotationY.toFixed(2)}`)
-    .join(';')}`
-
   return (
     <>
-      {/* No scene.background: the <Canvas> is transparent (alpha), so the page's
-          neutral radial-vignette backdrop shows through as one seam-free surface. */}
-
-      {/* Calm gallery rig: one soft ambient base fill + one gentle directional
-          key angled from above-front for soft falloff down the walls. No shadow
-          map (kept cheap) — grounding comes from <ContactShadows> and the
-          per-surface value separation in WallSystem. */}
-      <ambientLight intensity={0.62} />
-      <directionalLight position={[18, 26, 14]} intensity={0.8} color="#ffffff" />
-
-      {/* Soft contact shadow so the room sits on a surface instead of floating.
-          Renders its own shadow pass (independent of the WebGL shadow map). */}
-      <ContactShadows
-        key={groundShadowKey}
-        position={[groundBounds.floorCenterX, -0.05, groundBounds.floorCenterZ]}
-        scale={groundShadowSpan}
-        resolution={512}
-        blur={2.6}
-        opacity={0.32}
-        far={200}
-        color="#2b2926"
-        frames={1}
+      {/* Background matches wall color */}
+      <color attach="background" args={['#D8DEFF']} />
+      {/* Ambient light - reduced for better shadow definition */}
+      <ambientLight intensity={0.5} />
+      
+      {/* Main directional light - creates shadows and depth */}
+      <directionalLight 
+        position={[15, 20, 10]} 
+        intensity={1.2} 
+        castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-camera-far={500}
+        shadow-camera-left={-200}
+        shadow-camera-right={200}
+        shadow-camera-top={200}
+        shadow-camera-bottom={-200}
+        shadow-bias={-0.0001}
       />
-
+      
+      {/* Fill light from opposite side - softens shadows */}
+      <directionalLight position={[-10, 12, -8]} intensity={0.5} />
+      
+      {/* Top light for overall illumination */}
+      <directionalLight position={[0, 25, 0]} intensity={0.4} />
+      
+      {/* Rim lighting for wall edges - enhances depth */}
+      <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
+      <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
+      
+      {/* Hemisphere light for natural ambient */}
+      <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
+      
       {/* Floor is now created dynamically in WallSystem based on wall configuration */}
-
+      
       <WallSystem
         boards={localBoards}
         // Merge live text items into the config so saved labels render in the
@@ -2191,9 +2187,15 @@ export default function StudioRoom(props: StudioRoomProps) {
       )}
 
       <div className="w-full h-screen">
-        <Canvas
-          gl={{ alpha: true, premultipliedAlpha: false }}
-          style={{ background: 'transparent' }}
+        <Canvas 
+          shadows 
+          gl={{ 
+            shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap },
+            alpha: true,
+            premultipliedAlpha: false
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any}
+          style={{ background: '#D8DEFF' }}
         >
           <CameraController
             orbitControlsRef={orbitControlsRef}
