@@ -116,6 +116,12 @@ export default function FloorEditorOverlay({
   // button). null = nothing selected. Set by pointerdown on a wall polygon.
   const [selectedWallIndex, setSelectedWallIndex] = useState<number | null>(null)
 
+  // Walls mode: numeric Width/Height (FEET) inputs for the selected wall. Local
+  // string state so typing is smooth; committed to wallConfig on blur / Enter.
+  // Stored unit is feet (lib/wallLayout.ts SCALE=12), same as drag-to-stretch.
+  const [wallWidthInput, setWallWidthInput] = useState('')
+  const [wallHeightInput, setWallHeightInput] = useState('')
+
   // Walls mode: drag/rotate/stretch state
   const [draggingWallIndex, setDraggingWallIndex] = useState<number | null>(null)
   const [wallDragStart, setWallDragStart] = useState<{ x: number; z: number; startPx: number; startPy: number } | null>(null)
@@ -209,6 +215,43 @@ export default function FloorEditorOverlay({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [mode, onWallConfigChange])
+
+  // Keep the numeric Width/Height inputs synced to the selected wall (in feet).
+  // Re-runs when selection changes or wallConfig updates (e.g. live drag-stretch
+  // of width), so the fields always reflect the current wall.
+  useEffect(() => {
+    if (selectedWallIndex == null || selectedWallIndex >= wallConfig.walls.length) return
+    const w = wallConfig.walls[selectedWallIndex]
+    setWallWidthInput(String(Math.round(w.width * 100) / 100))
+    setWallHeightInput(String(Math.round(w.height * 100) / 100))
+  }, [selectedWallIndex, wallConfig])
+
+  // Write a wall dimension (feet) into wallConfig.walls[index] and commit it to
+  // the undo history — same commit shape handlePointerUp uses, so it persists
+  // through the existing wall-config blob save (no new save path). Height was
+  // previously not editable at all; this is the only way to change it.
+  const WALL_FT_MIN = 4
+  const WALL_FT_MAX = 40
+  const applyWallDimension = useCallback(
+    (index: number, dim: 'width' | 'height', feet: number) => {
+      if (!onWallConfigChange || !Number.isFinite(feet)) return
+      const cur = wallConfig.walls[index]
+      if (!cur) return
+      // No-op when the entered value already matches the current dimension
+      // (e.g. a focus→blur with no edit), so a wall previously dragged outside
+      // the numeric range isn't silently snapped to the clamp bound. Tolerance
+      // matches the 2-decimal display rounding.
+      if (Math.abs((cur[dim] ?? 0) - feet) < 0.01) return
+      const clamped = Math.min(WALL_FT_MAX, Math.max(WALL_FT_MIN, feet))
+      if (Math.abs((cur[dim] ?? 0) - clamped) < 1e-6) return
+      const nextWalls = wallConfig.walls.map((w, i) => (i === index ? { ...w, [dim]: clamped } : w))
+      const next = { ...wallConfig, walls: nextWalls }
+      onWallConfigChange(next)
+      setUndoHistory((prev) => { const t = prev.slice(0, undoIndex + 1); t.push(next); return t })
+      setUndoIndex((prev) => prev + 1)
+    },
+    [onWallConfigChange, wallConfig, undoIndex]
+  )
 
   // ── Tables mode handlers ──────────────────────────────────────────────────
 
@@ -715,7 +758,7 @@ export default function FloorEditorOverlay({
           </div>
 
           {mode === 'walls' && (
-            <div className="flex items-center gap-2 px-6 pb-4">
+            <div className="flex flex-wrap items-center gap-2 px-6 pb-4">
               <button
                 type="button"
                 onClick={handleAddWall}
@@ -734,6 +777,42 @@ export default function FloorEditorOverlay({
                 <Trash2 className="w-4 h-4" />
                 Remove wall
               </button>
+
+              {/* Numeric size for the selected wall — Width + Height in FEET.
+                  Type an exact value (decimal feet, e.g. 9.5); commits on blur /
+                  Enter, clamped to 4–40 ft. Drag-to-stretch-width still works. */}
+              {selectedWallIndex != null && selectedWallIndex < wallConfig.walls.length && (
+                <div className="flex items-center gap-2 ml-1 pl-3 border-l border-gray-200">
+                  <span className="text-xs font-medium text-gray-500">Wall {selectedWallIndex + 1}</span>
+                  {([
+                    { key: 'width' as const, label: 'W', value: wallWidthInput, set: setWallWidthInput },
+                    { key: 'height' as const, label: 'H', value: wallHeightInput, set: setWallHeightInput },
+                  ]).map(({ key, label, value, set }) => (
+                    <label key={key} className="flex items-center gap-1 text-xs text-gray-600">
+                      <span className="font-semibold text-gray-500">{label}</span>
+                      <input
+                        type="number"
+                        min={WALL_FT_MIN}
+                        max={WALL_FT_MAX}
+                        step={0.5}
+                        value={value}
+                        onChange={(e) => set(e.target.value)}
+                        onBlur={() => applyWallDimension(selectedWallIndex, key, parseFloat(value))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            applyWallDimension(selectedWallIndex, key, parseFloat(value))
+                            ;(e.target as HTMLInputElement).blur()
+                          }
+                        }}
+                        className="w-16 px-1.5 py-1 border border-gray-300 rounded text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                        aria-label={`Wall ${selectedWallIndex + 1} ${key} in feet`}
+                      />
+                      <span className="text-gray-400">ft</span>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

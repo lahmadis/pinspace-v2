@@ -2298,6 +2298,16 @@ export default function StudioRoom(props: StudioRoomProps) {
           prev && prev.id === boardId ? { ...prev, linkUrl: linkUrl || undefined } : prev
         )
       }}
+      onBoardSizeSaved={(boardId, widthIn, heightIn) => {
+        // Persisted server-side already (position PATCH). Mirror the absolute
+        // inches into the local boards cache so the 3D room re-renders at the
+        // new size, and into the open snapshot so lightbox navigation stays
+        // consistent this session. Same pattern as onLinkSaved.
+        applyBoardSizeLocal(boardId, widthIn, heightIn)
+        setLightboxBoard((prev) =>
+          prev && prev.id === boardId ? { ...prev, boardWidthIn: widthIn, boardHeightIn: heightIn } : prev
+        )
+      }}
     />
     </>
   )

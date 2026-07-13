@@ -14,7 +14,7 @@ import { Text, Html } from '@react-three/drei'
 import { PDFTextureMaterial } from './PDFTexture'
 import { useBoardTexture } from './useBoardTexture'
 import { toast } from '@/lib/toast'
-import { getBoardSizeInches } from '@/lib/boardDimensions'
+import { getBoardSizeInches, boardSizeInchesFromSource } from '@/lib/boardDimensions'
 import VideoBadge from './VideoBadge'
 import { useDisposableGeometry } from './useDisposableGeometry'
 import { enqueueBoardWrite } from '@/lib/boardPositionWriteQueue'
@@ -837,6 +837,59 @@ if (e.intersections && e.intersections.length > 0) {
     window.addEventListener('pointerup', onUp)
   }, [board.id, _wallIndex, getPointerOnWallPlane, gl, isLocked, scaledWallHeight, scaledWallWidth, side, wallHeightInches, wallWidthInches, worldToWallLocal, onSizePersisted])
 
+  // True (measured) physical size exists only when the upload captured it — PDFs
+  // (points/72). Gates the "Reset to true scale" escape hatch below.
+  const hasPhysicalSize =
+    board.physicalWidth != null && board.physicalHeight != null &&
+    board.physicalWidth > 0 && board.physicalHeight > 0
+
+  // Reset a manually-resized board back to its true physical size. Recomputes
+  // from physical dims via the SAME helper the upload path used, applies it
+  // optimistically (mirrors the corner-resize onUp), and persists board_width_in/
+  // board_height_in through the existing position PATCH. Manual resize stays an
+  // override — this is just the escape hatch back to measured scale.
+  const handleResetToTrueScale = useCallback(() => {
+    if (isLocked || !hasPhysicalSize) return
+    const src = boardSizeInchesFromSource({
+      aspectRatio: board.aspectRatio,
+      physicalWidth: board.physicalWidth,
+      physicalHeight: board.physicalHeight,
+    })
+    const next = { width: src.widthIn, height: src.heightIn }
+    const prior = sizeRef.current
+    if (Math.abs(prior.width - next.width) < 1e-3 && Math.abs(prior.height - next.height) < 1e-3) return
+    sizeRef.current = next
+    setSizeIn(next)
+    onSizePersisted?.(board.id, next.width, next.height)
+
+    const apiX = (positionRef.current.x + 0.5) * 100
+    const apiY = (positionRef.current.y + 0.5) * 100
+    const isMockBoard =
+      board.id.startsWith('temp-') || board.id.startsWith('demo-') || board.id.startsWith('sample-')
+    if (isMockBoard) return
+    enqueueBoardWrite(board.id, () => fetch(`/api/boards/${board.id}/position`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        wallIndex: _wallIndex,
+        x: apiX,
+        y: apiY,
+        boardWidthIn: next.width,
+        boardHeightIn: next.height,
+        side,
+      }),
+    }))
+      .then((res) => { if (!res.ok) throw new Error(`HTTP ${res.status}`) })
+      .catch((err) => {
+        console.error('❌ [DraggableBoard] Reset-to-true-scale PATCH failed:', err)
+        sizeRef.current = prior
+        setSizeIn(prior)
+        onSizePersisted?.(board.id, prior.width, prior.height)
+        toast.error('Failed to reset board size. Please try again.')
+      })
+  }, [isLocked, hasPhysicalSize, board.id, board.aspectRatio, board.physicalWidth, board.physicalHeight, _wallIndex, side, onSizePersisted])
+
   devLog(`🧱 DraggableBoard on wall: wallRotation=${wallRotation.toFixed(2)}, side=${boardSide}, boardZ=${boardZ}`)
   const BOARD_THICKNESS = 0.08 // Give boards some thickness so they don't appear paper-thin
   // Source geometries for the outline edges, memoized on size and disposed when
@@ -971,6 +1024,33 @@ if (e.intersections && e.intersections.length > 0) {
             <edgesGeometry args={[selectedEdgeGeometry]} />
             <lineBasicMaterial color="#4444ff" linewidth={3} />
           </lineSegments>
+        )}
+
+        {/* Reset to true scale — escape hatch back to the board's measured
+            physical size (PDFs). Shown only when the board is selected, editable,
+            and true dimensions exist; manual resize otherwise stays an override. */}
+        {isSelected && canEdit && hasPhysicalSize && (
+          <Html position={[0, boardHeight / 2 + 2, 0.1]} center distanceFactor={10} style={{ pointerEvents: 'auto' }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleResetToTrueScale() }}
+              onPointerDown={(e) => e.stopPropagation()}
+              title="Resize this board back to its measured (PDF) real-world size"
+              style={{
+                whiteSpace: 'nowrap',
+                background: 'rgba(15,23,42,0.85)',
+                color: 'white',
+                border: '1px solid rgba(255,255,255,0.25)',
+                borderRadius: '9999px',
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+              }}
+            >
+              Reset to true scale
+            </button>
+          </Html>
         )}
 
         {/*

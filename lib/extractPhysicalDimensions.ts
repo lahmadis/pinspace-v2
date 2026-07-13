@@ -101,6 +101,13 @@ export async function extractPDFPhysicalDimensions(pdfFile: File): Promise<{
 /**
  * Extract physical dimensions from an image file
  * Uses EXIF data to get DPI, or defaults to 72 DPI for web images, 300 DPI for print
+ *
+ * INTENTIONALLY NOT WIRED INTO THE UPLOAD PATH. Raster images carry no reliable
+ * real-world size — the DPI here is a guess (72, or 300 above 2000px), which
+ * would produce confidently-wrong physical dimensions (e.g. a screenshot read as
+ * a 30" print). Image board size is instead set MANUALLY via the board-size
+ * control in the lightbox (sheet presets / custom inches → board_width_in). Do
+ * not call this from useBoardUpload; if you need image size, ask the user.
  */
 export async function extractImagePhysicalDimensions(imageFile: File): Promise<{
   physicalWidth: number  // in inches

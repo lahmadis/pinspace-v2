@@ -5,6 +5,12 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { Comment, Board, BoardComment, BoardTrace, TraceStroke } from '@/types'
 import { validateLinkUrl } from '@/lib/linkUrl'
+import {
+  getBoardSizeDisplay,
+  fitBoardWithinSheet,
+  SHEET_SIZE_PRESETS,
+  type SheetSizePreset,
+} from '@/lib/boardDimensions'
 import { useImageViewport } from '@/components/useImageViewport'
 import type { TraceStreamEntry } from '@/components/3d/CameraController'
 import { toast } from '@/lib/toast'
@@ -37,6 +43,13 @@ interface LightboxModalProps {
    * re-reads on open. null = link cleared.
    */
   onLinkSaved?: (boardId: string, linkUrl: string | null) => void
+  /**
+   * Called after a manual board-size save persists (PATCH ok). Lets the parent
+   * mirror board_width_in / board_height_in into its local boards cache and the
+   * open-lightbox snapshot so the 3D room re-renders at the new size without a
+   * refresh. Mirrors onLinkSaved.
+   */
+  onBoardSizeSaved?: (boardId: string, widthIn: number, heightIn: number) => void
   // ---- Guest-critic mode (Phase A.5) ----
   /** When set, critique requests carry this token and writes are attributed to the guest. */
   guestToken?: string | null
@@ -111,7 +124,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, onBoardSizeSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -149,6 +162,18 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const [linkError, setLinkError] = useState<string | null>(null)
   const [savingLink, setSavingLink] = useState(false)
   const linkSaveInFlightRef = useRef(false)
+
+  // Manual board-size control (edit mode, owner/instructor). sizeOverride holds
+  // the optimistic post-save inches so the header/label update without waiting
+  // for a parent refetch; null = "use the board's stored size". Reset on board
+  // change. Mirrors linkOverride.
+  const [sizeOverride, setSizeOverride] = useState<{ widthIn: number; heightIn: number } | null>(null)
+  const [editingSize, setEditingSize] = useState(false)
+  const [sizeWidthInput, setSizeWidthInput] = useState('')
+  const [sizeHeightInput, setSizeHeightInput] = useState('')
+  const [sizeError, setSizeError] = useState<string | null>(null)
+  const [savingSize, setSavingSize] = useState(false)
+  const sizeSaveInFlightRef = useRef(false)
 
   // Single-image zoom/pan + image-rect measurement (Phase A.2). Only the
   // single-image branch below consumes it; PDF/compare are untouched.
@@ -322,6 +347,9 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     setEditingLink(false)
     setLinkInput('')
     setLinkError(null)
+    setSizeOverride(null)
+    setEditingSize(false)
+    setSizeError(null)
     // Reset the callout overlay on every board change (covers arrow nav).
     setCalloutMode(false)
     setComposer(null)
@@ -478,6 +506,58 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       setSavingLink(false)
     }
   }, [board, linkInput, linkOverride, onLinkSaved])
+
+  // Persist a manual board size (inches) through the EXISTING position PATCH,
+  // which already accepts boardWidthIn/boardHeightIn. Sends the board's current
+  // wall position unchanged (the route requires wallIndex/x/y). Optimistic:
+  // sizeOverride updates the header immediately; onBoardSizeSaved lets the
+  // parent mirror it into the 3D room. Mirrors handleSaveLink.
+  const handleSaveSize = useCallback(async (widthIn: number, heightIn: number) => {
+    if (sizeSaveInFlightRef.current || !board) return
+    if (!board.position || board.position.wallIndex == null) {
+      setSizeError('This board isn’t placed on a wall yet.')
+      return
+    }
+    if (!Number.isFinite(widthIn) || !Number.isFinite(heightIn) || widthIn <= 0 || heightIn <= 0) {
+      setSizeError('Enter a width and height in inches.')
+      return
+    }
+    // Clamp to sane real-world bounds (1"–600" = 50 ft).
+    const w = Math.min(600, Math.max(1, widthIn))
+    const h = Math.min(600, Math.max(1, heightIn))
+    sizeSaveInFlightRef.current = true
+    setSavingSize(true)
+    setSizeError(null)
+    try {
+      const res = await fetch(`/api/boards/${board.id}/position`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          wallIndex: board.position.wallIndex,
+          x: board.position.x,
+          y: board.position.y,
+          side: board.position.side,
+          boardWidthIn: w,
+          boardHeightIn: h,
+        }),
+        credentials: 'include',
+      })
+      if (res.ok) {
+        setSizeOverride({ widthIn: w, heightIn: h })
+        setEditingSize(false)
+        onBoardSizeSaved?.(board.id, w, h)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setSizeError(data?.error || data?.message || 'Failed to save size.')
+      }
+    } catch {
+      setSizeError('Failed to save size.')
+    } finally {
+      sizeSaveInFlightRef.current = false
+      setSavingSize(false)
+    }
+  }, [board, onBoardSizeSaved])
 
   const fetchComments = async () => {
     if (!board) return
@@ -1447,11 +1527,21 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     currentIndex >= 0 && allBoards.length > 0
       ? `${String(currentIndex + 1).padStart(2, '0')} / ${String(allBoards.length).padStart(2, '0')}`
       : null
-  // Title-block "sheet size" from the board's physical dimensions, when present.
-  const sheetSize =
-    board.physicalWidth && board.physicalHeight && board.physicalWidth > 0 && board.physicalHeight > 0
-      ? `${Math.round(board.physicalWidth)}×${Math.round(board.physicalHeight)} IN`
-      : null
+  // Title-block board size + provenance. Honors an optimistic override from a
+  // just-saved manual size. TRUE/SET show the plain size; ASSUMED (aspect-ratio
+  // 36" default — no measurement) is flagged so a test-fit stays honest.
+  const sizeDisplay = sizeOverride
+    ? {
+        widthIn: sizeOverride.widthIn,
+        heightIn: sizeOverride.heightIn,
+        provenance: 'set' as const,
+        label: `${Math.round(sizeOverride.widthIn)} × ${Math.round(sizeOverride.heightIn)} IN`,
+      }
+    : getBoardSizeDisplay(board)
+  // Manual board-size control: edit mode, owner or instructor, and only for a
+  // board actually placed on a wall (the position PATCH needs its wall position).
+  const isBoardOwner = !board.ownerId || (!!user && board.ownerId === user.id)
+  const canEditSize = isEditMode && !!board.position && (currentUserRole === 'instructor' || isBoardOwner)
   // Zoom controls surface the EXISTING viewport hook — step scale about the
   // current center via getViewportFraction→applyViewportFraction (which clamps
   // to MIN_SCALE..maxScale internally). Fit = reset. No zoom math reimplemented.
@@ -1524,9 +1614,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                     </svg>
                   )}
                 </span>
-                {sheetSize && (
-                  <span className="font-mono uppercase tracking-wider text-[10px] text-slate-400/80 flex-shrink-0">· {sheetSize}</span>
-                )}
+                <span className="font-mono uppercase tracking-wider text-[10px] text-slate-400/80 flex-shrink-0">
+                  · {sizeDisplay.label}
+                  {sizeDisplay.provenance === 'assumed' && (
+                    <span className="text-slate-500/70"> (assumed)</span>
+                  )}
+                </span>
               </p>
             )
           })()}
@@ -1598,7 +1691,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               onClick={(e) => {
                 e.stopPropagation()
                 if (editingLink) { setEditingLink(false); setLinkError(null) }
-                else { setLinkInput(resolvedLinkUrl ?? ''); setEditingLink(true); setLinkError(null) }
+                else { setEditingSize(false); setLinkInput(resolvedLinkUrl ?? ''); setEditingLink(true); setLinkError(null) }
               }}
               className={`w-8 h-8 flex items-center justify-center rounded-full border transition-colors ${
                 editingLink
@@ -1610,6 +1703,35 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 010-5.656l3-3a4 4 0 015.656 5.656l-1.5 1.5" />
+              </svg>
+            </button>
+          )}
+
+          {/* Board size — real-world sheet size / custom inches (owner/instructor,
+              placed board). Opens the size popover below. */}
+          {canEditSize && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                if (editingSize) { setEditingSize(false); setSizeError(null) }
+                else {
+                  setEditingLink(false)
+                  setSizeWidthInput(String(Math.round(sizeDisplay.widthIn * 10) / 10))
+                  setSizeHeightInput(String(Math.round(sizeDisplay.heightIn * 10) / 10))
+                  setSizeError(null)
+                  setEditingSize(true)
+                }
+              }}
+              className={`w-8 h-8 flex items-center justify-center rounded-full border transition-colors ${
+                editingSize
+                  ? 'border-indigo-300 bg-indigo-500/30 text-white'
+                  : 'border-white/20 bg-white/5 text-white/90 hover:bg-white/15'
+              }`}
+              title="Set real-world board size"
+              aria-label="Set board size"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" />
               </svg>
             </button>
           )}
@@ -1698,6 +1820,78 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 </button>
               </div>
               {linkError && <p className="text-[10px] text-red-300">{linkError}</p>}
+            </div>
+          </div>
+        )}
+
+        {/* Board-size popover — a sheet preset fills the inches inputs (fit
+            within the sheet, image aspect preserved); Save commits via
+            handleSaveSize (existing position PATCH). Custom inches always
+            editable. */}
+        {canEditSize && editingSize && (
+          <div className="absolute right-4 top-full mt-2 z-30" onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-col gap-2 w-64 rounded-xl bg-slate-900/90 backdrop-blur-xl border border-slate-700/70 shadow-[0_10px_30px_rgba(2,6,23,0.45)] p-3">
+              <div className="text-[10px] uppercase tracking-wider text-slate-400">Board size (real-world)</div>
+              <select
+                value=""
+                onChange={(e) => {
+                  const preset: SheetSizePreset | undefined = SHEET_SIZE_PRESETS.find((p) => p.label === e.target.value)
+                  if (!preset) return
+                  const fit = fitBoardWithinSheet(board.aspectRatio, preset.widthIn, preset.heightIn)
+                  setSizeWidthInput(String(Math.round(fit.widthIn * 10) / 10))
+                  setSizeHeightInput(String(Math.round(fit.heightIn * 10) / 10))
+                  setSizeError(null)
+                }}
+                className="w-full text-xs text-slate-800 bg-white/95 border border-slate-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+              >
+                <option value="">Sheet preset…</option>
+                {SHEET_SIZE_PRESETS.map((p) => (
+                  <option key={p.label} value={p.label}>{p.label} in</option>
+                ))}
+              </select>
+              <div className="flex items-center gap-1.5">
+                <label className="flex items-center gap-1 text-[11px] text-slate-300">
+                  <span className="font-semibold">W</span>
+                  <input
+                    type="number" min={1} max={600} step={0.5}
+                    value={sizeWidthInput}
+                    onChange={(e) => { setSizeWidthInput(e.target.value); if (sizeError) setSizeError(null) }}
+                    className="w-16 text-[11px] text-slate-900 bg-white/95 border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                  />
+                </label>
+                <label className="flex items-center gap-1 text-[11px] text-slate-300">
+                  <span className="font-semibold">H</span>
+                  <input
+                    type="number" min={1} max={600} step={0.5}
+                    value={sizeHeightInput}
+                    onChange={(e) => { setSizeHeightInput(e.target.value); if (sizeError) setSizeError(null) }}
+                    className="w-16 text-[11px] text-slate-900 bg-white/95 border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                  />
+                </label>
+                <span className="text-[11px] text-slate-400">in</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] text-slate-500 truncate">
+                  Now: {sizeDisplay.label}{sizeDisplay.provenance === 'assumed' ? ' (assumed)' : ''}
+                </span>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={() => { setEditingSize(false); setSizeError(null) }}
+                    disabled={savingSize}
+                    className="text-[11px] px-2 py-0.5 rounded bg-white/10 text-white/80 hover:bg-white/20 disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleSaveSize(parseFloat(sizeWidthInput), parseFloat(sizeHeightInput))}
+                    disabled={savingSize}
+                    className="text-[11px] px-2 py-0.5 rounded bg-indigo-500 text-white hover:bg-indigo-400 disabled:opacity-60"
+                  >
+                    {savingSize ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+              {sizeError && <p className="text-[10px] text-red-300">{sizeError}</p>}
             </div>
           </div>
         )}

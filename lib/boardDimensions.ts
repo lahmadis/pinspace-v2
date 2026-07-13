@@ -56,3 +56,98 @@ export function getBoardSizeInches(board: Board): { widthIn: number; heightIn: n
     physicalHeight: board.physicalHeight,
   })
 }
+
+/** A named real-world sheet size, in inches. Used by the manual board-size picker. */
+export interface SheetSizePreset {
+  label: string
+  widthIn: number
+  heightIn: number
+}
+
+/**
+ * Common architecture/design sheet sizes for the manual board-size control.
+ * ARCH + ISO A-series, portrait dimensions (width < height); the picker fits the
+ * image within these preserving its own aspect, so orientation is handled there.
+ */
+export const SHEET_SIZE_PRESETS: SheetSizePreset[] = [
+  { label: '24 × 36', widthIn: 24, heightIn: 36 },
+  { label: '30 × 42', widthIn: 30, heightIn: 42 },
+  { label: '36 × 42', widthIn: 36, heightIn: 42 },
+  { label: '36 × 48', widthIn: 36, heightIn: 48 },
+  { label: 'A1', widthIn: 23.4, heightIn: 33.1 },
+  { label: 'A0', widthIn: 33.1, heightIn: 46.8 },
+]
+
+/**
+ * Largest rectangle with the given aspect ratio (width/height) that fits inside
+ * a sheet of sheetW × sheetH inches. Used when applying a sheet preset so the
+ * image is fit within the sheet rather than distorted to fill it. Both sheet
+ * orientations are considered so a portrait image on a portrait sheet fills it.
+ */
+export function fitBoardWithinSheet(
+  aspectRatio: number | null | undefined,
+  sheetW: number,
+  sheetH: number,
+): { widthIn: number; heightIn: number } {
+  const ar = aspectRatio != null && Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : sheetW / sheetH
+  let widthIn = sheetW
+  let heightIn = sheetW / ar
+  if (heightIn > sheetH) {
+    heightIn = sheetH
+    widthIn = sheetH * ar
+  }
+  return { widthIn, heightIn }
+}
+
+/**
+ * How much we actually KNOW about a board's real-world size, for honest UI:
+ *   'true'    — physical dimensions were captured (PDF points/72) and the
+ *               rendered size still matches them.
+ *   'set'     — a human set the size explicitly (overrides physical, or a
+ *               manual size on an image that has no physical data).
+ *   'assumed' — no physical data; the size is the aspect-ratio-derived 36"
+ *               default. A test-fit against this is a guess, not a measurement.
+ */
+export type BoardSizeProvenance = 'true' | 'set' | 'assumed'
+
+function approxEqualInches(a: number, b: number): boolean {
+  return Math.abs(a - b) <= Math.max(0.5, 0.01 * Math.max(a, b))
+}
+
+export function getBoardSizeProvenance(board: Board): BoardSizeProvenance {
+  const hasPhysical =
+    board.physicalWidth != null && board.physicalHeight != null &&
+    board.physicalWidth > 0 && board.physicalHeight > 0
+  const { widthIn, heightIn } = getBoardSizeInches(board)
+
+  if (hasPhysical) {
+    const matchesTrue =
+      approxEqualInches(widthIn, board.physicalWidth as number) &&
+      approxEqualInches(heightIn, board.physicalHeight as number)
+    return matchesTrue ? 'true' : 'set'
+  }
+
+  // No physical data: is the size still the aspect-ratio 36" default, or set?
+  const def = boardSizeInchesFromSource({ aspectRatio: board.aspectRatio })
+  const matchesDefault = approxEqualInches(widthIn, def.widthIn) && approxEqualInches(heightIn, def.heightIn)
+  return matchesDefault ? 'assumed' : 'set'
+}
+
+/**
+ * Resolved size + provenance for display, e.g. `36 × 42 IN` (true/set) or
+ * `36 × 24 IN` with provenance 'assumed' so the caller can append "(assumed)".
+ */
+export function getBoardSizeDisplay(board: Board): {
+  widthIn: number
+  heightIn: number
+  provenance: BoardSizeProvenance
+  label: string
+} {
+  const { widthIn, heightIn } = getBoardSizeInches(board)
+  return {
+    widthIn,
+    heightIn,
+    provenance: getBoardSizeProvenance(board),
+    label: `${Math.round(widthIn)} × ${Math.round(heightIn)} IN`,
+  }
+}
