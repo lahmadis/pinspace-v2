@@ -197,6 +197,48 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch boards' }, { status: 500 })
     }
 
+    // --- Callout count badge (per board) ----------------------------------
+    // Same visibility gate as the critique layer (see the board-comments
+    // route): an authenticated workspace owner OR member OR superadmin. Public /
+    // unauthenticated viewers and guest links get NO counts — never leak private
+    // comment volume. The private-workspace auth branch above already guarantees
+    // this, but the public-workspace branch serves non-members too, so we resolve
+    // it uniformly here.
+    let canSeeCallouts = false
+    const { data: { session: calloutSession } } = await supabase.auth.getSession()
+    const calloutUserId = calloutSession?.user?.id
+    if (calloutUserId) {
+      const { data: calloutWs } = await adminDb
+        .from('workspaces').select('owner_id').eq('id', scopedWorkspaceId).maybeSingle()
+      if (calloutWs?.owner_id === calloutUserId) canSeeCallouts = true
+      if (!canSeeCallouts) {
+        const { data: calloutMember } = await adminDb
+          .from('workspace_members').select('user_id')
+          .eq('workspace_id', scopedWorkspaceId).eq('user_id', calloutUserId).maybeSingle()
+        canSeeCallouts = calloutMember != null
+      }
+      if (!canSeeCallouts) canSeeCallouts = await isSuperadmin(calloutUserId, adminDb)
+    }
+
+    // One grouped read (NOT N+1): fetch the root callout rows for the returned
+    // boards and tally per board_id in app code. Root pins only (parent_id NULL)
+    // = the number of callout markers on the board; replies live within a thread.
+    const calloutCountByBoard = new Map<string, number>()
+    if (canSeeCallouts) {
+      const boardIds = (boards || []).map((b) => b.id as string)
+      if (boardIds.length > 0) {
+        const { data: calloutRows } = await adminDb
+          .from('board_comments')
+          .select('board_id')
+          .is('parent_id', null)
+          .in('board_id', boardIds)
+        for (const r of calloutRows || []) {
+          const bid = r.board_id as string
+          calloutCountByBoard.set(bid, (calloutCountByBoard.get(bid) ?? 0) + 1)
+        }
+      }
+    }
+
     // Transform database format to frontend format
     const transformedBoards = (boards || []).map((board) => ({
       id: board.id,
@@ -231,6 +273,9 @@ export async function GET(request: NextRequest) {
       boardWidthIn: board.board_width_in != null ? Number(board.board_width_in) : undefined,
       boardHeightIn: board.board_height_in != null ? Number(board.board_height_in) : undefined,
       linkUrl: board.link_url ?? undefined,
+      // Present only for permitted viewers; undefined omits it from JSON so
+      // guests/public viewers never receive a count (and the client renders no badge).
+      calloutCount: canSeeCallouts ? (calloutCountByBoard.get(board.id) ?? 0) : undefined,
     }))
 
     // Room-level wall color (migration 031) so the 3D renderer can paint the
