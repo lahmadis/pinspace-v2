@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { isInstructorAccount } from '@/lib/auth/getAccountRole'
+import { isSuperadmin } from '@/lib/auth/superadmin'
 import { validateName } from '@/lib/validation/safeName'
+
+// Room wall color — the two supported values, mirrored by the DB CHECK
+// constraint (migration 031). Shared by the validation below.
+const WALL_COLORS = ['grey', 'white'] as const
+type WallColor = (typeof WALL_COLORS)[number]
 
 export const dynamic = 'force-dynamic'
 
@@ -14,11 +20,14 @@ export const dynamic = 'force-dynamic'
  * Pass `allowMembers: true` to also admit any workspace member (any role,
  * including student) — used ONLY for the name-only rename path (Phase 10).
  * Destructive operations must NOT pass allowMembers.
+ * Pass `allowSuperadmin: true` to also admit a platform superadmin (an
+ * owner-equivalent for that field) — used for the wall-color path so an admin
+ * can adjust it. Never passed for DELETE.
  */
 async function authorizeRoomMutation(
   request: NextRequest,
   roomId: string,
-  options: { allowMembers?: boolean } = {}
+  options: { allowMembers?: boolean; allowSuperadmin?: boolean } = {}
 ): Promise<
   | { ok: true; room: Record<string, unknown>; workspaceId: string; userId: string }
   | { ok: false; response: NextResponse }
@@ -60,6 +69,10 @@ async function authorizeRoomMutation(
   }
 
   let authorized = workspace.owner_id === userId
+  if (!authorized && options.allowSuperadmin) {
+    // Platform superadmin acts as an owner-equivalent for the permitted field.
+    authorized = await isSuperadmin(userId, admin)
+  }
   if (!authorized && options.allowMembers) {
     // Any workspace member (any role) may rename. Membership is the boundary
     // for non-owners; true non-members still fall through to 403 below.
@@ -110,9 +123,24 @@ export async function PATCH(
     const wantsName = typeof body?.name === 'string'
     const wantsDisplayOrder = body?.displayOrder != null
     const wantsIsPublished = typeof body?.isPublished === 'boolean'
-    const isNameOnlyRename = wantsName && !wantsDisplayOrder && !wantsIsPublished
+    // Wall color accepts the camelCase `wallColor` body key (matching this
+    // route's other keys); the snake_case `wall_color` alias is tolerated too.
+    const wallColorRaw =
+      typeof body?.wallColor === 'string'
+        ? body.wallColor
+        : typeof body?.wall_color === 'string'
+          ? body.wall_color
+          : null
+    const wantsWallColor = wallColorRaw != null
+    const isNameOnlyRename = wantsName && !wantsDisplayOrder && !wantsIsPublished && !wantsWallColor
 
-    const auth = await authorizeRoomMutation(request, params.id, { allowMembers: isNameOnlyRename })
+    // Wall color is owner-OR-superadmin (never plain members). isNameOnlyRename
+    // is false whenever wall color is present, so the member relaxation can't
+    // leak to it.
+    const auth = await authorizeRoomMutation(request, params.id, {
+      allowMembers: isNameOnlyRename,
+      allowSuperadmin: wantsWallColor,
+    })
     if (!auth.ok) return auth.response
     const { room } = auth
 
@@ -144,6 +172,16 @@ export async function PATCH(
       updates.is_published = body.isPublished
       // Mirror published_at so timestamp metadata stays coherent with the flag.
       updates.published_at = body.isPublished ? new Date().toISOString() : null
+    }
+    if (wantsWallColor) {
+      const wc = String(wallColorRaw).trim().toLowerCase()
+      if (!WALL_COLORS.includes(wc as WallColor)) {
+        return NextResponse.json(
+          { error: "wall_color must be 'grey' or 'white'" },
+          { status: 400 }
+        )
+      }
+      updates.wall_color = wc
     }
 
     const admin = supabaseServiceRole()

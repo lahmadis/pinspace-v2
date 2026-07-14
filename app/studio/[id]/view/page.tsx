@@ -185,6 +185,9 @@ export default function StudioViewPage() {
   // the top bar so the user knows which studio they're viewing — view mode
   // had no room-name display previously.
   const [roomName, setRoomName] = useState<string | null>(null)
+  // Room-level wall color (migration 031), surfaced by /api/boards. Drives the
+  // 3D wall material for viewers; defaults to 'grey' (the current look).
+  const [wallColor, setWallColor] = useState<'grey' | 'white'>('grey')
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null)
   // The signed-in user's workspace role (owner surfaces as 'instructor'),
   // resolved best-effort below. Passed to the lightbox so the owner/instructor
@@ -368,6 +371,7 @@ export default function StudioViewPage() {
       const resolvedRoomName: string | null = data.room?.name ?? null
       setResolvedWorkspaceId(wsId)
       setRoomName(resolvedRoomName)
+      setWallColor(data.room?.wallColor === 'white' ? 'white' : 'grey')
 
       if (!isDemo && resolvedRoomId && resolvedRoomId !== studioId) {
         const qs = searchParams ? searchParams.toString() : ''
@@ -629,12 +633,13 @@ export default function StudioViewPage() {
         
         {/* Wall System with Boards */}
         {wallConfig && (
-          <WallSystem 
-            boards={boards} 
+          <WallSystem
+            boards={boards}
             wallConfig={wallConfig}
             onWallClick={() => {}} // No wall click in view mode
             editingWall={null}
             onBoardClick={handleBoardClick}
+            wallColor={wallColor}
           />
         )}
 

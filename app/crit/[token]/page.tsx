@@ -194,6 +194,8 @@ export default function CritPage() {
   const [boards, setBoards] = useState<Board[]>([])
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
   const [roomName, setRoomName] = useState<string | null>(null)
+  // Room wall color (migration 031) so guest-critic viewers see the room's look.
+  const [wallColor, setWallColor] = useState<'grey' | 'white'>('grey')
   const [guest, setGuest] = useState<GuestInfo | null>(null)
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [guestName, setGuestName] = useState('')
@@ -315,6 +317,7 @@ export default function CritPage() {
         const roomId: string | null = data.room?.id ?? null
         setRoomId(roomId)
         setRoomName(data.room?.name ?? null)
+        setWallColor(data.room?.wallColor === 'white' ? 'white' : 'grey')
         const g: GuestInfo | null = data.guest ?? null
         setGuest(g)
 
@@ -796,6 +799,7 @@ export default function CritPage() {
             onWallClick={() => {}}
             editingWall={null}
             onBoardClick={handleBoardClick}
+            wallColor={wallColor}
           />
         )}
 

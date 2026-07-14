@@ -122,6 +122,15 @@ export default function BoardThumbnail({ board, position, width, height, onClick
     () => new THREE.PlaneGeometry(width + 0.03, height + 0.03),
     [width, height],
   )
+  // Persistent thin border, drawn just outside the sheet footprint so it always
+  // reads against the wall — crucial on a WHITE wall where a white sheet would
+  // otherwise vanish. Rendered in BOTH wall colors for a consistent look, and
+  // only while the board is at rest (the indigo hover/highlight frame replaces
+  // it on hover).
+  const borderEdgeGeometry = useDisposableGeometry(
+    () => new THREE.PlaneGeometry(width + 0.02, height + 0.02),
+    [width, height],
+  )
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleClick = (e: any) => {
@@ -186,6 +195,17 @@ export default function BoardThumbnail({ board, position, width, height, onClick
             args={[skeletonEdgeGeometry]}
           />
           <lineBasicMaterial attach="material" color="#94a3b8" transparent opacity={0.5} />
+        </lineSegments>
+      )}
+
+      {/* Persistent subtle edge so a board still reads as an object against the
+          wall (esp. a white sheet on a white wall). Neutral so it suits both
+          wall colors; hidden while hovered/highlighted (the indigo frame below
+          takes over). Placed at the board's front face, ringing just outside. */}
+      {!isHovered && (
+        <lineSegments position={[0, 0, BOARD_THICKNESS / 2 + 0.001]}>
+          <edgesGeometry attach="geometry" args={[borderEdgeGeometry]} />
+          <lineBasicMaterial attach="material" color="#8b93a1" transparent opacity={0.55} />
         </lineSegments>
       )}
 

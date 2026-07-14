@@ -50,11 +50,33 @@ interface WallSystemProps {
   highlightedBoardId?: string | null
   onBoardHover?: (boardId: string | null) => void
   onFloorClick?: () => void
+  /**
+   * Room-level wall color. 'grey' (default) is the exact current look; 'white'
+   * is a slightly off-white (never pure #FFFFFF, which blows out under the
+   * scene lights). Only the wall surface + its edge-shadow accents change — the
+   * floor and background are untouched.
+   */
+  wallColor?: 'grey' | 'white'
+}
+
+// Wall surface + edge-shadow palette per color. The 'grey' values are
+// byte-identical to the pre-feature hardcoded colors, so grey rooms render
+// exactly as before. 'white' uses a soft off-white with neutral (de-tinted)
+// edge shadows so the panel depth still reads without a blue cast.
+const WALL_PALETTES: Record<'grey' | 'white', {
+  main: string
+  sideEdge: string
+  topEdge: string
+  bottomEdge: string
+}> = {
+  grey: { main: '#D8DEFF', sideEdge: '#B3C4FF', topEdge: '#A1B2FF', bottomEdge: '#E0E0DB' },
+  white: { main: '#EAEAE6', sideEdge: '#DCDCD7', topEdge: '#D2D2CD', bottomEdge: '#E4E4DF' },
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey' }: WallSystemProps) {
 
+  const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
   const floorBounds = calculateFloorBounds(wallConfig)
   const wallDepth = 6 // Wall thickness in inches (same as walls)
@@ -123,7 +145,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
             <mesh castShadow receiveShadow renderOrder={0}>
               <boxGeometry args={[transform.width, transform.height, 6]} />
               <meshStandardMaterial
-                color="#D8DEFF" // very light, white-leaning blue for walls
+                color={wallPalette.main} // room wall color (grey default / off-white)
                 roughness={0.85} // Slight sheen for subtle depth
                 metalness={0.0}
                 depthWrite={true}
@@ -143,50 +165,50 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
               receiveShadow
             >
               <boxGeometry args={[0.2, transform.height, 0.2]} />
-              <meshStandardMaterial 
-                color="#B3C4FF" // slightly darker blue for side edge shadows
+              <meshStandardMaterial
+                color={wallPalette.sideEdge} // side edge shadow (per wall color)
                 roughness={0.9}
                 metalness={0.0}
               />
             </mesh>
 
             {/* Right edge shadow */}
-            <mesh 
-              position={[transform.width / 2 - 0.1, 0, 2.1]} 
-              castShadow 
+            <mesh
+              position={[transform.width / 2 - 0.1, 0, 2.1]}
+              castShadow
               receiveShadow
             >
               <boxGeometry args={[0.2, transform.height, 0.2]} />
-              <meshStandardMaterial 
-                color="#B3C4FF" // slightly darker blue for side edge shadows
+              <meshStandardMaterial
+                color={wallPalette.sideEdge} // side edge shadow (per wall color)
                 roughness={0.9}
                 metalness={0.0}
               />
             </mesh>
 
             {/* Top edge shadow */}
-            <mesh 
-              position={[0, transform.height / 2 - 0.1, 2.1]} 
-              castShadow 
+            <mesh
+              position={[0, transform.height / 2 - 0.1, 2.1]}
+              castShadow
               receiveShadow
             >
               <boxGeometry args={[transform.width, 0.2, 0.2]} />
-              <meshStandardMaterial 
-                color="#A1B2FF" // darker blue for top edge shadow
+              <meshStandardMaterial
+                color={wallPalette.topEdge} // top edge shadow (per wall color)
                 roughness={0.9}
                 metalness={0.0}
               />
             </mesh>
 
             {/* Bottom edge shadow */}
-            <mesh 
-              position={[0, -transform.height / 2 + 0.1, 2.1]} 
-              castShadow 
+            <mesh
+              position={[0, -transform.height / 2 + 0.1, 2.1]}
+              castShadow
               receiveShadow
             >
               <boxGeometry args={[transform.width, 0.2, 0.2]} />
-              <meshStandardMaterial 
-                color="#E0E0DB" // Darker for bottom shadow
+              <meshStandardMaterial
+                color={wallPalette.bottomEdge} // bottom edge shadow (per wall color)
                 roughness={0.9}
                 metalness={0.0}
               />

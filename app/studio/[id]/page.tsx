@@ -71,6 +71,9 @@ export default function StudioPage() {
   const [roomId, setRoomId] = useState<string | null>(null)
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [workspaceName, setWorkspaceName] = useState<string | null>(null)
+  // Room-level wall color (migration 031), surfaced by /api/boards. Drives the
+  // 3D wall material; defaults to 'grey' (the current look).
+  const [wallColor, setWallColor] = useState<'grey' | 'white'>('grey')
   const [currentRoomName, setCurrentRoomName] = useState<string | null>(null)
   const [allRooms, setAllRooms] = useState<Array<{ id: string; name: string }>>([])
   const [showRoomSwitcher, setShowRoomSwitcher] = useState(false)
@@ -265,6 +268,7 @@ export default function StudioPage() {
           resolvedWorkspaceId = data.room?.workspaceId ?? null
           setRoomId(resolvedRoomId)
           setWorkspaceId(resolvedWorkspaceId)
+          setWallColor(data.room?.wallColor === 'white' ? 'white' : 'grey')
           setBoardsError(false)
 
           // Backward-compat redirect: legacy /studio/{workspace_id} URLs.
@@ -1131,6 +1135,7 @@ export default function StudioPage() {
             isArchived={isArchived}
             commentNonce={commentNonce}
             currentUserRole={currentUserRole}
+            wallColor={wallColor}
             wallVersionRef={wallVersionRef}
             onWallConfigConflict={handleWallConfigConflict}
             onEditingWallChange={setCurrentWallIndex}

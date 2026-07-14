@@ -105,6 +105,8 @@ interface StudioRoomProps {
   commentNonce?: number
   /** Current authenticated user's role in this workspace. */
   currentUserRole?: 'instructor' | 'student' | null
+  /** Room-level wall color for the 3D walls. Defaults to 'grey' (current look). */
+  wallColor?: 'grey' | 'white'
   /**
    * Tier 2 optimistic-concurrency: shared mutable base version the wall-config
    * blob is based on. Read when POSTing a floor/wall save; bumped on success.
@@ -192,6 +194,7 @@ function SceneContent({
   onTableModelClick,
   orbitControlsRef,
   showEditUI,
+  wallColor = 'grey',
 }: StudioRoomProps & {
   onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   /** Pointer-over on a wall surface. Used to fire-and-forget pre-warm board textures. */
@@ -319,6 +322,7 @@ function SceneContent({
         highlightedBoardId={hoveredBoardId}
         onBoardHover={onBoardHover}
         onFloorClick={onFloorClick}
+        wallColor={wallColor}
       />
 
       {/* Tables with optional 3D models on floor - click table to open model in viewer */}

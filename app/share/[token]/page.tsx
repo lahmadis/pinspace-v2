@@ -140,6 +140,8 @@ export default function SharePage() {
   const [boards, setBoards] = useState<Board[]>([])
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
   const [roomName, setRoomName] = useState<string | null>(null)
+  // Room wall color (migration 031) so shared viewers see the room's chosen look.
+  const [wallColor, setWallColor] = useState<'grey' | 'white'>('grey')
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null)
   const [compareBoardIds, setCompareBoardIds] = useState<string[]>([])
@@ -208,6 +210,7 @@ export default function SharePage() {
         const workspaceId: string | null = data.room?.workspaceId ?? null
         const roomId: string | null = data.room?.id ?? null
         setRoomName(data.room?.name ?? null)
+        setWallColor(data.room?.wallColor === 'white' ? 'white' : 'grey')
 
         // Phase 2b: pass roomId so the route reads the per-room wall-config blob
         // (which has its own legacy fallback). Without it the route only reads
@@ -411,6 +414,7 @@ export default function SharePage() {
             onWallClick={() => {}}
             editingWall={null}
             onBoardClick={handleBoardClick}
+            wallColor={wallColor}
           />
         )}
 

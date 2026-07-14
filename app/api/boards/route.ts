@@ -233,12 +233,25 @@ export async function GET(request: NextRequest) {
       linkUrl: board.link_url ?? undefined,
     }))
 
+    // Room-level wall color (migration 031) so the 3D renderer can paint the
+    // walls without a second round-trip. One tiny read keyed by the resolved
+    // room; defaults to 'grey' (the current look) when absent.
+    let scopedRoomWallColor: 'grey' | 'white' = 'grey'
+    if (scopedRoomId) {
+      const { data: roomRow } = await adminDb
+        .from('rooms')
+        .select('wall_color')
+        .eq('id', scopedRoomId)
+        .maybeSingle()
+      if (roomRow?.wall_color === 'white') scopedRoomWallColor = 'white'
+    }
+
     // Surface the resolved room so the studio page can subscribe to realtime
     // changes scoped to room_id without making a second round-trip.
     const response = NextResponse.json({
       boards: transformedBoards,
       room: scopedRoomId
-        ? { id: scopedRoomId, workspaceId: scopedWorkspaceId, name: scopedRoomName }
+        ? { id: scopedRoomId, workspaceId: scopedWorkspaceId, name: scopedRoomName, wallColor: scopedRoomWallColor }
         : null,
     })
     response.headers.set('Cache-Control', 'no-store')

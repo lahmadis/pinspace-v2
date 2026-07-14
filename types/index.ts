@@ -213,6 +213,8 @@ export interface Room {
   isPublished: boolean
   publishedAt: string | null
   createdAt: string | null
+  /** Room-level wall color for the 3D studio. Defaults to 'grey' (the current look). */
+  wallColor?: 'grey' | 'white'
   /** Returned by /api/workspaces/[id]; absent on PATCH/POST responses for a single room. */
   boardCount?: number
 }

@@ -64,7 +64,7 @@ export async function GET(
     // the order owners curated.
     const { data: roomRows } = await admin
       .from('rooms')
-      .select('id, name, display_order, is_published, published_at, created_at')
+      .select('id, name, display_order, is_published, published_at, created_at, wall_color')
       .eq('workspace_id', workspaceId)
       .order('display_order', { ascending: true })
       .order('created_at', { ascending: true })
@@ -220,6 +220,7 @@ export async function GET(
         isPublished: Boolean(r.is_published),
         publishedAt: (r.published_at as string | null) ?? null,
         createdAt: (r.created_at as string | null) ?? null,
+        wallColor: (r.wall_color as 'grey' | 'white' | null) ?? 'grey',
         boardCount: boardCountByRoom.get(r.id as string) ?? 0,
       })),
     }

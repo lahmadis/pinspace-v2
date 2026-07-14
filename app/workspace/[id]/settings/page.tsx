@@ -229,6 +229,26 @@ export default function WorkspaceSettingsPage() {
     }
   }
 
+  const handleSetWallColor = async (room: Room, wallColor: 'grey' | 'white') => {
+    // No-op if already this color (avoids a needless PATCH + refetch).
+    if ((room.wallColor ?? 'grey') === wallColor) return
+    try {
+      setRoomBusy(room.id)
+      const response = await fetch(`/api/rooms/${room.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallColor }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data?.error || 'Failed to update wall color')
+      await fetchWorkspace()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update wall color')
+    } finally {
+      setRoomBusy(null)
+    }
+  }
+
   const handleConfirmDeleteRoom = async () => {
     if (!roomToDelete) return
     try {
@@ -426,7 +446,37 @@ export default function WorkspaceSettingsPage() {
 
                         {/* Action buttons */}
                         {!isEditing && (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-3">
+                            {/* Wall color — grey (default) or white. Persists via
+                                PATCH /api/rooms/[id] (owner/superadmin enforced
+                                server-side); everyone sees the color in the 3D room. */}
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-gray-400">Wall</span>
+                              <div
+                                className="flex items-center rounded-lg border border-gray-200 overflow-hidden"
+                                role="group"
+                                aria-label="Wall color"
+                              >
+                                {(['grey', 'white'] as const).map((c) => {
+                                  const active = (room.wallColor ?? 'grey') === c
+                                  return (
+                                    <button
+                                      key={c}
+                                      onClick={() => handleSetWallColor(room, c)}
+                                      disabled={isBusy}
+                                      aria-pressed={active}
+                                      className={`px-2.5 py-1 text-xs font-medium capitalize transition-colors disabled:opacity-50 ${
+                                        active
+                                          ? 'bg-indigo-600 text-white'
+                                          : 'bg-white text-gray-600 hover:bg-gray-100'
+                                      }`}
+                                    >
+                                      {c}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
                             <button
                               onClick={() => setRoomToDelete(room)}
                               disabled={isBusy}

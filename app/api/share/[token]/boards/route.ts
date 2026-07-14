@@ -24,7 +24,7 @@ export async function GET(
 
   const { data: room } = await admin
     .from('rooms')
-    .select('id, workspace_id, name')
+    .select('id, workspace_id, name, wall_color')
     .eq('id', roomId)
     .maybeSingle()
 
@@ -92,6 +92,7 @@ export async function GET(
       id: room.id,
       workspaceId: room.workspace_id,
       name: room.name,
+      wallColor: room.wall_color === 'white' ? 'white' : 'grey',
     },
   })
   response.headers.set('Cache-Control', 'no-store')
