@@ -189,6 +189,48 @@ export default function BoardThumbnail({ board, position, width, height, onClick
         </lineSegments>
       )}
 
+      {/* Callout count badge — a quiet indigo marker at the top-right corner.
+          Only rendered for viewers permitted to see callouts (the server omits
+          the count for guests/public, so calloutCount is undefined for them) and
+          only when at least one callout exists. Reuses the same <Html> anchor as
+          the hover tooltip so it billboards to the camera and stays legible at
+          any angle/zoom; pointerEvents:'none' so clicks pass through to the board
+          and open the lightbox. No red / pulse / animation — a quiet marker. */}
+      {typeof board.calloutCount === 'number' && board.calloutCount > 0 && (
+        <Html
+          position={[width / 2, height / 2, BOARD_THICKNESS / 2 + 0.05]}
+          center
+          distanceFactor={10}
+          style={{ pointerEvents: 'none' }}
+        >
+          <div
+            aria-label={`${board.calloutCount} callout${board.calloutCount === 1 ? '' : 's'}`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: '18px',
+              height: '18px',
+              padding: '0 5px',
+              borderRadius: '9px',
+              // indigo-600 — matches the hover/highlight frame (#6366f1). The
+              // white ring keeps it legible on BOTH the grey and white walls.
+              background: 'rgba(79, 70, 229, 0.92)',
+              color: '#fff',
+              fontSize: '11px',
+              fontWeight: 600,
+              lineHeight: 1,
+              border: '1px solid rgba(255, 255, 255, 0.85)',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
+              whiteSpace: 'nowrap',
+              userSelect: 'none',
+            }}
+          >
+            {board.calloutCount}
+          </div>
+        </Html>
+      )}
+
       {/* Video link badge — opens the attached video in a new tab. */}
       {board.linkUrl && <VideoBadge url={board.linkUrl} width={width} height={height} />}
 

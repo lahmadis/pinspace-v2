@@ -90,6 +90,14 @@ export interface Board {
   // "Open video" button in the lightbox. Validated via lib/linkUrl.ts. Maps to
   // the boards.link_url column. Undefined / absent = no link.
   linkUrl?: string
+  /**
+   * Number of root callout pins (board_comments with parent_id NULL) on this
+   * board, for the 3D count badge. Set by /api/boards ONLY for viewers permitted
+   * to see callouts (owner/member/superadmin); omitted for guests/public
+   * viewers, so it doubles as the client-side visibility gate. Undefined = no
+   * badge; 0 = permitted but no callouts.
+   */
+  calloutCount?: number
 }
 
 export interface Comment {
