@@ -192,15 +192,19 @@ export default function BoardThumbnail({ board, position, width, height, onClick
       {/* Callout count badge — a quiet indigo marker at the top-right corner.
           Only rendered for viewers permitted to see callouts (the server omits
           the count for guests/public, so calloutCount is undefined for them) and
-          only when at least one callout exists. Reuses the same <Html> anchor as
-          the hover tooltip so it billboards to the camera and stays legible at
-          any angle/zoom; pointerEvents:'none' so clicks pass through to the board
-          and open the lightbox. No red / pulse / animation — a quiet marker. */}
+          only when at least one callout exists. NO distanceFactor: like a real UI
+          marker it renders at a CONSTANT screen size regardless of camera
+          distance (with distanceFactor it shrank to a few px in the zoomed-out
+          room view — the whole point of a badge is to stay legible there). Still
+          billboards to the camera (DOM overlay). pointerEvents:'none' so clicks
+          pass through to the board and open the lightbox. Top-right corner — the
+          linkUrl VideoBadge sits top-LEFT, so the two never collide. No red /
+          pulse / animation — a quiet marker. */}
       {typeof board.calloutCount === 'number' && board.calloutCount > 0 && (
         <Html
           position={[width / 2, height / 2, BOARD_THICKNESS / 2 + 0.05]}
           center
-          distanceFactor={10}
+          zIndexRange={[60, 0]}
           style={{ pointerEvents: 'none' }}
         >
           <div
@@ -209,15 +213,15 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              minWidth: '18px',
-              height: '18px',
-              padding: '0 5px',
-              borderRadius: '9px',
+              minWidth: '22px',
+              height: '22px',
+              padding: '0 6px',
+              borderRadius: '11px',
               // indigo-600 — matches the hover/highlight frame (#6366f1). The
               // white ring keeps it legible on BOTH the grey and white walls.
               background: 'rgba(79, 70, 229, 0.92)',
               color: '#fff',
-              fontSize: '11px',
+              fontSize: '13px',
               fontWeight: 600,
               lineHeight: 1,
               border: '1px solid rgba(255, 255, 255, 0.85)',

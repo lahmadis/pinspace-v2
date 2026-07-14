@@ -239,6 +239,14 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // TEMP DEBUG — callout badge visibility (strip after diagnosing in Vercel logs).
+    console.log('[CALLOUT-BADGE-DEBUG]', {
+      canSeeCallouts,
+      calloutCountByBoardSize: calloutCountByBoard.size,
+      scopedRoomId,
+      boardsReturned: (boards || []).length,
+    })
+
     // Transform database format to frontend format
     const transformedBoards = (boards || []).map((board) => ({
       id: board.id,
