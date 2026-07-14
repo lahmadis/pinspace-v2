@@ -788,6 +788,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     resolveBoardId,
     applyBoardSizeLocal,
     applyBoardLinkLocal,
+    applyBoardTitleLocal,
     deleteBoard,
     addTempBoard,
     replaceTempBoard,
@@ -2308,6 +2309,17 @@ export default function StudioRoom(props: StudioRoomProps) {
         applyBoardSizeLocal(boardId, widthIn, heightIn)
         setLightboxBoard((prev) =>
           prev && prev.id === boardId ? { ...prev, boardWidthIn: widthIn, boardHeightIn: heightIn } : prev
+        )
+      }}
+      onTitleSaved={(boardId, title) => {
+        // Persisted server-side already (title PATCH). Mirror into the local
+        // boards cache so a later reopen/nav reads the fresh title, and into the
+        // open snapshot so the header stays consistent this session. The
+        // room-scoped boards realtime subscription propagates it to other
+        // viewers on its own. Same pattern as onLinkSaved.
+        applyBoardTitleLocal(boardId, title)
+        setLightboxBoard((prev) =>
+          prev && prev.id === boardId ? { ...prev, title } : prev
         )
       }}
     />

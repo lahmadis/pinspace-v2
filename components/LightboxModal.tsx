@@ -50,6 +50,12 @@ interface LightboxModalProps {
    * refresh. Mirrors onLinkSaved.
    */
   onBoardSizeSaved?: (boardId: string, widthIn: number, heightIn: number) => void
+  /**
+   * Called after a board-title save persists (PATCH ok). Lets the parent mirror
+   * the new title into its local boards cache and the open-lightbox snapshot so
+   * reopening/navigating shows it without a refetch. Mirrors onLinkSaved.
+   */
+  onTitleSaved?: (boardId: string, title: string) => void
   // ---- Guest-critic mode (Phase A.5) ----
   /** When set, critique requests carry this token and writes are attributed to the guest. */
   guestToken?: string | null
@@ -124,7 +130,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, onBoardSizeSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, onBoardSizeSaved, onTitleSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -174,6 +180,19 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const [sizeError, setSizeError] = useState<string | null>(null)
   const [savingSize, setSavingSize] = useState(false)
   const sizeSaveInFlightRef = useRef(false)
+
+  // Inline board-title edit (edit mode, uploader/owner/superadmin — see
+  // canEditTitle below). titleOverride holds the optimistic post-save value so
+  // the header updates without waiting for a refetch; null = "use board.title".
+  // Reset on board change. Mirrors linkOverride.
+  const [titleOverride, setTitleOverride] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleInput, setTitleInput] = useState('')
+  const [savingTitle, setSavingTitle] = useState(false)
+  const titleSaveInFlightRef = useRef(false)
+  // Set true by an Esc keypress so the ensuing unmount-blur cancels instead of
+  // saving (Enter/blur save; Esc cancels).
+  const titleEditCancelRef = useRef(false)
 
   // Single-image zoom/pan + image-rect measurement (Phase A.2). Only the
   // single-image branch below consumes it; PDF/compare are untouched.
@@ -350,6 +369,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     setSizeOverride(null)
     setEditingSize(false)
     setSizeError(null)
+    setTitleOverride(null)
+    setEditingTitle(false)
+    setTitleInput('')
+    titleEditCancelRef.current = false
     // Reset the callout overlay on every board change (covers arrow nav).
     setCalloutMode(false)
     setComposer(null)
@@ -506,6 +529,58 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       setSavingLink(false)
     }
   }, [board, linkInput, linkOverride, onLinkSaved])
+
+  // Persist an inline board-title rename via PATCH /api/boards/[id]. Optimistic:
+  // titleOverride updates the header immediately and the input closes; on
+  // failure we revert to the prior value and toast once. Enter/blur call this;
+  // Esc sets titleEditCancelRef so the unmount-blur cancels without saving.
+  const handleSaveTitle = useCallback(async () => {
+    if (titleEditCancelRef.current) {
+      titleEditCancelRef.current = false
+      setEditingTitle(false)
+      setTitleInput('')
+      return
+    }
+    if (titleSaveInFlightRef.current || !board) {
+      setEditingTitle(false)
+      return
+    }
+    const value = titleInput.trim().slice(0, 120)
+    const current = titleOverride ?? board.title ?? ''
+    // Empty or unchanged: cancel the edit; never persist an empty title.
+    if (!value || value === current) {
+      setEditingTitle(false)
+      setTitleInput('')
+      return
+    }
+    const prevOverride = titleOverride
+    titleSaveInFlightRef.current = true
+    setSavingTitle(true)
+    // Optimistic: show the new title and close the input.
+    setTitleOverride(value)
+    setEditingTitle(false)
+    try {
+      const res = await fetch(`/api/boards/${board.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: value }),
+        credentials: 'include',
+      })
+      if (res.ok) {
+        onTitleSaved?.(board.id, value)
+      } else {
+        // Revert to the pre-save value and surface a single toast.
+        setTitleOverride(prevOverride)
+        toast.error('Couldn’t rename this board.')
+      }
+    } catch {
+      setTitleOverride(prevOverride)
+      toast.error('Couldn’t rename this board.')
+    } finally {
+      titleSaveInFlightRef.current = false
+      setSavingTitle(false)
+    }
+  }, [board, titleInput, titleOverride, onTitleSaved])
 
   // Persist a manual board size (inches) through the EXISTING position PATCH,
   // which already accepts boardWidthIn/boardHeightIn. Sends the board's current
@@ -1542,6 +1617,14 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // board actually placed on a wall (the position PATCH needs its wall position).
   const isBoardOwner = !board.ownerId || (!!user && board.ownerId === user.id)
   const canEditSize = isEditMode && !!board.position && (currentUserRole === 'instructor' || isBoardOwner)
+  // Inline title edit is offered on the same edit surface as author-name/size,
+  // to an instructor/workspace-owner OR the board's uploader. The server (PATCH
+  // /api/boards/[id]) re-checks uploader/owner/superadmin, so a stale client
+  // affordance just round-trips to a 403 → revert + toast. Non-authorized
+  // viewers see plain static text (no affordance, no cursor change).
+  const canEditTitle = isEditMode && (currentUserRole === 'instructor' || isBoardOwner)
+  // Optimistic override wins over the stored value so a rename shows instantly.
+  const resolvedTitle = titleOverride ?? board.title
   // Zoom controls surface the EXISTING viewport hook — step scale about the
   // current center via getViewportFraction→applyViewportFraction (which clamps
   // to MIN_SCALE..maxScale internally). Fit = reset. No zoom math reimplemented.
@@ -1568,9 +1651,55 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       <div className="absolute top-3 left-3 right-3 rounded-2xl bg-slate-900/75 backdrop-blur-xl border border-slate-700/70 shadow-[0_10px_30px_rgba(2,6,23,0.45)] flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5 z-20">
         {/* Title block — title + author · sheet size (title-block feel) */}
         <div className="flex-1 min-w-0">
-          <h2 className="text-slate-50 font-semibold text-sm sm:text-[15px] truncate">
-            {compareBoards.length > 1 ? `Compare selection (${compareBoards.length})` : board.title}
-          </h2>
+          {compareBoards.length > 1 ? (
+            <h2 className="text-slate-50 font-semibold text-sm sm:text-[15px] truncate">
+              {`Compare selection (${compareBoards.length})`}
+            </h2>
+          ) : editingTitle && canEditTitle ? (
+            <input
+              type="text"
+              value={titleInput}
+              onChange={(e) => setTitleInput(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                // Swallow every key so Esc / arrows don't reach the lightbox's
+                // window-level close + prev/next handlers while editing.
+                e.stopPropagation()
+                if (e.key === 'Enter') { e.preventDefault(); handleSaveTitle() }
+                else if (e.key === 'Escape') {
+                  e.preventDefault()
+                  titleEditCancelRef.current = true
+                  setEditingTitle(false)
+                  setTitleInput('')
+                }
+              }}
+              onBlur={handleSaveTitle}
+              autoFocus
+              maxLength={120}
+              disabled={savingTitle}
+              className="w-full text-slate-900 bg-white/95 border border-indigo-400 rounded px-2 py-0.5 text-sm sm:text-[15px] font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+              placeholder="Board title"
+            />
+          ) : canEditTitle ? (
+            <h2
+              className="text-slate-50 font-semibold text-sm sm:text-[15px] flex items-center gap-1 min-w-0 group/title cursor-pointer hover:text-white"
+              onClick={(e) => {
+                e.stopPropagation()
+                setTitleInput(resolvedTitle)
+                setEditingTitle(true)
+              }}
+              title="Rename board"
+            >
+              <span className="truncate">{resolvedTitle}</span>
+              <svg className="w-3.5 h-3.5 opacity-0 group-hover/title:opacity-60 transition-opacity flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
+              </svg>
+            </h2>
+          ) : (
+            <h2 className="text-slate-50 font-semibold text-sm sm:text-[15px] truncate">
+              {resolvedTitle}
+            </h2>
+          )}
           {(() => {
             const resolvedName = displayedAuthorName ?? board.studentName ?? 'Unknown'
 

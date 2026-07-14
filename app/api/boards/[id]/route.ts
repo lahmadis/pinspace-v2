@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { isSuperadmin } from '@/lib/auth/superadmin'
+import { validateName } from '@/lib/validation/safeName'
 
 export async function GET(
   request: NextRequest,
@@ -100,6 +102,92 @@ export async function GET(
     return NextResponse.json({ board: transformedBoard })
   } catch (error) {
     console.error('Unexpected error fetching board:', error)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+}
+
+// PATCH — rename a single board (title only). Auth: the board's uploader, the
+// workspace owner, or a platform superadmin. Plain workspace members are NOT
+// permitted to rename (narrower than the collection PUT). Access is resolved
+// via the service role — RLS has no membership/ownership SELECT on workspaces —
+// with the check enforced in app code (no new RLS policies).
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = supabaseServer()
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError || !session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const userId = session.user.id
+    const boardId = params.id
+
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    }
+
+    // Only `title` is editable through this route today. Validate with the shared
+    // name helper: trims, rejects empty, caps at 120 chars, and rejects angle
+    // brackets + control characters (same DB-hygiene contract used for
+    // workspace/room/member names).
+    const result = validateName((body as { title?: unknown }).title, {
+      maxLength: 120,
+      fieldLabel: 'Title',
+    })
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 400 })
+    }
+    const title = result.value
+
+    const admin = supabaseServiceRole()
+    const { data: board, error: boardErr } = await admin
+      .from('boards')
+      .select('workspace_id, owner_id')
+      .eq('id', boardId)
+      .single()
+
+    if (boardErr || !board) {
+      return NextResponse.json({ error: 'Board not found' }, { status: 404 })
+    }
+
+    const { data: workspace } = await admin
+      .from('workspaces')
+      .select('owner_id')
+      .eq('id', board.workspace_id)
+      .single()
+
+    const isUploader = board.owner_id === userId
+    const isWorkspaceOwner = workspace?.owner_id === userId
+    let authorized = isUploader || isWorkspaceOwner
+    if (!authorized) {
+      authorized = await isSuperadmin(userId, admin)
+    }
+    if (!authorized) {
+      return NextResponse.json({ error: 'Not authorized to rename this board' }, { status: 403 })
+    }
+
+    const { data: updated, error: updateError } = await admin
+      .from('boards')
+      .update({ title })
+      .eq('id', boardId)
+      .select('id, title')
+      .single()
+
+    if (updateError || !updated) {
+      console.error('Error updating board title:', updateError)
+      return NextResponse.json({ error: 'Failed to update title' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, board: { id: updated.id, title: updated.title } })
+  } catch (error) {
+    console.error('Unexpected error updating board title:', error)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }

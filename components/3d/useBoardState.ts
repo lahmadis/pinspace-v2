@@ -949,6 +949,30 @@ export function useBoardState(
     })
   }, [])
 
+  /**
+   * Local-only title update — mirrors a just-persisted board title (PATCH in
+   * LightboxModal.handleSaveTitle) back into the boards array so the lightbox,
+   * which re-reads the board from `boards` on open/navigation, shows the new
+   * title before the debounced realtime refetch lands. The refetch then adopts
+   * the identical server value wholesale (title isn't specially preserved in
+   * parent-sync), so this only bridges the gap. Writes boardsRef synchronously
+   * too; bails via value equality. Mirrors applyBoardLinkLocal.
+   */
+  const applyBoardTitleLocal = useCallback((boardId: string, title: string) => {
+    boardsRef.current = boardsRef.current.map(b =>
+      b.id === boardId && b.title !== title ? { ...b, title } : b
+    )
+    setBoards(prev => {
+      let changed = false
+      const out = prev.map(b => {
+        if (b.id !== boardId || b.title === title) return b
+        changed = true
+        return { ...b, title }
+      })
+      return changed ? out : prev
+    })
+  }, [])
+
   return {
     boards,
     boardPositions,
@@ -957,6 +981,7 @@ export function useBoardState(
     resolveBoardId,
     applyBoardSizeLocal,
     applyBoardLinkLocal,
+    applyBoardTitleLocal,
     deleteBoard,
     addTempBoard,
     replaceTempBoard,

@@ -719,7 +719,20 @@ export async function POST(request: NextRequest) {
     const ts    = Date.now()
     const rand  = Math.random().toString(36).slice(2, 8)
     const boardId = `board-${ts}-${rand}`
-    const title = originalFilename ? originalFilename.replace(/\.[^.]+$/, '') : 'Untitled Board'
+    // Default title = original filename with its extension stripped, control
+    // chars removed, trimmed, and capped at 120. Fall back to a friendly label
+    // only when the filename is missing or sanitizes to nothing (e.g. ".png").
+    const deriveDefaultTitle = (fn: string | null): string => {
+      if (!fn) return 'Untitled board'
+      let cleaned = ''
+      for (const ch of fn.replace(/\.[^.]+$/, '')) {
+        const code = ch.charCodeAt(0)
+        if (code > 0x1f && code !== 0x7f) cleaned += ch
+      }
+      cleaned = cleaned.trim().slice(0, 120).trim()
+      return cleaned.length > 0 ? cleaned : 'Untitled board'
+    }
+    const title = deriveDefaultTitle(originalFilename)
 
     const { data: savedBoard, error: insertError } = await admin
       .from('boards')
