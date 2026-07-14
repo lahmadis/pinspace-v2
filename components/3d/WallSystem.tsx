@@ -52,17 +52,24 @@ interface WallSystemProps {
   onFloorClick?: () => void
   /**
    * Room-level wall color. 'grey' (default) is the exact current look; 'white'
-   * is a slightly off-white (never pure #FFFFFF, which blows out under the
-   * scene lights). Only the wall surface + its edge-shadow accents change — the
-   * floor and background are untouched.
+   * is true paper white (#FFFFFF) so a white-background sheet reads as the same
+   * white as the wall (see WALL_PALETTES). Only the wall surface + its edge
+   * accents change — the floor and background are untouched.
    */
   wallColor?: 'grey' | 'white'
 }
 
 // Wall surface + edge-shadow palette per color. The 'grey' values are
 // byte-identical to the pre-feature hardcoded colors, so grey rooms render
-// exactly as before. 'white' uses a soft off-white with neutral (de-tinted)
-// edge shadows so the panel depth still reads without a blue cast.
+// exactly as before.
+//
+// 'white' is TRUE PAPER WHITE: the main surface is #FFFFFF so it renders at the
+// same value as a #FFFFFF board texel on the same wall (both are metalness-0
+// meshStandardMaterial, coplanar and same-facing → equal albedo → equal shaded
+// value, including identical highlight roll-off). This makes a white-background
+// sheet visually continuous with the wall so only the ink stands out. The edge
+// accents are pulled to near-white (barely below #FFFFFF) so they hold the wall
+// corners without reintroducing a grey frame around each panel.
 const WALL_PALETTES: Record<'grey' | 'white', {
   main: string
   sideEdge: string
@@ -70,7 +77,7 @@ const WALL_PALETTES: Record<'grey' | 'white', {
   bottomEdge: string
 }> = {
   grey: { main: '#D8DEFF', sideEdge: '#B3C4FF', topEdge: '#A1B2FF', bottomEdge: '#E0E0DB' },
-  white: { main: '#EAEAE6', sideEdge: '#DCDCD7', topEdge: '#D2D2CD', bottomEdge: '#E4E4DF' },
+  white: { main: '#FFFFFF', sideEdge: '#FAFAF9', topEdge: '#F7F7F5', bottomEdge: '#F3F3F0' },
 }
 
 
@@ -145,8 +152,11 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
             <mesh castShadow receiveShadow renderOrder={0}>
               <boxGeometry args={[transform.width, transform.height, 6]} />
               <meshStandardMaterial
-                color={wallPalette.main} // room wall color (grey default / off-white)
-                roughness={0.85} // Slight sheen for subtle depth
+                color={wallPalette.main} // room wall color (grey default / paper white)
+                // White mode matches the board material's roughness (0.7) so a
+                // white sheet and the wall share the same sheen — no "glossier
+                // sheet" cue. Grey is unchanged at 0.85.
+                roughness={wallColor === 'white' ? 0.7 : 0.85}
                 metalness={0.0}
                 depthWrite={true}
                 depthTest={true}
