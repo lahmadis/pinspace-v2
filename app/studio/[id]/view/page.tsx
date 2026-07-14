@@ -186,6 +186,11 @@ export default function StudioViewPage() {
   // had no room-name display previously.
   const [roomName, setRoomName] = useState<string | null>(null)
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null)
+  // The signed-in user's workspace role (owner surfaces as 'instructor'),
+  // resolved best-effort below. Passed to the lightbox so the owner/instructor
+  // can inline-edit a board title from this read-only view. null for public /
+  // non-member viewers → no title-edit affordance.
+  const [currentUserRole, setCurrentUserRole] = useState<'instructor' | 'student' | null>(null)
   const [compareBoardIds, setCompareBoardIds] = useState<string[]>([])
   const shiftPressedRef = useRef(false)
   const compareBoardIdsRef = useRef<string[]>([])
@@ -375,6 +380,45 @@ export default function StudioViewPage() {
       setLoading(false)
     }
   }
+
+  // Resolve the signed-in user's workspace role (owner surfaces as 'instructor',
+  // per /api/workspaces) so the lightbox can offer inline title editing to the
+  // owner/instructor in this read-only view — the same signal the edit page
+  // computes. Best-effort: a 401/403 (public studio viewed by a non-member)
+  // leaves the role null → no affordance. Never runs in demo mode.
+  useEffect(() => {
+    if (isDemo || !resolvedWorkspaceId || !user?.id) {
+      setCurrentUserRole(null)
+      return
+    }
+    let cancelled = false
+    const myUserId = user.id
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/workspaces/${resolvedWorkspaceId}`)
+        if (!res.ok) {
+          if (!cancelled) setCurrentUserRole(null)
+          return
+        }
+        const data = await res.json()
+        const members = data?.workspace?.members
+        if (cancelled) return
+        if (Array.isArray(members)) {
+          const mine = (members as Array<{ userId: string; role: string }>).find(
+            (m) => m.userId === myUserId
+          )
+          setCurrentUserRole((mine?.role as 'instructor' | 'student') ?? null)
+        } else {
+          setCurrentUserRole(null)
+        }
+      } catch {
+        if (!cancelled) setCurrentUserRole(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isDemo, resolvedWorkspaceId, user?.id])
 
   const handleBoardClick = (board: Board) => {
     const shiftActive = shiftPressedRef.current
@@ -622,7 +666,14 @@ export default function StudioViewPage() {
         }}
         onNavigate={handleNavigate}
         isEditMode={false}
-        currentUserRole={null}
+        currentUserRole={currentUserRole}
+        onTitleSaved={(boardId, title) => {
+          // Rename persisted server-side already. Mirror into local boards + the
+          // open snapshot so the header stays correct on reopen/navigation
+          // without a refetch. (Author-name/size stay edit-mode-only, untouched.)
+          setBoards((prev) => prev.map((b) => (b.id === boardId ? { ...b, title } : b)))
+          setSelectedBoard((prev) => (prev && prev.id === boardId ? { ...prev, title } : prev))
+        }}
       />
     </div>
   )

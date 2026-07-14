@@ -181,7 +181,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const [savingSize, setSavingSize] = useState(false)
   const sizeSaveInFlightRef = useRef(false)
 
-  // Inline board-title edit (edit mode, uploader/owner/superadmin — see
+  // Inline board-title edit (view + edit mode, uploader/owner/superadmin — see
   // canEditTitle below). titleOverride holds the optimistic post-save value so
   // the header updates without waiting for a refetch; null = "use board.title".
   // Reset on board change. Mirrors linkOverride.
@@ -285,6 +285,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
   const isOpen = board !== null
   const [profileFullName, setProfileFullName] = useState<string | null>(null)
+  // Platform superadmin flag for the signed-in user, read from their own
+  // user_profiles row via /api/user-profile (already fetched below for the
+  // display name). Affordance-only — the PATCH route re-checks superadmin
+  // server-side, so this never grants anything.
+  const [isSuperadminViewer, setIsSuperadminViewer] = useState(false)
   // Guest-critic mode: no session user; identity comes from the token + name.
   const isGuest = !!guestToken
   const canComment = isGuest ? !!guestCanComment : !!user
@@ -316,6 +321,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   useEffect(() => {
     if (!user?.id) {
       setProfileFullName(null)
+      setIsSuperadminViewer(false)
       return
     }
     fetch('/api/user-profile', { cache: 'no-store' })
@@ -323,8 +329,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       .then((data) => {
         const fullName = typeof data?.full_name === 'string' ? data.full_name.trim() : ''
         setProfileFullName(fullName || null)
+        setIsSuperadminViewer(data?.is_superadmin === true)
       })
-      .catch(() => setProfileFullName(null))
+      .catch(() => {
+        setProfileFullName(null)
+        setIsSuperadminViewer(false)
+      })
   }, [user?.id])
 
   // Current board index for navigation
@@ -1617,12 +1627,18 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // board actually placed on a wall (the position PATCH needs its wall position).
   const isBoardOwner = !board.ownerId || (!!user && board.ownerId === user.id)
   const canEditSize = isEditMode && !!board.position && (currentUserRole === 'instructor' || isBoardOwner)
-  // Inline title edit is offered on the same edit surface as author-name/size,
-  // to an instructor/workspace-owner OR the board's uploader. The server (PATCH
-  // /api/boards/[id]) re-checks uploader/owner/superadmin, so a stale client
-  // affordance just round-trips to a 403 → revert + toast. Non-authorized
-  // viewers see plain static text (no affordance, no cursor change).
-  const canEditTitle = isEditMode && (currentUserRole === 'instructor' || isBoardOwner)
+  // Inline title edit — unlike author-name/size (edit-mode only), this is offered
+  // in BOTH view and edit mode to exactly who the PATCH /api/boards/[id] route
+  // accepts: the board's uploader, the workspace/room owner (surfaced as the
+  // 'instructor' role — /api/workspaces guarantees the owner appears as
+  // instructor), or a platform superadmin. Everyone else (members, guests,
+  // logged-out) sees plain static text — no affordance, no cursor change. The
+  // server re-checks, so a stale affordance just round-trips to a 403 → revert +
+  // toast. NB: a STRICT uploader match, not isBoardOwner — its no-owner fallback
+  // would over-grant to any viewer of an owner-less board now that this is no
+  // longer edit-gated.
+  const isBoardUploader = !!user && !!board.ownerId && board.ownerId === user.id
+  const canEditTitle = isBoardUploader || currentUserRole === 'instructor' || isSuperadminViewer
   // Optimistic override wins over the stored value so a rename shows instantly.
   const resolvedTitle = titleOverride ?? board.title
   // Zoom controls surface the EXISTING viewport hook — step scale about the
