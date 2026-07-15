@@ -189,7 +189,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
         </lineSegments>
       )}
 
-      {/* Callout count badge — a quiet indigo marker at the top-right corner.
+      {/* Callout count badge — a pink marker at the top-right corner.
           Only rendered for viewers permitted to see callouts (the server omits
           the count for guests/public, so calloutCount is undefined for them) and
           only when at least one callout exists. NO distanceFactor: like a real UI
@@ -217,9 +217,10 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               height: '22px',
               padding: '0 6px',
               borderRadius: '11px',
-              // indigo-600 — matches the hover/highlight frame (#6366f1). The
+              // pink-500 — reads as a distinct callout marker rather than
+              // blending into the indigo hover/highlight frame (#6366f1). The
               // white ring keeps it legible on BOTH the grey and white walls.
-              background: 'rgba(79, 70, 229, 0.92)',
+              background: '#ec4899',
               color: '#fff',
               fontSize: '13px',
               fontWeight: 600,
