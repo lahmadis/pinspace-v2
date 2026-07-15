@@ -57,6 +57,13 @@ interface WallSystemProps {
    * accents change — the floor and background are untouched.
    */
   wallColor?: 'grey' | 'white'
+  /**
+   * True while the 2D lightbox is open over this room. Hides the boards'
+   * callout-count badges for the duration — they're <Html> DOM overlays at
+   * z-index 60 and the lightbox is z-50, so with the room still mounted behind
+   * it they'd paint on top of the modal. Nothing else about the boards changes.
+   */
+  lightboxOpen?: boolean
 }
 
 // Wall surface + edge-shadow palette per color. The 'grey' values are
@@ -81,7 +88,7 @@ const WALL_PALETTES: Record<'grey' | 'white', {
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey' }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', lightboxOpen = false }: WallSystemProps) {
 
   const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
@@ -272,6 +279,7 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
                   onClick={onBoardClick}
                   isHighlighted={highlightedBoardId === board.id}
                   onHover={(hovered) => onBoardHover?.(hovered ? board.id : null)}
+                  suppressCountBadge={lightboxOpen}
                 />
               )
             })}

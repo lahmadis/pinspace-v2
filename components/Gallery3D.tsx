@@ -345,6 +345,7 @@ function StudioPlot({
   renderBoards,
   highlightedBoardId,
   onBoardClick,
+  lightboxOpen,
 }: {
   studio: GalleryStudio
   position: Vec3
@@ -353,6 +354,8 @@ function StudioPlot({
   renderBoards: boolean
   highlightedBoardId?: string | null
   onBoardClick?: (board: Board) => void
+  /** True while the 2D lightbox is open — hides the boards' callout-count badges. */
+  lightboxOpen?: boolean
 }) {
   const { width, depth } = getFootprint(studio)
   const wallConfig = studio.wallConfig || buildWallConfig({ width, depth })
@@ -372,6 +375,9 @@ function StudioPlot({
         editingWall={null}
         highlightedBoardId={highlightedBoardId}
         onBoardClick={onBoardClick}
+        // Hide the callout-count badges while the lightbox is open — they're
+        // z-60 DOM overlays and the lightbox is z-50, so they'd bleed onto it.
+        lightboxOpen={lightboxOpen}
       />
       {/* Blue bounding rectangle outline - invisible (used for layout calculations only) */}
       <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
@@ -609,6 +615,7 @@ function SceneContents({
   highlightedBoardId,
   nearbyBoard,
   onBoardClick,
+  lightboxOpen,
 }: {
   studios: GalleryStudio[]
   onTeleport: (studio: GalleryStudio) => void
@@ -618,6 +625,8 @@ function SceneContents({
   highlightedBoardId?: string | null
   nearbyBoard?: { board: Board; studio: GalleryStudio; position: THREE.Vector3 } | null
   onBoardClick?: (board: Board, studio: GalleryStudio) => void
+  /** True while the 2D lightbox is open — hides the boards' callout-count badges. */
+  lightboxOpen?: boolean
 }) {
   const studiosSorted = useMemo(() => {
     // Render all studios immediately - no distance limit
@@ -692,6 +701,7 @@ function SceneContents({
             renderBoards={shouldRenderBoards}
             highlightedBoardId={highlightedBoardId}
             onBoardClick={onBoardClick ? (board: Board) => onBoardClick(board, studio) : undefined}
+            lightboxOpen={lightboxOpen}
           />
         )
       })}
@@ -1099,6 +1109,7 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
           nearbyStudioId={promptStudio?.studio.id}
           onNearbyBoardChange={setNearbyBoard}
           nearbyBoard={nearbyBoard}
+          lightboxOpen={selectedBoard !== null}
           onBoardClick={(board: Board, studio: GalleryStudio) => {
             setSelectedBoard({ board, studio })
           }}

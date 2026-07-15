@@ -195,6 +195,7 @@ function SceneContent({
   orbitControlsRef,
   showEditUI,
   wallColor = 'grey',
+  lightboxOpen,
 }: StudioRoomProps & {
   onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   /** Pointer-over on a wall surface. Used to fire-and-forget pre-warm board textures. */
@@ -232,6 +233,8 @@ function SceneContent({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   orbitControlsRef: React.RefObject<any>
   showEditUI: boolean
+  /** True while the 2D lightbox is open — hides the boards' callout-count badges. */
+  lightboxOpen: boolean
 }) {
   useThree()
   const maxWallHeightRef = useRef<number>(96)
@@ -310,6 +313,9 @@ function SceneContent({
       
       <WallSystem
         boards={localBoards}
+        // Hide the callout-count badges while the lightbox is open — they're
+        // z-60 DOM overlays and the lightbox is z-50, so they'd bleed onto it.
+        lightboxOpen={lightboxOpen}
         // Merge live text items into the config so saved labels render in the
         // normal 3D room (WallSystem reads wallConfig.textItems).
         wallConfig={{ ...wallConfig, textItems }}
@@ -2229,6 +2235,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             {...props}
             orbitControlsRef={orbitControlsRef}
             showEditUI={showEditUI}
+            lightboxOpen={lightboxBoard !== null}
             localBoards={localBoards}
             onWallClick={handleWallClick}
             onWallHover={handleWallHover}

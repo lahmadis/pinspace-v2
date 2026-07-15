@@ -18,6 +18,16 @@ interface BoardThumbnailProps {
   onClick?: (board: Board) => void
   isHighlighted?: boolean
   onHover?: (hovered: boolean) => void // Callback when board hover state changes
+  /**
+   * Hide the callout-count badge. The badge is an <Html> DOM overlay living
+   * OUTSIDE the canvas at z-index 60; the lightbox is a z-50 fixed overlay and
+   * the room stays mounted behind it, so every badge in the room would
+   * otherwise paint on top of the open lightbox. The count is a 3D-room-only
+   * summary — in 2D the anchored numbered pins are the callout UI. Affects the
+   * count badge ONLY; the board, its texture, and every other overlay render
+   * exactly as before.
+   */
+  suppressCountBadge?: boolean
 }
 
 const BOARD_THICKNESS = 0.08
@@ -71,7 +81,7 @@ function BoardImageMaterial({
   )
 }
 
-export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted, onHover }: BoardThumbnailProps) {
+export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted, onHover, suppressCountBadge }: BoardThumbnailProps) {
   const [hovered, setHovered] = useState(false)
   const meshRef = useRef<THREE.Mesh>(null)
   const uploaderName =
@@ -199,8 +209,13 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           billboards to the camera (DOM overlay). pointerEvents:'none' so clicks
           pass through to the board and open the lightbox. Top-right corner — the
           linkUrl VideoBadge sits top-LEFT, so the two never collide. No red /
-          pulse / animation — a quiet marker. */}
-      {typeof board.calloutCount === 'number' && board.calloutCount > 0 && (
+          pulse / animation — a quiet marker.
+
+          suppressCountBadge hides it while the 2D lightbox is open: this <Html>
+          is a DOM overlay at z-index 60 and the lightbox is z-50, so with the
+          room still mounted behind it every badge would bleed through onto the
+          modal. 3D-room-only by design. */}
+      {!suppressCountBadge && typeof board.calloutCount === 'number' && board.calloutCount > 0 && (
         <Html
           position={[width / 2, height / 2, BOARD_THICKNESS / 2 + 0.05]}
           center

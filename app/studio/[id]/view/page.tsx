@@ -640,6 +640,9 @@ export default function StudioViewPage() {
             editingWall={null}
             onBoardClick={handleBoardClick}
             wallColor={wallColor}
+            // Hide the callout-count badges while the lightbox is open — they're
+            // z-60 DOM overlays and the lightbox is z-50, so they'd bleed onto it.
+            lightboxOpen={selectedBoard !== null}
           />
         )}
 
