@@ -205,7 +205,7 @@ function SceneContent({
   orbitControlsRef,
   showEditUI,
   wallColor = 'grey',
-  lightboxOpen,
+  suppressCallouts,
 }: StudioRoomProps & {
   onWallDoubleClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   /** Pointer-over on a wall surface. Used to fire-and-forget pre-warm board textures. */
@@ -243,8 +243,9 @@ function SceneContent({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   orbitControlsRef: React.RefObject<any>
   showEditUI: boolean
-  /** True while the 2D lightbox is open — hides the boards' callout-count badges. */
-  lightboxOpen: boolean
+  /** True while a z-50 2D panel (lightbox, floor editor) covers the room — hides
+   *  the boards' callout-count badges, which are z-60 and would paint over it. */
+  suppressCallouts: boolean
 }) {
   useThree()
   const maxWallHeightRef = useRef<number>(96)
@@ -323,9 +324,9 @@ function SceneContent({
       
       <WallSystem
         boards={localBoards}
-        // Hide the callout-count badges while the lightbox is open — they're
-        // z-60 DOM overlays and the lightbox is z-50, so they'd bleed onto it.
-        lightboxOpen={lightboxOpen}
+        // Hide the callout-count badges while a 2D panel covers the room — they
+        // are z-60 DOM overlays and the panels are z-50, so they'd bleed onto it.
+        suppressCallouts={suppressCallouts}
         // Merge live text items into the config so saved labels render in the
         // normal 3D room (WallSystem reads wallConfig.textItems).
         wallConfig={{ ...wallConfig, textItems }}
@@ -2177,7 +2178,11 @@ export default function StudioRoom(props: StudioRoomProps) {
             {...props}
             orbitControlsRef={orbitControlsRef}
             showEditUI={showEditUI}
-            lightboxOpen={lightboxBoard !== null}
+            // Both panels are z-50 over a still-mounted room, and the badges are
+            // z-60 <Html>, so each one needs them gone. `floorEditorOpen` is the
+            // RESOLVED value (controlled prop or internal state), not
+            // props.floorEditorOpen, which is undefined in uncontrolled use.
+            suppressCallouts={lightboxBoard !== null || floorEditorOpen}
             localBoards={localBoards}
             onWallDoubleClick={handleWallDoubleClick}
             onWallHover={handleWallHover}

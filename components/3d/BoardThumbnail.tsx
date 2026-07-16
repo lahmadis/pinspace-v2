@@ -20,12 +20,12 @@ interface BoardThumbnailProps {
   onHover?: (hovered: boolean) => void // Callback when board hover state changes
   /**
    * Hide the callout-count badge. The badge is an <Html> DOM overlay living
-   * OUTSIDE the canvas at z-index 60; the lightbox is a z-50 fixed overlay and
-   * the room stays mounted behind it, so every badge in the room would
-   * otherwise paint on top of the open lightbox. The count is a 3D-room-only
-   * summary — in 2D the anchored numbered pins are the callout UI. Affects the
-   * count badge ONLY; the board, its texture, and every other overlay render
-   * exactly as before.
+   * OUTSIDE the canvas at z-index 60; the panels that cover the room (the
+   * lightbox and the floor-plan editor) are z-50 fixed overlays and the room
+   * stays mounted behind them, so every badge in the room would otherwise paint
+   * on top of the open panel. The count is a 3D-room-only summary — in 2D the
+   * anchored numbered pins are the callout UI. Affects the count badge ONLY; the
+   * board, its texture, and every other overlay render exactly as before.
    */
   suppressCountBadge?: boolean
 }
@@ -224,10 +224,12 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           linkUrl VideoBadge sits top-LEFT, so the two never collide. No red /
           pulse / animation — a quiet marker.
 
-          suppressCountBadge hides it while the 2D lightbox is open: this <Html>
-          is a DOM overlay at z-index 60 and the lightbox is z-50, so with the
-          room still mounted behind it every badge would bleed through onto the
-          modal. 3D-room-only by design. */}
+          suppressCountBadge hides it while a 2D panel is open over the room (the
+          lightbox, or the floor-plan editor): this <Html> is a DOM overlay at
+          z-index 60 and those panels are z-50, so with the room still mounted
+          behind them every badge would bleed through onto the panel. Conditional
+          render rather than a style toggle, so the badge can't catch pointer
+          events either. 3D-room-only by design. */}
       {!suppressCountBadge && typeof board.calloutCount === 'number' && board.calloutCount > 0 && (
         <Html
           position={[width / 2, height / 2, BOARD_THICKNESS / 2 + 0.05]}

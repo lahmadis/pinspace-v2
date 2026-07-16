@@ -377,7 +377,8 @@ function StudioPlot({
         onBoardClick={onBoardClick}
         // Hide the callout-count badges while the lightbox is open — they're
         // z-60 DOM overlays and the lightbox is z-50, so they'd bleed onto it.
-        lightboxOpen={lightboxOpen}
+        // The gallery has no floor editor, so the lightbox is the only source.
+        suppressCallouts={lightboxOpen}
       />
       {/* Blue bounding rectangle outline - invisible (used for layout calculations only) */}
       <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]} visible={false}>

@@ -62,12 +62,18 @@ interface WallSystemProps {
    */
   wallColor?: 'grey' | 'white'
   /**
-   * True while the 2D lightbox is open over this room. Hides the boards'
-   * callout-count badges for the duration — they're <Html> DOM overlays at
-   * z-index 60 and the lightbox is z-50, so with the room still mounted behind
-   * it they'd paint on top of the modal. Nothing else about the boards changes.
+   * Hide the boards' callout-count badges while a 2D panel is open over this
+   * room — currently the lightbox and the floor-plan editor.
+   *
+   * Both are z-50 fixed overlays; the badges are <Html> DOM overlays at z-index
+   * 60 that live OUTSIDE the canvas, and the room stays mounted behind the panel.
+   * 60 > 50, so every badge in the room paints on top of it. Named for the effect
+   * rather than for any one panel: the next z-50 overlay over the room will need
+   * exactly this and shouldn't have to pretend a lightbox is open to get it.
+   *
+   * Nothing else about the boards changes.
    */
-  lightboxOpen?: boolean
+  suppressCallouts?: boolean
 }
 
 // Wall surface + edge-shadow palette per color. The 'grey' values are
@@ -92,7 +98,7 @@ const WALL_PALETTES: Record<'grey' | 'white', {
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', lightboxOpen = false }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false }: WallSystemProps) {
 
   const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
@@ -283,7 +289,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                   onClick={onBoardClick}
                   isHighlighted={highlightedBoardId === board.id}
                   onHover={(hovered) => onBoardHover?.(hovered ? board.id : null)}
-                  suppressCountBadge={lightboxOpen}
+                  suppressCountBadge={suppressCallouts}
                 />
               )
             })}
