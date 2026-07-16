@@ -8,6 +8,10 @@ import { loadTexture } from '@/components/3d/useBoardTexture'
 import { useDirectUpload, type DirectUploadResult, type DirectUploadOptions } from '@/lib/useDirectUpload'
 import { MAX_IMAGE_SIZE_BYTES } from '@/lib/uploadLimits'
 import { boardSizeInchesFromSource } from '@/lib/boardDimensions'
+// Static import is safe: pdfUtils is dependency-free string/extension helpers.
+// The rasterizer itself (lib/pdfToImage.ts, which pulls PDF.js) stays a dynamic
+// import below so it never lands in the main bundle.
+import { isAiFile, isPdfLike, stripRasterSourceExtension } from '@/lib/pdfUtils'
 
 /**
  * iPhones deliver camera-roll photos as HEIC/HEIF by default. Browsers
@@ -501,7 +505,7 @@ const uploadPDF = async (
   // P7 fired the toast after rasterization which is exactly the gap we're
   // closing in P7.1. Toast lives at bottom-center so it doesn't overlap
   // boards on the wall (top-right is the default for other toasts).
-  const baseName = file.name.replace('.pdf', '')
+  const baseName = stripRasterSourceExtension(file.name)
   const progressToastId = `pdf-upload-${file.name}-${Date.now()}`
   toast.loading(`Preparing "${baseName}"…`, {
     id: progressToastId,
@@ -515,8 +519,18 @@ const uploadPDF = async (
   } catch (err) {
     // Convert the stuck "Preparing…" loading toast into an error in place,
     // otherwise it stays sticky forever (loading has Infinity duration).
+    //
+    // For a .ai this is the expected failure, not an exotic one: the file was
+    // saved without "Create PDF Compatible File", so there's no PDF stream to
+    // read and PDF.js throws something like "Invalid PDF structure". That text
+    // is true but useless to a designer — the fix is a re-export setting, so say
+    // that instead. Real PDFs keep the raw parser message, which is the most
+    // specific thing we know about them.
     const errMsg = err instanceof Error ? err.message : 'Failed to read PDF'
-    toast.error(`"${baseName}" — ${errMsg}`, {
+    const message = isAiFile(file)
+      ? `"${baseName}" couldn't be read — re-export from Illustrator with "Create PDF Compatible File" turned on, or upload a PDF/PNG.`
+      : `"${baseName}" — ${errMsg}`
+    toast.error(message, {
       id: progressToastId,
       position: 'bottom-center',
     })
@@ -757,7 +771,9 @@ export const useBoardUpload = (options: UploadOptions) => {
     // all surface HEIC/HEIF photos from the library. iOS reports HEIC as
     // `image/heic`; older Android sometimes reports an empty type and the
     // extension is what's left to match on.
-    input.accept = '.jpg,.jpeg,.png,.pdf,.heic,.heif,image/heic,image/heif,image/jpeg,image/png'
+    // .ai is listed by extension only — there is no MIME for Illustrator we can
+    // rely on across platforms (see isAiFile in lib/pdfUtils.ts).
+    input.accept = '.jpg,.jpeg,.png,.pdf,.ai,.heic,.heif,image/heic,image/heif,image/jpeg,image/png'
     input.multiple = true
     
     input.onchange = async (e) => {
@@ -765,14 +781,16 @@ export const useBoardUpload = (options: UploadOptions) => {
       if (files.length === 0) return
       
       // Empty-string covered via isHeic — some browsers omit the type for
-      // HEIC and only the extension is left to match on.
+      // HEIC and only the extension is left to match on. .ai is admitted by
+      // extension for the same reason (isAiFile), since its MIME is whatever the
+      // uploader's OS happens to say.
       const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 'image/heic', 'image/heif', '']
       let successCount = 0
       let failCount = 0
       const oversized: string[] = []
 
       for (const file of files) {
-        if (!validTypes.includes(file.type) && !isHeic(file)) {
+        if (!validTypes.includes(file.type) && !isHeic(file) && !isAiFile(file)) {
           // Surface — silent failCount++ on unsupported file types is the
           // mode that made iPhone HEICs look like "nothing happened" to
           // users on mobile.
@@ -788,7 +806,10 @@ export const useBoardUpload = (options: UploadOptions) => {
         }
 
         try {
-          if (file.type === 'application/pdf') {
+          // isPdfLike, not a MIME equality check: this must win over the image
+          // path for a .ai whose MIME is empty, which the '' entry in validTypes
+          // above would otherwise wave through as an image.
+          if (isPdfLike(file)) {
             const result = await uploadPDF(file, options, upload)
             if (result.success) {
               successCount += result.count
@@ -844,15 +865,17 @@ export const useBoardUpload = (options: UploadOptions) => {
     }
   }
 
-  /** Upload multiple files (e.g. from drag-and-drop). Supports images + PDFs. */
+  /** Upload multiple files (e.g. from drag-and-drop). Supports images + PDFs + .ai. */
   const uploadFilesDirect = async (files: File[]): Promise<void> => {
+    // Mirrors the picker gate above: MIME list, plus extension-based admission
+    // for HEIC and .ai whose reported types can't be trusted.
     const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 'image/heic', 'image/heif', '']
     let successCount = 0
     let failCount = 0
     const oversized: string[] = []
 
     for (const file of files) {
-      if (!validTypes.includes(file.type) && !isHeic(file)) {
+      if (!validTypes.includes(file.type) && !isHeic(file) && !isAiFile(file)) {
         toast.error(`"${file.name}" — unsupported format (${file.type || 'unknown'}).`)
         failCount++
         continue
@@ -864,7 +887,8 @@ export const useBoardUpload = (options: UploadOptions) => {
         continue
       }
       try {
-        if (file.type === 'application/pdf') {
+        // See the picker branch: isPdfLike must beat the '' image fallthrough.
+        if (isPdfLike(file)) {
           const result = await uploadPDF(file, options, upload)
           if (result.success) successCount += result.count; else failCount++
         } else {

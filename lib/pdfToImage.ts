@@ -1,4 +1,12 @@
-// Convert PDF to image on client-side during upload
+// Convert PDF to image on client-side during upload.
+//
+// Also handles Adobe Illustrator .ai files: saved with "Create PDF Compatible
+// File" (Illustrator's default) they carry a full PDF stream, so PDF.js opens
+// them like any other PDF and each artboard arrives as a page. Nothing in this
+// file needs to know the difference — the caller decides what's PDF-like (see
+// isPdfLike in lib/pdfUtils.ts).
+
+import { stripRasterSourceExtension } from '@/lib/pdfUtils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PdfJsWindow = Window & { pdfjsLib?: any }
@@ -144,7 +152,7 @@ export async function convertPDFToImages(pdfFile: File): Promise<Array<{
       })
       
       // Create image file with page number (JPEG extension)
-      const baseName = pdfFile.name.replace('.pdf', '')
+      const baseName = stripRasterSourceExtension(pdfFile.name)
       const imageFileName = numPages > 1 
         ? `${baseName}_page${pageNum}.jpg`
         : `${baseName}.jpg`
