@@ -82,18 +82,22 @@ export default function StudioPage() {
   /**
    * May this user write the wall-config blob (walls, tables, wall text)?
    *
-   * Mirrors `canAddRoom` (app/workspace/[id]/page.tsx): wall layout is a
-   * room-STRUCTURE power, so it is instructor-only in a class, but open to any
-   * member of a shared project — those collaborators join with role `student`
-   * (see /api/workspaces/[id]/join), so an instructor-only gate would lock out
-   * people explicitly invited to co-build the room.
+   * OWNER ONLY. A room's layout has one author; everyone else is a viewer of it,
+   * including instructors and shared-project collaborators who may otherwise
+   * contribute to the room. Anyone else's write is a no-op, not an error.
    *
-   * Starts false and is only raised once membership is known. That direction is
+   * This is stricter than the neighbouring `canAddRoom` (app/workspace/[id]/page.tsx)
+   * on purpose, and it is load-bearing rather than merely cautious: it makes the
+   * owner the ONLY writer of this blob, which is the premise the writer's
+   * rebase-on-409 depends on (lib/wallConfigWriter.ts). Rebasing re-posts our
+   * config over whatever the server has; that is only safe while the sole person
+   * we can overwrite is ourselves in another tab.
+   *
+   * Starts false and is only raised once ownership is known. That direction is
    * deliberate: the workspace metadata fetch below is best-effort, and if it
-   * fails we cannot tell an owner from a viewer. Allowing writes would keep the
-   * bug; silently dropping an owner's writes would be worse than the false toast
-   * we're fixing. So the Reconfigure Walls affordance is gated on this same flag
-   * — unresolved permission means no editor opens, so there are no edits to lose.
+   * fails we cannot tell an owner from a viewer. So the wall-editing affordances
+   * are gated on this same flag — unresolved permission means no editor opens,
+   * and there are no edits to lose.
    */
   const [canEditWalls, setCanEditWalls] = useState(false)
   // Ref mirror so the persist/flush callbacks can read permission without taking
@@ -197,14 +201,19 @@ export default function StudioPage() {
     }
   }, [studioId])
 
-  // 409 handler: a save was rejected as stale. Adopt the server's latest config
-  // (strip the embedded version back out so wallConfig stays clean) and tell the
-  // user their unsaved changes were discarded. The writer has already adopted the
-  // version by the time this runs, so this only touches UI state.
+  // 409 handler: a save was rejected as stale AND could not be rebased. Adopt the
+  // server's latest config (strip the embedded version back out so wallConfig
+  // stays clean) and tell the user their unsaved changes were discarded. The
+  // writer has already adopted the version by the time this runs, so this only
+  // touches UI state.
   //
-  // Reaching here now means a REAL conflict: writes from this client are
-  // serialized, so a version mismatch that survives the queue came from someone
-  // else (or this user in another tab).
+  // This is now the LAST resort, not the ordinary 409 path. Writes from this
+  // client are serialized, wall writes are owner-only, and a losing write
+  // re-posts itself onto the server's version up to MAX_REBASE_RETRIES times
+  // before landing here. So reaching this means the version kept moving under a
+  // single writer — we genuinely don't know what the room should be, and saying
+  // so beats guessing. It is the only path that discards the user's edit, which
+  // is why it must keep telling them.
   const handleWallConfigConflict = useCallback(
     (latest: Record<string, unknown> & { version?: number }) => {
       const { version: _version, ...config } = latest
@@ -375,16 +384,21 @@ export default function StudioPage() {
                 const members = ws.members as Array<{ userId: string; role: string }>
                 const myMember = members.find((m) => m.userId === myUserId)
                 setCurrentUserRole((myMember?.role as 'instructor' | 'student') ?? null)
-                // `createdBy` is owner_id. The API already forces the owner to
-                // role 'instructor' in this response even when they have no
-                // workspace_members row, so isInstructor alone would cover them
-                // — the explicit owner check is belt-and-braces, not redundancy
-                // we rely on.
-                const isOwner = ws?.createdBy === myUserId
-                const isInstructor = myMember?.role === 'instructor'
-                const isSharedProject = ws?.type === 'shared'
-                canEdit = isOwner || isInstructor || (isSharedProject && !!myMember)
               }
+              // Wall-config is OWNER-ONLY. Not instructors, not shared-project
+              // collaborators — the room's layout has exactly one author.
+              //
+              // That single-writer property is what the writer's rebase-on-409
+              // leans on (lib/wallConfigWriter.ts): re-posting our config over the
+              // server's is only safe while the only person it can be overwriting
+              // is ourselves in another tab. Widening this predicate turns that
+              // rebase into silently clobbering someone else's edit, so the two
+              // decisions have to move together.
+              //
+              // `createdBy` is owner_id, and needs only the session — deliberately
+              // NOT read off `members`, so an owner still gets write access if the
+              // members array is missing or malformed.
+              canEdit = !!myUserId && ws?.createdBy === myUserId
             }
           } catch {
             // Non-fatal: breadcrumb + archive status are best-effort. canEdit
@@ -473,6 +487,12 @@ export default function StudioPage() {
               roomId: studioId,
               config: DEFAULT_CONFIG,
               silentConflict: true,
+              // Never rebase THIS write. A 409 here means the room already has a
+              // layout; re-posting DEFAULT_CONFIG on top of it would replace a
+              // real room with an empty one. Adopting the server's config (below)
+              // is the entire point of seeding — defaults are a starting guess,
+              // not the user's intent.
+              rebaseOnConflict: false,
               signal,
             })
             if (result.status === 'conflict' && result.latest) {

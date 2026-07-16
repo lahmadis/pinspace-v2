@@ -20,10 +20,24 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
  * it reaches the front of the queue, i.e. after the previous write has resolved
  * and adopted its new version. No two writes can carry the same baseVersion.
  *
- * It deliberately does NOT weaken conflict detection: a genuine second editor
- * (or the same user in another tab) still moves the stored version underneath us
- * and still produces the 409 toast.
+ * On a surviving 409 it then REBASES rather than reverting: it adopts the
+ * server's version and re-posts the caller's own config on top, up to
+ * MAX_REBASE_RETRIES times, and only reports the conflict (reload + toast) if the
+ * version keeps moving. Wall writes are owner-only, so the writer that lost the
+ * race is the same human who is still editing — reloading over their pending
+ * change threw away work to protect it from nobody. Callers whose config is not
+ * the user's intent for the room opt out with rebaseOnConflict:false; see that
+ * field, and note this is last-write-wins if wall writes are ever reopened to a
+ * second person.
  */
+
+/**
+ * How many times a single write may adopt the server's version and re-post
+ * itself before giving up and reporting the conflict. Small on purpose: if the
+ * version moves this many times under a serialized, owner-only writer, something
+ * is going on that we should not paper over by retrying harder.
+ */
+const MAX_REBASE_RETRIES = 2
 
 /** The server's 409 body: the stored config plus its authoritative version. */
 export type WallConfigLatest = Record<string, unknown> & { version?: number }
@@ -52,6 +66,24 @@ export interface WallConfigWriteParams {
    * a toast would be a lie.
    */
   silentConflict?: boolean
+  /**
+   * On a 409, adopt the server's version and immediately re-POST THIS config on
+   * top of it, up to MAX_REBASE_RETRIES times, instead of reloading the server's
+   * layout and discarding the user's edit. Defaults to true.
+   *
+   * This is deliberately last-write-wins, and it is only defensible because wall
+   * writes are owner-only (see canEditWalls in app/studio/[id]/page.tsx): the
+   * only writer is one human, so a surviving 409 is that person overlapping with
+   * themselves (two tabs, or a write still in flight), and their newest intent is
+   * the right winner. If wall writes are ever reopened to a second person, this
+   * silently overwrites their work and must be reconsidered.
+   *
+   * Pass false when THIS config is not the user's intent for the room — the
+   * first-entry seed writes DEFAULT_CONFIG, so rebasing it onto a room that
+   * turned out to already have a layout would replace a real room with an empty
+   * one. That is data loss, not a false toast.
+   */
+  rebaseOnConflict?: boolean
   signal?: AbortSignal
 }
 
@@ -338,43 +370,68 @@ export function useWallConfigWriter(
         adopt(base)
       }
 
-      // Adopt straight from the response rather than re-reading state — a
-      // null version means the server accepted but didn't tell us the new one, so
-      // we go UNKNOWN and the next write re-learns instead of reusing a base we
-      // can no longer justify.
-      const first = await sendOnce(p, base)
-      if (first.kind === 'ok') {
-        adopt(first.version, p.config)
-        return { status: 'ok', version: first.version }
-      }
-      if (first.kind === 'conflict') {
-        // First attempt: nothing of ours can be on the server, so this is a real
-        // conflict — somebody else moved the version.
-        return settleConflict(p, first.latest)
-      }
-      if (first.kind === 'rejected') return { status: 'error', error: first.error }
-
-      // first.kind === 'unreachable': the transport failed, so the write MAY have
-      // committed. Retry with a freshly built payload.
-      if (p.signal?.aborted) return { status: 'error', error: first.error }
-
-      const second = await sendOnce(p, base)
-      if (second.kind === 'ok') {
-        adopt(second.version, p.config)
-        return { status: 'ok', version: second.version }
-      }
-      if (second.kind === 'conflict') {
-        // Exactly-once: our first attempt died at the transport layer but may
-        // have landed. If what's stored is identical to what we just tried to
-        // write, this 409 is our own write coming back at us — not a conflict.
-        const stored = second.latest
-        if (stored && typeof stored.version === 'number' && sameStoredConfig(stored, p.config)) {
-          adopt(stored.version)
-          return { status: 'ok', version: stored.version }
+      // One logical send at a given base: the POST, plus exactly one retry if the
+      // transport died. Folded into a helper so the rebase loop below can treat a
+      // send as a single outcome — and so the exactly-once check (our own write
+      // coming back as a 409) stays attached to the transport retry that causes
+      // it, rather than being confused with a genuine version conflict.
+      const sendAt = async (baseVersion: number): Promise<Attempt> => {
+        const first = await sendOnce(p, baseVersion)
+        if (first.kind !== 'unreachable') return first
+        // The transport failed, so the write MAY have committed. Retry with a
+        // freshly built payload.
+        if (p.signal?.aborted) return first
+        const second = await sendOnce(p, baseVersion)
+        if (second.kind === 'conflict') {
+          // Our first attempt died at the transport layer but may have landed. If
+          // what's stored is identical to what we just tried to write, this 409 is
+          // our own write coming back at us — not a conflict.
+          const stored = second.latest
+          if (stored && typeof stored.version === 'number' && sameStoredConfig(stored, p.config)) {
+            return { kind: 'ok', version: stored.version }
+          }
         }
-        return settleConflict(p, second.latest)
+        return second
       }
-      return { status: 'error', error: second.error }
+
+      // Rebase loop. A 409 here means the stored version moved after we read our
+      // base — with owner-only writes that is this same user overlapping with
+      // themselves, so their pending config is still what they want the room to
+      // be. Adopt the server's version and re-post it rather than reloading and
+      // throwing their edit away. Bounded: if the version keeps moving out from
+      // under us we stop guessing and fall back to reload-and-toast, which is
+      // loud but never loses work silently.
+      const allowRebase = p.rebaseOnConflict !== false
+      for (let rebases = 0; ; rebases++) {
+        // Adopt straight from the response rather than re-reading state — a null
+        // version means the server accepted but didn't tell us the new one, so we
+        // go UNKNOWN and the next write re-learns instead of reusing a base we can
+        // no longer justify.
+        const attempt = await sendAt(base)
+        if (attempt.kind === 'ok') {
+          adopt(attempt.version, p.config)
+          return { status: 'ok', version: attempt.version }
+        }
+        if (attempt.kind === 'rejected' || attempt.kind === 'unreachable') {
+          return { status: 'error', error: attempt.error }
+        }
+
+        // attempt.kind === 'conflict'
+        const nextBase = attempt.latest?.version
+        const canRebase =
+          allowRebase &&
+          rebases < MAX_REBASE_RETRIES &&
+          typeof nextBase === 'number' &&
+          Number.isFinite(nextBase) &&
+          !p.signal?.aborted
+        if (!canRebase) return settleConflict(p, attempt.latest)
+
+        // Take the server's version as our new base and re-post OUR config on it.
+        // No onConflict here: nothing is being discarded, so there is nothing to
+        // warn about — the toast is reserved for work actually lost.
+        base = nextBase as number
+        adopt(base)
+      }
     },
     [fetchLatest, sendOnce, settleConflict, stateFor]
   )

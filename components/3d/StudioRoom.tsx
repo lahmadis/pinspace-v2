@@ -112,12 +112,12 @@ interface StudioRoomProps {
   /** Current authenticated user's role in this workspace. */
   currentUserRole?: 'instructor' | 'student' | null
   /**
-   * May this user write the wall-config blob? Resolved by the page (owner OR
-   * instructor OR any member of a shared project). Every write of the blob —
-   * Save & Exit, the wall-delete persist and the text-item save — is gated on
-   * it, because a write by someone who isn't editing bumps the version and 409s
-   * the real editor's next save. Defaults to false: a host that hasn't resolved
-   * permission must not write. Read-only surfaces (share/crit/view) never pass it.
+   * May this user write the wall-config blob? Resolved by the page: OWNER ONLY.
+   * Every write of the blob — Save & Exit, the wall-delete persist and the
+   * text-item save — is gated on it, because a write by someone who isn't the
+   * room's author bumps the version and 409s the owner's next save. Defaults to
+   * false: a host that hasn't resolved ownership must not write. Read-only
+   * surfaces (share/crit/view) never pass it.
    */
   canEditWalls?: boolean
   /** Room-level wall color for the 3D walls. Defaults to 'grey' (current look). */
@@ -2066,7 +2066,12 @@ export default function StudioRoom(props: StudioRoomProps) {
           EditModeOverlay). Sits under the "Add Your Board" button while a wall
           is being edited. "Add text" drops a label at wall center; selecting a
           label reveals its content field, font-size stepper, and Remove. */}
-      {showEditUI && editingWall !== null && (
+      {/* canEditWalls, not just showEditUI: wall text lives in the wall-config
+          blob, so it is owner-only like the rest of it. Entering wall-edit mode
+          is NOT owner-gated (anyone may open a wall to place boards), so without
+          this a non-owner could add a label, watch it appear, and have it vanish
+          on reload — the write no-ops silently. Don't offer what can't be saved. */}
+      {showEditUI && editingWall !== null && props.canEditWalls && (
         <div className="fixed left-6 top-48 z-50 flex flex-col gap-2 w-56">
           <button
             onClick={handleAddText}
