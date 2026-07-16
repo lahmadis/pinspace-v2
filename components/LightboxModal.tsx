@@ -14,7 +14,7 @@ import {
 import { useImageViewport } from '@/components/useImageViewport'
 import type { TraceStreamEntry } from '@/components/3d/CameraController'
 import { toast } from '@/lib/toast'
-import { ExternalLink } from 'lucide-react'
+import { Download, ExternalLink } from 'lucide-react'
 
 // Trace ink palette + brush widths (width = fraction of image width).
 const TRACE_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6']
@@ -104,6 +104,55 @@ function formatTimestamp(timestamp: string): string {
     hour: 'numeric',
     minute: '2-digit'
   })
+}
+
+// Marks a direct public-bucket URL. board-images is public, so full_image_url is
+// a plain CDN URL and Supabase turns ?download=<name> into a
+// Content-Disposition: attachment — the browser saves the file with no auth and
+// no fetch. Demo/sample boards point at placeholder hosts instead and take the
+// blob path in handleDownload.
+const SUPABASE_PUBLIC_MARKER = '/storage/v1/object/public/'
+
+// Extension of the stored object, NOT of whatever was originally uploaded: the
+// upload pipeline re-encodes every image to JPEG (useDirectUpload.ts), so a
+// PNG upload is .jpg bytes in storage and must download as .jpg.
+function extFromUrl(url: string): string {
+  const path = url.split('?')[0].split('#')[0]
+  const m = path.match(/\.([a-z0-9]{2,5})$/i)
+  return m ? m[1].toLowerCase() : 'jpg'
+}
+
+// The board title IS the original filename minus its extension (the upload route
+// derives it that way via deriveDefaultTitle), so title + real extension gets us
+// back to the uploaded name. Falls back to board-<id> for an empty/renamed-away
+// title. Mirrors the sanitize() rules in the workspace-export route.
+function downloadFileName(title: string | null | undefined, boardId: string, url: string): string {
+  const ext = extFromUrl(url)
+  const base = (title ?? '')
+    .trim()
+    .replace(/[/\\?%*:|"<>]/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/^\.+/, '') // never produce a dotfile
+    .slice(0, 80)
+  const safe = base || `board-${boardId}`
+  // Don't double up when the title already carries the extension (renamed board).
+  return new RegExp(`\\.${ext}$`, 'i').test(safe) ? safe : `${safe}.${ext}`
+}
+
+function triggerAnchorDownload(href: string, filename: string) {
+  const a = document.createElement('a')
+  a.href = href
+  a.download = filename
+  // The download attribute is ignored cross-origin, so the Supabase save rides
+  // entirely on Content-Disposition: attachment. _blank keeps a missing header
+  // from navigating the studio/crit page away — which would tear down the
+  // lightbox and any trace still inside its 600ms save debounce. With the
+  // header present (the normal path) no tab is ever shown.
+  a.target = '_blank'
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
 }
 
 function getInitials(name: string): string {
@@ -1641,6 +1690,34 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const canEditTitle = isBoardUploader || currentUserRole === 'instructor' || isSuperadminViewer
   // Optimistic override wins over the stored value so a rename shows instantly.
   const resolvedTitle = titleOverride ?? board.title
+
+  // Save the board image to disk. Read-only — never writes to Storage. The
+  // public-bucket path hands the browser a ?download= URL and lets it stream the
+  // bytes directly (works for guests on a crit link: no auth, no CORS, no fetch).
+  // Anything else (demo/sample placeholder hosts) falls back to fetch→blob.
+  const handleDownload = async () => {
+    const filename = downloadFileName(resolvedTitle, board.id, imageUrl)
+    if (imageUrl.includes(SUPABASE_PUBLIC_MARKER)) {
+      try {
+        const u = new URL(imageUrl)
+        u.searchParams.set('download', filename)
+        triggerAnchorDownload(u.toString(), filename)
+        return
+      } catch {
+        // Unparseable URL — fall through to the blob path.
+      }
+    }
+    try {
+      const res = await fetch(imageUrl)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const objectUrl = URL.createObjectURL(await res.blob())
+      triggerAnchorDownload(objectUrl, filename)
+      // Revoking in the same tick can abort the download in Firefox/Safari.
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+    } catch {
+      toast.error('Couldn’t download this board.')
+    }
+  }
   // Zoom controls surface the EXISTING viewport hook — step scale about the
   // current center via getViewportFraction→applyViewportFraction (which clamps
   // to MIN_SCALE..maxScale internally). Fit = reset. No zoom math reimplemented.
@@ -1904,6 +1981,20 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   {comments.length}
                 </span>
               )}
+            </button>
+          )}
+
+          {/* Download — save the board image. Everyone, including guests on a
+              crit link (public bucket = no auth). Single-board only, matching
+              Present: "the viewed board" is ambiguous in a compare selection. */}
+          {compareBoards.length <= 1 && !!imageUrl && (
+            <button
+              onClick={(e) => { e.stopPropagation(); void handleDownload() }}
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors"
+              title="Download image"
+              aria-label="Download image"
+            >
+              <Download className="w-3.5 h-3.5" />
             </button>
           )}
 
