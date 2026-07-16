@@ -186,8 +186,9 @@ function SceneContent({
   onBoardDrop,
   onDragCancel,
   onCommentClick,
-  selectedBoardId,
-  setSelectedBoardId,
+  selectedBoardIds,
+  soleSelectedBoardId,
+  onSelectBoard,
   onDeselect,
   isWorkspaceMember,
   localBoards,
@@ -224,8 +225,12 @@ function SceneContent({
   onBoardDrop: (localX: number, localY: number) => void
   onDragCancel: () => void
   onCommentClick: (board: Board) => void
-  selectedBoardId: string | null
-  setSelectedBoardId: (id: string | null) => void
+  /** Every selected board — drives the highlight. Copy is the only bulk action. */
+  selectedBoardIds: Set<string>
+  /** Set only when exactly one is selected; gates single-board actions. */
+  soleSelectedBoardId: string | null
+  /** additive = shift-click (toggle membership) rather than replace. */
+  onSelectBoard: (boardId: string, additive?: boolean) => void
   onDeselect?: () => void
   isWorkspaceMember?: boolean
   localBoards: Board[]
@@ -446,9 +451,10 @@ function SceneContent({
                   onSizePersisted={onBoardSizePersisted}
                   onDelete={onBoardDelete}
                   onCommentClick={onCommentClick}
-                  onSelect={() => setSelectedBoardId(board.id)}
+                  onSelect={(opts) => onSelectBoard(board.id, opts?.additive)}
                   onDeselect={onDeselect}
-                  isSelected={selectedBoardId === board.id}
+                  isSelected={selectedBoardIds.has(board.id)}
+                  isSoleSelection={soleSelectedBoardId === board.id}
                   workspaceId={studioId}
                   isWorkspaceMember={isWorkspaceMember}
                   otherBoardsOnWall={guideGeometry}
@@ -696,7 +702,39 @@ function PresenterCursorBroadcast({
 
 export default function StudioRoom(props: StudioRoomProps) {
   const [user, setUser] = useState<User | null>(null)
-  const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null)
+  /**
+   * Boards selected in wall-edit mode. A Set purely so COPY can take several at
+   * once — selection drives nothing else in bulk.
+   *
+   * Everything that ACTS on a selection (delete, reset-to-true-scale) reads
+   * `selectedBoardId` below instead, which is null unless exactly one board is
+   * selected. Drag and corner-resize never read selection at all — they are the
+   * board's own pointer handlers, gated on canEdit/isLocked — so widening this
+   * to a Set cannot reach them.
+   */
+  const [selectedBoardIds, setSelectedBoardIds] = useState<Set<string>>(() => new Set())
+  /**
+   * The single selected board, or null when zero or MANY are selected. Every
+   * pre-existing single-board code path reads this and is therefore byte-
+   * identical at size 1 and simply inert at size >1 — which is what keeps
+   * multi-select from silently becoming group delete/resize.
+   */
+  const selectedBoardId = selectedBoardIds.size === 1
+    ? selectedBoardIds.values().next().value ?? null
+    : null
+  /** Replace the selection (plain click) or toggle one member (shift-click). */
+  const selectBoard = useCallback((boardId: string, additive = false) => {
+    setSelectedBoardIds(prev => {
+      if (!additive) return new Set([boardId])
+      const next = new Set(prev)
+      if (next.has(boardId)) next.delete(boardId)
+      else next.add(boardId)
+      return next
+    })
+  }, [])
+  const clearBoardSelection = useCallback(() => {
+    setSelectedBoardIds(prev => (prev.size === 0 ? prev : new Set()))
+  }, [])
   const [isWorkspaceMember, setIsWorkspaceMember] = useState<boolean>(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const orbitControlsRef = useRef<any>(null)
@@ -793,9 +831,30 @@ export default function StudioRoom(props: StudioRoomProps) {
   }, [placedBoards3D])
   const [draggingFromSidebar, setDraggingFromSidebar] = useState<Board | null>(null)
   const [commentPanelBoard, setCommentPanelBoard] = useState<Board | null>(null)
-  const copiedBoardRef = useRef<Board | null>(null)
   /**
-   * How many times the current `copiedBoardRef` has been pasted. Reset on
+   * In-app clipboard: the copied boards plus each one's offset from the group's
+   * anchor (its min-x/min-y corner), in wall-local API percent (0–100).
+   *
+   * Storing OFFSETS rather than absolute positions is what lets a group paste
+   * onto a different wall and keep its arrangement: API coords are the same
+   * 0–100 shape on every wall, so the anchor can move while the shape doesn't.
+   * A single copy is just the size-1 case with dx/dy = 0.
+   *
+   * `board` keeps the source's DB id on purpose: /api/boards/duplicate takes a
+   * source boardId and copies the image refs server-side, so there is no way to
+   * paste from a bare image ref. A source deleted between copy and paste 404s —
+   * pre-existing single-paste behavior.
+   */
+  type CopiedBoard = { board: Board; dx: number; dy: number }
+  type BoardClipboard = {
+    /** The group's anchor at copy time: min-x/min-y across the selection. */
+    anchorX: number
+    anchorY: number
+    entries: CopiedBoard[]
+  }
+  const copiedBoardsRef = useRef<BoardClipboard | null>(null)
+  /**
+   * How many times the current `copiedBoardsRef` has been pasted. Reset on
    * every copy so the first paste of a fresh source lands at +1 grid step,
    * not stacked on the previous run. Used by handlePaste to cascade
    * successive pastes diagonally so they don't overlap exactly.
@@ -839,10 +898,15 @@ export default function StudioRoom(props: StudioRoomProps) {
     setTextItems(Array.isArray(raw) ? raw : [])
   }, [props.studioId, props.wallConfig])
 
-  // Clear text selection when leaving wall-edit mode.
+  // Clear text + board selection when leaving wall-edit mode. Selection only
+  // means anything in the 2D editor, and a set left behind would silently
+  // become the copy source next time a wall is opened.
   useEffect(() => {
-    if (editingWall === null) setSelectedTextId(null)
-  }, [editingWall])
+    if (editingWall === null) {
+      setSelectedTextId(null)
+      clearBoardSelection()
+    }
+  }, [editingWall, clearBoardSelection])
 
   // Floor click no longer opens editor; use header "Place 3D model" button instead
 
@@ -1709,140 +1773,184 @@ export default function StudioRoom(props: StudioRoomProps) {
   }, [editingWall, editingWallSide, localBoards, deleteBoard])
 
   const handlePaste = useCallback(async () => {
-    const copied = copiedBoardRef.current
-    if (!copied || editingWall === null || editingWallSide == null || !editingWallDimensions) return
-    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
-    const side = editingWallSide
-    const apiWidth = copied.position?.width ?? 30
-    const apiHeight = copied.position?.height ?? 30
+    const clipboard = copiedBoardsRef.current
+    if (!clipboard || clipboard.entries.length === 0) return
+    if (editingWall === null || editingWallSide == null || !editingWallDimensions) return
 
     // Cascade pastes so successive Cmd+V's don't stack exactly on each other.
-    // Each paste shifts the source position by N × 5% of wall width/height.
-    // Free placement (no grid snap) — board movement itself is free since
-    // Phase 7 was reverted, so paste shouldn't impose a grid the user can't
-    // see. Source position is reused as the base regardless of which wall
-    // the source was on; wall-local API coords (0–100) are the same shape
-    // on every wall, so "the same spot" pastes to "the same spot" on the
-    // target wall.
+    // Each paste shifts the group ANCHOR by N × 5% of wall width/height; every
+    // member keeps its stored offset from that anchor, so the arrangement is
+    // rigid and only the group moves. Free placement (no grid snap) — board
+    // movement itself is free since Phase 7 was reverted, so paste shouldn't
+    // impose a grid the user can't see. The anchor is reused as the base
+    // regardless of which wall the sources were on; wall-local API coords
+    // (0–100) are the same shape on every wall, so "the same spot" pastes to
+    // "the same spot" on the target wall.
     pasteCountRef.current += 1
     const offsetCount = pasteCountRef.current
     const PASTE_OFFSET_API = 5 // % of wall per paste — small enough to keep the new board near the source
-    const srcAPIx = copied.position?.x ?? 50
-    const srcAPIy = copied.position?.y ?? 50
-    const apiX = Math.max(0, Math.min(100, srcAPIx + PASTE_OFFSET_API * offsetCount))
-    const apiY = Math.max(0, Math.min(100, srcAPIy + PASTE_OFFSET_API * offsetCount))
-    // The placedBoards3D map uses wall-local NORMALIZED coords (-0.5..+0.5).
-    const normX = (apiX / 100) - 0.5
-    const normY = (apiY / 100) - 0.5
+    const side = editingWallSide
+    // Where this paste's group anchor lands. Members sit at groupX/Y + their
+    // stored offset, so the arrangement is rigid and only the anchor moves.
+    const groupX = clipboard.anchorX + PASTE_OFFSET_API * offsetCount
+    const groupY = clipboard.anchorY + PASTE_OFFSET_API * offsetCount
 
-    const tempBoard: Board = {
-      id: tempId,
-      // Stable client-side React key, carried onto the real board after
-      // duplicate API responds so the rendering instance survives the id
-      // swap. Matches the upload flow in useBoardUpload.createTempBoard.
-      localId: tempId,
-      // studioId stays as the URL param (= room id post-6.2b); workspaceId
-      // is the actual workspace uuid resolved by the page.
-      studioId: props.studioId,
-      workspaceId: props.workspaceId ?? props.studioId,
-      studentName: copied.studentName,
-      title: (copied.title || 'Board').trimEnd() + ' (copy)',
-      thumbnailUrl: copied.fullImageUrl ?? copied.thumbnailUrl,
-      fullImageUrl: copied.fullImageUrl ?? copied.thumbnailUrl,
-      uploadedAt: new Date(),
-      tags: copied.tags ?? [],
-      position: {
-        wallIndex: editingWall,
-        x: apiX,
-        y: apiY,
-        width: apiWidth,
-        height: apiHeight,
-        side,
-      },
-      ownerId: user?.id,
-      ownerName: user?.user_metadata?.full_name ?? user?.email?.split('@')[0] ?? 'User',
-      aspectRatio: copied.aspectRatio,
-      originalWidth: copied.originalWidth,
-      originalHeight: copied.originalHeight,
-      physicalWidth: copied.physicalWidth,
-      physicalHeight: copied.physicalHeight,
-      boardWidthIn: copied.boardWidthIn,
-      boardHeightIn: copied.boardHeightIn,
-    }
-    addTempBoard(tempBoard, copied.fullImageUrl ?? copied.thumbnailUrl)
-    const normW = (apiWidth / 100) || 0.3
-    const normH = (apiHeight / 100) || 0.3
-    setPlacedBoards3D(prev => {
-      const m = new Map(prev)
-      m.set(tempId, { x: normX, y: normY, width: normW, height: normH })
-      placedBoards3DRef.current = m
-      return m
-    })
-    try {
-      const res = await fetch('/api/boards/duplicate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          boardId: copied.id,
-          // Duplicate API expects a workspace id; post-6.2b URL flip studioId
-          // is a room id, so use the resolved workspaceId.
-          workspaceId: props.workspaceId ?? props.studioId,
+    // Each entry is independent — no cross-board dependency — so they run
+    // concurrently, mirroring the multi-page PDF upload path. Distinct tempId
+    // per task + setPlacedBoards3D's functional updater is what makes that safe;
+    // see section 23 of docs/storage-audit-P1.md for the data-race analysis.
+    const pasteOne = async ({ board: copied, dx, dy }: CopiedBoard, index: number) => {
+      const tempId = `temp-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 11)}`
+      const apiWidth = copied.position?.width ?? 30
+      const apiHeight = copied.position?.height ?? 30
+
+      // Group anchor + this board's stored offset, clamped into the wall. The
+      // clamp is per-board, so a group wider than the target wall gets squashed
+      // against the edge and members can overlap — accepted: on-wall and reachable
+      // beats faithful-but-off-wall.
+      const apiX = Math.max(0, Math.min(100, groupX + dx))
+      const apiY = Math.max(0, Math.min(100, groupY + dy))
+      // The placedBoards3D map uses wall-local NORMALIZED coords (-0.5..+0.5).
+      const normX = (apiX / 100) - 0.5
+      const normY = (apiY / 100) - 0.5
+
+      const tempBoard: Board = {
+        id: tempId,
+        // Stable client-side React key, carried onto the real board after
+        // duplicate API responds so the rendering instance survives the id
+        // swap. Matches the upload flow in useBoardUpload.createTempBoard.
+        localId: tempId,
+        // studioId stays as the URL param (= room id post-6.2b); workspaceId
+        // is the actual workspace uuid resolved by the page.
+        studioId: props.studioId,
+        workspaceId: props.workspaceId ?? props.studioId,
+        studentName: copied.studentName,
+        title: (copied.title || 'Board').trimEnd() + ' (copy)',
+        thumbnailUrl: copied.fullImageUrl ?? copied.thumbnailUrl,
+        fullImageUrl: copied.fullImageUrl ?? copied.thumbnailUrl,
+        uploadedAt: new Date(),
+        tags: copied.tags ?? [],
+        position: {
           wallIndex: editingWall,
-          position_x: apiX,
-          position_y: apiY,
-          position_side: side,
-          position_width: apiWidth,
-          position_height: apiHeight,
-        }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err?.error || 'Duplicate failed')
+          x: apiX,
+          y: apiY,
+          width: apiWidth,
+          height: apiHeight,
+          side,
+        },
+        ownerId: user?.id,
+        ownerName: user?.user_metadata?.full_name ?? user?.email?.split('@')[0] ?? 'User',
+        aspectRatio: copied.aspectRatio,
+        originalWidth: copied.originalWidth,
+        originalHeight: copied.originalHeight,
+        physicalWidth: copied.physicalWidth,
+        physicalHeight: copied.physicalHeight,
+        boardWidthIn: copied.boardWidthIn,
+        boardHeightIn: copied.boardHeightIn,
       }
-      const data = await res.json()
-      const newBoard = data.board as Board
-      const onCurrentWall = newBoard.position?.wallIndex === editingWall && (newBoard.position?.side || 'front') === side
-      // Carry the temp board's localId onto the real board so the React key
-      // stays stable across the duplicate swap.
-      const boardToUse: Board = onCurrentWall
-        ? { ...newBoard, localId: tempId }
-        : {
-            ...newBoard,
-            localId: tempId,
-            position: { wallIndex: editingWall, x: apiX, y: apiY, width: apiWidth, height: apiHeight, side },
-          }
-      replaceTempBoard(tempId, boardToUse)
+      addTempBoard(tempBoard, copied.fullImageUrl ?? copied.thumbnailUrl)
+      const normW = (apiWidth / 100) || 0.3
+      const normH = (apiHeight / 100) || 0.3
       setPlacedBoards3D(prev => {
         const m = new Map(prev)
-        const pos = m.get(tempId)
-        if (pos) {
-          m.delete(tempId)
-          m.set(boardToUse.id, pos)
+        m.set(tempId, { x: normX, y: normY, width: normW, height: normH })
+        placedBoards3DRef.current = m
+        return m
+      })
+      try {
+        const res = await fetch('/api/boards/duplicate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            boardId: copied.id,
+            // Duplicate API expects a workspace id; post-6.2b URL flip studioId
+            // is a room id, so use the resolved workspaceId.
+            workspaceId: props.workspaceId ?? props.studioId,
+            wallIndex: editingWall,
+            position_x: apiX,
+            position_y: apiY,
+            position_side: side,
+            position_width: apiWidth,
+            position_height: apiHeight,
+          }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err?.error || 'Duplicate failed')
         }
-        placedBoards3DRef.current = m
-        return m
-      })
-    } catch (err) {
-      console.error('Paste failed:', err)
-      removeTempBoard(tempId)
-      setPlacedBoards3D(prev => {
-        const m = new Map(prev)
-        m.delete(tempId)
-        placedBoards3DRef.current = m
-        return m
-      })
-      toast.error('Could not paste board. You may need to be a member of the workspace.')
+        const data = await res.json()
+        const newBoard = data.board as Board
+        const onCurrentWall = newBoard.position?.wallIndex === editingWall && (newBoard.position?.side || 'front') === side
+        // Carry the temp board's localId onto the real board so the React key
+        // stays stable across the duplicate swap.
+        const boardToUse: Board = onCurrentWall
+          ? { ...newBoard, localId: tempId }
+          : {
+              ...newBoard,
+              localId: tempId,
+              position: { wallIndex: editingWall, x: apiX, y: apiY, width: apiWidth, height: apiHeight, side },
+            }
+        replaceTempBoard(tempId, boardToUse)
+        setPlacedBoards3D(prev => {
+          const m = new Map(prev)
+          const pos = m.get(tempId)
+          if (pos) {
+            m.delete(tempId)
+            m.set(boardToUse.id, pos)
+          }
+          placedBoards3DRef.current = m
+          return m
+        })
+      } catch (err) {
+        console.error('Paste failed:', err)
+        removeTempBoard(tempId)
+        setPlacedBoards3D(prev => {
+          const m = new Map(prev)
+          m.delete(tempId)
+          placedBoards3DRef.current = m
+          return m
+        })
+        throw err
+      }
+    }
+
+    const results = await Promise.allSettled(clipboard.entries.map((entry, i) => pasteOne(entry, i)))
+    // One toast for the whole group, not one per failed board: a paste of 3 that
+    // fails for the same reason 3 times is one problem, and each pasteOne has
+    // already rolled its own temp board back.
+    const failed = results.filter(r => r.status === 'rejected').length
+    if (failed > 0) {
+      toast.error(
+        failed === clipboard.entries.length
+          ? 'Could not paste. You may need to be a member of the workspace.'
+          : `Could not paste ${failed} of ${clipboard.entries.length} boards.`
+      )
     }
   }, [editingWall, editingWallSide, editingWallDimensions, props.studioId, props.workspaceId, user, addTempBoard, replaceTempBoard, removeTempBoard, setPlacedBoards3D])
 
+  /**
+   * Copy every selected board, recording each one's offset from the group's
+   * anchor (the min-x/min-y of the selection) so paste can rebuild the layout.
+   * Empty selection is a no-op — it deliberately does NOT clear the clipboard,
+   * so a stray click can't silently discard what you copied.
+   */
   const handleCopy = useCallback(() => {
-    if (!selectedBoardId) return
-    const board = localBoards.find(b => b.id === selectedBoardId)
-    if (board) {
-      copiedBoardRef.current = board
-      pasteCountRef.current = 0
+    if (selectedBoardIds.size === 0) return
+    const boards = localBoards.filter(b => selectedBoardIds.has(b.id))
+    if (boards.length === 0) return
+    const anchorX = Math.min(...boards.map(b => b.position?.x ?? 50))
+    const anchorY = Math.min(...boards.map(b => b.position?.y ?? 50))
+    copiedBoardsRef.current = {
+      anchorX,
+      anchorY,
+      entries: boards.map(board => ({
+        board,
+        dx: (board.position?.x ?? 50) - anchorX,
+        dy: (board.position?.y ?? 50) - anchorY,
+      })),
     }
-  }, [selectedBoardId, localBoards])
+    pasteCountRef.current = 0
+  }, [selectedBoardIds, localBoards])
 
   // Keyboard shortcuts: Backspace/Delete = delete selected board, Ctrl+Z = undo, Ctrl+Y = redo, Ctrl+C/V = copy/paste, Escape = deselect
   useEffect(() => {
@@ -1865,18 +1973,19 @@ export default function StudioRoom(props: StudioRoomProps) {
           redo()
         } else if (e.key === 'c') {
           e.preventDefault()
-          if (selectedBoardId && editingWall !== null) {
-            const board = localBoards.find(b => b.id === selectedBoardId)
-            if (board) {
-              copiedBoardRef.current = board
-              pasteCountRef.current = 0
-            }
-          }
+          // Delegates to handleCopy (which copies the whole selection) rather
+          // than re-implementing a single-board copy inline, as it used to —
+          // two copies of this logic is how they drift apart.
+          if (editingWall !== null) handleCopy()
         }
         return
       }
 
-      // Backspace or Delete = delete selected board (when in edit mode)
+      // Backspace or Delete = delete selected board (when in edit mode).
+      // `selectedBoardId` is null unless EXACTLY one board is selected, so a
+      // multi-selection deletes nothing: group delete is deliberately not a
+      // feature, and silently deleting several boards on one keypress is the
+      // worst way to discover it would have been.
       if ((e.key === 'Backspace' || e.key === 'Delete') && selectedBoardId && editingWall !== null) {
         e.preventDefault()
         e.stopPropagation()
@@ -1884,20 +1993,20 @@ export default function StudioRoom(props: StudioRoomProps) {
         if (selectedBoard) {
           devLog('⌨️ [Keyboard] Delete key - deleting board:', selectedBoardId)
           handleBoardDelete(selectedBoardId)
-          setSelectedBoardId(null)
+          clearBoardSelection()
         }
       }
 
       // Escape = deselect or close comment panel
       if (e.key === 'Escape') {
-        if (selectedBoardId) setSelectedBoardId(null)
+        clearBoardSelection()
         if (commentPanelBoard) setCommentPanelBoard(null)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedBoardId, editingWall, localBoards, handleBoardDelete, commentPanelBoard, undo, redo])
+  }, [selectedBoardId, editingWall, localBoards, handleBoardDelete, commentPanelBoard, undo, redo, handleCopy, clearBoardSelection])
 
   const [isDragOver, setIsDragOver] = useState(false)
   const dragCounterRef = useRef(0)
@@ -1940,7 +2049,9 @@ export default function StudioRoom(props: StudioRoomProps) {
           return
         }
       }
-      if (copiedBoardRef.current) {
+      // Nothing copied → let the event through untouched, so an empty-selection
+      // Ctrl+V stays a genuine no-op rather than a swallowed keystroke.
+      if (copiedBoardsRef.current?.entries.length) {
         e.preventDefault()
         e.stopPropagation()
         handlePaste()
@@ -2058,7 +2169,9 @@ export default function StudioRoom(props: StudioRoomProps) {
         ).length : 0}
         onCopy={handleCopy}
         onPaste={handlePaste}
-        hasSelection={!!selectedBoardId}
+        // Enables the Copy button — copy is the one action that takes the whole
+        // selection, so any non-empty set counts.
+        hasSelection={selectedBoardIds.size > 0}
         onBoardSelect={handleBoardSelect}
         onBoardDragStart={handleBoardDragStart}
       />
@@ -2204,9 +2317,10 @@ export default function StudioRoom(props: StudioRoomProps) {
             handleLightboxOpen(selected)
           }}
           onBoardClick={(board: unknown) => handleLightboxOpen(board as Board)}
-            selectedBoardId={selectedBoardId}
-            setSelectedBoardId={setSelectedBoardId}
-            onDeselect={() => { setSelectedBoardId(null); setSelectedTextId(null) }}
+            selectedBoardIds={selectedBoardIds}
+            soleSelectedBoardId={selectedBoardId}
+            onSelectBoard={selectBoard}
+            onDeselect={() => { clearBoardSelection(); setSelectedTextId(null) }}
             isWorkspaceMember={isWorkspaceMember}
             editingWallSide={editingWallSide}
             tables={tables}

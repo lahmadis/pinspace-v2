@@ -86,8 +86,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Not authorized to duplicate this board' }, { status: 403 })
     }
 
+    // Timestamp ALONE is not unique: multi-board paste fires one request per
+    // copied board, and several land inside the same millisecond, which collided
+    // on the primary key and 500'd. Same `board-${ts}-${rand}` shape the normal
+    // create path uses (app/api/boards/route.ts) — these two insert paths should
+    // not disagree about how a board id is built.
     const timestamp = Date.now()
-    const newId = `board-${timestamp}`
+    const newId = `board-${timestamp}-${Math.random().toString(36).slice(2, 8)}`
     const ownerName = session?.user?.user_metadata?.full_name ?? session?.user?.user_metadata?.email?.split('@')[0] ?? 'User'
 
     // Mirror Phase 6.1 boards.room_id alongside workspace_id. Reuse the source

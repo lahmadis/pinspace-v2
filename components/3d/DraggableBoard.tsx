@@ -39,9 +39,22 @@ interface DraggableBoardProps {
   onSizePersisted?: (boardId: string, widthIn: number, heightIn: number) => void
   onDelete: (boardId: string) => void
   onCommentClick?: (board: Board) => void
-  onSelect?: () => void
+  /**
+   * `additive` is true for a shift-click: toggle this board in the selection
+   * instead of replacing it. Plain click stays "select only this one".
+   */
+  onSelect?: (opts?: { additive?: boolean }) => void
   onDeselect?: () => void
+  /** In the selection set — drives the highlight only. */
   isSelected?: boolean
+  /**
+   * The ONLY board selected. Gates single-board actions that must not become
+   * group actions when several boards are selected: with a multi-selection the
+   * reset-to-true-scale button would appear on every member, which is a group
+   * resize affordance. Selection is only for copy; when exactly one board is
+   * selected this is `isSelected` and behavior is unchanged.
+   */
+  isSoleSelection?: boolean
   workspaceId?: string // Workspace/studio ID to check membership
   isWorkspaceMember?: boolean // Whether user is a member of the workspace
   /**
@@ -114,6 +127,7 @@ export function DraggableBoard({
   onSelect,
   onDeselect,
   isSelected = false,
+  isSoleSelection = false,
   workspaceId: _workspaceId,
   isWorkspaceMember = false,
   otherBoardsOnWall,
@@ -496,8 +510,15 @@ if (e.intersections && e.intersections.length > 0) {
       return
     }
     
-    // Deselect board when starting to drag
-    if (onDeselect && isSelected) {
+    // Deselect board when starting to drag.
+    //
+    // NOT on a shift-click: onDeselect clears the ENTIRE selection, and shift is
+    // a selection gesture rather than the start of a drag. Without this guard,
+    // shift-clicking an already-selected board wiped the set here and the toggle
+    // then re-added the board — so "remove this one from the selection" came out
+    // as "select only this one". Plain clicks still clear-then-select exactly as
+    // before, which is the same end state as the old single-selection code.
+    if (onDeselect && isSelected && !e.shiftKey) {
       devLog('🖱️ [DraggableBoard] Deselecting board because drag started')
       onDeselect()
     }
@@ -523,18 +544,22 @@ if (e.intersections && e.intersections.length > 0) {
         Math.abs(e.clientX - dragStartPosition.current.x) < 5 && 
         Math.abs(e.clientY - dragStartPosition.current.y) < 5
       
-      devLog('🖱️ [DraggableBoard] Pointer up - wasClick:', wasClick, 'onSelect exists:', !!onSelect, 'movement:', dragStartPosition.current ? {
+      devLog('🖱️ [DraggableBoard] Pointer up - wasClick:', wasClick, 'movement:', dragStartPosition.current ? {
         x: Math.abs(e.clientX - dragStartPosition.current.x),
         y: Math.abs(e.clientY - dragStartPosition.current.y)
       } : 'no start pos')
-      
-      // If it was just a click (no significant movement), select the board
-      // wasClick being true means there was minimal movement, so it's a click, not a drag
-      if (wasClick && onSelect) {
-        devLog('🖱️ Click detected (not drag) - selecting board:', board.id)
-        onSelect()
-      }
-      
+
+      // Selection is NOT dispatched here — the mesh's onClick below owns it.
+      //
+      // Both used to fire for one click on an unlocked board. That was invisible
+      // while selecting meant `setSelectedBoardId(id)`, because running it twice
+      // is the same as once; a shift-click TOGGLE applied twice is the identity,
+      // so the selection could never grow. Dropping this one rather than onClick
+      // is what keeps every case identical: onClick is the only dispatcher a
+      // locked board or a corner-handle click ever had (both bypass this
+      // handler — handleCornerPointerDown stopPropagation()s before we attach),
+      // so onClick still fires everywhere it used to, unchanged.
+
       // Mark that we just finished dragging to prevent sync from resetting position
       justFinishedDragging.current = true
 
@@ -959,9 +984,11 @@ if (e.intersections && e.intersections.length > 0) {
             // Stop propagation so the invisible wall plane doesn't get the click
             e.stopPropagation()
 
-            // Select the board when clicked
+            // The SOLE selection dispatcher — see the note in handleUp above.
+            // Shift toggles set membership; the modifier rides on nativeEvent,
+            // not on the R3F synthetic event.
             if (onSelect) {
-              onSelect()
+              onSelect({ additive: e.nativeEvent?.shiftKey === true })
             }
           }}
           // Same shield as onClick above, for the other event name: the wall
@@ -1035,7 +1062,7 @@ if (e.intersections && e.intersections.length > 0) {
         {/* Reset to true scale — escape hatch back to the board's measured
             physical size (PDFs). Shown only when the board is selected, editable,
             and true dimensions exist; manual resize otherwise stays an override. */}
-        {isSelected && canEdit && hasPhysicalSize && (
+        {isSoleSelection && canEdit && hasPhysicalSize && (
           <Html position={[0, boardHeight / 2 + 2, 0.1]} center distanceFactor={10} style={{ pointerEvents: 'auto' }}>
             <button
               onClick={(e) => { e.stopPropagation(); handleResetToTrueScale() }}
