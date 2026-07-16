@@ -111,6 +111,15 @@ interface StudioRoomProps {
   commentNonce?: number
   /** Current authenticated user's role in this workspace. */
   currentUserRole?: 'instructor' | 'student' | null
+  /**
+   * May this user write the wall-config blob? Resolved by the page (owner OR
+   * instructor OR any member of a shared project). Every write of the blob —
+   * Save & Exit, the wall-delete persist and the text-item save — is gated on
+   * it, because a write by someone who isn't editing bumps the version and 409s
+   * the real editor's next save. Defaults to false: a host that hasn't resolved
+   * permission must not write. Read-only surfaces (share/crit/view) never pass it.
+   */
+  canEditWalls?: boolean
   /** Room-level wall color for the 3D walls. Defaults to 'grey' (current look). */
   wallColor?: 'grey' | 'white'
   /**
@@ -889,14 +898,14 @@ export default function StudioRoom(props: StudioRoomProps) {
     // failures and reports real conflicts to the page.
     const writer = props.wallConfigWriter
     ;(async () => {
-      if (!writer) return
+      if (!writer || !props.canEditWalls) return
       const result = await writer.write({ wsKey, roomId, config: payload, keepalive: true })
       if (result.status === 'error') {
         console.error('Failed to save floor/wall config', result.error)
         toast.error(`Could not save studio model layout. ${result.error.message}`)
       }
     })()
-  }, [props.studioId, props.workspaceId, props.wallConfig, props.wallConfigWriter, tables, textItems])
+  }, [props.studioId, props.workspaceId, props.wallConfig, props.wallConfigWriter, props.canEditWalls, tables, textItems])
 
   /**
    * Wall indices for the floor editor's board-safety guard. Just the indices —
@@ -974,12 +983,12 @@ export default function StudioRoom(props: StudioRoomProps) {
       const wsKey = props.workspaceId ?? props.studioId
       const roomId = props.studioId
       const writer = props.wallConfigWriter
-      if (!writer) return { ok: false }
+      if (!writer || !props.canEditWalls) return { ok: false }
       const result = await writer.write({ wsKey, roomId, config: payload })
       if (result.status === 'error') console.error('persist wall config failed', result.error)
       return { ok: result.status === 'ok' }
     },
-    [tables, textItems, props.studioId, props.workspaceId, props.wallConfigWriter]
+    [tables, textItems, props.studioId, props.workspaceId, props.wallConfigWriter, props.canEditWalls]
   )
 
   /**
@@ -1011,7 +1020,7 @@ export default function StudioRoom(props: StudioRoomProps) {
       const roomId = props.studioId
       const writer = props.wallConfigWriter
       ;(async () => {
-        if (!writer) return
+        if (!writer || !props.canEditWalls) return
         const result = await writer.write({ wsKey, roomId, config: payload, keepalive: true })
         if (result.status === 'error') {
           console.error('Failed to save wall text', result.error)
@@ -1019,7 +1028,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         }
       })()
     },
-    [tables, props.wallConfig, props.workspaceId, props.studioId, props.wallConfigWriter]
+    [tables, props.wallConfig, props.workspaceId, props.studioId, props.wallConfigWriter, props.canEditWalls]
   )
 
   // Debounced variant for content typing — coalesces keystrokes into one POST.

@@ -79,6 +79,30 @@ export default function StudioPage() {
   const [allRooms, setAllRooms] = useState<Array<{ id: string; name: string }>>([])
   const [showRoomSwitcher, setShowRoomSwitcher] = useState(false)
   const [currentUserRole, setCurrentUserRole] = useState<'instructor' | 'student' | null>(null)
+  /**
+   * May this user write the wall-config blob (walls, tables, wall text)?
+   *
+   * Mirrors `canAddRoom` (app/workspace/[id]/page.tsx): wall layout is a
+   * room-STRUCTURE power, so it is instructor-only in a class, but open to any
+   * member of a shared project — those collaborators join with role `student`
+   * (see /api/workspaces/[id]/join), so an instructor-only gate would lock out
+   * people explicitly invited to co-build the room.
+   *
+   * Starts false and is only raised once membership is known. That direction is
+   * deliberate: the workspace metadata fetch below is best-effort, and if it
+   * fails we cannot tell an owner from a viewer. Allowing writes would keep the
+   * bug; silently dropping an owner's writes would be worse than the false toast
+   * we're fixing. So the Reconfigure Walls affordance is gated on this same flag
+   * — unresolved permission means no editor opens, so there are no edits to lose.
+   */
+  const [canEditWalls, setCanEditWalls] = useState(false)
+  // Ref mirror so the persist/flush callbacks can read permission without taking
+  // it as a dep — their identity feeds the unmount-flush effect below, and
+  // rebuilding that on a permission change would tear down an armed autosave.
+  const canEditWallsRef = useRef(false)
+  useEffect(() => {
+    canEditWallsRef.current = canEditWalls
+  }, [canEditWalls])
   // Tier 1 presence: other members currently in this room (self excluded in the bar).
   const [presentUsers, setPresentUsers] = useState<PresentUser[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -222,6 +246,9 @@ export default function StudioPage() {
     const config = wallPersistLatestRef.current
     if (!config) return
     wallPersistLatestRef.current = null
+    // Defense in depth: persistWallConfig already refuses to arm a timer for a
+    // non-editor, so this only fires if a future caller stages a config directly.
+    if (!canEditWallsRef.current) return
     const wsKey = workspaceId ?? studioId
     // Queued: the writer reads the base version only once this reaches the front
     // of the queue, so it can never collide with a Save & Exit / text / delete
@@ -232,6 +259,10 @@ export default function StudioPage() {
   }, [studioId, workspaceId, cacheWallConfigLocally, wallConfigWriter])
 
   const persistWallConfig = useCallback((config: WallConfig) => {
+    // The single choke point for the debounced autosave: every wall drag/rotate/
+    // stretch/add/undo lands here. A non-editor never arms the timer, so the
+    // unmount flush below has nothing to send either.
+    if (!canEditWallsRef.current) return
     wallPersistLatestRef.current = config
     if (wallPersistTimeoutRef.current) clearTimeout(wallPersistTimeoutRef.current)
     wallPersistTimeoutRef.current = setTimeout(() => {
@@ -306,7 +337,23 @@ export default function StudioPage() {
 
         // Fetch workspace metadata for archive status + breadcrumb + room
         // switcher. Keyed by the resolved workspace id, not the URL param.
-        const wsIdForFetch = resolvedWorkspaceId
+        //
+        // Also resolves wall-write permission. `canEdit` is tracked as a local
+        // alongside the state setter because the first-entry seed below runs in
+        // THIS same pass — the state update wouldn't be visible to it.
+        // `?? studioId` mirrors wallConfigWsId below, and is load-bearing now
+        // that permission is resolved here: /api/boards returns `room: null` for
+        // a legacy /studio/{workspace_id} URL whose workspace has no rooms rows,
+        // so resolvedWorkspaceId is null even though the id in hand IS the
+        // workspace. Without the fallback the block below is skipped and the
+        // OWNER silently drops to read-only on a page that otherwise looks fine.
+        // When studioId is a room id that failed to resolve, this 404s and
+        // canEdit stays false — same as having skipped it.
+        const wsIdForFetch = resolvedWorkspaceId ?? studioId
+        // Demo studios never fetch workspace metadata (there's no workspace to
+        // read), so permission can't be resolved from members. They're a local
+        // sandbox, so keep them editable rather than gating them into read-only.
+        let canEdit = isDemo
         if (!isDemo && wsIdForFetch) {
           try {
             const wsRes = await fetch(`/api/workspaces/${wsIdForFetch}`, { signal })
@@ -325,16 +372,27 @@ export default function StudioPage() {
               const { data: { session: authSession } } = await supabase.auth.getSession()
               const myUserId = authSession?.user?.id
               if (myUserId && Array.isArray(ws?.members)) {
-                const myMember = (ws.members as Array<{ userId: string; role: string }>).find(
-                  (m) => m.userId === myUserId
-                )
+                const members = ws.members as Array<{ userId: string; role: string }>
+                const myMember = members.find((m) => m.userId === myUserId)
                 setCurrentUserRole((myMember?.role as 'instructor' | 'student') ?? null)
+                // `createdBy` is owner_id. The API already forces the owner to
+                // role 'instructor' in this response even when they have no
+                // workspace_members row, so isInstructor alone would cover them
+                // — the explicit owner check is belt-and-braces, not redundancy
+                // we rely on.
+                const isOwner = ws?.createdBy === myUserId
+                const isInstructor = myMember?.role === 'instructor'
+                const isSharedProject = ws?.type === 'shared'
+                canEdit = isOwner || isInstructor || (isSharedProject && !!myMember)
               }
             }
           } catch {
-            // Non-fatal: breadcrumb + archive status are best-effort
+            // Non-fatal: breadcrumb + archive status are best-effort. canEdit
+            // stays false — see the canEditWalls declaration for why that's the
+            // safe direction.
           }
         }
+        setCanEditWalls(canEdit)
 
         // Phase 2a: wall-config is now per-room. The endpoint path segment is
         // still the workspace id (for the auth check); the room id is appended
@@ -351,7 +409,13 @@ export default function StudioPage() {
           if (resConfig.ok) {
             const data = await resConfig.json()
             // Capture the base version so the first save sends the right one.
-            if (typeof data?.version === 'number') {
+            // `readError` means the route couldn't determine what's stored (as
+            // opposed to proving nothing is): it then sends no version at all,
+            // and treating its absence as "unknown" is what keeps us off the
+            // blind-write path. The explicit check is belt-and-braces so a route
+            // that ever regains a version field on an errored read can't be read
+            // as authoritative.
+            if (data?.readError !== true && typeof data?.version === 'number') {
               wallConfigWriter.setVersion(studioId, data.version)
               versionKnown = true
             }
@@ -382,6 +446,13 @@ export default function StudioPage() {
         if (loadedConfig) {
           setWallConfig(loadedConfig)
           if (!versionKnown) wallConfigWriter.markVersionUnknown(studioId, loadedConfig)
+        } else if (!canEdit) {
+          // A viewer opening a room that has no config yet renders the defaults
+          // WITHOUT seeding them. Seeding is a write: it creates the blob and
+          // bumps the version, which 409s the real editor's next save. The room
+          // gets its config from the first person who may actually edit it.
+          setWallConfig(DEFAULT_CONFIG)
+          if (!versionKnown) wallConfigWriter.markVersionUnknown(studioId, DEFAULT_CONFIG)
         } else {
           // First entry: silently persist defaults so subsequent loads just read them.
           setWallConfig(DEFAULT_CONFIG)
@@ -1020,8 +1091,10 @@ export default function StudioPage() {
                 Share
               </button>
 
-              {/* Place 3D model - open floor editor to add tables and upload/position models */}
-              {!isArchived && (
+              {/* Place 3D model - open floor editor to add tables and upload/position models.
+                  Tables live in the same wall-config blob, so this is the same
+                  write power as Reconfigure Walls and gates identically. */}
+              {!isArchived && canEditWalls && (
                 <button
                   onClick={() => { setFloorEditorMode('tables'); setFloorEditorOpen(true) }}
                   className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
@@ -1031,8 +1104,10 @@ export default function StudioPage() {
                 </button>
               )}
 
-              {/* Reconfigure button */}
-              {!isArchived && (
+              {/* Reconfigure button. Gated on canEditWalls as well as archive
+                  status: opening this editor is what used to write the blob, and
+                  showing it to someone whose writes will no-op is a trap. */}
+              {!isArchived && canEditWalls && (
                 <button
                   onClick={handleReconfigureWalls}
                   className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
@@ -1105,7 +1180,7 @@ export default function StudioPage() {
                       <Share2 className="w-4 h-4 text-blue-600" />
                       Share
                     </button>
-                    {!isArchived && (
+                    {!isArchived && canEditWalls && (
                       <button
                         role="menuitem"
                         onClick={() => { setShowStudioMenu(false); setFloorEditorMode('tables'); setFloorEditorOpen(true) }}
@@ -1115,7 +1190,7 @@ export default function StudioPage() {
                         Place 3D model
                       </button>
                     )}
-                    {!isArchived && (
+                    {!isArchived && canEditWalls && (
                       <button
                         role="menuitem"
                         onClick={() => { setShowStudioMenu(false); handleReconfigureWalls() }}
@@ -1166,6 +1241,7 @@ export default function StudioPage() {
             isArchived={isArchived}
             commentNonce={commentNonce}
             currentUserRole={currentUserRole}
+            canEditWalls={canEditWalls}
             wallColor={wallColor}
             wallConfigWriter={wallConfigWriter}
             onEditingWallChange={setCurrentWallIndex}

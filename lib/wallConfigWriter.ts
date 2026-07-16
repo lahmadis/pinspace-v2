@@ -220,8 +220,13 @@ export function useWallConfigWriter(
         })
         if (!res.ok) return null
         const data = (await res.json().catch(() => null)) as
-          | { version?: unknown; config?: unknown; exists?: unknown }
+          | { version?: unknown; config?: unknown; exists?: unknown; readError?: unknown }
           | null
+        // The route couldn't determine what's stored. `exists:false` here means
+        // "don't know", NOT "nothing there" — and the caller reads !exists as
+        // "nothing to destroy", so letting this through would license the very
+        // clobber the rebase guard exists to prevent. Unreadable == unknown.
+        if (data?.readError === true) return null
         const v = data?.version
         if (typeof v !== 'number' || !Number.isFinite(v)) return null
         return { version: v, config: data?.config ?? null, exists: data?.exists === true }

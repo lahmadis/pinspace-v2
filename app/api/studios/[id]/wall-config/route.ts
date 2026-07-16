@@ -32,25 +32,69 @@ function configPath(wsId: string, roomId: string | null): string {
     : `${CONFIG_PREFIX}/${wsId}.json`
 }
 
-async function readConfigAt(filePath: string): Promise<StoredConfig | null> {
+/**
+ * A read either found the blob, proved it absent, or failed to find out.
+ *
+ * The third case used to be indistinguishable from the second: both returned
+ * null, and the GET reported `{exists:false, version:0}` for each. A client that
+ * hit a transient storage error therefore believed the room had NO layout at
+ * version 0, seeded defaults over a room that already had a real layout, and
+ * bumped the version — 409ing the actual editor. Telling them apart is what lets
+ * the client fall back to its rebase-before-write guard instead of writing blind.
+ */
+type ConfigRead =
+  | { status: 'found'; stored: StoredConfig }
+  | { status: 'absent' }
+  | { status: 'error' }
+
+/**
+ * Supabase Storage reports a missing object as an error, so "not found" has to be
+ * picked out of the error rather than inferred from its presence. Anything we
+ * can't positively identify as a 404 is treated as a real failure — guessing
+ * "absent" is the bug this exists to prevent.
+ */
+function isNotFound(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const e = error as { status?: unknown; statusCode?: unknown; message?: unknown }
+  if (e.status === 404 || e.statusCode === 404 || e.statusCode === '404') return true
+  return typeof e.message === 'string' && /not.?found/i.test(e.message)
+}
+
+async function readConfigAt(filePath: string): Promise<ConfigRead> {
   try {
     const db = supabaseServiceRole()
     const { data, error } = await db.storage.from(CONFIG_BUCKET).download(filePath)
-    if (error || !data) return null
+    if (error || !data) {
+      if (error && !isNotFound(error)) {
+        console.warn('Storage wall-config read failed:', filePath, error)
+        return { status: 'error' }
+      }
+      return { status: 'absent' }
+    }
     const raw = await data.text()
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
+    // Present but empty: nothing to parse, and nothing worth protecting.
+    if (!raw) return { status: 'absent' }
+    // Present but unparseable is NOT absent. The blob exists and holds something
+    // we don't understand; reporting it absent would invite a client to seed
+    // defaults straight over it.
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch (err) {
+      console.warn('Storage wall-config blob is not valid JSON:', filePath, err)
+      return { status: 'error' }
+    }
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       // Strip `version` back out so it never leaks into the config the client
       // renders / re-sends. Missing or non-numeric → version 0 (legacy blob).
       const { version, ...config } = parsed as Record<string, unknown>
       const v = typeof version === 'number' && Number.isFinite(version) ? version : 0
-      return { version: v, config }
+      return { status: 'found', stored: { version: v, config } }
     }
-    return { version: 0, config: {} }
+    return { status: 'found', stored: { version: 0, config: {} } }
   } catch (err) {
-    console.warn('Storage wall-config read skipped:', err)
-    return null
+    console.warn('Storage wall-config read failed:', filePath, err)
+    return { status: 'error' }
   }
 }
 
@@ -98,22 +142,44 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   // workspace blob so existing rooms (created before this change, no per-room
   // blob yet) keep showing their current config. The first save will bump the
   // version against whatever path we end up writing to.
+  // `readError` responses deliberately carry NO `version`. Clients gate on
+  // `typeof version === 'number'`, and 0 satisfies that — which is exactly how a
+  // failed read used to masquerade as a known version 0 and license a blind
+  // seed-write. Omitting it makes the client's existing "version unknown" path
+  // (rebase against the server before writing) engage on its own.
+  const readErrorBody = { exists: false, config: null, readError: true }
+
   if (roomId) {
     const perRoom = await readConfigAt(configPath(id, roomId))
-    if (perRoom) {
-      return jsonNoStore({ exists: true, config: perRoom.config, version: perRoom.version }, { status: 200 })
+    if (perRoom.status === 'found') {
+      return jsonNoStore(
+        { exists: true, config: perRoom.stored.config, version: perRoom.stored.version },
+        { status: 200 }
+      )
     }
+    // Do NOT fall back to the legacy blob when the per-room read FAILED: absent
+    // is what licenses the fallback, and we don't know that this is absent.
+    if (perRoom.status === 'error') return jsonNoStore(readErrorBody, { status: 200 })
+
     const legacy = await readConfigAt(configPath(id, null))
-    if (legacy) {
-      return jsonNoStore({ exists: true, config: legacy.config, version: legacy.version }, { status: 200 })
+    if (legacy.status === 'found') {
+      return jsonNoStore(
+        { exists: true, config: legacy.stored.config, version: legacy.stored.version },
+        { status: 200 }
+      )
     }
+    if (legacy.status === 'error') return jsonNoStore(readErrorBody, { status: 200 })
     return jsonNoStore({ exists: false, config: null, version: 0 }, { status: 200 })
   }
 
   const stored = await readConfigAt(configPath(id, null))
-  if (stored) {
-    return jsonNoStore({ exists: true, config: stored.config, version: stored.version }, { status: 200 })
+  if (stored.status === 'found') {
+    return jsonNoStore(
+      { exists: true, config: stored.stored.config, version: stored.stored.version },
+      { status: 200 }
+    )
   }
+  if (stored.status === 'error') return jsonNoStore(readErrorBody, { status: 200 })
   return jsonNoStore({ exists: false, config: null, version: 0 }, { status: 200 })
 }
 
@@ -149,7 +215,15 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     // counter is scoped to that same blob. The legacy path is only used when
     // roomId is omitted (back-compat for older clients).
     const writePath = configPath(id, roomId)
-    const current = await readConfigAt(writePath)
+    // Behaviour-preserving mapping onto readConfigAt's discriminated result: a
+    // failed read collapses to null exactly as it did before, so the conflict
+    // rule below is untouched. (A read error here still lets a baseVersion-0
+    // write land on a blob that may exist — but the client no longer SENDS that
+    // write, since a readError GET now leaves its version unknown and routes it
+    // through the rebase guard. Hardening the POST itself is a server-side
+    // change and is deliberately out of scope for this pass.)
+    const read = await readConfigAt(writePath)
+    const current = read.status === 'found' ? read.stored : null
     const currentVersion = current?.version ?? 0
 
     // Stale write: the client's base is behind what's stored. Reject with 409

@@ -170,7 +170,16 @@ export default function FloorEditorOverlay({
   // World-per-pixel conversion used in drag handlers
   const invScale = 1 / uniformScale
 
-  // When entering walls mode with no custom transforms, freeze current layout
+  // When entering walls mode with no custom transforms, freeze current layout.
+  //
+  // persist:false is load-bearing. This runs on MOUNT, from rendering the editor
+  // rather than from any user edit, and it derives the transforms purely from the
+  // config already on screen (getWallTransform is what the 3D view renders from) —
+  // so it adds no information the server doesn't already hold. Persisting it wrote
+  // the blob and bumped the version merely because someone OPENED the editor,
+  // which 409'd the real editor's next save as a false "updated by another user".
+  // The synthesized transforms are display state; they ride to the server with the
+  // first genuine edit, or with Save & Exit, which send the whole config anyway.
   useEffect(() => {
     if (mode !== 'walls' || !onWallConfigChange) return
     const hasCustom = (wallConfig.customTransforms?.length ?? 0) >= wallConfig.walls.length
@@ -180,7 +189,7 @@ export default function FloorEditorOverlay({
       return { x: t.x, z: t.z, rotationY: t.rotationY }
     })
     const next = { ...wallConfig, customTransforms }
-    onWallConfigChange(next)
+    onWallConfigChange(next, { persist: false })
   }, [mode])
 
   // Initialize undo history when entering walls mode
