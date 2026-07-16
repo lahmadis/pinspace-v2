@@ -155,9 +155,9 @@ export default function DemoStudioRoomPage() {
               onBoardClick={(board) => {
                 console.log('Board clicked:', board.title)
               }}
-              onWallClick={(wallIndex) => {
+              onWallDoubleClick={(wallIndex) => {
                 // View mode - no edit functionality
-                console.log('Wall clicked:', wallIndex)
+                console.log('Wall double-clicked:', wallIndex)
               }}
             />
           </Suspense>

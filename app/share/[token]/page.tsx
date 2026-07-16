@@ -411,7 +411,7 @@ export default function SharePage() {
           <WallSystem
             boards={boards}
             wallConfig={wallConfig}
-            onWallClick={() => {}}
+            onWallDoubleClick={() => {}}
             editingWall={null}
             onBoardClick={handleBoardClick}
             wallColor={wallColor}

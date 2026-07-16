@@ -371,7 +371,7 @@ function StudioPlot({
       <WallSystem
         boards={renderBoards ? studio.boards || [] : []}
         wallConfig={{ ...wallConfig, layoutType: wallConfig.layoutType || 'square' } as any} // eslint-disable-line @typescript-eslint/no-explicit-any
-        onWallClick={() => {}}
+        onWallDoubleClick={() => {}}
         editingWall={null}
         highlightedBoardId={highlightedBoardId}
         onBoardClick={onBoardClick}

@@ -148,7 +148,7 @@ export default function DemoStudioRoomPage() {
               onBoardClick={(board) => {
                 console.log('Board clicked:', board.title)
               }}
-              onWallClick={(wallIndex) => {
+              onWallDoubleClick={(wallIndex) => {
                 if (editingWall === null) {
                   setEditingWall(wallIndex)
                 }

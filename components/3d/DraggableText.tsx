@@ -176,6 +176,10 @@ export function DraggableText({
         {/* Invisible drag/select target */}
         <mesh
           onPointerDown={handlePointerDown}
+          // The wall plane behind this label opens edit mode on double click,
+          // and R3F only stops the walk on objects carrying that named handler.
+          // Swallow it so double-clicking a label can't jump edit mode.
+          onDoubleClick={(e) => e.stopPropagation()}
           onPointerOver={(e) => {
             e.stopPropagation()
             gl.domElement.style.cursor = 'grab'

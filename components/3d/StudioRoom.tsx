@@ -161,7 +161,7 @@ function SceneContent({
   wallConfig,
   othersEditingWalls,
   onBoardUpdate: _onBoardUpdate,
-  onWallClick,
+  onWallDoubleClick,
   onWallHover,
   editingWall,
   placedBoards3D,
@@ -197,7 +197,7 @@ function SceneContent({
   wallColor = 'grey',
   lightboxOpen,
 }: StudioRoomProps & {
-  onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
+  onWallDoubleClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   /** Pointer-over on a wall surface. Used to fire-and-forget pre-warm board textures. */
   onWallHover?: (wallIndex: number, side: 'front' | 'back') => void
   editingWall: number | null
@@ -319,7 +319,7 @@ function SceneContent({
         // Merge live text items into the config so saved labels render in the
         // normal 3D room (WallSystem reads wallConfig.textItems).
         wallConfig={{ ...wallConfig, textItems }}
-        onWallClick={onWallClick}
+        onWallDoubleClick={onWallDoubleClick}
         onWallHover={onWallHover}
         editingWall={editingWall}
         editUIActive={showEditUI}
@@ -1244,7 +1244,9 @@ export default function StudioRoom(props: StudioRoomProps) {
     }
   }, [localBoards])
 
-  const handleWallClick = (
+  // Enters 2D edit mode for a wall side. Fires on DOUBLE click only — a single
+  // click stays free for orbit/drag.
+  const handleWallDoubleClick = (
     wallIndex: number,
     wallDimensions: WallDimensions,
     position: THREE.Vector3,
@@ -1252,11 +1254,11 @@ export default function StudioRoom(props: StudioRoomProps) {
     side: 'front' | 'back'
   ) => {
     if (props.isArchived) return
-    // Belt-and-suspenders prefetch for users who click without hovering
+    // Belt-and-suspenders prefetch for users who double-click without hovering
     // (touch, fast clickers, keyboard). Idempotent — handleWallHover early-
     // returns for already-prefetched walls.
     handleWallHover(wallIndex, side)
-    devLog('🖼️ [StudioRoom] Wall clicked:', wallIndex, 'rotation:', rotation, 'side:', side)
+    devLog('🖼️ [StudioRoom] Wall double-clicked:', wallIndex, 'rotation:', rotation, 'side:', side)
 
     // If we're already editing this wall and side, don't reinitialize
     if (editingWall === wallIndex && editingWallSide === side) {
@@ -2237,7 +2239,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             showEditUI={showEditUI}
             lightboxOpen={lightboxBoard !== null}
             localBoards={localBoards}
-            onWallClick={handleWallClick}
+            onWallDoubleClick={handleWallDoubleClick}
             onWallHover={handleWallHover}
             editingWall={editingWall}
             placedBoards3D={placedBoards3D}

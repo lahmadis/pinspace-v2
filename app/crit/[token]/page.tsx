@@ -796,7 +796,7 @@ export default function CritPage() {
           <WallSystem
             boards={boards}
             wallConfig={wallConfig}
-            onWallClick={() => {}}
+            onWallDoubleClick={() => {}}
             editingWall={null}
             onBoardClick={handleBoardClick}
             wallColor={wallColor}

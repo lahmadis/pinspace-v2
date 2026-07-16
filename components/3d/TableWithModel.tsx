@@ -170,6 +170,16 @@ export default function TableWithModel({ table, onTableClick }: TableWithModelPr
     if (hasModel && table.modelUrl && onTableClick) onTableClick(table.modelUrl)
   }
 
+  // A wall's invisible raycast plane opens 2D edit mode on double click, and a
+  // table usually has a wall somewhere behind it along the ray. R3F only stops
+  // the intersection walk on objects that actually carry the named handler, so
+  // handleClick's stopPropagation does nothing for dblclick — without this, a
+  // double click on a table would open the model viewer AND drop edit mode
+  // behind it. Swallow unconditionally: the table occludes the wall.
+  const handleDoubleClick = (e: { stopPropagation: () => void }) => {
+    e.stopPropagation()
+  }
+
   const handlePointerOver = (e: { stopPropagation: () => void }) => {
     if (!hasModel) return
     e.stopPropagation()
@@ -188,6 +198,7 @@ export default function TableWithModel({ table, onTableClick }: TableWithModelPr
       position={[table.x, 0, table.z]}
       rotation={[0, rotationY, 0]}
       onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}
     >

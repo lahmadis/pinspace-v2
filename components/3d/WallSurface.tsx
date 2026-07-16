@@ -2,10 +2,24 @@ import * as THREE from 'three'
 import { useMemo, useState } from 'react'
 import { ThreeEvent } from '@react-three/fiber'
 
+// R3F reports `delta` on click-family events: pixels travelled since the last
+// pointerdown. The browser already refuses to fire dblclick when the two clicks
+// land far apart, so this only has to catch what it does allow — a small orbit
+// drag repeated in place, which should rotate the camera, not open edit mode.
+// Slightly looser than R3F's own internal threshold of 2 so a jittery-but-real
+// double click still registers.
+const DRAG_THRESHOLD_PX = 4
+
 interface WallSurfaceProps {
   wallDimensions: { width: number; height: number } // feet
   side: 'front' | 'back'
-  onSurfaceClick: (params: {
+  /**
+   * Fires on DOUBLE click only — a single click on a wall is deliberately inert
+   * so it stays free for orbit/drag. Wired to R3F's onDoubleClick, which maps to
+   * the native dblclick event, so double-click timing is the browser's (and thus
+   * the platform's) rather than a hand-rolled timer.
+   */
+  onSurfaceDoubleClick: (params: {
     side: 'front' | 'back'
     localPoint: THREE.Vector2
     worldPoint: THREE.Vector3
@@ -13,20 +27,21 @@ interface WallSurfaceProps {
   /**
    * Fires on pointer-over. WallSystem uses this to kick off a fire-and-forget
    * texture pre-warm for boards on this side, so the user's subsequent
-   * wall-click into edit mode doesn't show the grey skeleton placeholder.
+   * double-click into edit mode doesn't show the grey skeleton placeholder.
    */
   onSurfaceHover?: (params: { side: 'front' | 'back' }) => void
   visibleOutline?: boolean
 }
 
 /**
- * Clickable, invisible plane representing one wall face (front/back).
- * Geometry is axis-aligned in local space; parent group handles rotation/position.
+ * Invisible plane representing one wall face (front/back), activated by DOUBLE
+ * click. Geometry is axis-aligned in local space; parent group handles
+ * rotation/position.
  */
 export function WallSurface({
   wallDimensions,
   side,
-  onSurfaceClick,
+  onSurfaceDoubleClick,
   onSurfaceHover,
   visibleOutline = false,
 }: WallSurfaceProps) {
@@ -41,15 +56,17 @@ export function WallSurface({
   // Optional hover outline (very light)
   const [hovered, setHovered] = useState(false)
 
-  const handleClick = (e: ThreeEvent<MouseEvent>) => {
+  const handleDoubleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
+    // Ignore a double click that ended a drag — that gesture was an orbit.
+    if (e.delta > DRAG_THRESHOLD_PX) return
     // Local coordinates on the plane: x,y in plane space (centered)
     const local = e.intersections[0]?.uv
     if (!local) return
     // Convert uv (0..1) to centered (-0.5..0.5)
     const localPoint = new THREE.Vector2(local.x - 0.5, local.y - 0.5)
     const worldPoint = e.point.clone()
-    onSurfaceClick({
+    onSurfaceDoubleClick({
       side,
       localPoint,
       worldPoint,
@@ -60,7 +77,7 @@ export function WallSurface({
     <mesh
       position={[0, 0, zOffset]}
       rotation={[0, 0, 0]}
-      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
       onPointerOver={() => {
         setHovered(true)
         onSurfaceHover?.({ side })

@@ -958,12 +958,18 @@ if (e.intersections && e.intersections.length > 0) {
           onClick={(e) => {
             // Stop propagation so the invisible wall plane doesn't get the click
             e.stopPropagation()
-            
+
             // Select the board when clicked
             if (onSelect) {
               onSelect()
             }
           }}
+          // Same shield as onClick above, for the other event name: the wall
+          // plane opens edit mode on double click, and R3F only stops the walk
+          // on objects carrying that named handler — so without this a double
+          // click on a board overhanging the wall edge could reach an ADJACENT
+          // wall's plane and jump edit mode mid-edit.
+          onDoubleClick={(e) => e.stopPropagation()}
           // Make sure boards render in front of the invisible wall plane
           renderOrder={1}
           onPointerOver={(e) => {

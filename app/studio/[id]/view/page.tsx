@@ -636,7 +636,7 @@ export default function StudioViewPage() {
           <WallSystem
             boards={boards}
             wallConfig={wallConfig}
-            onWallClick={() => {}} // No wall click in view mode
+            onWallDoubleClick={() => {}} // No wall edit in view mode
             editingWall={null}
             onBoardClick={handleBoardClick}
             wallColor={wallColor}

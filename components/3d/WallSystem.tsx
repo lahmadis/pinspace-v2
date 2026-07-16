@@ -25,7 +25,11 @@ interface WallConfig {
 interface WallSystemProps {
   boards: Board[]
   wallConfig: WallConfig
-  onWallClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
+  /**
+   * Fires on DOUBLE click of a wall surface (single click is inert, leaving it
+   * free for orbit/drag). StudioRoom uses this to enter 2D edit mode.
+   */
+  onWallDoubleClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   /**
    * Fires when the pointer enters a wall surface. StudioRoom uses this to
    * fire-and-forget pre-warm board full-image textures for the boards on
@@ -88,7 +92,7 @@ const WALL_PALETTES: Record<'grey' | 'white', {
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', lightboxOpen = false }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', lightboxOpen = false }: WallSystemProps) {
 
   const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
@@ -135,20 +139,20 @@ export default function WallSystem({ boards, wallConfig, onWallClick, onWallHove
             <WallSurface
               wallDimensions={wall}
               side="front"
-              onSurfaceClick={({ side }) => {
+              onSurfaceDoubleClick={({ side }) => {
                 const position = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
                 const rotation = transform.rotationY
-                onWallClick?.(wallIndex, wall, position, rotation, side)
+                onWallDoubleClick?.(wallIndex, wall, position, rotation, side)
               }}
               onSurfaceHover={({ side }) => onWallHover?.(wallIndex, side)}
             />
             <WallSurface
               wallDimensions={wall}
               side="back"
-              onSurfaceClick={({ side }) => {
+              onSurfaceDoubleClick={({ side }) => {
                 const position = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
                 const rotation = transform.rotationY
-                onWallClick?.(wallIndex, wall, position, rotation + Math.PI, side)
+                onWallDoubleClick?.(wallIndex, wall, position, rotation + Math.PI, side)
               }}
               onSurfaceHover={({ side }) => onWallHover?.(wallIndex, side)}
             />

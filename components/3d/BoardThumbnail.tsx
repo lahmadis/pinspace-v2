@@ -146,6 +146,18 @@ export default function BoardThumbnail({ board, position, width, height, onClick
     e.stopPropagation()
   }
 
+  // The wall's invisible raycast plane sits directly behind every board (board
+  // z ±3.2 vs plane ±3.01) and opens 2D edit mode on double click. R3F
+  // dispatches each event name independently and only stops the walk when the
+  // hit object actually HAS that handler — so handleClick's stopPropagation
+  // does nothing for dblclick, and without this a double click on a board would
+  // open the lightbox AND drop edit mode behind it. Swallow it unconditionally:
+  // a board occludes the wall, so a double click there is never meant for it.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleDoubleClick = (e: any) => {
+    e.stopPropagation()
+  }
+
   // Phase 6: board rotation is no longer applied — boards render flat.
   // The DB column is preserved for non-destructive removal; we just ignore
   // any stored value on render.
@@ -164,6 +176,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
         receiveShadow
         renderOrder={1}
         onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
         onPointerDown={handlePointerDown}
       >
         <boxGeometry args={[width, height, BOARD_THICKNESS]} />
