@@ -22,8 +22,13 @@ interface FloorEditorOverlayProps {
   onSaveAndExit: () => void
   /** 'tables' = place/move tables and models; 'walls' = move and rotate walls */
   mode?: 'tables' | 'walls'
-  /** Called when wall positions/rotations change (walls mode). */
-  onWallConfigChange?: (config: WallConfig) => void
+  /**
+   * Called when wall positions/rotations change (walls mode). Persists via the
+   * parent's debounced autosave unless `persist: false` — that means the caller
+   * writes the config itself and the pending autosave must be dropped so it can't
+   * later clobber that write with a pre-change config.
+   */
+  onWallConfigChange?: (config: WallConfig, opts?: { persist?: boolean }) => void
   /**
    * Per-board wall index for every board in the current room, used to decide
    * whether a wall is "occupied" before allowing deletion. We deliberately
@@ -552,10 +557,12 @@ export default function FloorEditorOverlay({
    * Atomic wall delete. Same path for the empty-wall case (no modal) and
    * the confirm-from-modal case (boards will also be deleted server-side).
    *   (1) await re-index PATCH. Fail → toast, abort, change nothing.
-   *   (2) splice walls[i] + customTransforms[i] and call onWallConfigChange.
-   *   (3) await geometry POST through the same path Save & Exit uses; the
-   *       parent bumps wallVersionRef from the response so a later Save &
-   *       Exit doesn't 409 against a stale version.
+   *   (2) splice walls[i] + customTransforms[i] and call onWallConfigChange
+   *       with persist:false — local state only; step (3) owns the write.
+   *   (3) await geometry POST through the same path Save & Exit uses. It goes
+   *       through the shared wall-config writer, which serializes it against
+   *       every other write and adopts the new version from the response, so a
+   *       later Save & Exit can't 409 against a stale version.
    *   (4) If only (3) failed, toast "please refresh" — rare both-must-fail.
    *   (5) onBoardUpdate (StudioRoom does this inside onWallRemoved).
    *   (6) Clear selection + close modal.
@@ -589,7 +596,15 @@ export default function FloorEditorOverlay({
         }
       }
 
-      onWallConfigChange(next)
+      // ONE write for one delete. `persist: false` updates local state only and
+      // cancels the pending debounced autosave; onPersistWallConfig then owns the
+      // write. Previously both fired: the autosave and this persist read the same
+      // base version and, whenever the persist took longer than the 500ms
+      // debounce, the loser 409'd — a false "another user" toast for a delete the
+      // user performed alone. We keep the persist (not the autosave) because it is
+      // awaited and returns ok/fail, which this path needs to sequence against the
+      // board re-index already committed server-side and to toast on failure.
+      onWallConfigChange(next, { persist: false })
       if (onPersistWallConfig) {
         const persistResult = await onPersistWallConfig(next)
         if (!persistResult.ok) {

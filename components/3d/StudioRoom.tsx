@@ -24,6 +24,7 @@ import { DraggableBoard } from './DraggableBoard'
 import { DraggableText } from './DraggableText'
 import { WallDropZone } from '@/components/3d/WallDropZone'
 import type { WallTextItem } from '@/lib/wallLayout'
+import type { WallConfigWriter } from '@/lib/wallConfigWriter'
 import RightCommentPanel from '@/components/RightCommentPanel'
 import LightboxModal from '@/components/LightboxModal'
 import { useBoardState } from './useBoardState'
@@ -98,7 +99,12 @@ interface StudioRoomProps {
   /** 'tables' = place tables/models, 'walls' = move/rotate walls. */
   floorEditorMode?: 'tables' | 'walls'
   /** Called when user updates wall positions/rotations in floor editor (walls mode). */
-  onWallConfigChange?: (config: WallConfig) => void
+  /**
+   * Local wall-config change. Persists via the page's debounced autosave unless
+   * `persist: false`, which means the caller owns the write itself (see
+   * FloorEditorOverlay's wall delete).
+   */
+  onWallConfigChange?: (config: WallConfig, opts?: { persist?: boolean }) => void
   /** When true, upload and editing are disabled (view-only mode). */
   isArchived?: boolean
   /** Increments on any realtime comment change so open panels refetch. */
@@ -108,18 +114,13 @@ interface StudioRoomProps {
   /** Room-level wall color for the 3D walls. Defaults to 'grey' (current look). */
   wallColor?: 'grey' | 'white'
   /**
-   * Tier 2 optimistic-concurrency: shared mutable base version the wall-config
-   * blob is based on. Read when POSTing a floor/wall save; bumped on success.
-   * Owned by the studio page so the geometry-drag path and the floor-editor
-   * path share one version.
+   * Tier 2 optimistic-concurrency: the shared wall-config write gate, owned by
+   * the studio page. Owns the base version AND serializes every write, so the
+   * page's autosave and this component's three writers can never ship the same
+   * baseVersion. Reports real 409s to the page itself (toast + reload), so
+   * callers only need the ok/conflict/error result.
    */
-  wallVersionRef?: React.MutableRefObject<number>
-  /**
-   * Called with the server's latest config (incl. embedded `version`) when a
-   * wall-config save is rejected as stale (409). The parent reloads local state
-   * and shows the conflict toast.
-   */
-  onWallConfigConflict?: (latest: Record<string, unknown> & { version?: number }) => void
+  wallConfigWriter?: WallConfigWriter
   /**
    * Phase B.2: follow-presenter camera sync (ephemeral broadcast). The page owns
    * the studio-live channel + state and threads these through.
@@ -881,45 +882,21 @@ export default function StudioRoom(props: StudioRoomProps) {
         // Local cache is best-effort only; API save remains source of truth.
       }
     }
-    // Tier 2: send the version this layout is based on. A 409 means another
-    // user changed the room first — don't retry (it isn't transient); hand the
-    // latest back to the parent to reload + toast.
-    const savePayload = JSON.stringify({ baseVersion: props.wallVersionRef?.current ?? 0, config: payload })
-    const saveOnce = async (): Promise<'ok' | 'conflict'> => {
-      const res = await fetch(`/api/studios/${wsKey}/wall-config?roomId=${encodeURIComponent(roomId)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        keepalive: true,
-        body: savePayload,
-      })
-      if (res.status === 409) {
-        const data = await res.json().catch(() => ({} as { latest?: Record<string, unknown> & { version?: number } }))
-        if (data.latest && props.onWallConfigConflict) props.onWallConfigConflict(data.latest)
-        return 'conflict'
-      }
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({} as { error?: string }))
-        throw new Error(data.error || `HTTP ${res.status}`)
-      }
-      const data = await res.json().catch(() => ({} as { version?: number }))
-      if (typeof data.version === 'number' && props.wallVersionRef) props.wallVersionRef.current = data.version
-      return 'ok'
-    }
-
+    // Tier 2: queued through the shared writer, which owns the base version and
+    // guarantees this can't race the page's debounced autosave — clicking Save &
+    // Exit right after a drag (i.e. inside the 500ms debounce) used to send the
+    // same baseVersion twice and 409 against itself. The writer retries transport
+    // failures and reports real conflicts to the page.
+    const writer = props.wallConfigWriter
     ;(async () => {
-      try {
-        if ((await saveOnce()) === 'conflict') return
-      } catch (firstError) {
-        try {
-          if ((await saveOnce()) === 'conflict') return
-        } catch (secondError) {
-          console.error('Failed to save floor/wall config', { firstError, secondError })
-          const message = secondError instanceof Error ? secondError.message : 'Please try again.'
-          toast.error(`Could not save studio model layout. ${message}`)
-        }
+      if (!writer) return
+      const result = await writer.write({ wsKey, roomId, config: payload, keepalive: true })
+      if (result.status === 'error') {
+        console.error('Failed to save floor/wall config', result.error)
+        toast.error(`Could not save studio model layout. ${result.error.message}`)
       }
     })()
-  }, [props.studioId, props.workspaceId, props.wallConfig, props.wallVersionRef, props.onWallConfigConflict, tables, textItems])
+  }, [props.studioId, props.workspaceId, props.wallConfig, props.wallConfigWriter, tables, textItems])
 
   /**
    * Wall indices for the floor editor's board-safety guard. Just the indices —
@@ -969,14 +946,15 @@ export default function StudioRoom(props: StudioRoomProps) {
   )
 
   /**
-   * Persist a wall config snapshot through the same endpoint Save & Exit
-   * uses (POST /api/studios/[wsId]/wall-config?roomId=...), updating the
-   * local version counter from the response. Used by the floor editor to
+   * Persist a wall config snapshot through the shared writer (same queue and
+   * version as Save & Exit and the page's autosave). Used by the floor editor to
    * commit the geometry half of an atomic wall delete: deleting a wall
    * decrements board indices in the DB right away, so the wall config has
    * to land in the same logical transaction (best-effort here — a separate
-   * tx isn't available). Returns `{ ok: false }` on any non-2xx response
-   * including 409; a 409 also bubbles up through onWallConfigConflict.
+   * tx isn't available). This is the SOLE write for a delete — the editor calls
+   * onWallConfigChange with persist:false so the debounced autosave doesn't race
+   * it. Returns `{ ok: false }` on conflict or error; the writer reports a real
+   * 409 to the page (reload + toast) itself.
    */
   const handlePersistWallConfig = useCallback(
     async (nextConfig: WallConfig): Promise<{ ok: boolean }> => {
@@ -995,47 +973,19 @@ export default function StudioRoom(props: StudioRoomProps) {
       const payload = { ...nextConfig, tables: tablesToSave, textItems }
       const wsKey = props.workspaceId ?? props.studioId
       const roomId = props.studioId
-      const body = JSON.stringify({
-        baseVersion: props.wallVersionRef?.current ?? 0,
-        config: payload,
-      })
-      try {
-        const res = await fetch(
-          `/api/studios/${wsKey}/wall-config?roomId=${encodeURIComponent(roomId)}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body,
-          }
-        )
-        if (res.status === 409) {
-          const data = await res
-            .json()
-            .catch(() => ({} as { latest?: Record<string, unknown> & { version?: number } }))
-          if (data.latest && props.onWallConfigConflict) props.onWallConfigConflict(data.latest)
-          return { ok: false }
-        }
-        if (!res.ok) {
-          console.error('persist wall config failed', { status: res.status })
-          return { ok: false }
-        }
-        const data = await res.json().catch(() => ({} as { version?: number }))
-        if (typeof data.version === 'number' && props.wallVersionRef) {
-          props.wallVersionRef.current = data.version
-        }
-        return { ok: true }
-      } catch (err) {
-        console.error('persist wall config threw', err)
-        return { ok: false }
-      }
+      const writer = props.wallConfigWriter
+      if (!writer) return { ok: false }
+      const result = await writer.write({ wsKey, roomId, config: payload })
+      if (result.status === 'error') console.error('persist wall config failed', result.error)
+      return { ok: result.status === 'ok' }
     },
-    [tables, textItems, props.studioId, props.workspaceId, props.wallVersionRef, props.onWallConfigConflict]
+    [tables, textItems, props.studioId, props.workspaceId, props.wallConfigWriter]
   )
 
   /**
-   * Persist the CURRENT blob with the given text items, through the SAME
-   * versioned wall-config POST tables/geometry use (baseVersion → 409 →
-   * onWallConfigConflict). keepalive so a save survives a navigation right
+   * Persist the CURRENT blob with the given text items, through the SAME shared
+   * writer (and therefore the same queue + version) that tables/geometry use.
+   * keepalive so a save survives a navigation right
    * after the gesture — this is the write DELETE/remove goes through, so it is
    * naturally safe (it does NOT copy the non-keepalive un-place clear at the
    * boards path). We include `tables` too so a text save never wipes tables.
@@ -1059,41 +1009,17 @@ export default function StudioRoom(props: StudioRoomProps) {
       const payload = { ...props.wallConfig, tables: tablesToSave, textItems: items }
       const wsKey = props.workspaceId ?? props.studioId
       const roomId = props.studioId
-      const body = JSON.stringify({ baseVersion: props.wallVersionRef?.current ?? 0, config: payload })
-      const saveOnce = async (): Promise<'ok' | 'conflict'> => {
-        const res = await fetch(`/api/studios/${wsKey}/wall-config?roomId=${encodeURIComponent(roomId)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          keepalive: true,
-          body,
-        })
-        if (res.status === 409) {
-          const data = await res.json().catch(() => ({} as { latest?: Record<string, unknown> & { version?: number } }))
-          if (data.latest && props.onWallConfigConflict) props.onWallConfigConflict(data.latest)
-          return 'conflict'
-        }
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({} as { error?: string }))
-          throw new Error(data.error || `HTTP ${res.status}`)
-        }
-        const data = await res.json().catch(() => ({} as { version?: number }))
-        if (typeof data.version === 'number' && props.wallVersionRef) props.wallVersionRef.current = data.version
-        return 'ok'
-      }
+      const writer = props.wallConfigWriter
       ;(async () => {
-        try {
-          if ((await saveOnce()) === 'conflict') return
-        } catch (firstError) {
-          try {
-            if ((await saveOnce()) === 'conflict') return
-          } catch (secondError) {
-            console.error('Failed to save wall text', { firstError, secondError })
-            toast.error('Could not save text. Please try again.')
-          }
+        if (!writer) return
+        const result = await writer.write({ wsKey, roomId, config: payload, keepalive: true })
+        if (result.status === 'error') {
+          console.error('Failed to save wall text', result.error)
+          toast.error('Could not save text. Please try again.')
         }
       })()
     },
-    [tables, props.wallConfig, props.workspaceId, props.studioId, props.wallVersionRef, props.onWallConfigConflict]
+    [tables, props.wallConfig, props.workspaceId, props.studioId, props.wallConfigWriter]
   )
 
   // Debounced variant for content typing — coalesces keystrokes into one POST.

@@ -13,6 +13,7 @@ import { ArrowLeft, Share2, Settings, Box, ChevronDown, Menu, X, Presentation } 
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import { DEFAULT_WALL_CONFIG, type WallConfig } from '@/lib/wallLayout'
+import { useWallConfigWriter } from '@/lib/wallConfigWriter'
 
 type RealtimeBoardPayload = {
   eventType: 'INSERT' | 'UPDATE' | 'DELETE'
@@ -130,18 +131,6 @@ export default function StudioPage() {
 
   const isDemo = searchParams?.get('demo') === 'true'
 
-  // Tier 2 optimistic-concurrency: the version the local wallConfig is based on.
-  // A ref (not state) so save callbacks always read the freshest value without
-  // re-creating and without stale-closure risk. Bumped on every successful save;
-  // adopted from the server on load and on a 409 reload.
-  const wallVersionRef = useRef<number>(0)
-
-  // Clear stale wall config whenever the room changes so the previous room's
-  // layout is never visible while the new room's config is loading.
-  useEffect(() => {
-    setWallConfig(null)
-  }, [studioId])
-
   // Wall-config persistence: debounce network writes so a drag at 60fps doesn't fire 60 POSTs/sec.
   // Local UI state still updates immediately; only the fetch is throttled.
   const wallPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -185,12 +174,16 @@ export default function StudioPage() {
   }, [studioId])
 
   // 409 handler: a save was rejected as stale. Adopt the server's latest config
-  // (strip the embedded version back out so wallConfig stays clean), update the
-  // base version, and tell the user their unsaved changes were discarded.
+  // (strip the embedded version back out so wallConfig stays clean) and tell the
+  // user their unsaved changes were discarded. The writer has already adopted the
+  // version by the time this runs, so this only touches UI state.
+  //
+  // Reaching here now means a REAL conflict: writes from this client are
+  // serialized, so a version mismatch that survives the queue came from someone
+  // else (or this user in another tab).
   const handleWallConfigConflict = useCallback(
     (latest: Record<string, unknown> & { version?: number }) => {
-      const { version, ...config } = latest
-      if (typeof version === 'number') wallVersionRef.current = version
+      const { version: _version, ...config } = latest
       const nextConfig = config as unknown as WallConfig
       setWallConfig(nextConfig)
       cacheWallConfigLocally(nextConfig)
@@ -199,31 +192,44 @@ export default function StudioPage() {
     [cacheWallConfigLocally]
   )
 
+  // Tier 2 optimistic-concurrency. The writer owns BOTH the base version and a
+  // serialization queue, and EVERY wall-config write (this page's autosave plus
+  // Save & Exit, wall-delete and text-items in StudioRoom) goes through it.
+  // Holding the version and the queue in one object is the point: writes used to
+  // read the version at payload-build time, so two overlapping in flight shipped
+  // the same baseVersion and the second to land 409'd against the version the
+  // first had just created — the false "updated by another user" toast with a
+  // single user in the room.
+  const wallConfigWriter = useWallConfigWriter(handleWallConfigConflict)
+
+  // Room change: drop the previous room's layout so it's never briefly shown as
+  // this room's, and tell the writer which room is on screen so a conflict from
+  // the room we just left can't toast over this one. We deliberately do NOT touch
+  // the version here: it's keyed per room inside the writer, so room A's number
+  // can't leak into room B, and the trailing flush of room A's pending autosave
+  // (fired from the effect cleanup below, during this switch) still needs it.
+  useEffect(() => {
+    setWallConfig(null)
+    wallConfigWriter.setCurrentRoom(studioId)
+    // On unmount there is no studio on screen, so a late conflict from a write
+    // still in flight has no business toasting over whatever page the user is on
+    // now. (On a room switch this is immediately followed by setCurrentRoom of
+    // the new room — cleanups all run before setups.)
+    return () => wallConfigWriter.setCurrentRoom(null)
+  }, [studioId, wallConfigWriter])
+
   const flushWallConfig = useCallback(async () => {
     const config = wallPersistLatestRef.current
     if (!config) return
     wallPersistLatestRef.current = null
     const wsKey = workspaceId ?? studioId
-    try {
-      const res = await fetch(`/api/studios/${wsKey}/wall-config?roomId=${encodeURIComponent(studioId)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseVersion: wallVersionRef.current, config }),
-      })
-      if (res.status === 409) {
-        const data = await res.json().catch(() => ({} as { latest?: Record<string, unknown> & { version?: number } }))
-        if (data.latest) handleWallConfigConflict(data.latest)
-        return
-      }
-      if (res.ok) {
-        const data = await res.json().catch(() => ({} as { version?: number }))
-        if (typeof data.version === 'number') wallVersionRef.current = data.version
-        cacheWallConfigLocally(config)
-      }
-    } catch (e) {
-      console.error('Failed to save wall config', e)
-    }
-  }, [studioId, workspaceId, cacheWallConfigLocally, handleWallConfigConflict])
+    // Queued: the writer reads the base version only once this reaches the front
+    // of the queue, so it can never collide with a Save & Exit / text / delete
+    // write that is already in flight. 409 → the writer already reported it.
+    const result = await wallConfigWriter.write({ wsKey, roomId: studioId, config })
+    if (result.status === 'ok') cacheWallConfigLocally(config)
+    else if (result.status === 'error') console.error('Failed to save wall config', result.error)
+  }, [studioId, workspaceId, cacheWallConfigLocally, wallConfigWriter])
 
   const persistWallConfig = useCallback((config: WallConfig) => {
     wallPersistLatestRef.current = config
@@ -233,6 +239,22 @@ export default function StudioPage() {
       flushWallConfig()
     }, 500)
   }, [flushWallConfig])
+
+  /**
+   * Drop any pending debounced autosave. Used when a caller takes ownership of
+   * writing this config itself (the wall delete, which must await its write to
+   * sequence against the board re-index it already committed server-side).
+   * Without this the timer from an earlier drag would still be armed and would
+   * later re-write a PRE-delete config on top of the delete — resurrecting the
+   * wall. Cancelling is what makes collapsing the delete to one write safe.
+   */
+  const cancelPendingWallConfigSave = useCallback(() => {
+    if (wallPersistTimeoutRef.current) {
+      clearTimeout(wallPersistTimeoutRef.current)
+      wallPersistTimeoutRef.current = null
+    }
+    wallPersistLatestRef.current = null
+  }, [])
 
   // Flush any pending wall-config write on unmount so the user's last drag isn't lost.
   useEffect(() => {
@@ -323,13 +345,16 @@ export default function StudioPage() {
         const wallConfigUrl = `/api/studios/${wallConfigWsId}/wall-config?roomId=${encodeURIComponent(studioId)}`
 
         let loadedConfig: WallConfig | null = null
+        let versionKnown = false
         try {
           const resConfig = await fetch(wallConfigUrl, { signal })
           if (resConfig.ok) {
             const data = await resConfig.json()
-            // Capture the base version so the first save sends the right
-            // baseVersion. Falls back to 0 (legacy blob / localStorage path).
-            if (typeof data?.version === 'number') wallVersionRef.current = data.version
+            // Capture the base version so the first save sends the right one.
+            if (typeof data?.version === 'number') {
+              wallConfigWriter.setVersion(studioId, data.version)
+              versionKnown = true
+            }
             if (data?.config) {
               loadedConfig = data.config
             }
@@ -348,43 +373,49 @@ export default function StudioPage() {
           }
         }
 
+        // The GET never gave us a version, so whatever we're about to render came
+        // from stale localStorage (or defaults below) rather than the server. Hand
+        // the writer that config as its baseline: the next write re-learns the
+        // version but may only use it if the stored blob still matches this — if
+        // the server has moved on, writing would silently destroy a layout we
+        // never saw, so it surfaces as a real conflict instead.
         if (loadedConfig) {
           setWallConfig(loadedConfig)
+          if (!versionKnown) wallConfigWriter.markVersionUnknown(studioId, loadedConfig)
         } else {
           // First entry: silently persist defaults so subsequent loads just read them.
           setWallConfig(DEFAULT_CONFIG)
+          if (!versionKnown) wallConfigWriter.markVersionUnknown(studioId, DEFAULT_CONFIG)
+          // What this room ends up on: defaults, or the server's layout if the
+          // write below finds one already there.
+          let seededConfig: WallConfig = DEFAULT_CONFIG
           try {
-            const res = await fetch(wallConfigUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ baseVersion: 0, config: DEFAULT_CONFIG }),
+            // silentConflict: a 409 here means another client seeded this room's
+            // defaults first (simultaneous first-entry). Nobody made a real edit
+            // and both wrote identical defaults, so adopt theirs without a toast.
+            // This is also the recovery when the load GET failed AND the room turns
+            // out to already have a real layout: the writer refuses to rebase
+            // defaults over it and reports a conflict, which lands here and adopts
+            // the server's config — no toast, no clobber.
+            const result = await wallConfigWriter.write({
+              wsKey: wallConfigWsId,
+              roomId: studioId,
+              config: DEFAULT_CONFIG,
+              silentConflict: true,
               signal,
             })
-            if (res.status === 409) {
-              // Another user created this room's config first (simultaneous
-              // first-entry). Silently adopt theirs — no toast: nobody made a
-              // real edit yet, and both wrote identical defaults anyway.
-              const data = await res.json().catch(() => ({} as { latest?: Record<string, unknown> & { version?: number } }))
-              if (data.latest) {
-                const { version, ...cfg } = data.latest
-                if (typeof version === 'number') wallVersionRef.current = version
-                setWallConfig(cfg as unknown as WallConfig)
-              }
-            } else if (res.ok) {
-              const data = await res.json().catch(() => ({} as { version?: number }))
-              if (typeof data.version === 'number') wallVersionRef.current = data.version
+            if (result.status === 'conflict' && result.latest) {
+              const { version: _version, ...cfg } = result.latest
+              seededConfig = cfg as unknown as WallConfig
+              setWallConfig(seededConfig)
             }
           } catch (e) {
             if (!signal.aborted) console.warn('Failed to persist default wall config', e)
           }
-          try {
-            localStorage.setItem(
-              `studio-${studioId}-wall-config`,
-              JSON.stringify(DEFAULT_CONFIG)
-            )
-          } catch {
-            // localStorage cache is best-effort; API is source of truth.
-          }
+          // Cache what we actually settled on, not DEFAULT_CONFIG — after adopting
+          // the server's real layout above, caching defaults would poison this
+          // room's fallback for any later session whose GET fails.
+          cacheWallConfigLocally(seededConfig)
         }
       } catch (error) {
         if (signal.aborted) return
@@ -1136,8 +1167,7 @@ export default function StudioPage() {
             commentNonce={commentNonce}
             currentUserRole={currentUserRole}
             wallColor={wallColor}
-            wallVersionRef={wallVersionRef}
-            onWallConfigConflict={handleWallConfigConflict}
+            wallConfigWriter={wallConfigWriter}
             onEditingWallChange={setCurrentWallIndex}
             othersEditingWalls={othersEditingWalls}
             liveChannelRef={liveChannelRef}
@@ -1151,9 +1181,17 @@ export default function StudioPage() {
             lbCursorRef={lbCursorRef}
             critDirty={critDirty}
             traceStreamRef={traceStreamRef}
-            onWallConfigChange={(config) => {
+            onWallConfigChange={(config, opts) => {
               setWallConfig(config)
-              persistWallConfig(config)
+              if (opts?.persist === false) {
+                // The caller owns this write (wall delete: it awaits its own
+                // persist so it can sequence against the board re-index). Drop
+                // the pending autosave so a timer armed by an earlier drag can't
+                // land a pre-delete config on top of it.
+                cancelPendingWallConfigSave()
+              } else {
+                persistWallConfig(config)
+              }
             }}
           />
         </div>
