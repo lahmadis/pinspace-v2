@@ -775,10 +775,19 @@ export const useBoardUpload = (options: UploadOptions) => {
     // rely on across platforms (see isAiFile in lib/pdfUtils.ts).
     input.accept = '.jpg,.jpeg,.png,.pdf,.ai,.heic,.heif,image/heic,image/heif,image/jpeg,image/png'
     input.multiple = true
-    
+    // iOS Safari can garbage-collect a detached file input while its native
+    // photo picker is open, so the change event fires on a dead element (or
+    // never fires) and the upload silently no-ops. Keeping the hidden input in
+    // the DOM across the async picker lifecycle prevents that collection; it's
+    // removed again in onchange below once the selection has been read.
+    input.style.display = 'none'
+    document.body.appendChild(input)
+
     input.onchange = async (e) => {
       const files = Array.from((e.target as HTMLInputElement).files || [])
-      if (files.length === 0) return
+      // Selection has been read — drop the input node so we don't leak it.
+      if (input.parentNode) input.remove()
+      if (files.length === 0) { console.warn('[Upload] Picker fired with no files'); return }
       
       // Empty-string covered via isHeic — some browsers omit the type for
       // HEIC and only the extension is left to match on. .ai is admitted by
