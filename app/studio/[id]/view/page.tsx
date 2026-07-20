@@ -158,6 +158,10 @@ export default function StudioViewPage() {
   // Check if it's a demo studio (starts with "demo-studio-") or has demo=true param
   const isDemoStudio = studioId.startsWith('demo-studio-')
   const isDemo = searchParams?.get('demo') === 'true' || isDemoStudio
+  // Gallery/bubble-network browse (returnTo=gallery, set by Gallery3D) hides the
+  // callout-count badges; direct room view keeps them. Same param mechanism the
+  // back-button destination below already reads.
+  const fromGallery = searchParams?.get('returnTo') === 'gallery'
   // Cache is consumed EXACTLY ONCE here, during lazy useState init. Do not
   // re-read it inside any useEffect — re-reading on Effect A's re-run (when
   // resolvedWorkspaceId arrives) used to clobber freshly-fetched boards
@@ -643,7 +647,8 @@ export default function StudioViewPage() {
             // Hide the callout-count badges while the lightbox is open — they're
             // z-60 DOM overlays and the lightbox is z-50, so they'd bleed onto it.
             // View mode has no floor editor, so the lightbox is the only source.
-            suppressCallouts={selectedBoard !== null}
+            // Also hide them for gallery/bubble-network browse; direct room view keeps them.
+            suppressCallouts={selectedBoard !== null || fromGallery}
           />
         )}
 
