@@ -673,6 +673,9 @@ export default function StudioViewPage() {
         }}
         onNavigate={handleNavigate}
         isEditMode={false}
+        // Read-only presentation surface: hide ALL callout + trace UI in the lightbox.
+        // Only the view page opts in; editor (via StudioRoom) and guest crit leave it default false.
+        hideCallouts={true}
         currentUserRole={currentUserRole}
         onTitleSaved={(boardId, title) => {
           // Rename persisted server-side already. Mirror into local boards + the

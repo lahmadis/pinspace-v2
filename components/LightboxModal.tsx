@@ -33,6 +33,17 @@ interface LightboxModalProps {
   onNavigate: (direction: 'prev' | 'next') => void
   /** True when rendered on the edit-mode studio page; enables inline author name editing. */
   isEditMode?: boolean
+  /**
+   * View-mode opt-in — set ONLY by app/studio/[id]/view/page.tsx. When true, the
+   * read-only presentation surface hides ALL callout + trace UI: the numbered
+   * pins, the "N callouts"/"Show resolved" header, the inline composer + placement
+   * layer, the Add-callout and Trace tool-dock buttons (and their separator), and
+   * the trace canvas/layers/tools. Editor (via StudioRoom) and guest crit pass
+   * nothing, so this defaults false and their behavior is unchanged. NOT the same
+   * as isEditMode — both view and guest crit pass isEditMode={false}, so gating on
+   * isEditMode would wrongly strip guest crit's callout/trace UI.
+   */
+  hideCallouts?: boolean
   /** Role of the currently authenticated user in this workspace. Instructors may resolve/delete any callout. */
   currentUserRole?: 'instructor' | 'student' | null
   /**
@@ -179,7 +190,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, currentUserRole = null, onLinkSaved, onBoardSizeSaved, onTitleSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, hideCallouts = false, currentUserRole = null, onLinkSaved, onBoardSizeSaved, onTitleSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -2335,7 +2346,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       onDoubleClick={(e) => e.stopPropagation()}
                     >
                       {/* Add callout — existing button, same handler / mutual-exclusion / gate / badge */}
-                      {calloutsEnabled && calloutsAccessible && canComment && (
+                      {!hideCallouts && calloutsEnabled && calloutsAccessible && canComment && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
@@ -2363,7 +2374,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       )}
 
                       {/* Trace — existing button, same handler / mutual-exclusion / gate / state */}
-                      {calloutsEnabled && calloutsAccessible && canTrace && (
+                      {!hideCallouts && calloutsEnabled && calloutsAccessible && canTrace && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
@@ -2386,7 +2397,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       )}
 
                       {/* Separator — only when a tool button is present */}
-                      {calloutsEnabled && calloutsAccessible && (canComment || canTrace) && (
+                      {!hideCallouts && calloutsEnabled && calloutsAccessible && (canComment || canTrace) && (
                         <span className="w-px h-5 bg-white/15 mx-0.5" />
                       )}
 
@@ -2437,8 +2448,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
                 {/* ---- Anchored callout overlay (single-image, non-present) ----
                     Gated on calloutsAccessible so public/unauthenticated viewers
-                    get no pins, capture layer, composer, or control strip. */}
-                {!isPresentMode && calloutsEnabled && calloutsAccessible && (
+                    get no pins, capture layer, composer, or control strip.
+                    Also gated on !hideCallouts so read-only view mode shows none of
+                    the callout/trace overlay (pins, header, composer, trace canvas). */}
+                {!isPresentMode && !hideCallouts && calloutsEnabled && calloutsAccessible && (
                   <>
                     {/* Trace canvas — renders every visible author's strokes.
                         While tracing it captures pointer events (suppressing pan
