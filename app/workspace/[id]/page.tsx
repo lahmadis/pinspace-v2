@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from '@/lib/toast'
@@ -59,6 +59,11 @@ export default function WorkspaceRoomsPage() {
   const [addingRoom, setAddingRoom] = useState(false)
   const [newRoomName, setNewRoomName] = useState('')
   const [roomBusy, setRoomBusy] = useState<string | null>(null) // room id, or 'create'
+  // In-flight guard for room creation. A ref, not `roomBusy`: the button's
+  // disabled state and the Enter handler both read the render's stale value, so a
+  // double-click / double-Enter in one tick would fire two create POSTs before a
+  // re-render. The ref, set synchronously, stops the second one.
+  const creatingRoomRef = useRef(false)
   const [roomToDelete, setRoomToDelete] = useState<Room | null>(null)
 
   // Publish modal: null = closed; room = waiting to flip is_published after metadata; 'settings' = editing existing metadata only
@@ -155,12 +160,16 @@ export default function WorkspaceRoomsPage() {
   const canRename = isAnyMember
 
   const handleCreateRoom = async () => {
+    // Refuse a second create while one is in flight — see creatingRoomRef. Must
+    // run before any await (and before the name check is fine either way).
+    if (creatingRoomRef.current) return
     const trimmed = newRoomName.trim()
     if (!trimmed) {
       toast.error('Room name required')
       return
     }
     try {
+      creatingRoomRef.current = true
       setRoomBusy('create')
       const res = await fetch(`/api/workspaces/${workspaceId}/rooms`, {
         method: 'POST',
@@ -176,6 +185,8 @@ export default function WorkspaceRoomsPage() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to create room')
     } finally {
+      // Re-enable on success and failure so a failed create can be retried.
+      creatingRoomRef.current = false
       setRoomBusy(null)
     }
   }

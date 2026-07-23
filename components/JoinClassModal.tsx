@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from '@/lib/toast'
 
@@ -18,6 +18,10 @@ export default function JoinClassModal({ onClose, variant = 'class' }: JoinClass
   const router = useRouter()
   const [inviteCode, setInviteCode] = useState('')
   const [loading, setLoading] = useState(false)
+  // In-flight guard. This handler only validates the code and navigates (creates
+  // no row), but a same-tick double-submit would double-navigate; the ref stops
+  // the second call past the stale `loading` render value.
+  const submittingRef = useRef(false)
 
   const normalizeInviteInput = (raw: string): string => {
     const trimmed = raw.trim()
@@ -39,6 +43,7 @@ export default function JoinClassModal({ onClose, variant = 'class' }: JoinClass
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submittingRef.current) return
 
     const normalizedCode = normalizeInviteInput(inviteCode)
     if (!normalizedCode) {
@@ -47,6 +52,7 @@ export default function JoinClassModal({ onClose, variant = 'class' }: JoinClass
     }
 
     try {
+      submittingRef.current = true
       setLoading(true)
 
       // Check if code is valid
@@ -63,6 +69,8 @@ export default function JoinClassModal({ onClose, variant = 'class' }: JoinClass
       console.error('Error:', error)
       toast.error('Failed to validate invite code')
     } finally {
+      // Re-enable on success and failure so a failed check can be retried.
+      submittingRef.current = false
       setLoading(false)
     }
   }

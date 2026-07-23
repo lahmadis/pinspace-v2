@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import Link from 'next/link'
@@ -24,6 +24,11 @@ export default function JoinWorkspacePage() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [joining, setJoining] = useState(false)
+  // In-flight guard for join (a membership-creating POST). Ref, not `joining`
+  // state, so a same-tick double-click can't slip a second POST past the stale
+  // render value. The server route also dedupes membership, so this mainly avoids
+  // a redundant request; the guard keeps the client consistent with the others.
+  const joiningRef = useRef(false)
   const [error, setError] = useState('')
   const [profileFullName, setProfileFullName] = useState<string | null>(null)
 
@@ -81,8 +86,10 @@ export default function JoinWorkspacePage() {
 
   const handleJoin = async () => {
     if (!user || !workspace) return
+    if (joiningRef.current) return
 
     try {
+      joiningRef.current = true
       setJoining(true)
 
       const response = await fetch(`/api/workspaces/${workspace.id}/join`, {
@@ -110,6 +117,8 @@ export default function JoinWorkspacePage() {
       console.error('Error:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to join workspace')
     } finally {
+      // Re-enable on success and failure so a failed join can be retried.
+      joiningRef.current = false
       setJoining(false)
     }
   }

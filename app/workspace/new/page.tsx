@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState, useEffect } from 'react'
+import { Suspense, useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import type { Institution } from '@/types'
@@ -15,6 +15,11 @@ function NewWorkspaceForm() {
   const { status: authStatus, user } = useAuthSession()
   const isLoaded = authStatus !== 'loading'
   const [loading, setLoading] = useState(false)
+  // In-flight guard. A ref, not the `loading` state: two clicks in the same tick
+  // both run handleSubmit with the render's stale `loading === false`, so a state
+  // check can't stop the second POST — the ref is set synchronously and is seen
+  // by the second call. This is what prevents the duplicate-workspace double POST.
+  const submittingRef = useRef(false)
   const [institutions, setInstitutions] = useState<Institution[]>([])
   const { mode: accountMode } = useAccountMode(user?.id)
   const headerTitle =
@@ -55,12 +60,18 @@ function NewWorkspaceForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    // Refuse a second submit while one is already in flight (double-click, or
+    // Enter + click). Must run before any await so the second call bails
+    // immediately rather than firing a second create POST.
+    if (submittingRef.current) return
+
     if (!formData.name.trim()) {
       toast.error('Please enter a workspace name')
       return
     }
 
     try {
+      submittingRef.current = true
       setLoading(true)
 
       let creatorName = ''
@@ -110,6 +121,10 @@ function NewWorkspaceForm() {
       const errorMessage = error instanceof Error ? error.message : 'Failed to create workspace'
       toast.error(errorMessage)
     } finally {
+      // Re-enable on both success and failure. On success the component is
+      // navigating away, so clearing the ref is harmless; on failure it makes the
+      // create retryable.
+      submittingRef.current = false
       setLoading(false)
     }
   }
