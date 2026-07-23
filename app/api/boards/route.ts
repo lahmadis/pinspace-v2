@@ -565,7 +565,6 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Storage path is everything after the `/board-images/` segment of the public URL.
-    const storagePathsToDelete = new Set<string>()
     const extractStoragePath = (url: string | null | undefined): string | null => {
       if (!url) return null
       const marker = '/board-images/'
@@ -573,10 +572,68 @@ export async function DELETE(request: NextRequest) {
       if (idx === -1) return null
       return decodeURIComponent(url.slice(idx + marker.length).split('?')[0])
     }
-    const thumbPath = extractStoragePath(boardData.thumbnail_url)
-    const fullPath = extractStoragePath(boardData.full_image_url)
-    if (thumbPath) storagePathsToDelete.add(thumbPath)
-    if (fullPath) storagePathsToDelete.add(fullPath)
+
+    // ALIASING INVARIANT — DO NOT REMOVE THIS GUARD WITHOUT ALSO FIXING
+    // /api/boards/duplicate. Multiple board rows can reference the SAME storage
+    // object: duplicate (copy/paste) copies the source's thumbnail_url and
+    // full_image_url VERBATIM instead of creating its own file, so a copy, its
+    // source, and sibling copies all point at one object. Removing that object
+    // while another row still references it permanently blanks those boards
+    // (three boards were already destroyed this way). So: only remove an object
+    // when NO other board still references its URL.
+    //
+    // Ordering: this check runs BEFORE the row delete below, so the row being
+    // deleted still exists and would match its own URLs — we exclude it
+    // explicitly with .neq('id', boardId). Service role (admin), NOT
+    // supabaseServer(): an RLS-bound query can't see boards in workspaces this
+    // user cannot access, which would UNDER-count references and delete a live
+    // object — the exact failure this guard exists to prevent.
+    //
+    // thumbnail_url and full_image_url are evaluated INDEPENDENTLY (distinct
+    // objects, distinct fates); identical URLs (e.g. PDFs where thumb === full)
+    // are de-duped so we don't query twice.
+    const isReferencedByOtherBoard = async (url: string): Promise<boolean> => {
+      // A URL may be referenced by another board via EITHER column, so check both.
+      // On query error, fail safe (treat as referenced → skip removal): leaving an
+      // orphan object is recoverable; destroying a live aliased image is not.
+      const { count: thumbRefs, error: thumbErr } = await admin
+        .from('boards')
+        .select('id', { count: 'exact', head: true })
+        .eq('thumbnail_url', url)
+        .neq('id', boardId)
+      if (thumbErr) {
+        console.error('Reference check (thumbnail_url) failed; skipping removal to be safe', boardId, thumbErr)
+        return true
+      }
+      if ((thumbRefs ?? 0) > 0) return true
+      const { count: fullRefs, error: fullErr } = await admin
+        .from('boards')
+        .select('id', { count: 'exact', head: true })
+        .eq('full_image_url', url)
+        .neq('id', boardId)
+      if (fullErr) {
+        console.error('Reference check (full_image_url) failed; skipping removal to be safe', boardId, fullErr)
+        return true
+      }
+      return (fullRefs ?? 0) > 0
+    }
+
+    const seenUrls = new Set<string>()
+    const storagePathsToDelete = new Set<string>()
+    for (const url of [boardData.thumbnail_url, boardData.full_image_url]) {
+      if (!url || seenUrls.has(url)) continue
+      seenUrls.add(url)
+      const path = extractStoragePath(url)
+      if (!path) continue
+      if (await isReferencedByOtherBoard(url)) {
+        console.warn(
+          'Skipping storage removal: object still referenced by another board (aliased copy)',
+          { boardId, path }
+        )
+        continue
+      }
+      storagePathsToDelete.add(path)
+    }
     if (storagePathsToDelete.size > 0) {
       const { error: storageError } = await admin
         .storage
