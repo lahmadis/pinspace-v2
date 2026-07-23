@@ -255,8 +255,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const titleEditCancelRef = useRef(false)
 
   // Single-image zoom/pan + image-rect measurement (Phase A.2). Only the
-  // single-image branch below consumes it; PDF/compare are untouched.
-  const viewport = useImageViewport()
+  // single-image branch below consumes it; PDF/compare are untouched. The board's
+  // rotation is threaded in so the pin/trace mapping composes it the same way the
+  // <img> CSS transform does (keeps callouts + traces glued on a rotated board).
+  const viewport = useImageViewport(undefined, board?.position?.rotation ?? 0)
   const {
     reset: resetViewport,
     scaleRef: viewportScaleRef,
@@ -1733,7 +1735,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // current center via getViewportFraction→applyViewportFraction (which clamps
   // to MIN_SCALE..maxScale internally). Fit = reset. No zoom math reimplemented.
   const ZOOM_STEP = 1.4
-  const MAX_ZOOM = 8 // mirrors useImageViewport DEFAULT_MAX_SCALE (called with no arg)
+  const MAX_ZOOM = 8 // mirrors useImageViewport DEFAULT_MAX_SCALE (maxScale left at default)
   const stepZoom = (dir: 1 | -1) => {
     const v = getViewportFraction()
     if (!v) return

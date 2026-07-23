@@ -158,14 +158,16 @@ export default function BoardThumbnail({ board, position, width, height, onClick
     e.stopPropagation()
   }
 
-  // Phase 6: board rotation is no longer applied — boards render flat.
-  // The DB column is preserved for non-destructive removal; we just ignore
-  // any stored value on render.
+  // Board rotation (radians) applied as rotation.z about the board center —
+  // re-enabled after Phase 6. Physically correct for both sides: a board rotated
+  // by R reads as -R when viewed from behind (the back render sits at -Z), which
+  // is exactly what walking around a real rotated board shows.
+  const boardRotation = board.position?.rotation ?? 0
 
   return (
     <group
       position={position}
-      rotation={[0, 0, 0]}
+      rotation={[0, 0, boardRotation]}
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
       onPointerDown={handlePointerDown}

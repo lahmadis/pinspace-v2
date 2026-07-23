@@ -21,9 +21,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  * functions stay pure (derived from measured base + current scale/offset),
  * never reading the DOM per call.
  *
- * NOTE: mapping/zoom math assumes no rotation (board rotation is dead data per
- * Phase 6). The visual transform still composes the caller's rotate() so it is
- * preserved exactly; at the always-0 rotation in use this is exact.
+ * ROTATION: the mapping is rotation-aware. imageFractionToContainerPoint and its
+ * inverse compose the board's rotation about the image center, in the SAME order
+ * as the CSS `translate() scale() rotate()` (transform-origin center) the caller
+ * applies to the <img>. Pass the board rotation (radians) as the second argument;
+ * it defaults to 0, and the unrotated path is byte-for-byte the previous math.
+ * Zoom/pan stay correct under rotation: uniform zoom about a screen point and pan
+ * (a pure translate of offset) both commute with the fixed image-center rotation.
  */
 
 interface Rect { left: number; top: number; width: number; height: number }
@@ -64,7 +68,10 @@ export interface ImageViewport {
   setInteractionEnabled: (enabled: boolean) => void
 }
 
-export function useImageViewport(maxScale: number = DEFAULT_MAX_SCALE): ImageViewport {
+export function useImageViewport(
+  maxScale: number = DEFAULT_MAX_SCALE,
+  rotationRad: number = 0,
+): ImageViewport {
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState<Point>({ x: 0, y: 0 })
   const [isInteracting, setIsInteracting] = useState(false)
@@ -75,6 +82,11 @@ export function useImageViewport(maxScale: number = DEFAULT_MAX_SCALE): ImageVie
   const baseRef = useRef<Rect | null>(null)          // painted rect at scale 1, container-local
   const viewRef = useRef({ scale: 1, x: 0, y: 0 })   // mirror of scale/offset for imperative handlers
   const scaleRef = useRef(1)
+  // Board rotation (radians) mirrored into a ref so the mapping callbacks below
+  // read the current value without taking it as a dep — their identity must stay
+  // stable (redrawTraces and others close over them).
+  const rotationRef = useRef(rotationRad)
+  useEffect(() => { rotationRef.current = rotationRad }, [rotationRad])
   // Phase B.3.1: when false, all local zoom/pan input is ignored. Set false on a
   // follower while their lightbox viewport is driven by the presenter; the
   // viewport is then moved only via applyViewportFraction (below).
@@ -289,7 +301,19 @@ export function useImageViewport(maxScale: number = DEFAULT_MAX_SCALE): ImageVie
     const { scale: s, x, y } = viewRef.current
     const cx = base.left + base.width / 2 + x
     const cy = base.top + base.height / 2 + y
-    return { x: cx + (fx - 0.5) * base.width * s, y: cy + (fy - 0.5) * base.height * s }
+    // Local offset from the image center at scale 1, then rotate → scale → the
+    // pan-translated center. This matches the CSS `translate() scale() rotate()`
+    // (transform-origin center); uniform scale commutes with rotation, so scaling
+    // after the rotation is equivalent to the CSS S·R order.
+    const rot = rotationRef.current
+    const vx = (fx - 0.5) * base.width
+    const vy = (fy - 0.5) * base.height
+    if (!rot) return { x: cx + vx * s, y: cy + vy * s }
+    const cos = Math.cos(rot)
+    const sin = Math.sin(rot)
+    const rx = vx * cos - vy * sin
+    const ry = vx * sin + vy * cos
+    return { x: cx + rx * s, y: cy + ry * s }
   }, [])
 
   const containerPointToImageFraction = useCallback((px: number, py: number): Point | null => {
@@ -298,7 +322,22 @@ export function useImageViewport(maxScale: number = DEFAULT_MAX_SCALE): ImageVie
     const { scale: s, x, y } = viewRef.current
     const cx = base.left + base.width / 2 + x
     const cy = base.top + base.height / 2 + y
-    return { x: (px - cx) / (base.width * s) + 0.5, y: (py - cy) / (base.height * s) + 0.5 }
+    // Exact inverse of imageFractionToContainerPoint: undo translate + scale, then
+    // the inverse rotation about the image center. This is the PLACEMENT path (new
+    // callout pins / trace points), so it must stay the precise inverse or points
+    // land off where the user clicked on a rotated board.
+    const rot = rotationRef.current
+    const dx = (px - cx) / s
+    const dy = (py - cy) / s
+    let vx = dx
+    let vy = dy
+    if (rot) {
+      const cos = Math.cos(rot)
+      const sin = Math.sin(rot)
+      vx = dx * cos + dy * sin
+      vy = -dx * sin + dy * cos
+    }
+    return { x: vx / base.width + 0.5, y: vy / base.height + 0.5 }
   }, [])
 
   // Phase B.3.1: express/consume the viewport in a resolution-independent way for
