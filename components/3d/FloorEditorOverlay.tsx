@@ -54,6 +54,13 @@ interface FloorEditorOverlayProps {
    * already been re-indexed, putting boards on the wrong walls.
    */
   onPersistWallConfig?: (next: WallConfig) => Promise<{ ok: boolean }>
+  /**
+   * May this user delete a wall? When false the Remove-wall control is hidden and
+   * the delete path is refused (defense in depth). A student member may still
+   * add/move walls — only deletion (which also deletes the wall's boards) is
+   * withheld. Defaults to false (fail-closed).
+   */
+  canDeleteWalls?: boolean
 }
 
 const VIEW_WIDTH = 700
@@ -110,6 +117,7 @@ export default function FloorEditorOverlay({
   boardWallIndices,
   onWallRemoved,
   onPersistWallConfig,
+  canDeleteWalls = false,
 }: FloorEditorOverlayProps) {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
   const [uploadingTableId, setUploadingTableId] = useState<string | null>(null)
@@ -581,6 +589,11 @@ export default function FloorEditorOverlay({
    */
   const commitWallDelete = useCallback(async (targetIndex: number) => {
     if (removingWallRef.current) return
+    // Defense in depth behind the hidden Remove-wall button: onWallRemoved (the
+    // board re-index / delete) runs BEFORE the delete-gated persist, so bailing
+    // here for a non-deleter prevents deleting boards for a wall whose geometry
+    // write would then be refused, leaving the room inconsistent.
+    if (!canDeleteWalls) return
     if (!onWallConfigChange) return
     if (targetIndex < 0 || targetIndex >= wallConfig.walls.length) return
     if (wallConfig.walls.length <= 1) return
@@ -626,7 +639,7 @@ export default function FloorEditorOverlay({
     } finally {
       removingWallRef.current = false
     }
-  }, [wallConfig, onWallConfigChange, onWallRemoved, onPersistWallConfig])
+  }, [wallConfig, onWallConfigChange, onWallRemoved, onPersistWallConfig, canDeleteWalls])
 
   const handleRemoveWall = useCallback(() => {
     if (removingWallRef.current) return
@@ -791,16 +804,22 @@ export default function FloorEditorOverlay({
                 <Plus className="w-4 h-4" />
                 Add wall
               </button>
-              <button
-                type="button"
-                onClick={handleRemoveWall}
-                disabled={selectedWallIndex == null || wallConfig.walls.length <= 1}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 rounded-xl text-sm font-medium transition-colors shadow-sm"
-                title={selectedWallIndex == null ? 'Click a wall to select it first' : `Remove wall ${selectedWallIndex + 1}`}
-              >
-                <Trash2 className="w-4 h-4" />
-                Remove wall
-              </button>
+              {/* Remove-wall is delete-gated: hidden entirely for users who may
+                  edit but not delete (e.g. a student member). Deleting a wall also
+                  deletes the boards on it, so it is withheld rather than shown as a
+                  disabled/no-op button. */}
+              {canDeleteWalls && (
+                <button
+                  type="button"
+                  onClick={handleRemoveWall}
+                  disabled={selectedWallIndex == null || wallConfig.walls.length <= 1}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 rounded-xl text-sm font-medium transition-colors shadow-sm"
+                  title={selectedWallIndex == null ? 'Click a wall to select it first' : `Remove wall ${selectedWallIndex + 1}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Remove wall
+                </button>
+              )}
 
               {/* Numeric size for the selected wall — Width + Height in FEET.
                   Type an exact value (decimal feet, e.g. 9.5); commits on blur /

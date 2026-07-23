@@ -82,20 +82,19 @@ export default function StudioPage() {
   /**
    * May this user write the wall-config blob (walls, tables, wall text)?
    *
-   * OWNER ONLY. A room's layout has one author; everyone else is a viewer of it,
-   * including instructors and shared-project collaborators who may otherwise
-   * contribute to the room. Anyone else's write is a no-op, not an error.
+   * OWNER, platform SUPERADMIN, or ANY workspace member (any role). Widened from
+   * owner-only: a room's layout is now collaboratively editable. This is only
+   * safe because the writer attributes 409s by `lastWriterId`
+   * (lib/wallConfigWriter.ts) — a second editor gets a real conflict toast rather
+   * than being silently rebased over. The two decisions move together; do not
+   * widen one without the other.
    *
-   * This is stricter than the neighbouring `canAddRoom` (app/workspace/[id]/page.tsx)
-   * on purpose, and it is load-bearing rather than merely cautious: it makes the
-   * owner the ONLY writer of this blob, which is the premise the writer's
-   * rebase-on-409 depends on (lib/wallConfigWriter.ts). Rebasing re-posts our
-   * config over whatever the server has; that is only safe while the sole person
-   * we can overwrite is ourselves in another tab.
+   * Wall DELETE is NOT gated by this flag — it is narrower (see canDeleteWalls),
+   * because deleting a wall also deletes the boards pinned to it.
    *
-   * Starts false and is only raised once ownership is known. That direction is
+   * Starts false and is only raised once permission is known. That direction is
    * deliberate: the workspace metadata fetch below is best-effort, and if it
-   * fails we cannot tell an owner from a viewer. So the wall-editing affordances
+   * fails we cannot tell an editor from a viewer. So the wall-editing affordances
    * are gated on this same flag — unresolved permission means no editor opens,
    * and there are no edits to lose.
    */
@@ -107,6 +106,15 @@ export default function StudioPage() {
   useEffect(() => {
     canEditWallsRef.current = canEditWalls
   }, [canEditWalls])
+  /**
+   * May this user DELETE a wall? Narrower than canEditWalls: OWNER, platform
+   * SUPERADMIN, or an INSTRUCTOR. A student member may add/move walls but not
+   * delete one — a wall delete also permanently deletes every board pinned to
+   * that wall, so it is kept to teaching staff. Gates the delete path in
+   * StudioRoom (handlePersistWallConfig) and hides the Remove-wall control in the
+   * floor editor. Same fail-closed default as canEditWalls.
+   */
+  const [canDeleteWalls, setCanDeleteWalls] = useState(false)
   // Tier 1 presence: other members currently in this room (self excluded in the bar).
   const [presentUsers, setPresentUsers] = useState<PresentUser[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -363,6 +371,7 @@ export default function StudioPage() {
         // read), so permission can't be resolved from members. They're a local
         // sandbox, so keep them editable rather than gating them into read-only.
         let canEdit = isDemo
+        let canDelete = isDemo
         if (!isDemo && wsIdForFetch) {
           try {
             const wsRes = await fetch(`/api/workspaces/${wsIdForFetch}`, { signal })
@@ -377,36 +386,43 @@ export default function StudioPage() {
               setAllRooms(rooms)
               const matched = rooms.find(r => r.id === resolvedRoomId)
               setCurrentRoomName(matched?.name ?? null)
-              // Resolve current user's role from workspace members list
+              // Resolve current user's role + membership from the workspace
+              // members list. Both wall predicates below reuse these, so there is
+              // no extra round trip.
               const { data: { session: authSession } } = await supabase.auth.getSession()
               const myUserId = authSession?.user?.id
+              let myRole: 'instructor' | 'student' | null = null
+              let isMember = false
               if (myUserId && Array.isArray(ws?.members)) {
                 const members = ws.members as Array<{ userId: string; role: string }>
                 const myMember = members.find((m) => m.userId === myUserId)
-                setCurrentUserRole((myMember?.role as 'instructor' | 'student') ?? null)
+                myRole = (myMember?.role as 'instructor' | 'student') ?? null
+                isMember = myMember != null
+                setCurrentUserRole(myRole)
               }
-              // Wall-config is OWNER-ONLY. Not instructors, not shared-project
-              // collaborators — the room's layout has exactly one author.
-              //
-              // That single-writer property is what the writer's rebase-on-409
-              // leans on (lib/wallConfigWriter.ts): re-posting our config over the
-              // server's is only safe while the only person it can be overwriting
-              // is ourselves in another tab. Widening this predicate turns that
-              // rebase into silently clobbering someone else's edit, so the two
-              // decisions have to move together.
-              //
-              // `createdBy` is owner_id, and needs only the session — deliberately
-              // NOT read off `members`, so an owner still gets write access if the
-              // members array is missing or malformed.
-              canEdit = !!myUserId && ws?.createdBy === myUserId
+              // `createdBy` is owner_id and needs only the session — deliberately
+              // NOT read off `members`, so an owner keeps write access even if the
+              // members array is missing or malformed. `isSuperadmin` rides on the
+              // same workspace fetch (no new route).
+              const isOwner = !!myUserId && ws?.createdBy === myUserId
+              const viewerIsSuperadmin = wsData.isSuperadmin === true
+              // EDIT (walls/tables/text): owner, superadmin, or any member (any
+              // role). Widened from owner-only — safe now that the writer resolves
+              // concurrent 409s by lastWriterId instead of assuming a lone writer
+              // (lib/wallConfigWriter.ts).
+              canEdit = isOwner || viewerIsSuperadmin || isMember
+              // DELETE (a wall, and the boards on it): owner, superadmin, or an
+              // instructor only. A student member is intentionally excluded.
+              canDelete = isOwner || viewerIsSuperadmin || myRole === 'instructor'
             }
           } catch {
-            // Non-fatal: breadcrumb + archive status are best-effort. canEdit
-            // stays false — see the canEditWalls declaration for why that's the
-            // safe direction.
+            // Non-fatal: breadcrumb + archive status are best-effort. canEdit and
+            // canDelete stay false (fail-closed) — see the canEditWalls
+            // declaration for why that's the safe direction.
           }
         }
         setCanEditWalls(canEdit)
+        setCanDeleteWalls(canDelete)
 
         // Phase 2a: wall-config is now per-room. The endpoint path segment is
         // still the workspace id (for the auth check); the room id is appended
@@ -1262,6 +1278,7 @@ export default function StudioPage() {
             commentNonce={commentNonce}
             currentUserRole={currentUserRole}
             canEditWalls={canEditWalls}
+            canDeleteWalls={canDeleteWalls}
             wallColor={wallColor}
             wallConfigWriter={wallConfigWriter}
             onEditingWallChange={setCurrentWallIndex}

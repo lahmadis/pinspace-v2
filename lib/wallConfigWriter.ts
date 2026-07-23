@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase/client'
 
 /**
  * Single-writer gate for the wall-config blob.
@@ -20,15 +22,21 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
  * it reaches the front of the queue, i.e. after the previous write has resolved
  * and adopted its new version. No two writes can carry the same baseVersion.
  *
- * On a surviving 409 it then REBASES rather than reverting: it adopts the
- * server's version and re-posts the caller's own config on top, up to
- * MAX_REBASE_RETRIES times, and only reports the conflict (reload + toast) if the
- * version keeps moving. Wall writes are owner-only, so the writer that lost the
- * race is the same human who is still editing — reloading over their pending
- * change threw away work to protect it from nobody. Callers whose config is not
- * the user's intent for the room opt out with rebaseOnConflict:false; see that
- * field, and note this is last-write-wins if wall writes are ever reopened to a
- * second person.
+ * On a surviving 409 it then decides between REBASE and REPORT based on WHO
+ * wrote the stored blob last. Every write stamps `lastWriterId` (the session
+ * user id) into the blob, so a 409 can be attributed:
+ *   - stored lastWriterId === this user  → the same human overlapping with
+ *     themselves (two tabs, or a write still in flight). Rebase: adopt the
+ *     server's version and re-post this config on top, up to MAX_REBASE_RETRIES
+ *     times. Their newest intent is the right winner and nothing is lost.
+ *   - a DIFFERENT user, or no lastWriterId at all (a blob written before this
+ *     field existed) → a genuine second editor. Do NOT rebase: report the
+ *     conflict (reload + toast) so the other person's layout is not silently
+ *     clobbered. Absent id fails safe into this branch.
+ * This attribution is what makes it safe for more than one person (owner plus
+ * instructor/members) to edit walls. Callers whose config is not the user's
+ * intent for the room opt out of rebase entirely with rebaseOnConflict:false;
+ * see that field.
  */
 
 /**
@@ -71,12 +79,13 @@ export interface WallConfigWriteParams {
    * top of it, up to MAX_REBASE_RETRIES times, instead of reloading the server's
    * layout and discarding the user's edit. Defaults to true.
    *
-   * This is deliberately last-write-wins, and it is only defensible because wall
-   * writes are owner-only (see canEditWalls in app/studio/[id]/page.tsx): the
-   * only writer is one human, so a surviving 409 is that person overlapping with
-   * themselves (two tabs, or a write still in flight), and their newest intent is
-   * the right winner. If wall writes are ever reopened to a second person, this
-   * silently overwrites their work and must be reconsidered.
+   * Rebase is NOT unconditional last-write-wins anymore. It fires ONLY when the
+   * stored blob's `lastWriterId` is THIS user — the same human overlapping with
+   * themselves (two tabs, or an in-flight write), where re-posting their newest
+   * intent loses nothing. When a DIFFERENT user wrote last — or the blob predates
+   * lastWriterId — the writer reports the conflict instead of rebasing, so a
+   * second editor's work is never silently overwritten. This flag governs only
+   * the same-user branch; a different-writer 409 always reports regardless of it.
    *
    * Pass false when THIS config is not the user's intent for the room — the
    * first-entry seed writes DEFAULT_CONFIG, so rebasing it onto a room that
@@ -145,16 +154,47 @@ function canonical(value: unknown): unknown {
   return value
 }
 
-function stripVersion(value: unknown): unknown {
+/** The metadata key the writer stamps so a 409 can be attributed to a user. */
+const LAST_WRITER_KEY = 'lastWriterId'
+
+/**
+ * Strip the two server-/writer-owned metadata keys so neither counts toward a
+ * config's identity: `version` (the route overwrites it on write) and
+ * `lastWriterId` (stamped on every write below). Two configs that differ only in
+ * who saved them last, or at what version, are the SAME layout — the exactly-once
+ * self-heal and the version-unknown rebase guard both depend on that, so a blob
+ * that gained a lastWriterId must still compare equal to the un-stamped baseline
+ * a load handed us.
+ */
+function stripMeta(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value
-  const { version: _version, ...rest } = value as Record<string, unknown>
+  const { version: _version, [LAST_WRITER_KEY]: _lastWriterId, ...rest } = value as Record<string, unknown>
   return rest
 }
 
 function sameStoredConfig(a: unknown, b: unknown): boolean {
   return (
-    JSON.stringify(canonical(stripVersion(a))) === JSON.stringify(canonical(stripVersion(b)))
+    JSON.stringify(canonical(stripMeta(a))) === JSON.stringify(canonical(stripMeta(b)))
   )
+}
+
+/** Read the stored blob's writer id, or null when it's absent/blank (legacy). */
+function lastWriterOf(config: unknown): string | null {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return null
+  const v = (config as Record<string, unknown>)[LAST_WRITER_KEY]
+  return typeof v === 'string' && v.length > 0 ? v : null
+}
+
+/**
+ * Stamp the current writer onto the config that goes on the wire. Objects only —
+ * a non-object config passes through untouched, and a null userId leaves the blob
+ * unstamped. Unstamped fails safe: the next 409 against it can't be attributed to
+ * us, so the writer reports rather than clobbers.
+ */
+function withLastWriter(config: unknown, userId: string | null): unknown {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return config
+  if (!userId) return config
+  return { ...(config as Record<string, unknown>), [LAST_WRITER_KEY]: userId }
 }
 
 function toError(err: unknown): Error {
@@ -191,6 +231,42 @@ export function useWallConfigWriter(
   // The mutex. Every write links onto this chain; it never rejects and never
   // carries a value, so one failure can't wedge the queue.
   const chainRef = useRef<Promise<unknown>>(Promise.resolve())
+
+  // The session user id, stamped into every write so a later 409 can tell "me in
+  // another tab" (rebase) from "a different editor" (report). Read through a ref
+  // so the write callbacks stay referentially stable. Resolved from the supabase
+  // session, cached, and refreshed on sign-in/out.
+  const userIdRef = useRef<string | null>(null)
+  const resolveUserId = useCallback(async (): Promise<string | null> => {
+    if (userIdRef.current) return userIdRef.current
+    try {
+      const { data } = (await supabase.auth.getSession()) as { data: { session: Session | null } }
+      userIdRef.current = data.session?.user?.id ?? null
+    } catch {
+      // Leave null — the write goes unstamped and any 409 fails safe to "report".
+    }
+    return userIdRef.current
+  }, [])
+  // Populate eagerly and track auth changes so even the very first write is
+  // stamped (a user editing walls is authenticated, so getSession resolves an id
+  // without a network round-trip).
+  useEffect(() => {
+    let active = true
+    ;(supabase.auth.getSession() as Promise<{ data: { session: Session | null } }>)
+      .then(({ data }) => {
+        if (active) userIdRef.current = data.session?.user?.id ?? null
+      })
+      .catch(() => {})
+    const { data: sub } = supabase.auth.onAuthStateChange(
+      (_event: AuthChangeEvent, session: Session | null) => {
+        userIdRef.current = session?.user?.id ?? null
+      }
+    )
+    return () => {
+      active = false
+      sub.subscription.unsubscribe()
+    }
+  }, [])
 
   const stateFor = useCallback((roomId: string): RoomVersionState => {
     let state = roomsRef.current.get(roomId)
@@ -278,8 +354,11 @@ export function useWallConfigWriter(
         ...(p.keepalive ? { keepalive: true } : {}),
         ...(p.signal ? { signal: p.signal } : {}),
         // Built fresh per attempt from the base this write read once it held the
-        // queue — never from a string captured before that.
-        body: JSON.stringify({ baseVersion, config: p.config }),
+        // queue — never from a string captured before that. The config is stamped
+        // with this session's user id so a later 409 against the blob can tell
+        // whether it was us (rebase) or a different editor (report). userIdRef is
+        // populated by doWrite before any send.
+        body: JSON.stringify({ baseVersion, config: withLastWriter(p.config, userIdRef.current) }),
       })
     } catch (err) {
       return { kind: 'unreachable', error: toError(err) }
@@ -329,6 +408,10 @@ export function useWallConfigWriter(
       // trailing flush of the room we just left must still use that room's
       // version, which is exactly the case a shared version got wrong.
       const state = stateFor(p.roomId)
+      // Make sure the writer id is known before any send stamps it, and capture it
+      // once so every attempt in this write (transport retries + rebases) and the
+      // conflict attribution below all agree on the same value.
+      const userId = await resolveUserId()
       /**
        * A null version leaves us without a base, so record what we just wrote as
        * the new baseline — the server is now known to hold exactly that.
@@ -395,12 +478,12 @@ export function useWallConfigWriter(
       }
 
       // Rebase loop. A 409 here means the stored version moved after we read our
-      // base — with owner-only writes that is this same user overlapping with
-      // themselves, so their pending config is still what they want the room to
-      // be. Adopt the server's version and re-post it rather than reloading and
-      // throwing their edit away. Bounded: if the version keeps moving out from
-      // under us we stop guessing and fall back to reload-and-toast, which is
-      // loud but never loses work silently.
+      // base. Whether that is safe to rebase over depends on WHO moved it (checked
+      // per-iteration below via lastWriterId): the same user overlapping with
+      // themselves may re-post their pending config, but a different editor must
+      // not be clobbered. When we do rebase, it is bounded — if the version keeps
+      // moving out from under us we stop guessing and fall back to reload-and-toast,
+      // which is loud but never loses work silently.
       const allowRebase = p.rebaseOnConflict !== false
       for (let rebases = 0; ; rebases++) {
         // Adopt straight from the response rather than re-reading state — a null
@@ -417,9 +500,18 @@ export function useWallConfigWriter(
         }
 
         // attempt.kind === 'conflict'
+        // Attribute the 409 by who wrote the stored blob last. Rebase only when
+        // that was THIS user (same human, two tabs / in-flight overlap) — re-posting
+        // their newest intent loses nothing. A different writer, or a legacy blob
+        // with no lastWriterId, is a genuine second editor: fall through to
+        // settleConflict so their layout is not silently clobbered. Absent id →
+        // lastWriterOf is null → not us → reports. Fails safe.
+        const storedWriter = lastWriterOf(attempt.latest)
+        const sameWriter = storedWriter !== null && storedWriter === userId
         const nextBase = attempt.latest?.version
         const canRebase =
           allowRebase &&
+          sameWriter &&
           rebases < MAX_REBASE_RETRIES &&
           typeof nextBase === 'number' &&
           Number.isFinite(nextBase) &&
@@ -433,7 +525,7 @@ export function useWallConfigWriter(
         adopt(base)
       }
     },
-    [fetchLatest, sendOnce, settleConflict, stateFor]
+    [fetchLatest, sendOnce, settleConflict, stateFor, resolveUserId]
   )
 
   const write = useCallback(

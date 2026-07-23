@@ -104,6 +104,13 @@ export async function GET(
     const isMember = membership !== null
     const isPublicPublished = workspace.is_public === true && workspace.published_at != null
 
+    // Platform-superadmin flag for THIS viewer. Computed once here and reused
+    // both for the network-published read gate below and for the response, which
+    // the studio page reads to widen wall-config edit permission (owner OR
+    // superadmin OR member) without a second round trip. This is the raw platform
+    // role — not scoped to network-published like `isSuperadminViewer` below.
+    const viewerIsSuperadmin = await isSuperadmin(userId, admin)
+
     // Org members may view their own org's classes (mirrors the old RLS policy).
     let orgMatchClass = false
     if (!isOwner && !isMember && !isPublicPublished && workspace.type === 'class' && workspace.organization_id) {
@@ -122,7 +129,7 @@ export async function GET(
     let isSuperadminViewer = false
     if (!isOwner && !isMember && !isPublicPublished && !orgMatchClass) {
       isSuperadminViewer =
-        (await isSuperadmin(userId, admin)) &&
+        viewerIsSuperadmin &&
         (await isNetworkPublished(admin, { workspaceId }))
     }
 
@@ -225,7 +232,9 @@ export async function GET(
       })),
     }
 
-    return NextResponse.json({ workspace: transformedWorkspace })
+    // `isSuperadmin` is a sibling of `workspace` (a viewer property, not a
+    // workspace one). The studio page folds it into wall-config edit permission.
+    return NextResponse.json({ workspace: transformedWorkspace, isSuperadmin: viewerIsSuperadmin })
   } catch (error) {
     console.error('Unexpected error fetching workspace:', error)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })

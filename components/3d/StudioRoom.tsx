@@ -120,6 +120,14 @@ interface StudioRoomProps {
    * surfaces (share/crit/view) never pass it.
    */
   canEditWalls?: boolean
+  /**
+   * May this user DELETE a wall? Narrower than canEditWalls (owner, superadmin, or
+   * instructor — never a plain student member), because a wall delete also
+   * permanently deletes the boards pinned to that wall. Gates the delete write
+   * (handlePersistWallConfig) and hides the Remove-wall control in the floor
+   * editor. Defaults to false (fail-closed).
+   */
+  canDeleteWalls?: boolean
   /** Room-level wall color for the 3D walls. Defaults to 'grey' (current look). */
   wallColor?: 'grey' | 'white'
   /**
@@ -1029,6 +1037,11 @@ export default function StudioRoom(props: StudioRoomProps) {
    * onWallConfigChange with persist:false so the debounced autosave doesn't race
    * it. Returns `{ ok: false }` on conflict or error; the writer reports a real
    * 409 to the page (reload + toast) itself.
+   *
+   * Gated on `canDeleteWalls`, NOT `canEditWalls`: a student member may add and
+   * move walls (canEditWalls) but not delete one. The floor editor also hides its
+   * Remove-wall control for them, so this is the server-of-record guard behind
+   * that — a delete config from a non-deleter no-ops here.
    */
   const handlePersistWallConfig = useCallback(
     async (nextConfig: WallConfig): Promise<{ ok: boolean }> => {
@@ -1048,12 +1061,12 @@ export default function StudioRoom(props: StudioRoomProps) {
       const wsKey = props.workspaceId ?? props.studioId
       const roomId = props.studioId
       const writer = props.wallConfigWriter
-      if (!writer || !props.canEditWalls) return { ok: false }
+      if (!writer || !props.canDeleteWalls) return { ok: false }
       const result = await writer.write({ wsKey, roomId, config: payload })
       if (result.status === 'error') console.error('persist wall config failed', result.error)
       return { ok: result.status === 'ok' }
     },
-    [tables, textItems, props.studioId, props.workspaceId, props.wallConfigWriter, props.canEditWalls]
+    [tables, textItems, props.studioId, props.workspaceId, props.wallConfigWriter, props.canDeleteWalls]
   )
 
   /**
@@ -2133,6 +2146,7 @@ export default function StudioRoom(props: StudioRoomProps) {
           boardWallIndices={boardWallIndices}
           onWallRemoved={handleWallRemoved}
           onPersistWallConfig={handlePersistWallConfig}
+          canDeleteWalls={props.canDeleteWalls ?? false}
         />
       )}
 
