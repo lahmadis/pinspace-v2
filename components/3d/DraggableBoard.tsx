@@ -1278,33 +1278,50 @@ if (e.intersections && e.intersections.length > 0) {
         })()}
 
         {/*
-         * Rotate handle — a small knob on a short stem above the top edge. Native
-         * to the resize pattern (same edit-mode gate, its own pointer events,
-         * lives in the rotated inner group so it stays glued to the board's top).
-         * Dragging it spins the board about its center; Shift snaps to 90°.
+         * Rotate handle — a small knob on a short stalk just above the top edge.
+         * Native to the resize pattern (same edit-mode gate, world-unit mesh so it
+         * scales with camera distance, lives in the rotated inner group so it stays
+         * glued to the board's top). Dragging it spins the board about its center;
+         * Shift snaps to 90°.
+         *
+         * The DRAWN knob/stalk are deliberately small; the pointer hit target is a
+         * SEPARATE, generous invisible disc (knob + stalk carry no raycast), so the
+         * handle stays easy to grab on the first click without floating large over
+         * the board.
          */}
         {canEdit && !isLocked && (() => {
-          const knobR = Math.max(1.5, Math.min(boardWidth, boardHeight) * 0.06)
-          const stem = Math.max(4, Math.min(boardWidth, boardHeight) * 0.22)
+          const knobR = Math.max(0.5, Math.min(boardWidth, boardHeight) * 0.02)   // drawn knob (~1/3 of prior)
+          const stem = Math.max(1.5, Math.min(boardWidth, boardHeight) * 0.07)    // stalk (~1/3 of prior)
+          const hitR = Math.max(3.5, Math.min(boardWidth, boardHeight) * 0.12)    // generous invisible grab area
           const topY = boardHeight / 2
+          const knobY = topY + stem
           return (
             <group>
-              {/* Stem (visual only — no raycast). */}
+              {/* Stalk (visual only — no raycast). */}
               <mesh position={[0, topY + stem / 2, BOARD_THICKNESS / 2 + 0.01]} raycast={() => null}>
-                <planeGeometry args={[Math.max(0.3, knobR * 0.3), stem]} />
+                <planeGeometry args={[Math.max(0.2, knobR * 0.5), stem]} />
                 <meshBasicMaterial color="#4444ff" transparent opacity={0.7} depthTest={false} depthWrite={false} />
               </mesh>
-              {/* Interactive knob. */}
+              {/* Visible knob (small, no raycast — the hit disc below owns events). */}
+              <mesh position={[0, knobY, BOARD_THICKNESS / 2 + 0.02]} renderOrder={3} raycast={() => null}>
+                <circleGeometry args={[knobR, 24]} />
+                <meshBasicMaterial color="#4444ff" transparent opacity={0.9} depthTest={false} depthWrite={false} />
+              </mesh>
+              {/* Invisible generous hit target. Biased UPWARD so its bottom sits
+                  at the top edge (center = topY + max(stem,hitR) ⇒ bottom ≈ topY),
+                  keeping it off the board body — a pointer-down on the board's
+                  top-center still starts a drag-to-move, not a rotate — while the
+                  disc still covers the knob and extends generously above it. */}
               <mesh
-                position={[0, topY + stem, BOARD_THICKNESS / 2 + 0.02]}
+                position={[0, topY + Math.max(stem, hitR), BOARD_THICKNESS / 2 + 0.03]}
                 renderOrder={3}
                 onPointerOver={(e) => { e.stopPropagation(); gl.domElement.style.cursor = 'grab' }}
                 onPointerMove={(e) => { e.stopPropagation(); gl.domElement.style.cursor = 'grab' }}
                 onPointerOut={(e) => { e.stopPropagation(); if (!isRotating) gl.domElement.style.cursor = '' }}
                 onPointerDown={(e) => { handleRotatePointerDown(e) }}
               >
-                <circleGeometry args={[knobR, 24]} />
-                <meshBasicMaterial color="#4444ff" transparent opacity={0.9} depthTest={false} depthWrite={false} />
+                <circleGeometry args={[hitR, 24]} />
+                <meshBasicMaterial transparent opacity={0} depthTest={false} depthWrite={false} />
               </mesh>
             </group>
           )
