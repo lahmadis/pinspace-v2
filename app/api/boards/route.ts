@@ -570,7 +570,16 @@ export async function DELETE(request: NextRequest) {
       const marker = '/board-images/'
       const idx = url.indexOf(marker)
       if (idx === -1) return null
-      return decodeURIComponent(url.slice(idx + marker.length).split('?')[0])
+      const raw = url.slice(idx + marker.length).split('?')[0]
+      // A malformed percent-escape makes decodeURIComponent throw. Since the
+      // reference check below runs this over OTHER boards' URLs, one poisoned
+      // row would otherwise 500 every delete that scans past it — including
+      // deletes of unrelated boards. Fall back to the undecoded slice.
+      try {
+        return decodeURIComponent(raw)
+      } catch {
+        return raw
+      }
     }
 
     // ALIASING INVARIANT — DO NOT REMOVE THIS GUARD WITHOUT ALSO FIXING
@@ -580,52 +589,104 @@ export async function DELETE(request: NextRequest) {
     // source, and sibling copies all point at one object. Removing that object
     // while another row still references it permanently blanks those boards
     // (three boards were already destroyed this way). So: only remove an object
-    // when NO other board still references its URL.
+    // when NO other board still references its storage path.
     //
-    // Ordering: this check runs BEFORE the row delete below, so the row being
-    // deleted still exists and would match its own URLs — we exclude it
-    // explicitly with .neq('id', boardId). Service role (admin), NOT
+    // Ordering: this CHECK runs before the row delete, so the row being deleted
+    // still exists and would match its own URLs — we exclude it explicitly with
+    // .neq('id', boardId). The REMOVAL itself runs after the row delete
+    // succeeds; see the note at that call. Service role (admin), NOT
     // supabaseServer(): an RLS-bound query can't see boards in workspaces this
     // user cannot access, which would UNDER-count references and delete a live
     // object — the exact failure this guard exists to prevent.
     //
     // thumbnail_url and full_image_url are evaluated INDEPENDENTLY (distinct
-    // objects, distinct fates); identical URLs (e.g. PDFs where thumb === full)
-    // are de-duped so we don't query twice.
-    const isReferencedByOtherBoard = async (url: string): Promise<boolean> => {
-      // A URL may be referenced by another board via EITHER column, so check both.
-      // On query error, fail safe (treat as referenced → skip removal): leaving an
-      // orphan object is recoverable; destroying a live aliased image is not.
-      const { count: thumbRefs, error: thumbErr } = await admin
-        .from('boards')
-        .select('id', { count: 'exact', head: true })
-        .eq('thumbnail_url', url)
-        .neq('id', boardId)
-      if (thumbErr) {
-        console.error('Reference check (thumbnail_url) failed; skipping removal to be safe', boardId, thumbErr)
-        return true
+    // objects, distinct fates); URLs that resolve to the SAME storage path
+    // (e.g. PDFs where thumb === full) are de-duped so we don't query twice.
+    //
+    // The count keys on the extracted storage PATH, not the raw URL. Two rows
+    // can address one object through different URL strings — a query string, a
+    // percent-encoding difference, a changed CDN base — and a raw-URL equality
+    // check would miss that and delete a live object.
+    //
+    // `_` is a LIKE single-char wildcard and DOES occur in generated paths
+    // (model filenames sanitise to `_`), so LIKE metacharacters are escaped.
+    // Over-matching is harmless — every candidate is re-verified in JS — but
+    // under-matching is not.
+    const escapeLike = (s: string): string => s.replace(/([\\%_])/g, '\\$1')
+
+    // Candidate page size. A full page means we cannot PROVE the object is
+    // unreferenced (a true alias could sit past the end), so a full page is
+    // treated as referenced. Leak, not loss.
+    const CANDIDATE_LIMIT = 500
+
+    const isPathReferencedByOtherBoard = async (path: string): Promise<boolean> => {
+      // A path may be referenced by another board via EITHER column, so check
+      // both. On query error, fail safe (treat as referenced → skip removal):
+      // leaving an orphan object is recoverable; destroying a live aliased
+      // image is not.
+      //
+      // Stored URLs come from getPublicUrl, which encodeURI()s the whole URL,
+      // whereas `path` is decoded — so a LIKE built from the decoded form
+      // cannot match a stored URL containing any character encodeURI escapes
+      // (space, %, non-ASCII, ...). Every path we generate today is
+      // [a-zA-Z0-9._/-] so the two forms coincide, but matching BOTH means this
+      // does not quietly start under-counting the day that stops being true.
+      const variants = Array.from(new Set([path, encodeURI(path)]))
+
+      for (const variant of variants) {
+        const pattern = `%${escapeLike(variant)}%`
+
+        const { data: thumbRows, error: thumbErr } = await admin
+          .from('boards')
+          .select('id, thumbnail_url')
+          .neq('id', boardId)
+          .like('thumbnail_url', pattern)
+          .limit(CANDIDATE_LIMIT)
+        if (thumbErr) {
+          console.error('Reference check (thumbnail_url) failed; skipping removal to be safe', boardId, thumbErr)
+          return true
+        }
+        const thumbCandidates = thumbRows ?? []
+        if (thumbCandidates.length >= CANDIDATE_LIMIT) {
+          console.warn('Reference check (thumbnail_url) hit the candidate cap; skipping removal to be safe', { boardId, path })
+          return true
+        }
+        if (thumbCandidates.some((r) => extractStoragePath(r.thumbnail_url) === path)) return true
+
+        const { data: fullRows, error: fullErr } = await admin
+          .from('boards')
+          .select('id, full_image_url')
+          .neq('id', boardId)
+          .like('full_image_url', pattern)
+          .limit(CANDIDATE_LIMIT)
+        if (fullErr) {
+          console.error('Reference check (full_image_url) failed; skipping removal to be safe', boardId, fullErr)
+          return true
+        }
+        const fullCandidates = fullRows ?? []
+        if (fullCandidates.length >= CANDIDATE_LIMIT) {
+          console.warn('Reference check (full_image_url) hit the candidate cap; skipping removal to be safe', { boardId, path })
+          return true
+        }
+        if (fullCandidates.some((r) => extractStoragePath(r.full_image_url) === path)) return true
       }
-      if ((thumbRefs ?? 0) > 0) return true
-      const { count: fullRefs, error: fullErr } = await admin
-        .from('boards')
-        .select('id', { count: 'exact', head: true })
-        .eq('full_image_url', url)
-        .neq('id', boardId)
-      if (fullErr) {
-        console.error('Reference check (full_image_url) failed; skipping removal to be safe', boardId, fullErr)
-        return true
-      }
-      return (fullRefs ?? 0) > 0
+      return false
     }
 
-    const seenUrls = new Set<string>()
+    const checkedPaths = new Set<string>()
     const storagePathsToDelete = new Set<string>()
     for (const url of [boardData.thumbnail_url, boardData.full_image_url]) {
-      if (!url || seenUrls.has(url)) continue
-      seenUrls.add(url)
+      if (!url) continue
       const path = extractStoragePath(url)
-      if (!path) continue
-      if (await isReferencedByOtherBoard(url)) {
+      if (!path) {
+        // Legacy /uploads/... URLs and anything not in this bucket. Nothing to
+        // remove, but say so rather than dropping it silently.
+        console.warn('Skipping storage removal: URL is not a board-images object', { boardId, url })
+        continue
+      }
+      if (checkedPaths.has(path)) continue
+      checkedPaths.add(path)
+      if (await isPathReferencedByOtherBoard(path)) {
         console.warn(
           'Skipping storage removal: object still referenced by another board (aliased copy)',
           { boardId, path }
@@ -633,15 +694,6 @@ export async function DELETE(request: NextRequest) {
         continue
       }
       storagePathsToDelete.add(path)
-    }
-    if (storagePathsToDelete.size > 0) {
-      const { error: storageError } = await admin
-        .storage
-        .from('board-images')
-        .remove(Array.from(storagePathsToDelete))
-      if (storageError) {
-        console.error('Failed to cascade delete storage objects for board', boardId, storageError)
-      }
     }
 
     const { error } = await admin
@@ -652,6 +704,46 @@ export async function DELETE(request: NextRequest) {
     if (error) {
       console.error('Error deleting board:', error)
       return NextResponse.json({ error: 'Failed to delete board' }, { status: 500 })
+    }
+
+    // Storage removal runs only AFTER the row delete succeeds. Removing first
+    // meant a failed row delete left the surviving row pointing at an object
+    // that no longer existed — a blanked board, the same loss the reference
+    // guard above exists to prevent. Orphaning an object on the reverse failure
+    // (row gone, remove fails) is logged and recoverable.
+    if (storagePathsToDelete.size > 0) {
+      // Re-check each path immediately before removing it. Between the first
+      // check and here we issued a row delete, and a concurrent
+      // /api/boards/duplicate could have inserted a row aliasing one of these
+      // objects in that window — that fresh copy would arrive already blanked.
+      // This does not close the window completely (nothing short of a
+      // transaction or real storage copies does), but it narrows it to the
+      // remove call itself.
+      const confirmedUnreferenced: string[] = []
+      for (const path of storagePathsToDelete) {
+        if (await isPathReferencedByOtherBoard(path)) {
+          console.warn('Skipping storage removal: object became referenced during delete', { boardId, path })
+          continue
+        }
+        confirmedUnreferenced.push(path)
+      }
+
+      if (confirmedUnreferenced.length > 0) {
+        try {
+          const { error: storageError } = await admin
+            .storage
+            .from('board-images')
+            .remove(confirmedUnreferenced)
+          if (storageError) {
+            console.error('Failed to cascade delete storage objects for board', boardId, storageError)
+          }
+        } catch (storageThrow) {
+          // Never let this surface as a 500: the row is already gone, so the
+          // delete succeeded as far as the caller is concerned. Reporting
+          // failure here would invite a retry of an already-completed delete.
+          console.error('Storage removal threw for board', boardId, storageThrow)
+        }
+      }
     }
 
     return NextResponse.json({ success: true })
