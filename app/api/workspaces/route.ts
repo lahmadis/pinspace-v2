@@ -3,6 +3,7 @@ import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { generateInviteCode } from '@/lib/workspaceUtils'
 import { isInstructorAccount } from '@/lib/auth/getAccountRole'
 import { validateName } from '@/lib/validation/safeName'
+import { currentAcademicYear } from '@/lib/academicYear'
 
 // GET: list workspaces owned by or shared with the current user
 export async function GET() {
@@ -204,7 +205,19 @@ export async function POST(req: Request) {
 
     // Insert workspace
     // Try with type first, if it fails (column doesn't exist), try without type
-    const insertData: Record<string, unknown> = { name, description, owner_id: userId }
+    // Stamp the academic year at creation. It was never set here, so it stayed
+    // NULL until (and unless) someone opened the publish modal — which left 31
+    // of 45 workspaces with no year and made the explore year filter drop them
+    // silently. Derived server-side from server time so the stored value cannot
+    // be shaped by the client's clock or timezone; the migration-032 backfill
+    // reads created_at in UTC for the same reason, so both agree.
+    // An instructor can still override it later via network-metadata.
+    const insertData: Record<string, unknown> = {
+      name,
+      description,
+      owner_id: userId,
+      academic_year: currentAcademicYear(),
+    }
     if (institutionId) insertData.organization_id = institutionId
     if (type === 'shared') insertData.invite_code = generateInviteCode()
 

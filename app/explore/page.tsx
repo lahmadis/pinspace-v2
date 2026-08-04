@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
 import DemoBanner from '@/components/DemoBanner'
 import { prefetchStudioView } from '@/lib/studioViewCache'
-import { currentAcademicYear } from '@/lib/academicYear'
 
 type StudioResponse = {
   studios: BubbleNode[]
@@ -31,7 +30,12 @@ function ExplorePageInner() {
   const [selectedYear, setSelectedYear] = useState<string | number | null>(null)
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(currentAcademicYear())
+  // Starts as All Years and is narrowed once we know which years actually have
+  // published rooms. It used to start at today's calendar year, which meant
+  // that whenever nothing was published in that year the page rendered empty —
+  // and because the year bar only renders when years exist, there was no tab to
+  // click to escape it. Defaulting wide and narrowing is the safe direction.
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('')
   const [availableAcademicYears, setAvailableAcademicYears] = useState<{ year: string; count: number }[]>([])
   const [roomDrillWorkspace, setRoomDrillWorkspace] = useState<BubbleNode | null>(null)
 
@@ -82,14 +86,13 @@ function ExplorePageInner() {
         const res = await fetch(ayUrl, { cache: 'no-store' })
         if (res.ok) {
           const data = await res.json()
-          setAvailableAcademicYears(data.academicYears || [])
-          // Default to current year if available, otherwise first available
-          const current = currentAcademicYear()
           const years: { year: string; count: number }[] = data.academicYears || []
-          const hasCurrentYear = years.some((y: { year: string }) => y.year === current)
-          if (!hasCurrentYear && years.length > 0) {
-            setSelectedAcademicYear(years[0].year)
-          }
+          setAvailableAcademicYears(years)
+          // Default to the most recent year that actually HAS published rooms
+          // (the endpoint returns them sorted descending, and every entry has a
+          // non-zero count), never to today's calendar year. If nothing is
+          // published yet, stay on All Years rather than picking an empty one.
+          setSelectedAcademicYear(years.length > 0 ? years[0].year : '')
         }
       } catch (e) {
         console.error(e)

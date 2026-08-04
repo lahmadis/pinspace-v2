@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { notFound, useSearchParams, useRouter } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
-import { currentAcademicYear } from '@/lib/academicYear'
 
 const DEPT_MAP: Record<string, { name: string; color: string; accent: string }> = {
   'aerospace-engineering': { name: 'Aerospace Engineering', color: '#0ea5e9', accent: 'text-sky-600' },
@@ -49,7 +48,10 @@ export default function DepartmentPage({ params }: { params: { department: strin
   const [studioNodes, setStudioNodes] = useState<BubbleNode[]>([])
   const [studios, setStudios] = useState<StudioItem[]>([])
   const [yearFilter, setYearFilter] = useState<string>('All Years')
-  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(currentAcademicYear())
+  // See app/explore/page.tsx: default wide (All Years), then narrow to a year
+  // that actually has published rooms. Defaulting to the calendar year rendered
+  // an empty page with no tab available to escape it.
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('')
   const [availableAcademicYears, setAvailableAcademicYears] = useState<{ year: string; count: number }[]>([])
 
   const meta = DEPT_MAP[params.department]
@@ -67,13 +69,10 @@ export default function DepartmentPage({ params }: { params: { department: strin
         const res = await fetch(`/api/explore/academic-years`, { cache: 'no-store' })
         if (res.ok) {
           const data = await res.json()
-          setAvailableAcademicYears(data.academicYears || [])
-          const current = currentAcademicYear()
           const ayList: { year: string; count: number }[] = data.academicYears || []
-          const hasCurrentYear = ayList.some((y) => y.year === current)
-          if (!hasCurrentYear && ayList.length > 0) {
-            setSelectedAcademicYear(ayList[0].year)
-          }
+          setAvailableAcademicYears(ayList)
+          // Most recent year with published rooms, or All Years if there are none.
+          setSelectedAcademicYear(ayList.length > 0 ? ayList[0].year : '')
         }
       } catch (e) {
         console.error(e)
