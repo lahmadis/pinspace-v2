@@ -22,16 +22,17 @@ function NewWorkspaceForm() {
   const submittingRef = useRef(false)
   const [institutions, setInstitutions] = useState<Institution[]>([])
   const { mode: accountMode } = useAccountMode(user?.id)
+  // Firm and university share one vocabulary — the old accountMode === 'firm'
+  // arms were pure noun swaps ("Firm Room" vs "Class"). The shared/personal
+  // arms stay: those are genuine workspace kinds, not org-type nouns.
   const headerTitle =
-    typeParam === 'shared' ? 'Create Shared Room'
-    : accountMode === 'firm' ? 'Create a Firm Room'
-    : accountMode === 'personal' ? 'Create a Personal Room'
-    : 'Create a Class'
+    typeParam === 'shared' ? 'Create Shared Project'
+    : accountMode === 'personal' ? 'Create a Personal Project'
+    : 'Create a Project'
   const headerSubtitle =
-    typeParam === 'shared' ? 'Set up a shared studio space for collaboration'
-    : accountMode === 'firm' ? 'Set up a shared studio for your firm'
-    : accountMode === 'personal' ? 'Set up a personal studio space'
-    : 'Set up a shared studio for your class'
+    typeParam === 'shared' ? 'Set up a shared space for collaboration'
+    : accountMode === 'personal' ? 'Set up a space for your own work'
+    : 'Set up a shared space and invite collaborators'
   const [formData, setFormData] = useState({
     name: '',
     institutionSlug: ''
@@ -169,13 +170,13 @@ function NewWorkspaceForm() {
               {headerTitle}
             </h2>
             <p className="text-gray-600">
+              {/* "holds a 3D studio" rather than "is a studio": a project is the
+                  container, the studio is the 3D view one level down. */}
               {typeParam === 'shared'
-                ? 'A shared room is a 3D studio where anyone with an invite code can join and collaborate.'
-                : accountMode === 'firm'
-                ? 'A firm room is a shared 3D studio where you can invite teammates and collaborate on design work.'
+                ? 'A shared project holds a 3D studio anyone with an invite code can join and collaborate in.'
                 : accountMode === 'personal'
-                ? 'A personal room is your own 3D studio space for individual work.'
-                : 'A class is a shared 3D studio where you can invite students and collaborate on design work.'}
+                ? 'A personal project holds your own 3D studio for individual work.'
+                : 'A project holds a shared 3D studio where you can invite collaborators and work on design together.'}
             </p>
           </div>
 
@@ -196,7 +197,7 @@ function NewWorkspaceForm() {
                 required
               />
               <p className="mt-2 text-sm text-gray-500">
-                Choose a descriptive name for your studio class
+                Choose a descriptive name for your project
               </p>
             </div>
 

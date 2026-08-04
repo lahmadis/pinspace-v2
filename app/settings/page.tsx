@@ -320,7 +320,6 @@ export default function SettingsPage() {
         onScopeChange={handleScopeChange}
         hasOrganization={hasOrganization}
         orgName={organization?.name}
-        accountMode={accountMode}
         firstName={firstName}
         userEmail={user?.email}
         isAdmin={isAdmin}

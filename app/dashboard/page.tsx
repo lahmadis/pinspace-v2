@@ -260,8 +260,6 @@ function DashboardContent() {
     return false
   })
 
-  const joinModalVariant: 'class' | 'room' = accountMode === 'firm' ? 'room' : 'class'
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (!isLoaded) {
@@ -299,7 +297,6 @@ function DashboardContent() {
         onScopeChange={handleScopeChange}
         hasOrganization={hasOrganization}
         orgName={organization?.name}
-        accountMode={accountMode}
         firstName={firstName}
         userEmail={user?.email}
         isAdmin={isAdmin}
@@ -311,7 +308,6 @@ function DashboardContent() {
         scope={currentScope}
         rooms={scopedRooms}
         userId={user?.id}
-        accountMode={accountMode}
         institutionHome={institutionHome}
         loading={loading}
         organization={organization}
@@ -327,10 +323,7 @@ function DashboardContent() {
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
 
       {showJoinModal && (
-        <JoinClassModal
-          onClose={() => setShowJoinModal(false)}
-          variant={joinModalVariant}
-        />
+        <JoinClassModal onClose={() => setShowJoinModal(false)} />
       )}
 
       {renamingId && (

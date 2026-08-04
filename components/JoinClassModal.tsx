@@ -6,15 +6,15 @@ import { toast } from '@/lib/toast'
 
 interface JoinClassModalProps {
   onClose: () => void
-  variant?: 'class' | 'room'
 }
 
-export default function JoinClassModal({ onClose, variant = 'class' }: JoinClassModalProps) {
-  const noun = variant === 'room' ? 'Room' : 'Class'
-  const helperText =
-    variant === 'room'
-      ? 'A teammate or admin should have shared an invite link or code with you.'
-      : 'Your instructor should have shared an invite link or code via email, Canvas, or in class.'
+// `variant` used to switch this copy between 'Room' (firm orgs) and 'Class'
+// (universities); it was a pure noun swap with no behavioural difference, and
+// it was fed straight from accountMode === 'firm'. One vocabulary now, matching
+// the dashboard.
+export default function JoinClassModal({ onClose }: JoinClassModalProps) {
+  const noun = 'Project'
+  const helperText = 'Whoever set it up should have shared an invite link or code with you.'
   const router = useRouter()
   const [inviteCode, setInviteCode] = useState('')
   const [loading, setLoading] = useState(false)

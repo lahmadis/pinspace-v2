@@ -15,7 +15,6 @@ interface DashboardSidebarProps {
   onScopeChange: (scope: Scope) => void
   hasOrganization: boolean
   orgName?: string | null
-  accountMode?: string
   firstName?: string | null
   userEmail?: string | null
   isAdmin?: boolean
@@ -24,7 +23,7 @@ interface DashboardSidebarProps {
 }
 
 export function DashboardSidebar({
-  currentScope, onScopeChange, hasOrganization, orgName, accountMode,
+  currentScope, onScopeChange, hasOrganization, orgName,
   firstName, userEmail, isAdmin, isOpen, onToggle,
 }: DashboardSidebarProps) {
   const router = useRouter()
@@ -32,7 +31,10 @@ export function DashboardSidebar({
   const displayName = (profile.fullName ? profile.fullName.trim().split(/\s+/)[0] : null) || firstName || userEmail?.split('@')[0] || 'You'
   const initials = displayName.slice(0, 2).toUpperCase()
   const avatarUrl = profile.avatarUrl
-  const orgLabel = accountMode === 'firm' ? (orgName?.split(' ')[0] || 'Firm') : (orgName?.split(' ')[0] || 'Network')
+  // Real data (the org's own first word) is unchanged — both arms of the old
+  // accountMode ternary computed it identically. Only the FALLBACK noun
+  // branched ('Firm' vs 'Network'), which is the copy branch being collapsed.
+  const orgLabel = orgName?.split(' ')[0] || 'Network'
 
   const handleSignOut = async () => {
     resetAccountModeCache()

@@ -196,31 +196,31 @@ interface ScopeCfg {
   showJoin: boolean
 }
 
+// One vocabulary for every org type. This used to swap "Project"/"Class" on
+// accountMode === 'firm', which doubled the copy surface for no benefit and
+// left the firm half effectively untested. Deliberately avoids "room" and
+// "studio": both already name the layer BELOW a workspace (a workspace holds
+// rooms; /studio/[id] is the 3D room view), so reusing either here would
+// collide.
 function scopeConfig(
   scope: Scope,
-  accountMode: string,
   organization: { name: string; slug: string } | null,
   institutionHome: string | null,
   canCreate: boolean,
 ): ScopeCfg {
-  const noun = accountMode === 'firm' ? 'Project' : 'Class'
   switch (scope) {
     case 'wentworth':
       return {
-        title: organization?.name || (accountMode === 'firm' ? 'Firm Projects' : 'Network'),
-        newLabel: `New ${noun}`,
+        title: organization?.name || 'Network',
+        newLabel: 'New Project',
         newHref: withInstitution('/workspace/new', institutionHome),
-        emptyTitle: `No ${noun.toLowerCase()}s yet`,
+        emptyTitle: 'Nothing here yet',
         // Students are the people who see this copy most, and the same
-        // canCreate flag hides the New Class affordance from them — telling
-        // them to create one is a dead end. Offer only what they can do.
+        // canCreate flag hides the create affordance from them — telling them
+        // to create something is a dead end. Offer only what they can do.
         emptySubtext: canCreate
-          ? accountMode === 'firm'
-            ? 'Create a firm project or join one with an invite code.'
-            : 'Create a class or join one with an invite code.'
-          : accountMode === 'firm'
-            ? 'Join a firm project with an invite code.'
-            : 'Join a class with an invite code.',
+          ? 'Create one or join with an invite code.'
+          : 'Join with an invite code.',
         showJoin: true,
       }
     case 'shared':
@@ -228,8 +228,8 @@ function scopeConfig(
         title: 'Shared Projects',
         newLabel: 'New Shared Project',
         newHref: '/workspace/new?type=shared',
-        emptyTitle: 'No shared projects yet',
-        emptySubtext: 'Projects you collaborate on with others will appear here.',
+        emptyTitle: 'Nothing here yet',
+        emptySubtext: 'Anything you collaborate on with others will appear here.',
         showJoin: true,
       }
     case 'personal':
@@ -237,8 +237,8 @@ function scopeConfig(
         title: 'Personal Projects',
         newLabel: 'New Personal Project',
         newHref: withInstitution('/studio/new', institutionHome),
-        emptyTitle: 'No personal projects yet',
-        emptySubtext: 'Create your first project to get started.',
+        emptyTitle: 'Nothing here yet',
+        emptySubtext: 'Create one to get started.',
         showJoin: false,
       }
   }
@@ -250,7 +250,6 @@ interface DashboardMainProps {
   scope: Scope
   rooms: DashboardWorkspace[]
   userId: string | undefined
-  accountMode: string
   institutionHome: string | null
   loading: boolean
   organization: { name: string; slug: string } | null
@@ -261,7 +260,7 @@ interface DashboardMainProps {
 }
 
 export function DashboardMain({
-  scope, rooms, userId, accountMode, institutionHome, loading,
+  scope, rooms, userId, institutionHome, loading,
   organization, onDelete, onRename, onLeave, onShowJoinModal,
 }: DashboardMainProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
@@ -288,7 +287,7 @@ export function DashboardMain({
       ? organization?.slug ? `/explore?institution=${encodeURIComponent(organization.slug)}` : '/explore'
       : scope === 'shared' ? '/network/shared' : '/network'
 
-  const cfg = scopeConfig(scope, accountMode, organization, institutionHome, canCreate)
+  const cfg = scopeConfig(scope, organization, institutionHome, canCreate)
   const hasArchived = rooms.some((r) => r.is_archived)
   const visibleRooms = showArchived ? rooms : rooms.filter((r) => !r.is_archived)
 
@@ -299,10 +298,10 @@ export function DashboardMain({
     <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
       {/* Top bar */}
       {/* Wrap below sm so the org title + action buttons each get their own
-          row on narrow viewports (≤ ~440px) instead of pushing New Class past
+          row on narrow viewports (≤ ~440px) instead of pushing New Project past
           the right edge. min-w-0 on the title lets it shrink rather than
           shove the actions row off, and the actions inner row also wraps so
-          three buttons (Show archived / Join with code / New Class) don't
+          three buttons (Show archived / Join with code / New Project) don't
           clip individually on the narrowest phones. sm:flex-nowrap + sm:h-16
           restore the desktop row exactly. */}
       <div className="shrink-0 sm:h-16 flex flex-wrap items-center justify-between gap-2 px-6 py-3 sm:py-0 sm:flex-nowrap border-b border-gray-200 bg-white">
@@ -368,7 +367,7 @@ export function DashboardMain({
           </div>
         ) : (
           <>
-            {/* Persistent chrome. Enter Network and New Class are entry points,
+            {/* Persistent chrome. Enter Network and New Project are entry points,
                 not content, so they render unconditionally rather than inside
                 the populated branch of an empty-state ternary — that structure
                 is what silently deleted Enter Network for every user with zero
