@@ -104,6 +104,72 @@ function getUniformScale(bounds: { minX: number; maxX: number; minZ: number; max
   return { scale, offsetX, offsetY, usedWidth, usedHeight }
 }
 
+/**
+ * Endpoint snap radius, in scene units. 1 unit = 1 inch (lib/wallLayout.ts), so
+ * this is literally 6 inches at room scale — the same space customTransforms
+ * x/z live in, no conversion. For calibration: walls are 4–40 ft, the minimum
+ * wall is 24 in, and the board smart-guide snap is 2 in.
+ */
+const ENDPOINT_SNAP_THRESHOLD_IN = 6
+
+/** Rotation snap increment. Matches board rotation (DraggableBoard.tsx). */
+const ROTATION_SNAP_RAD = Math.PI / 2
+
+type Point2 = { x: number; z: number }
+
+/**
+ * The two ends of a wall's long axis, in world inches.
+ *
+ * Walls are stored as midpoint + angle + width, never as endpoints, so these
+ * are derived. The width axis is (+cosθ, −sinθ) to match Three.js Ry(θ) — the
+ * same convention the corner math and the stretch handler already use; getting
+ * the z-sign wrong here mirrors the wall.
+ */
+function wallEndpoints(t: { x: number; z: number; rotationY: number; width: number }): {
+  start: Point2
+  end: Point2
+} {
+  const half = t.width / 2
+  const axisX = Math.cos(t.rotationY)
+  const axisZ = -Math.sin(t.rotationY)
+  return {
+    start: { x: t.x - half * axisX, z: t.z - half * axisZ },
+    end: { x: t.x + half * axisX, z: t.z + half * axisZ },
+  }
+}
+
+/**
+ * Closest endpoint belonging to a DIFFERENT wall, within `threshold`, or null.
+ *
+ * `excludeIndex` is what keeps a wall from snapping to its own other end (which
+ * would collapse it). Strict `<` means an exact-threshold candidate doesn't
+ * snap, and ties keep the first found rather than flapping between equals.
+ */
+function nearestOtherEndpoint(
+  wallConfig: WallConfig,
+  excludeIndex: number,
+  point: Point2,
+  threshold: number
+): Point2 | null {
+  let best: Point2 | null = null
+  let bestDistSq = threshold * threshold
+  for (let i = 0; i < wallConfig.walls.length; i++) {
+    if (i === excludeIndex) continue
+    const t = getWallTransformResolved(wallConfig, i)
+    const { start, end } = wallEndpoints(t)
+    for (const candidate of [start, end]) {
+      const dx = candidate.x - point.x
+      const dz = candidate.z - point.z
+      const distSq = dx * dx + dz * dz
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq
+        best = candidate
+      }
+    }
+  }
+  return best
+}
+
 function worldToScreen(
   x: number,
   z: number,
@@ -139,6 +205,14 @@ export default function FloorEditorOverlay({
   onPersistWallConfig,
   canDeleteWalls = false,
 }: FloorEditorOverlayProps) {
+  // Snapping is opt-in per gesture via Shift. Read live (not latched at
+  // pointer-down) so it can be toggled mid-drag; `lastPointerRef` lets the
+  // key-toggle effect replay the gesture at the current cursor position.
+  const shiftHeldRef = useRef(false)
+  const lastPointerRef = useRef<{ x: number; y: number } | null>(null)
+  /** Neighbour endpoint the current gesture is snapped to, for the highlight. */
+  const [activeSnapTarget, setActiveSnapTarget] = useState<Point2 | null>(null)
+
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
   const [uploadingTableId, setUploadingTableId] = useState<string | null>(null)
   // Browser → Supabase Storage directly. Model uploads used to POST a FormData
@@ -390,39 +464,87 @@ export default function FloorEditorOverlay({
 
   // ── Unified pointer move ──────────────────────────────────────────────────
   //
-  // Walls move/rotate/stretch are intentionally free-continuous: no grid snap,
-  // no angle snap, no neighbor-endpoint snap. Users want fine control over the
-  // room layout. Board placement snap (a separate surface) is unaffected.
-
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent) => {
+  // Walls move/rotate/stretch are free-continuous BY DEFAULT: no grid snap, no
+  // angle snap, no neighbor-endpoint snap. Users want fine control over the
+  // room layout. Snapping is opt-in for the duration of a gesture by holding
+  // Shift, mirroring board rotation (DraggableBoard.tsx) so there is one
+  // modifier to learn rather than two interactions. Board placement snap (a
+  // separate surface) is unaffected.
+  //
+  // Shift is read live rather than latched at pointer-down, and the gesture is
+  // re-applied on Shift keydown/keyup (see the effect below), so toggling
+  // mid-drag snaps and unsnaps without restarting. The RAW (unsnapped) value is
+  // what every gesture accumulates; the snap is applied on the way out. That is
+  // what makes releasing Shift return to exactly the free position instead of a
+  // drifted one.
+  const applyPointerAt = useCallback(
+    (clientX: number, clientY: number) => {
       // ── Wall drag (move) ──
       if (draggingWallIndex !== null && wallDragStart && onWallConfigChange) {
-        const deltaPx = e.clientX - wallDragStart.startPx
-        const deltaPy = e.clientY - wallDragStart.startPy
-        const newX = wallDragStart.x + deltaPx * invScale
-        const newZ = wallDragStart.z - deltaPy * invScale
+        const deltaPx = clientX - wallDragStart.startPx
+        const deltaPy = clientY - wallDragStart.startPy
+        const rawX = wallDragStart.x + deltaPx * invScale
+        const rawZ = wallDragStart.z - deltaPy * invScale
+
+        // Translate the whole wall so whichever of ITS endpoints is closest to a
+        // neighbour's endpoint lands exactly on it. Both ends are candidates;
+        // the smaller correction wins.
+        let appliedX = rawX
+        let appliedZ = rawZ
+        let snapped: Point2 | null = null
+        if (shiftHeldRef.current) {
+          const t = getWallTransformResolved(wallConfig, draggingWallIndex)
+          const ends = wallEndpoints({ ...t, x: rawX, z: rawZ })
+          let bestDistSq = Infinity
+          for (const own of [ends.start, ends.end]) {
+            const target = nearestOtherEndpoint(
+              wallConfig, draggingWallIndex, own, ENDPOINT_SNAP_THRESHOLD_IN
+            )
+            if (!target) continue
+            const dx = target.x - own.x
+            const dz = target.z - own.z
+            const distSq = dx * dx + dz * dz
+            if (distSq < bestDistSq) {
+              bestDistSq = distSq
+              appliedX = rawX + dx
+              appliedZ = rawZ + dz
+              snapped = target
+            }
+          }
+        }
+        setActiveSnapTarget(snapped)
 
         const custom = ensureCustomTransforms(wallConfig, draggingWallIndex)
-        custom[draggingWallIndex] = { ...custom[draggingWallIndex], x: newX, z: newZ }
+        custom[draggingWallIndex] = { ...custom[draggingWallIndex], x: appliedX, z: appliedZ }
         const nextConfig = { ...wallConfig, customTransforms: custom }
         lastAppliedWallConfigRef.current = nextConfig
         onWallConfigChange(nextConfig)
-        setWallDragStart((s) => (s ? { ...s, x: newX, z: newZ, startPx: e.clientX, startPy: e.clientY } : null))
+        // Store the RAW position, not the snapped one: this gesture is
+        // incremental (the base moves with the cursor each frame), so writing
+        // the snapped value back would make the snap sticky and releasing Shift
+        // would leave the wall welded to the neighbour.
+        setWallDragStart((s) => (s ? { ...s, x: rawX, z: rawZ, startPx: clientX, startPy: clientY } : null))
         return
       }
 
       // ── Wall rotate ──
       if (rotatingWallIndex !== null && rotateStart && onWallConfigChange) {
-        const dx = e.clientX - rotateStart.centerClientX
-        const dy = e.clientY - rotateStart.centerClientY
+        const dx = clientX - rotateStart.centerClientX
+        const dy = clientY - rotateStart.centerClientY
         const currentAngle = Math.atan2(dy, dx)
         const delta = wrapAngle(currentAngle - rotateStart.initialAngleFromCenter)
         // +delta (not −delta): under the corrected width-axis convention the
         // visible wall long-axis rotates with screen-angle = +rotationY, so an
         // increasing cursor angle (clockwise drag, screen y-down) must increase
         // rotationY for the wall to follow the cursor.
-        const newRotationY = rotateStart.initialRotationY + delta
+        const rawRotationY = rotateStart.initialRotationY + delta
+        // rotateStart is never mutated mid-gesture, so rawRotationY is always
+        // recomputed from the pointer — the accumulator is inherently raw and
+        // the snap is a pure read-time transform, exactly as in DraggableBoard.
+        const newRotationY = shiftHeldRef.current
+          ? Math.round(rawRotationY / ROTATION_SNAP_RAD) * ROTATION_SNAP_RAD
+          : rawRotationY
+        setActiveSnapTarget(null)
 
         const custom = ensureCustomTransforms(wallConfig, rotatingWallIndex)
         custom[rotatingWallIndex] = { ...custom[rotatingWallIndex], rotationY: newRotationY }
@@ -434,14 +556,46 @@ export default function FloorEditorOverlay({
 
       // ── Wall stretch ──
       if (stretchingWallIndex !== null && stretchStart && onWallConfigChange) {
-        const deltaPx = e.clientX - stretchStart.startPx
-        const deltaPy = e.clientY - stretchStart.startPy
+        const deltaPx = clientX - stretchStart.startPx
+        const deltaPy = clientY - stretchStart.startPy
         const deltaX = deltaPx * invScale
         const deltaZ = -deltaPy * invScale
         const deltaAlong = deltaX * stretchStart.axisX + deltaZ * stretchStart.axisZ
         const signedDelta = stretchStart.end === 'end' ? deltaAlong : -deltaAlong
         const MIN_WALL_INCHES = 24
-        const nextWidthInches = Math.max(MIN_WALL_INCHES, stretchStart.initialWidthInches + signedDelta)
+        const rawWidthInches = Math.max(MIN_WALL_INCHES, stretchStart.initialWidthInches + signedDelta)
+
+        // Endpoint snap for the stretch gesture adjusts LENGTH only. Stretching
+        // must not translate or rotate the wall, so the dragged end is snapped
+        // to the target's projection onto the wall axis: any perpendicular
+        // offset (at most the threshold) is left in place deliberately rather
+        // than silently swinging the wall to close it.
+        let nextWidthInches = rawWidthInches
+        let snapped: Point2 | null = null
+        if (shiftHeldRef.current) {
+          const sign = stretchStart.end === 'end' ? 1 : -1
+          const halfInit = stretchStart.initialWidthInches / 2
+          const fixedX = stretchStart.initialCenterX - sign * halfInit * stretchStart.axisX
+          const fixedZ = stretchStart.initialCenterZ - sign * halfInit * stretchStart.axisZ
+          const movingX = fixedX + sign * rawWidthInches * stretchStart.axisX
+          const movingZ = fixedZ + sign * rawWidthInches * stretchStart.axisZ
+          const target = nearestOtherEndpoint(
+            wallConfig,
+            stretchingWallIndex,
+            { x: movingX, z: movingZ },
+            ENDPOINT_SNAP_THRESHOLD_IN
+          )
+          if (target) {
+            const along =
+              (target.x - fixedX) * stretchStart.axisX + (target.z - fixedZ) * stretchStart.axisZ
+            const candidateWidth = along * sign
+            if (candidateWidth >= MIN_WALL_INCHES) {
+              nextWidthInches = candidateWidth
+              snapped = target
+            }
+          }
+        }
+        setActiveSnapTarget(snapped)
         const widthDelta = nextWidthInches - stretchStart.initialWidthInches
         const centerShift = widthDelta / 2
         const centerSign = stretchStart.end === 'end' ? 1 : -1
@@ -459,14 +613,14 @@ export default function FloorEditorOverlay({
         return
       }
 
-      // ── Table drag ──
+      // ── Table drag ── (unsnapped; tables are floor-anchored, not wall-bound)
       if (!draggingTableId || !dragStart) return
-      const deltaPx = e.clientX - dragStart.startPx
-      const deltaPy = e.clientY - dragStart.startPy
+      const deltaPx = clientX - dragStart.startPx
+      const deltaPy = clientY - dragStart.startPy
       const newX = dragStart.x + deltaPx * invScale
       const newZ = dragStart.z - deltaPy * invScale
       setTables((prev) => prev.map((t) => t.id === draggingTableId ? { ...t, x: newX, z: newZ } : t))
-      setDragStart((s) => (s ? { ...s, x: newX, z: newZ, startPx: e.clientX, startPy: e.clientY } : null))
+      setDragStart((s) => (s ? { ...s, x: newX, z: newZ, startPx: clientX, startPy: clientY } : null))
     },
     [
       draggingWallIndex, wallDragStart, rotatingWallIndex, rotateStart,
@@ -475,6 +629,44 @@ export default function FloorEditorOverlay({
       ensureCustomTransforms,
     ]
   )
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      shiftHeldRef.current = e.shiftKey
+      lastPointerRef.current = { x: e.clientX, y: e.clientY }
+      applyPointerAt(e.clientX, e.clientY)
+    },
+    [applyPointerAt]
+  )
+
+  // Re-apply the in-flight gesture when Shift is pressed or released without
+  // the pointer moving, so the snap engages/disengages live. Mirrors the
+  // keydown/keyup re-apply in DraggableBoard's rotation gesture; here the
+  // pointer position has to be replayed from a ref because key events don't
+  // carry one. Every gesture recomputes from a raw accumulator, so replaying
+  // the same coordinates is idempotent.
+  useEffect(() => {
+    const gestureActive =
+      draggingWallIndex !== null || rotatingWallIndex !== null || stretchingWallIndex !== null
+    if (!gestureActive) return
+    const onShiftToggle = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Shift') return
+      const held = ev.type === 'keydown'
+      // Holding Shift auto-repeats keydown. Only act on an actual edge:
+      // otherwise every repeat re-runs the gesture and pushes an identical
+      // config to the parent at the OS repeat rate, which is pure churn.
+      if (shiftHeldRef.current === held) return
+      shiftHeldRef.current = held
+      const last = lastPointerRef.current
+      if (last) applyPointerAt(last.x, last.y)
+    }
+    window.addEventListener('keydown', onShiftToggle)
+    window.addEventListener('keyup', onShiftToggle)
+    return () => {
+      window.removeEventListener('keydown', onShiftToggle)
+      window.removeEventListener('keyup', onShiftToggle)
+    }
+  }, [draggingWallIndex, rotatingWallIndex, stretchingWallIndex, applyPointerAt])
 
   const handlePointerUp = useCallback(() => {
     if (mode === 'walls' && onWallConfigChange &&
@@ -504,6 +696,10 @@ export default function FloorEditorOverlay({
     setRotateStart(null)
     setStretchingWallIndex(null)
     setStretchStart(null)
+    // The committed config above is `lastAppliedWallConfigRef.current`, i.e.
+    // the SNAPPED geometry — the snap is not a preview overlay.
+    setActiveSnapTarget(null)
+    lastPointerRef.current = null
   }, [mode, onWallConfigChange, draggingWallIndex, rotatingWallIndex, stretchingWallIndex, wallConfig, undoIndex])
 
   // ── Wall interaction starters ─────────────────────────────────────────────
@@ -904,7 +1100,7 @@ export default function FloorEditorOverlay({
         <div className="p-6 overflow-auto">
           <p className="text-sm text-gray-500 mb-4">
             {mode === 'walls'
-              ? 'Top-down view. Click a wall to select it. Drag walls to move, endpoint handles to resize, the circle handle on the front edge to rotate. Ctrl+Z undo, Ctrl+Y redo.'
+              ? 'Top-down view. Click a wall to select it. Drag walls to move, endpoint handles to resize, the circle handle on the front edge to rotate. Hold Shift while dragging to snap — 90° on rotate, to a neighbouring wall corner on move and resize. Ctrl+Z undo, Ctrl+Y redo.'
               : 'Top-down view. Drag tables to move. Click a table then "Add model" to place a 3D model on it.'}
           </p>
 
@@ -968,6 +1164,21 @@ export default function FloorEditorOverlay({
                 </g>
                 )
               })}
+
+              {/* Snap indicator — the neighbour endpoint the dragged wall is
+                  currently welded to. Without this the user can only infer the
+                  snap fired from the result, which is indistinguishable from
+                  having landed it by hand. Drawn after the walls so it is never
+                  occluded, and non-interactive so it can't steal the drag. */}
+              {mode === 'walls' && activeSnapTarget && (() => {
+                const [cx, cy] = worldToScreen(activeSnapTarget.x, activeSnapTarget.z, bounds)
+                return (
+                  <g style={{ pointerEvents: 'none' }}>
+                    <circle cx={cx} cy={cy} r={9} fill="none" stroke="#facc15" strokeWidth={2} />
+                    <circle cx={cx} cy={cy} r={3.5} fill="#facc15" />
+                  </g>
+                )
+              })()}
 
               {/* Rotate handle lines (wall center → handle) */}
               {mode === 'walls' && wallGeometry.map(({ index, centerPx, centerPy, handlePx, handlePy }) => (
