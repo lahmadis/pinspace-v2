@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react'
 import imageCompression from 'browser-image-compression'
 import { supabase } from '@/lib/supabase/client'
-import { MAX_IMAGE_SIZE_BYTES, MAX_MODEL_SIZE_BYTES, SUPPORTED_MODEL_EXTENSIONS } from '@/lib/uploadLimits'
+import { MAX_IMAGE_SIZE_BYTES, maxModelBytesForName, SUPPORTED_MODEL_EXTENSIONS } from '@/lib/uploadLimits'
 
 // HEIC/HEIF are accepted here because the upload pipeline converts them to
 // JPEG (via heic2any in hooks/useBoardUpload.ts) BEFORE calling this hook.
@@ -78,7 +78,10 @@ export function useDirectUpload(): DirectUploadState & {
         throw new Error(`Unsupported file type: ${file.type}`)
       }
 
-      const maxBytes = isModel ? MAX_MODEL_SIZE_BYTES : MAX_IMAGE_SIZE_BYTES
+      // Per-format for models: STL (especially ASCII) is far more verbose than
+      // the binary formats and carries its own larger cap. Using the flat
+      // MAX_MODEL_SIZE_BYTES here rejected STLs the rest of the app accepts.
+      const maxBytes = isModel ? maxModelBytesForName(file.name) : MAX_IMAGE_SIZE_BYTES
       if (file.size > maxBytes) {
         const fileMb = (file.size / 1024 / 1024).toFixed(1)
         const capMb = (maxBytes / 1024 / 1024).toFixed(0)
@@ -118,7 +121,16 @@ export function useDirectUpload(): DirectUploadState & {
         const safeName = baseName.replace(/[^a-zA-Z0-9._-]/g, '_').toLowerCase()
         const ext = modelExt!.slice(1)
         uploadBlob = file
-        contentType = file.type || 'application/octet-stream'
+        // Derive the MIME from the EXTENSION, not file.type. Browsers report
+        // model formats inconsistently — commonly '' for .stl and .3dm, and
+        // occasionally a type the bucket does not allow-list — which surfaces as
+        // an opaque storage rejection. Mirrors app/api/upload-model/route.ts so
+        // both paths write identical metadata.
+        contentType =
+          ext === 'glb' ? 'model/gltf-binary'
+          : ext === 'gltf' ? 'model/gltf+json'
+          : ext === 'stl' ? 'model/stl'
+          : 'application/octet-stream' // .3dm has no standard MIME
         storagePath = `${userId}/models/${ts}-${rand}-${safeName}.${ext}`
       }
 

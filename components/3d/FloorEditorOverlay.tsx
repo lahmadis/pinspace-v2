@@ -8,6 +8,7 @@ import { X, Plus, Upload, Trash2 } from 'lucide-react'
 import { WallConfigPreview } from './WallConfigPreview'
 import { toast } from '@/lib/toast'
 import { maxModelBytesForName } from '@/lib/uploadLimits'
+import { useDirectUpload } from '@/lib/useDirectUpload'
 
 const TABLE_HEIGHT_INCHES = 18 // 1.5 feet
 const DEFAULT_TABLE_WIDTH = 24
@@ -15,7 +16,6 @@ const DEFAULT_TABLE_DEPTH = 18
 const GRID_INCHES = 12 // 1 ft grid (visual reference only; wall transforms are free-continuous)
 
 interface FloorEditorOverlayProps {
-  studioId: string
   wallConfig: WallConfig
   tables: FloorTable[]
   setTables: (tables: FloorTable[] | ((prev: FloorTable[]) => FloorTable[])) => void
@@ -112,7 +112,6 @@ function normalizeAngle(a: number): number {
 }
 
 export default function FloorEditorOverlay({
-  studioId,
   wallConfig,
   tables,
   setTables,
@@ -126,6 +125,11 @@ export default function FloorEditorOverlay({
 }: FloorEditorOverlayProps) {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
   const [uploadingTableId, setUploadingTableId] = useState<string | null>(null)
+  // Browser → Supabase Storage directly. Model uploads used to POST a FormData
+  // to /api/upload-model, which is a Vercel serverless function: its request
+  // body is capped at ~4.5 MB, so anything larger died at the platform before
+  // the route's own size check ran, no matter what the client cap said.
+  const { upload: uploadModelFile } = useDirectUpload()
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null)
   const [dragStart, setDragStart] = useState<{ x: number; z: number; startPx: number; startPy: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -322,13 +326,8 @@ export default function FloorEditorOverlay({
       }
       try {
         setUploadingTableId(tableId)
-        const formData = new FormData()
-        formData.append('model', file)
-        formData.append('studioId', studioId)
-        const response = await fetch('/api/upload-model', { method: 'POST', body: formData })
-        const data = await response.json().catch(() => ({} as { error?: string; url?: string }))
-        if (!response.ok || !data.url) throw new Error(data.error || `Upload failed (${response.status})`)
-        setTables((prev) => prev.map((t) => (t.id === tableId ? { ...t, modelUrl: data.url } : t)))
+        const { fullUrl } = await uploadModelFile(file)
+        setTables((prev) => prev.map((t) => (t.id === tableId ? { ...t, modelUrl: fullUrl } : t)))
         toast.success('3D model uploaded')
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Please try again.'
@@ -338,7 +337,7 @@ export default function FloorEditorOverlay({
         e.target.value = ''
       }
     },
-    [selectedTableId, setTables, studioId]
+    [selectedTableId, setTables, uploadModelFile]
   )
 
   const handlePointerDownOnTable = useCallback(

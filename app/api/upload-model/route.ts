@@ -12,6 +12,17 @@ function getSafeName(name: string): string {
     .slice(0, 60) || 'model'
 }
 
+/**
+ * NOT the app's model-upload path any more — the floor editor uploads straight
+ * from the browser to Storage via lib/useDirectUpload.ts.
+ *
+ * DO NOT re-wire a UI to this route without reading this first: it is a Vercel
+ * serverless function, so its request body is capped at ~4.5 MB by the
+ * platform. Anything larger is rejected before this handler executes, which
+ * means the `maxModelBytesForName` check below (40 MB, or 50 MB for STL) can
+ * never actually be the binding limit in production. It reads as if large
+ * uploads are supported here; they are not.
+ */
 export async function POST(request: NextRequest) {
   try {
     const supabase = supabaseServer()

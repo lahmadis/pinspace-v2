@@ -2173,7 +2173,6 @@ export default function StudioRoom(props: StudioRoomProps) {
 
       {floorEditorOpen && (
         <FloorEditorOverlay
-          studioId={props.studioId}
           wallConfig={props.wallConfig}
           tables={tables}
           setTables={setTables}
