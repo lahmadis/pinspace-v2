@@ -445,6 +445,17 @@ export default function WorkspaceRoomsPage() {
   // Reorder UI is an owner-only power. `createdBy` is the workspace owner_id.
   const isOwner = workspace.createdBy === user?.id
 
+  // Owner hardening, mirroring app/studio/[id]/page.tsx:403-407: `createdBy` is
+  // owner_id and needs only the session, so the owner keeps their powers even
+  // when the members array is missing or malformed. Every predicate feeding the
+  // card affordance row is otherwise derived purely from workspace.members, and
+  // the whole row hangs off canRename — so one bad members payload silently
+  // strips the real owner of rename, publish AND delete at once. Widens to the
+  // OWNER only; non-owners are unaffected, and publish still additionally
+  // requires an instructor ACCOUNT (isAccountInstructor), which is the server
+  // gate in PATCH /api/rooms/[id].
+  const ownerOrInstructor = isInstructor || isOwner
+
   // Shared per-card handlers/flags. Per-room props (room, isEditing, isBusy)
   // are supplied at each call site.
   const cardHandlers: RoomCardHandlers = {
@@ -453,9 +464,9 @@ export default function WorkspaceRoomsPage() {
     onSaveRename: handleRenameRoom,
     onCancelEdit: () => { setEditingRoomId(null); setEditingRoomName('') },
     onStartEdit: (r) => { setEditingRoomId(r.id); setEditingRoomName(r.name) },
-    canRename,
-    canShowPublish: orgModeAllowsPublish && canPublish,
-    isInstructor,
+    canRename: canRename || isOwner,
+    canShowPublish: orgModeAllowsPublish && ownerOrInstructor && isAccountInstructor,
+    isInstructor: ownerOrInstructor,
     onTogglePublish: (r) => { handleTogglePublish(r) },
     onRequestDelete: (r) => setRoomToDelete(r),
   }

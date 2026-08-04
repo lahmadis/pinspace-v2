@@ -313,7 +313,12 @@ export default function WorkspaceSettingsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Main Column */}
           <div className="lg:col-span-2 space-y-8">
-            {/* Invite Section */}
+            {/* Invite Section — instructors only. The invite link, QR and code
+                each hand out class access, so this matches the entry point on
+                the rooms-list page, where the Settings link itself sits behind
+                isInstructor. It was ungated, so any member reaching this URL
+                directly could pass out access to a class they merely belong to. */}
+            {isInstructor && (
             <div className="bg-white rounded-xl border border-gray-200 p-8">
               <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2.5">
                 <Mail className="w-5 h-5 text-indigo-600" />
@@ -363,8 +368,8 @@ export default function WorkspaceSettingsPage() {
               <div className="mt-8 pt-8 border-t border-gray-200">
                 <p className="text-sm text-gray-500 mb-4">Or scan this QR code:</p>
                 <div className="inline-block p-4 bg-white border border-gray-200 rounded-lg">
-                  <QRCodeSVG 
-                    value={inviteLink} 
+                  <QRCodeSVG
+                    value={inviteLink}
                     size={200}
                     level="M"
                     includeMargin={false}
@@ -372,6 +377,7 @@ export default function WorkspaceSettingsPage() {
                 </div>
               </div>
             </div>
+            )}
 
             {/* Rooms Section — instructors only. Publish controls live on the
                 rooms-list page (/workspace/[id]) so they sit next to each room
@@ -710,7 +716,9 @@ export default function WorkspaceSettingsPage() {
                 <h4 className="font-semibold text-indigo-900">Tips</h4>
               </div>
               <ul className="text-sm text-indigo-800 space-y-2">
-                <li>• Share the invite link via email or course platform</li>
+                {/* Follows the Invite section's gate — without this, members who
+                    can no longer see the invite link are still told to share it. */}
+                {isInstructor && <li>• Share the invite link via email or course platform</li>}
                 <li>• Students need to sign in before joining</li>
                 <li>• All members can add boards to the studio</li>
                 <li>• Any member of the studio can edit or delete any board.</li>

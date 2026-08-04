@@ -201,6 +201,7 @@ function scopeConfig(
   accountMode: string,
   organization: { name: string; slug: string } | null,
   institutionHome: string | null,
+  canCreate: boolean,
 ): ScopeCfg {
   const noun = accountMode === 'firm' ? 'Project' : 'Class'
   switch (scope) {
@@ -210,9 +211,16 @@ function scopeConfig(
         newLabel: `New ${noun}`,
         newHref: withInstitution('/workspace/new', institutionHome),
         emptyTitle: `No ${noun.toLowerCase()}s yet`,
-        emptySubtext: accountMode === 'firm'
-          ? 'Create a firm project or join one with an invite code.'
-          : 'Create a class or join one with an invite code.',
+        // Students are the people who see this copy most, and the same
+        // canCreate flag hides the New Class affordance from them — telling
+        // them to create one is a dead end. Offer only what they can do.
+        emptySubtext: canCreate
+          ? accountMode === 'firm'
+            ? 'Create a firm project or join one with an invite code.'
+            : 'Create a class or join one with an invite code.'
+          : accountMode === 'firm'
+            ? 'Join a firm project with an invite code.'
+            : 'Join a class with an invite code.',
         showJoin: true,
       }
     case 'shared':
@@ -267,20 +275,20 @@ export function DashboardMain({
   const requiresInstructor = scope === 'wentworth'
   const canCreate = !requiresInstructor || profile.accountRole === 'instructor'
 
-  // Enter Network is an org-wide entry point, not a class action. Its only gate
-  // is the scope — never account_role, never "owns/joined at least one room".
-  // A student with zero classes is precisely who needs it, so it renders in the
-  // zero-room empty state as well as the populated grid. Deliberately NOT also
-  // gated on `organization`: the Wentworth tab is already unreachable without an
-  // org (DashboardSidebar renders it behind hasOrganization), and `organization`
-  // is null while the profile fetch is in flight or if it fails — re-adding that
-  // check would make the card vanish again for the exact users this serves.
+  // Enter Network is an org-wide entry point, not a class action. It is gated on
+  // nothing at all now — never account_role, never "owns/joined at least one
+  // room" — because the grid it lives in renders unconditionally (see below).
+  // Deliberately NOT gated on `organization` either: the Wentworth tab is
+  // already unreachable without an org (DashboardSidebar renders it behind
+  // hasOrganization), and `organization` is null while the profile fetch is in
+  // flight or if it fails — re-adding that check would make the card vanish
+  // again for the exact users it serves.
   const networkHref =
     scope === 'wentworth'
       ? organization?.slug ? `/explore?institution=${encodeURIComponent(organization.slug)}` : '/explore'
       : scope === 'shared' ? '/network/shared' : '/network'
 
-  const cfg = scopeConfig(scope, accountMode, organization, institutionHome)
+  const cfg = scopeConfig(scope, accountMode, organization, institutionHome, canCreate)
   const hasArchived = rooms.some((r) => r.is_archived)
   const visibleRooms = showArchived ? rooms : rooms.filter((r) => !r.is_archived)
 
@@ -301,7 +309,14 @@ export function DashboardMain({
         <span className="text-base font-semibold text-gray-900 pl-10 md:pl-0 min-w-0 truncate">{cfg.title}</span>
 
         <div className="flex flex-wrap items-center gap-2">
-          {hasArchived && profile.accountRole === 'instructor' && (
+          {/* Revealing your own archived rooms is a VIEW action, so it is not
+              gated on account_role. It used to be, which made archiving a
+              one-way door: a student-account owner can archive a personal or
+              shared project (that check is the workspace MEMBER role, and every
+              creator is inserted as an instructor member) but could never
+              unhide it again, because this check was the ACCOUNT role. The
+              rooms are already in `rooms` — this only toggles the filter. */}
+          {hasArchived && (
             <button
               type="button"
               onClick={() => setShowArchived((v) => !v)}
@@ -351,60 +366,65 @@ export function DashboardMain({
               </div>
             ))}
           </div>
-        ) : visibleRooms.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            {/* Wentworth only — Personal/Shared keep their grid-only placement.
-                With zero classes this is the one thing a student can actually
-                do, so it leads the empty state. */}
-            {scope === 'wentworth' && (
-              <div className="w-full max-w-[240px] mb-10">
-                <EnterNetworkCard href={networkHref} />
+        ) : (
+          <>
+            {/* Persistent chrome. Enter Network and New Class are entry points,
+                not content, so they render unconditionally rather than inside
+                the populated branch of an empty-state ternary — that structure
+                is what silently deleted Enter Network for every user with zero
+                rooms. Same shape as app/network/page.tsx and app/explore/page.tsx,
+                where the header and back link sit outside the ternary, and as
+                app/workspace/[id]/page.tsx, where "No rooms yet" renders BELOW
+                the grid instead of replacing it. Anything added to this grid
+                later inherits the fix. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <EnterNetworkCard href={networkHref} />
+              {canCreate && <NewRoomCard href={cfg.newHref} label={cfg.newLabel} />}
+              {visibleRooms.map((room) => (
+                <RoomCard
+                  key={room.id}
+                  workspace={room}
+                  isOwner={room.owner_id === userId}
+                  scope={scope}
+                  openMenuId={openMenuId}
+                  setOpenMenuId={setOpenMenuId}
+                  institutionSlug={institutionHome}
+                  onDelete={onDelete}
+                  onRename={onRename}
+                  onLeave={onLeave}
+                />
+              ))}
+            </div>
+
+            {visibleRooms.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+                  <Plus className="w-7 h-7 text-gray-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">{cfg.emptyTitle}</h3>
+                <p className="text-sm text-gray-500 mb-6 max-w-xs">{cfg.emptySubtext}</p>
+                <div className="flex gap-2.5 flex-wrap justify-center">
+                  {cfg.showJoin && (
+                    <button
+                      type="button"
+                      onClick={onShowJoinModal}
+                      className="px-4 py-2 border border-indigo-400 text-indigo-600 rounded-lg text-sm font-medium hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
+                    >
+                      <UserPlus className="w-4 h-4" /> Join with code
+                    </button>
+                  )}
+                  {canCreate && (
+                    <Link
+                      href={cfg.newHref}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center gap-1.5 shadow-sm"
+                    >
+                      <Plus className="w-4 h-4" /> {cfg.newLabel}
+                    </Link>
+                  )}
+                </div>
               </div>
             )}
-            <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-              <Plus className="w-7 h-7 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">{cfg.emptyTitle}</h3>
-            <p className="text-sm text-gray-500 mb-6 max-w-xs">{cfg.emptySubtext}</p>
-            <div className="flex gap-2.5 flex-wrap justify-center">
-              {cfg.showJoin && (
-                <button
-                  type="button"
-                  onClick={onShowJoinModal}
-                  className="px-4 py-2 border border-indigo-400 text-indigo-600 rounded-lg text-sm font-medium hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
-                >
-                  <UserPlus className="w-4 h-4" /> Join with code
-                </button>
-              )}
-              {canCreate && (
-                <Link
-                  href={cfg.newHref}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center gap-1.5 shadow-sm"
-                >
-                  <Plus className="w-4 h-4" /> {cfg.newLabel}
-                </Link>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            <EnterNetworkCard href={networkHref} />
-            {canCreate && <NewRoomCard href={cfg.newHref} label={cfg.newLabel} />}
-            {visibleRooms.map((room) => (
-              <RoomCard
-                key={room.id}
-                workspace={room}
-                isOwner={room.owner_id === userId}
-                scope={scope}
-                openMenuId={openMenuId}
-                setOpenMenuId={setOpenMenuId}
-                institutionSlug={institutionHome}
-                onDelete={onDelete}
-                onRename={onRename}
-                onLeave={onLeave}
-              />
-            ))}
-          </div>
+          </>
         )}
       </div>
     </div>
