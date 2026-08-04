@@ -267,6 +267,19 @@ export function DashboardMain({
   const requiresInstructor = scope === 'wentworth'
   const canCreate = !requiresInstructor || profile.accountRole === 'instructor'
 
+  // Enter Network is an org-wide entry point, not a class action. Its only gate
+  // is the scope — never account_role, never "owns/joined at least one room".
+  // A student with zero classes is precisely who needs it, so it renders in the
+  // zero-room empty state as well as the populated grid. Deliberately NOT also
+  // gated on `organization`: the Wentworth tab is already unreachable without an
+  // org (DashboardSidebar renders it behind hasOrganization), and `organization`
+  // is null while the profile fetch is in flight or if it fails — re-adding that
+  // check would make the card vanish again for the exact users this serves.
+  const networkHref =
+    scope === 'wentworth'
+      ? organization?.slug ? `/explore?institution=${encodeURIComponent(organization.slug)}` : '/explore'
+      : scope === 'shared' ? '/network/shared' : '/network'
+
   const cfg = scopeConfig(scope, accountMode, organization, institutionHome)
   const hasArchived = rooms.some((r) => r.is_archived)
   const visibleRooms = showArchived ? rooms : rooms.filter((r) => !r.is_archived)
@@ -340,6 +353,14 @@ export function DashboardMain({
           </div>
         ) : visibleRooms.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
+            {/* Wentworth only — Personal/Shared keep their grid-only placement.
+                With zero classes this is the one thing a student can actually
+                do, so it leads the empty state. */}
+            {scope === 'wentworth' && (
+              <div className="w-full max-w-[240px] mb-10">
+                <EnterNetworkCard href={networkHref} />
+              </div>
+            )}
             <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
               <Plus className="w-7 h-7 text-gray-400" />
             </div>
@@ -367,11 +388,7 @@ export function DashboardMain({
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {scope === 'wentworth' && (
-              <EnterNetworkCard href={organization?.slug ? `/explore?institution=${encodeURIComponent(organization.slug)}` : '/explore'} />
-            )}
-            {scope === 'personal' && <EnterNetworkCard href="/network" />}
-            {scope === 'shared' && <EnterNetworkCard href="/network/shared" />}
+            <EnterNetworkCard href={networkHref} />
             {canCreate && <NewRoomCard href={cfg.newHref} label={cfg.newLabel} />}
             {visibleRooms.map((room) => (
               <RoomCard
