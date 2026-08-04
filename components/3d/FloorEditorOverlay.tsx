@@ -44,7 +44,12 @@ interface FloorEditorOverlayProps {
    * is false the wall delete is aborted before any geometry change so the
    * room stays consistent.
    */
-  onWallRemoved?: (deletedIndex: number) => Promise<{ ok: boolean }>
+  onWallRemoved?: (
+    deletedIndex: number,
+    /** Board count shown to the user when confirming; the server re-counts live
+     *  and refuses on mismatch so a stale count can't delete unseen boards. */
+    expectedBoardCount: number,
+  ) => Promise<{ ok: boolean; message?: string; liveBoardCount?: number }>
   /**
    * Persists the post-splice wall config to the per-room blob using the
    * same endpoint Save & Exit uses, and updates the local version counter
@@ -587,7 +592,7 @@ export default function FloorEditorOverlay({
    * would restore the wall while leaving boards already deleted/re-indexed
    * server-side, the exact desync this atomic commit prevents.
    */
-  const commitWallDelete = useCallback(async (targetIndex: number) => {
+  const commitWallDelete = useCallback(async (targetIndex: number, expectedBoardCount: number) => {
     if (removingWallRef.current) return
     // Defense in depth behind the hidden Remove-wall button: onWallRemoved (the
     // board re-index / delete) runs BEFORE the delete-gated persist, so bailing
@@ -611,9 +616,22 @@ export default function FloorEditorOverlay({
     removingWallRef.current = true
     try {
       if (onWallRemoved) {
-        const reindexResult = await onWallRemoved(targetIndex)
+        const reindexResult = await onWallRemoved(targetIndex, expectedBoardCount)
         if (!reindexResult.ok) {
-          toast.error("Couldn't update boards for the wall delete. No changes made.")
+          // A stale count came back with the live one. Restate the confirmation
+          // with the real number so the retry consents to what is actually on
+          // the wall — re-sending the stale count would just 409 forever.
+          if (typeof reindexResult.liveBoardCount === 'number') {
+            setPendingDelete(
+              reindexResult.liveBoardCount > 0
+                ? { index: targetIndex, boardCount: reindexResult.liveBoardCount }
+                : null
+            )
+          }
+          // Prefer the specific reason (stale count, permission, partial
+          // failure) over the generic one; the generic line promises nothing
+          // was changed, which is only true when the server got nowhere.
+          toast.error(reindexResult.message ?? "Couldn't update boards for the wall delete. No changes made.")
           return
         }
       }
@@ -658,8 +676,11 @@ export default function FloorEditorOverlay({
       return
     }
 
-    // Empty wall — commit directly, no modal.
-    void commitWallDelete(targetIndex)
+    // Believed-empty wall — commit directly, no modal. `boardsHere` (0) rides
+    // along as the consent count: if the server finds boards here after all,
+    // this client was stale and the delete is refused rather than silently
+    // destroying boards no modal ever mentioned.
+    void commitWallDelete(targetIndex, boardsHere)
   }, [wallConfig, onWallConfigChange, selectedWallIndex, boardWallIndices, commitWallDelete])
 
   // ── Compute wall geometry for rendering ───────────────────────────────────
@@ -1094,9 +1115,11 @@ export default function FloorEditorOverlay({
               >
                 Cancel
               </button>
+              {/* Pass the count the user just read in this modal — that is
+                  exactly what they consented to, and the server holds us to it. */}
               <button
                 type="button"
-                onClick={() => { void commitWallDelete(pendingDelete.index) }}
+                onClick={() => { void commitWallDelete(pendingDelete.index, pendingDelete.boardCount) }}
                 disabled={removingWallRef.current}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
               >

@@ -991,29 +991,66 @@ export default function StudioRoom(props: StudioRoomProps) {
   )
 
   /**
-   * Re-index boards on walls past `deletedIndex` so they stay pinned to the
-   * correct physical wall after the floor editor pops the wall at
-   * `deletedIndex`. The editor's board-safety guard refuses to delete a wall
-   * that has any boards on it, so we never have to handle boards on the
-   * deleted index.
+   * Delete the boards on `deletedIndex` and re-index boards on walls past it so
+   * they stay pinned to the correct physical wall after the floor editor pops
+   * that wall.
    *
-   * Returns `{ ok }` so the editor can sequence this atomically with the
-   * geometry POST: on failure the editor leaves the wall in place and the
-   * room stays consistent. onBoardUpdate refreshes localBoards on success so
-   * the 3D view picks up the new indices.
+   * `expectedBoardCount` is the count the editor showed the user when asking
+   * for confirmation. It is derived from `localBoards`, which is stale the
+   * instant a collaborator pins a board to this wall — and a stale zero skips
+   * the confirm modal entirely. The endpoint re-counts live and 409s on
+   * mismatch, so those boards can't be deleted behind the user's back; we
+   * refresh and surface a retry rather than proceeding.
+   *
+   * Returns `{ ok, message? }` so the editor can sequence this atomically with
+   * the geometry POST: on failure the editor leaves the wall in place and the
+   * room stays consistent, toasting `message` when we have a specific reason.
+   * onBoardUpdate refreshes localBoards on success so the 3D view picks up the
+   * new indices.
    */
   const handleWallRemoved = useCallback(
-    async (deletedIndex: number): Promise<{ ok: boolean }> => {
+    async (
+      deletedIndex: number,
+      expectedBoardCount: number,
+    ): Promise<{ ok: boolean; message?: string; liveBoardCount?: number }> => {
       const roomId = props.studioId
       try {
         const res = await fetch('/api/boards/reindex-after-wall-delete', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomId, deletedWallIndex: deletedIndex }),
+          body: JSON.stringify({ roomId, deletedWallIndex: deletedIndex, expectedBoardCount }),
         })
         if (!res.ok) {
-          const data = await res.json().catch(() => ({} as { error?: string }))
+          const data = await res.json().catch(
+            () => ({} as { error?: string; liveBoardCount?: number; partial?: boolean })
+          )
           console.error('reindex-after-wall-delete failed', { status: res.status, data })
+          if (res.status === 409) {
+            // Someone else changed this wall since we loaded. Pull the current
+            // boards in so a retry is judged against what is actually there,
+            // and hand the live count back so the confirmation can restate it.
+            await props.onBoardUpdate().catch(() => {})
+            const live = data.liveBoardCount ?? 0
+            return {
+              ok: false,
+              liveBoardCount: live,
+              message: live === 0
+                ? 'This wall changed while you were working — its boards were moved or removed. Nothing was deleted; try again.'
+                : `This wall now has ${live} board${live === 1 ? '' : 's'} on it — the count has been updated. Nothing was deleted.`,
+            }
+          }
+          if (res.status === 403) {
+            return { ok: false, message: 'You do not have permission to delete a wall in this room.' }
+          }
+          if (data.partial) {
+            // The delete committed and a later step failed. Saying "no changes
+            // made" here would send the user hunting for boards that are gone.
+            await props.onBoardUpdate().catch(() => {})
+            return {
+              ok: false,
+              message: 'Boards were deleted and some board positions may have changed, but the wall itself could not be updated. Please refresh before continuing.',
+            }
+          }
           return { ok: false }
         }
         // Refetch boards so local state picks up the new wall_index values.
