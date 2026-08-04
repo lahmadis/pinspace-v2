@@ -46,7 +46,7 @@ export default function WorkspaceRoomsPage() {
   const workspaceId = params.id as string
 
   const { status: authStatus, user } = useAuthSession()
-  const { mode: accountMode } = useAccountMode(user?.id, user?.email)
+  const { mode: accountMode, resolved: accountModeResolved } = useAccountMode(user?.id, user?.email)
   const { profile } = useProfile()
   const isAuthLoaded = authStatus !== 'loading'
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
@@ -147,6 +147,13 @@ export default function WorkspaceRoomsPage() {
   // of workspace ownership. Mirrors the server gate in PATCH /api/rooms/[id].
   const isAccountInstructor = profile.accountRole === 'instructor'
   const canPublish = isInstructor && isAccountInstructor
+  // accountMode reads 'personal' both for a real personal account and for one
+  // whose load FAILED (resolved=false). Publishing is already gated on
+  // canPublish — workspace instructor AND instructor account — so an unresolved
+  // mode must not additionally strip the control from someone whose membership
+  // role has already earned it. Only a positively resolved personal account
+  // hides it, which is the pre-existing behaviour for genuine personal accounts.
+  const orgModeAllowsPublish = !accountModeResolved || accountMode !== 'personal'
   // Adding rooms is allowed for any collaborator on a SHARED project, not just
   // the owner. Shared projects join new collaborators as `student`-role members
   // (see /api/workspaces/[id]/join), so an instructor-only gate hides the
@@ -447,7 +454,7 @@ export default function WorkspaceRoomsPage() {
     onCancelEdit: () => { setEditingRoomId(null); setEditingRoomName('') },
     onStartEdit: (r) => { setEditingRoomId(r.id); setEditingRoomName(r.name) },
     canRename,
-    canShowPublish: accountMode !== 'personal' && canPublish,
+    canShowPublish: orgModeAllowsPublish && canPublish,
     isInstructor,
     onTogglePublish: (r) => { handleTogglePublish(r) },
     onRequestDelete: (r) => setRoomToDelete(r),
@@ -473,7 +480,7 @@ export default function WorkspaceRoomsPage() {
           </div>
           {isInstructor && (
             <div className="flex items-center gap-2">
-              {accountMode !== 'personal' && canPublish && (
+              {orgModeAllowsPublish && canPublish && (
                 <button
                   onClick={() => setNetworkSettingsOpen(true)}
                   className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"

@@ -86,7 +86,7 @@ export default function SettingsPage() {
   const router = useRouter()
   const { status: authStatus, user } = useAuthSession()
   const isLoaded = authStatus !== 'loading'
-  const { mode: accountMode } = useAccountMode(user?.id, user?.email)
+  const { mode: accountMode, resolved: accountModeResolved } = useAccountMode(user?.id, user?.email)
   const { setProfile } = useProfile()
 
   // Profile
@@ -305,7 +305,9 @@ export default function SettingsPage() {
     )
   }
 
-  const hasOrganization = accountMode !== 'personal' || Boolean(organization)
+  // Same guard as the dashboard: an unresolved accountMode reports 'personal'
+  // by default, and trusting that would hide the org tab in this sidebar too.
+  const hasOrganization = Boolean(organization) || (accountModeResolved && accountMode !== 'personal')
   const displayName = firstName || user?.email?.split('@')[0] || 'You'
   const nameChanged = fullName !== savedName
 

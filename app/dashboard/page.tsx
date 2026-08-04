@@ -39,8 +39,13 @@ function DashboardContent() {
   const [institutionHome, setInstitutionHome] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [organization, setOrganization] = useState<DashboardOrganization | null>(null)
+  // Whether the profile fetch below has SETTLED — not whether it found an org.
+  // `organization` is null both while loading and when the user genuinely has
+  // none, and the scope-init effect must be able to tell those apart.
+  const [orgResolved, setOrgResolved] = useState(false)
   const [firstName, setFirstName] = useState<string | null>(null)
-  const { mode: accountMode, loading: accountModeLoading } = useAccountMode(user?.id, user?.email)
+  const { mode: accountMode, loading: accountModeLoading, resolved: accountModeResolved } =
+    useAccountMode(user?.id, user?.email)
 
   // UI
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -56,7 +61,12 @@ function DashboardContent() {
   const [currentScope, setCurrentScope] = useState<Scope>('personal')
   const scopeInitRef = useRef(false)
 
-  const hasOrganization = accountMode !== 'personal' || Boolean(organization)
+  // A FAILED accountMode load still reports mode 'personal' (the default) with
+  // resolved=false. Reading that as a real personal account is what hid the org
+  // tab from university users after one transient fetch error, so accountMode
+  // only counts once it resolved. `organization` is the more direct signal
+  // anyway — it comes straight from the profile's joined org row.
+  const hasOrganization = Boolean(organization) || (accountModeResolved && accountMode !== 'personal')
 
   const handleScopeChange = (scope: Scope) => {
     setCurrentScope(scope)
@@ -64,21 +74,25 @@ function DashboardContent() {
     setSidebarOpen(false)
   }
 
-  // Init scope from localStorage once account mode is resolved
+  // Init scope from localStorage once account mode AND the profile fetch have
+  // both settled. Committing scopeInitRef on the earlier pass used to bounce a
+  // university user to Personal: hasOrg was computed from an `organization`
+  // that simply hadn't arrived yet, and the ref guard then stopped the effect
+  // reconsidering when it did. Waiting on orgResolved keeps the commit one-shot
+  // while making sure the one shot sees both inputs.
   useEffect(() => {
-    if (!isLoaded || accountModeLoading || scopeInitRef.current) return
+    if (!isLoaded || accountModeLoading || !orgResolved || scopeInitRef.current) return
     scopeInitRef.current = true
     const saved = typeof window !== 'undefined'
       ? (localStorage.getItem(SCOPE_STORAGE_KEY) as Scope | null)
       : null
-    const hasOrg = accountMode !== 'personal' || Boolean(organization)
     const valid: Scope[] = ['wentworth', 'shared', 'personal']
     if (saved && valid.includes(saved)) {
-      setCurrentScope(saved === 'wentworth' && !hasOrg ? 'personal' : saved)
+      setCurrentScope(saved === 'wentworth' && !hasOrganization ? 'personal' : saved)
     } else {
-      setCurrentScope(hasOrg ? 'wentworth' : 'personal')
+      setCurrentScope(hasOrganization ? 'wentworth' : 'personal')
     }
-  }, [isLoaded, accountModeLoading, accountMode, organization])
+  }, [isLoaded, accountModeLoading, orgResolved, hasOrganization])
 
   // ── Data fetching ─────────────────────────────────────────────────────────
 
@@ -148,7 +162,15 @@ function DashboardContent() {
       const fullName = typeof profile?.full_name === 'string' ? profile.full_name : null
       setFirstName(fullName ? (fullName.trim().split(/\s+/)[0] || null) : null)
       setProfile({ avatarUrl: profile?.avatar_url ?? null, fullName })
-    }).catch(() => setIsAdmin(false))
+      setOrgResolved(true)
+    }).catch(() => {
+      // Mark resolved on failure too. This is the scope-init effect's release
+      // latch, and blocking it forever would leave the dashboard stuck on its
+      // initial Personal scope with no retry — worse than committing on the
+      // (degraded) information we have.
+      setIsAdmin(false)
+      setOrgResolved(true)
+    })
   }, [user?.id, searchParams, router])
 
   // ── Handlers ──────────────────────────────────────────────────────────────

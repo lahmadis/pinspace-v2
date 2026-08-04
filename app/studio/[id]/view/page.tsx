@@ -153,7 +153,7 @@ export default function StudioViewPage() {
   const router = useRouter()
   const studioId = params.id as string
   const { user } = useAuthSession()
-  const { mode: accountMode } = useAccountMode(user?.id, user?.email)
+  const { mode: accountMode, resolved: accountModeResolved } = useAccountMode(user?.id, user?.email)
   
   // Check if it's a demo studio (starts with "demo-studio-") or has demo=true param
   const isDemoStudio = studioId.startsWith('demo-studio-')
@@ -511,7 +511,10 @@ export default function StudioViewPage() {
           onClick={() => {
             const base = searchParams.get('returnTo') === 'gallery'
               ? '/gallery'
-              : accountMode === 'personal' ? '/network' : '/explore'
+              // Only a resolved personal account goes to its own network; an
+              // unresolved mode is unknown, not personal, so it keeps the org
+              // destination rather than stranding a university user on /network.
+              : accountModeResolved && accountMode === 'personal' ? '/network' : '/explore'
             if (isDemo) {
               const originalParams = typeof window !== 'undefined' ? window.location.search : ''
               if (originalParams.includes('color=') || originalParams.includes('department=')) {
