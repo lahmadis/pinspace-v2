@@ -15,6 +15,22 @@ const DEFAULT_TABLE_WIDTH = 24
 const DEFAULT_TABLE_DEPTH = 18
 const GRID_INCHES = 12 // 1 ft grid (visual reference only; wall transforms are free-continuous)
 
+/** Bytes → MB with one decimal, for upload progress copy. */
+const toMb = (bytes: number): string => (bytes / (1024 * 1024)).toFixed(1)
+
+/**
+ * Above this size a bare percentage still reads as stalled on a slow link —
+ * the byte counter is the part that visibly moves between percent ticks — so
+ * large transfers also get "18.3 / 43.0 MB".
+ */
+const BYTES_DETAIL_THRESHOLD = 5 * 1024 * 1024
+
+function uploadLabel(pct: number, loaded: number, total: number): string {
+  return total > BYTES_DETAIL_THRESHOLD
+    ? `Uploading ${pct}% (${toMb(loaded)} / ${toMb(total)} MB)`
+    : `Uploading ${pct}%`
+}
+
 interface FloorEditorOverlayProps {
   wallConfig: WallConfig
   tables: FloorTable[]
@@ -129,7 +145,12 @@ export default function FloorEditorOverlay({
   // to /api/upload-model, which is a Vercel serverless function: its request
   // body is capped at ~4.5 MB, so anything larger died at the platform before
   // the route's own size check ran, no matter what the client cap said.
-  const { upload: uploadModelFile } = useDirectUpload()
+  const {
+    upload: uploadModelFile,
+    progress: modelUploadPct,
+    loadedBytes: modelUploadLoaded,
+    totalBytes: modelUploadTotal,
+  } = useDirectUpload()
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null)
   const [dragStart, setDragStart] = useState<{ x: number; z: number; startPx: number; startPy: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -1068,10 +1089,12 @@ export default function FloorEditorOverlay({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingTableId === selectedTableId}
-                className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg text-sm font-medium text-gray-700 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg text-sm font-medium text-gray-700 transition-colors"
               >
                 <Upload className="w-4 h-4" />
-                {uploadingTableId === selectedTableId ? 'Uploading…' : 'Add model'}
+                {uploadingTableId === selectedTableId
+                  ? uploadLabel(modelUploadPct, modelUploadLoaded, modelUploadTotal)
+                  : 'Add model'}
               </button>
               <button
                 type="button"
