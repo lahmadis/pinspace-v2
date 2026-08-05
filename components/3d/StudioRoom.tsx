@@ -429,6 +429,9 @@ function SceneContent({
                 centerInchesY: (pos.y ?? 0) * wallHInches,
                 widthInches: widthIn,
                 heightInches: heightIn,
+                // Only used to orient the resize size-match outline so it sits
+                // on the matched board; the snap math stays axis-aligned.
+                rotationRad: b.position?.rotation ?? 0,
               }]
             })
             return entries.map(([boardId, localPos]) => {

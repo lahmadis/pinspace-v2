@@ -3,7 +3,7 @@
 const isDev = process.env.NODE_ENV === 'development'
 const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
 
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { useThree, ThreeEvent } from '@react-three/fiber'
 import { supabase } from '@/lib/supabase/client'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
@@ -17,7 +17,14 @@ import { toast } from '@/lib/toast'
 import { getBoardSizeInches, boardSizeInchesFromSource } from '@/lib/boardDimensions'
 import VideoBadge from './VideoBadge'
 import { useDisposableGeometry } from './useDisposableGeometry'
-import { snapCenter, type ActiveGuides } from './boardSnapping'
+import {
+  snapCenter,
+  snapEdges,
+  isAxisAlignedForSnap,
+  type ActiveGuides,
+  type SizeMatch,
+  type SnapTarget,
+} from './boardSnapping'
 import { enqueueBoardWrite } from '@/lib/boardPositionWriteQueue'
 
 interface DraggableBoardProps {
@@ -71,10 +78,27 @@ interface DraggableBoardProps {
     centerInchesY: number
     widthInches: number
     heightInches: number
+    /**
+     * The neighbour's own rotation in radians. The snap math ignores it — it
+     * treats every rectangle as axis-aligned, as it always has — but the
+     * size-match outline is drawn ON the matched board, so without this it
+     * would render an unrotated box floating over a rotated neighbour.
+     */
+    rotationRad?: number
   }>
 }
 
 type ResizeCursor = 'nwse-resize' | 'nesw-resize'
+
+/** Sentinel id for the wall-as-snap-target. Never collides with a board id. */
+const WALL_SNAP_TARGET_ID = '__wall__'
+/** Stable empties so a no-snap pointer sample doesn't allocate every frame. */
+const EMPTY_GUIDES: ActiveGuides = { vertical: [], horizontal: [] }
+const EMPTY_SIZE_MATCHES: SizeMatch[] = []
+/** Pink shared with the alignment guides. */
+const SNAP_ACCENT = '#ec4899'
+/** Thickness of guide lines and the size-match outline, in wall inches. */
+const SNAP_LINE_THICKNESS_IN = 0.5
 
 /**
  * Corner→cursor lookup, keyed on the corner index (and the back-side X-mirror,
@@ -327,6 +351,12 @@ useEffect(() => {
     vertical: [],
     horizontal: [],
   })
+
+  // Boards whose width or height the in-progress resize currently matches.
+  // Rendered as a pink outline on the matched board rather than a guide line —
+  // a shared dimension is not a spatial alignment, so a line between the two
+  // would imply an edge relationship that isn't there. Cleared on pointer-up.
+  const [sizeMatches, setSizeMatches] = useState<SizeMatch[]>(EMPTY_SIZE_MATCHES)
 
   const updatePosition = (clientX: number, clientY: number) => {
     const rotationForCoords = wallBaseRotationForCoords ?? wallRotation
@@ -677,10 +707,48 @@ if (e.intersections && e.intersections.length > 0) {
     // Track shift mid-drag so the user can toggle the resize mode without restarting.
     // Default = proportional (locks aspect ratio). Shift held = free resize.
     const shiftHeldRef = { current: e.shiftKey }
-    const onKeyDown = (ev: KeyboardEvent) => { if (ev.key === 'Shift') shiftHeldRef.current = true }
-    const onKeyUp = (ev: KeyboardEvent) => { if (ev.key === 'Shift') shiftHeldRef.current = false }
+    // Alt suppresses snapping for fine manual control. Shift is already taken
+    // by the free/proportional toggle above, hence Alt.
+    const altHeldRef = { current: e.altKey }
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Shift') shiftHeldRef.current = true
+      if (ev.key === 'Alt') altHeldRef.current = true
+    }
+    const onKeyUp = (ev: KeyboardEvent) => {
+      if (ev.key === 'Shift') shiftHeldRef.current = false
+      if (ev.key === 'Alt') altHeldRef.current = false
+    }
+    // Alt+Tab (and any other focus loss) swallows the keyup, which would leave
+    // the modifier stuck on for the rest of the gesture — snapping dead, or the
+    // resize stuck in free mode. Treat losing the window as releasing both.
+    const onWindowBlur = () => {
+      shiftHeldRef.current = false
+      altHeldRef.current = false
+    }
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onWindowBlur)
+
+    // Snap geometry, fixed for the gesture. Edge alignment may snap to other
+    // boards AND to the wall's own edges/center; size matching only ever
+    // considers boards (there is nothing sensible to outline for the wall).
+    const sizeTargets = otherBoardsOnWall ?? []
+    const alignTargets: SnapTarget[] = [
+      ...sizeTargets,
+      {
+        id: WALL_SNAP_TARGET_ID,
+        centerInchesX: 0,
+        centerInchesY: 0,
+        widthInches: wallWidthInches,
+        heightInches: wallHeightInches,
+      },
+    ]
+    // Direction from the anchor to the moving corner on each wall axis, taken
+    // from the actual geometry rather than the board-local sign so the
+    // back-side X mirror needs no special case.
+    const dirX = Math.sign(initialCorner.x - anchor.x) || 1
+    const dirY = Math.sign(initialCorner.y - anchor.y) || 1
+    const allowEdgeAlign = isAxisAlignedForSnap(rotationRef.current)
 
     const onMove = (ev: PointerEvent) => {
       const p = getPointerOnWallPlane(ev.clientX, ev.clientY)
@@ -709,7 +777,8 @@ if (e.intersections && e.intersections.length > 0) {
       const dragDX = pointerWall.x - initialCornerX
       const dragDY = pointerWall.y - initialCornerY
 
-      if (shiftHeldRef.current) {
+      const isFree = shiftHeldRef.current
+      if (isFree) {
         // Shift held = FREE resize: width and height move independently. Project
         // the drag delta onto the board's own (rotated) axes so width tracks the
         // board-local X and height the board-local Y even when the board is turned.
@@ -719,10 +788,6 @@ if (e.intersections && e.intersections.length > 0) {
         const heightDelta = dragAlongY * cornerLocalDirY
         newW = THREE.MathUtils.clamp(initialW + widthDelta, MIN_INCHES_W, MAX_INCHES_W)
         newH = THREE.MathUtils.clamp(initialH + heightDelta, MIN_INCHES_H, MAX_INCHES_H)
-        // The active corner sits at anchor + signed extents along the board's
-        // rotated axes.
-        newCornerX = ax + cornerLocalDirX * newW * bAxisX.x + cornerLocalDirY * newH * bAxisY.x
-        newCornerY = ay + cornerLocalDirX * newW * bAxisX.y + cornerLocalDirY * newH * bAxisY.y
       } else {
         // Default = PROPORTIONAL: project drag delta onto the anchor→corner
         // diagonal direction, grow the diagonal by that scalar, scale both
@@ -735,8 +800,50 @@ if (e.intersections && e.intersections.length > 0) {
         const scale = THREE.MathUtils.clamp(rawScale, minScale, maxScale)
         newW = initialW * scale
         newH = initialH * scale
-        newCornerX = ax + dirNormX * initialDiagonal * scale
-        newCornerY = ay + dirNormY * initialDiagonal * scale
+      }
+
+      // Snap the raw size before deriving the corner, so the snapped value is
+      // what renders AND what the pointer-up PATCH persists. Alt suppresses.
+      if (altHeldRef.current) {
+        setActiveGuides(EMPTY_GUIDES)
+        setSizeMatches(EMPTY_SIZE_MATCHES)
+      } else {
+        const snapped = snapEdges({
+          width: newW,
+          height: newH,
+          anchorX: ax,
+          anchorY: ay,
+          dirX,
+          dirY,
+          minWidth: MIN_INCHES_W,
+          minHeight: MIN_INCHES_H,
+          maxWidth: MAX_INCHES_W,
+          maxHeight: MAX_INCHES_H,
+          alignTargets,
+          sizeTargets,
+          excludeId: board.id,
+          allowEdgeAlign,
+          mode: isFree ? 'free' : 'proportional',
+        })
+        newW = snapped.width
+        newH = snapped.height
+        setActiveGuides(snapped.guides)
+        setSizeMatches(snapped.sizeMatches)
+      }
+
+      // Derive the moving corner from the FINAL size, so a snap moves the board
+      // rather than just the guide.
+      if (isFree) {
+        // The active corner sits at anchor + signed extents along the board's
+        // rotated axes.
+        newCornerX = ax + cornerLocalDirX * newW * bAxisX.x + cornerLocalDirY * newH * bAxisY.x
+        newCornerY = ay + cornerLocalDirX * newW * bAxisX.y + cornerLocalDirY * newH * bAxisY.y
+      } else {
+        // Proportional keeps the aspect locked, so either axis recovers the
+        // scale; width is used for both.
+        const finalScale = newW / initialW
+        newCornerX = ax + dirNormX * initialDiagonal * finalScale
+        newCornerY = ay + dirNormY * initialDiagonal * finalScale
       }
 
       const newCenterX = (ax + newCornerX) / 2
@@ -754,6 +861,9 @@ if (e.intersections && e.intersections.length > 0) {
       // Reset both possible cursor targets in case pointer-up fires off-handle.
       document.body.style.cursor = ''
       gl.domElement.style.cursor = ''
+      // Snap affordances are transient — same lifecycle as the move gesture's.
+      setActiveGuides(EMPTY_GUIDES)
+      setSizeMatches(EMPTY_SIZE_MATCHES)
       const ref = positionRef.current
       const sz = sizeRef.current
       justFinishedDragging.current = true
@@ -827,12 +937,15 @@ if (e.intersections && e.intersections.length > 0) {
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onWindowBlur)
     }
 
     resizeListenersRef.current = { move: onMove, up: onUp }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
-  }, [board.id, _wallIndex, getPointerOnWallPlane, gl, isLocked, scaledWallHeight, scaledWallWidth, side, wallHeightInches, wallWidthInches, worldToWallLocal, onSizePersisted])
+    // otherBoardsOnWall is captured for the snap target lists — without it the
+    // gesture would snap against a stale set of neighbors after any add/delete.
+  }, [board.id, _wallIndex, getPointerOnWallPlane, gl, isLocked, scaledWallHeight, scaledWallWidth, side, wallHeightInches, wallWidthInches, worldToWallLocal, onSizePersisted, otherBoardsOnWall])
 
   /**
    * Rotate gesture. A dedicated handle (rendered above the board's top edge)
@@ -1005,6 +1118,55 @@ if (e.intersections && e.intersections.length > 0) {
     () => new THREE.BoxGeometry(boardWidth + 0.3, boardHeight + 0.3, BOARD_THICKNESS + 0.02),
     [boardWidth, boardHeight],
   )
+  // Resolve size matches to drawable geometry. Grouped by target so a board
+  // matching on BOTH axes gets one outline with a `W × H` label rather than
+  // two identical outlines stacked on each other.
+  const sizeMatchHighlights = useMemo(() => {
+    if (sizeMatches.length === 0) return []
+    const byTarget = new Map<string, { width?: number; height?: number }>()
+    for (const m of sizeMatches) {
+      const entry = byTarget.get(m.targetId) ?? {}
+      if (m.axis === 'width') entry.width = m.valueIn
+      else entry.height = m.valueIn
+      byTarget.set(m.targetId, entry)
+    }
+    const out: Array<{
+      id: string
+      centerX: number
+      centerY: number
+      width: number
+      height: number
+      halfW: number
+      halfH: number
+      rotation: number
+      label: string
+    }> = []
+    for (const [id, axes] of byTarget) {
+      const target = otherBoardsOnWall?.find((b) => b.id === id)
+      if (!target) continue
+      const label =
+        axes.width != null && axes.height != null
+          ? `${Math.round(axes.width)} × ${Math.round(axes.height)}"`
+          : axes.width != null
+            ? `W ${Math.round(axes.width)}"`
+            : `H ${Math.round(axes.height as number)}"`
+      out.push({
+        id,
+        centerX: target.centerInchesX,
+        centerY: target.centerInchesY,
+        width: target.widthInches,
+        height: target.heightInches,
+        halfW: target.widthInches / 2,
+        halfH: target.heightInches / 2,
+        // Raw, unmirrored — matches how each board renders its own inner group
+        // (rotation is applied directly; only position is X-mirrored on the back).
+        rotation: target.rotationRad ?? 0,
+        label,
+      })
+    }
+    return out
+  }, [sizeMatches, otherBoardsOnWall])
+
   const hasImage = board.fullImageUrl || board.thumbnailUrl
   const imageUrl = board.fullImageUrl || board.thumbnailUrl || ''
   const isPDF = imageUrl.toLowerCase().endsWith('.pdf')
@@ -1033,25 +1195,68 @@ if (e.intersections && e.intersections.length > 0) {
   // Position the group at the wall position, then position board within group's local space
   return (
     <group position={wallPosition} rotation={[0, wallRotation, 0]}>
-      {isDragging && activeGuides.vertical.map((gx) => (
+      {(isDragging || isResizing) && activeGuides.vertical.map((gx) => (
         <mesh
           key={`vg-${gx}`}
           position={[isBackSide ? -gx : gx, 0, boardZ + 0.01]}
           raycast={() => null}
         >
-          <planeGeometry args={[0.5, scaledWallHeight]} />
-          <meshBasicMaterial color="#ec4899" transparent opacity={0.95} depthTest={false} depthWrite={false} />
+          <planeGeometry args={[SNAP_LINE_THICKNESS_IN, scaledWallHeight]} />
+          <meshBasicMaterial color={SNAP_ACCENT} transparent opacity={0.95} depthTest={false} depthWrite={false} />
         </mesh>
       ))}
-      {isDragging && activeGuides.horizontal.map((gy) => (
+      {(isDragging || isResizing) && activeGuides.horizontal.map((gy) => (
         <mesh
           key={`hg-${gy}`}
           position={[0, gy, boardZ + 0.01]}
           raycast={() => null}
         >
-          <planeGeometry args={[scaledWallWidth, 0.5]} />
-          <meshBasicMaterial color="#ec4899" transparent opacity={0.95} depthTest={false} depthWrite={false} />
+          <planeGeometry args={[scaledWallWidth, SNAP_LINE_THICKNESS_IN]} />
+          <meshBasicMaterial color={SNAP_ACCENT} transparent opacity={0.95} depthTest={false} depthWrite={false} />
         </mesh>
+      ))}
+
+      {/*
+       * Size-match highlight. A shared width/height is not a spatial
+       * alignment, so this deliberately draws NO line between the two boards —
+       * it outlines the matched board and labels the dimension they now share.
+       * One outline per matched board even when both axes match; the label
+       * then reads `W × H`.
+       */}
+      {isResizing && sizeMatchHighlights.map((hl) => (
+        <group
+          key={`sm-${hl.id}`}
+          position={[isBackSide ? -hl.centerX : hl.centerX, hl.centerY, boardZ + 0.02]}
+          rotation={[0, 0, hl.rotation]}
+        >
+          {[
+            { key: 'top', pos: [0, hl.halfH, 0], size: [hl.width, SNAP_LINE_THICKNESS_IN] },
+            { key: 'bottom', pos: [0, -hl.halfH, 0], size: [hl.width, SNAP_LINE_THICKNESS_IN] },
+            { key: 'left', pos: [-hl.halfW, 0, 0], size: [SNAP_LINE_THICKNESS_IN, hl.height] },
+            { key: 'right', pos: [hl.halfW, 0, 0], size: [SNAP_LINE_THICKNESS_IN, hl.height] },
+          ].map((edge) => (
+            <mesh
+              key={edge.key}
+              position={edge.pos as [number, number, number]}
+              raycast={() => null}
+            >
+              <planeGeometry args={edge.size as [number, number]} />
+              <meshBasicMaterial color={SNAP_ACCENT} transparent opacity={0.95} depthTest={false} depthWrite={false} />
+            </mesh>
+          ))}
+          <Text
+            position={[0, hl.halfH + 2, 0]}
+            fontSize={5}
+            color={SNAP_ACCENT}
+            anchorX="center"
+            anchorY="bottom"
+            outlineWidth={0.4}
+            outlineColor="#ffffff"
+            raycast={() => null}
+          >
+            {hl.label}
+          </Text>
+        </group>
       ))}
       <group ref={innerGroupRef} position={[boardXRender, boardY, boardZ]} rotation={[0, 0, boardRotation]}>
         <mesh

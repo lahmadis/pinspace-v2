@@ -50,6 +50,43 @@ export interface ActiveGuides {
   horizontal: number[]
 }
 
+/**
+ * Edge alignment treats a board's edges as axis-aligned lines in wall space,
+ * which only holds at 0° and 180° (at 180° the half-extents are unchanged). At
+ * 90°/270° the board's width runs along the wall's Y axis, so the half-extents
+ * would have to swap — the move gesture has never handled that either, so
+ * rather than invent rotation-aware alignment lines we suppress edge alignment
+ * on rotated boards. Size matching is unaffected: width and height are
+ * intrinsic to the board, not spatial.
+ */
+export const ROTATION_SNAP_EPSILON_DEG = 0.5
+
+/** True when a board's edges are axis-aligned in wall space (0° or 180°). */
+export function isAxisAlignedForSnap(rotationRad: number): boolean {
+  const deg = ((rotationRad * 180) / Math.PI) % 360
+  const norm = deg > 180 ? deg - 360 : deg < -180 ? deg + 360 : deg
+  const a = Math.abs(norm)
+  return a < ROTATION_SNAP_EPSILON_DEG || Math.abs(a - 180) < ROTATION_SNAP_EPSILON_DEG
+}
+
+/**
+ * A board whose width or height the resized board has matched exactly. Matching
+ * size is not a spatial alignment, so this draws no guide line — the caller
+ * outlines the matched board instead.
+ */
+export interface SizeMatch {
+  targetId: string
+  axis: 'width' | 'height'
+  valueIn: number
+}
+
+interface AxisCandidate {
+  /** Snapped size on this axis, absolute inches. */
+  size: number
+  /** How far the size had to move to get there. */
+  distance: number
+}
+
 /** The three alignment lines a rectangle contributes on one axis. */
 function linesFor(center: number, half: number): [number, number, number] {
   return [center - half, center, center + half]
@@ -151,5 +188,197 @@ export function snapCenter(params: {
     centerX,
     centerY,
     guides: { vertical: Array.from(verticalSet), horizontal: Array.from(horizontalSet) },
+  }
+}
+
+/**
+ * Best snap for ONE axis of a corner resize, in size space.
+ *
+ * Two candidate sources compete:
+ *   - edge alignment: the moving edge lands on a target's edge or center line,
+ *     which implies a size of `(line - anchor) * dir`
+ *   - size match: the board's dimension equals a target's dimension
+ *
+ * The smaller correction wins. Ties go to edge alignment, which is considered
+ * first and only displaced by a strictly smaller distance — spatial alignment
+ * is the more visually obvious of the two.
+ *
+ * Candidates outside [minSize, maxSize] are rejected rather than clamped, so a
+ * snap can never collapse a board below the floor or silently land somewhere
+ * other than where its guide says.
+ */
+function bestAxisCandidate(params: {
+  size: number
+  anchor: number
+  dir: number
+  minSize: number
+  maxSize: number
+  alignTargets: ReadonlyArray<SnapTarget>
+  sizeTargets: ReadonlyArray<SnapTarget>
+  excludeId: string
+  allowEdgeAlign: boolean
+  axis: 'width' | 'height'
+}): AxisCandidate | null {
+  const { size, anchor, dir, minSize, maxSize, excludeId, allowEdgeAlign, axis } = params
+  let best: AxisCandidate | null = null
+
+  const consider = (candidateSize: number) => {
+    if (!Number.isFinite(candidateSize)) return
+    if (candidateSize < minSize || candidateSize > maxSize) return
+    const distance = Math.abs(candidateSize - size)
+    if (distance >= GUIDE_SNAP_THRESHOLD_IN) return
+    if (best && distance >= best.distance) return
+    best = { size: candidateSize, distance }
+  }
+
+  if (allowEdgeAlign) {
+    for (const t of params.alignTargets) {
+      if (t.id === excludeId) continue
+      const center = axis === 'width' ? t.centerInchesX : t.centerInchesY
+      const half = (axis === 'width' ? t.widthInches : t.heightInches) / 2
+      for (const line of linesFor(center, half)) {
+        // The moving edge sits at `anchor + dir * size`; landing it on `line`
+        // means the size becomes (line - anchor) * dir.
+        consider((line - anchor) * dir)
+      }
+    }
+  }
+
+  for (const t of params.sizeTargets) {
+    if (t.id === excludeId) continue
+    consider(axis === 'width' ? t.widthInches : t.heightInches)
+  }
+
+  return best
+}
+
+/**
+ * Corner-resize snap. Works in SIZE space (absolute inches) because that is
+ * what gets persisted, and because it stays correct for rotated boards, where
+ * the moving corner is not simply `anchor + dir * size` along the wall axes.
+ *
+ * Only the moving edges participate. The two edges through the anchor corner
+ * are fixed by construction and never enter the candidate set, so dragging one
+ * corner can never shift the opposite edge.
+ *
+ * `alignTargets` may include the wall (as a rectangle centered on the wall
+ * origin, whose three lines are then left / center / right). `sizeTargets`
+ * should be boards only — matching a board's size to the wall's is meaningless
+ * and there would be nothing sensible to outline.
+ */
+export function snapEdges(params: {
+  width: number
+  height: number
+  /** The fixed anchor corner, wall-local inches. */
+  anchorX: number
+  anchorY: number
+  /** ±1 per axis: which side of the anchor the moving corner sits on. */
+  dirX: number
+  dirY: number
+  minWidth: number
+  minHeight: number
+  maxWidth: number
+  maxHeight: number
+  alignTargets: ReadonlyArray<SnapTarget>
+  sizeTargets: ReadonlyArray<SnapTarget>
+  excludeId: string
+  /** False on rotated boards — see isAxisAlignedForSnap. */
+  allowEdgeAlign: boolean
+  /** 'proportional' locks the aspect ratio, so only one axis can drive. */
+  mode: 'free' | 'proportional'
+}): { width: number; height: number; guides: ActiveGuides; sizeMatches: SizeMatch[] } {
+  const {
+    anchorX, anchorY, dirX, dirY,
+    minWidth, minHeight, maxWidth, maxHeight,
+    alignTargets, sizeTargets, excludeId, allowEdgeAlign, mode,
+  } = params
+
+  const shared = { alignTargets, sizeTargets, excludeId, allowEdgeAlign }
+  const xCand = bestAxisCandidate({
+    ...shared, size: params.width, anchor: anchorX, dir: dirX,
+    minSize: minWidth, maxSize: maxWidth, axis: 'width',
+  })
+  const yCand = bestAxisCandidate({
+    ...shared, size: params.height, anchor: anchorY, dir: dirY,
+    minSize: minHeight, maxSize: maxHeight, axis: 'height',
+  })
+
+  let width = params.width
+  let height = params.height
+
+  if (mode === 'free') {
+    if (xCand) width = xCand.size
+    if (yCand) height = yCand.size
+  } else {
+    // Aspect is locked, so only one axis can drive and the other follows by
+    // ratio.
+    //
+    // Rank and gate on the INDUCED correction — the larger distance either
+    // axis actually travels — not on the winning axis's own distance. The
+    // carry multiplies by the aspect ratio, so on a 10:1 board a 1.9" snap of
+    // the short side would drag the long side ~19": far outside the threshold,
+    // and a visible jump. Gating on the induced value keeps the promise the
+    // threshold makes, which is that no edge moves more than it.
+    const evaluate = (cand: AxisCandidate | null, axis: 'width' | 'height') => {
+      if (!cand) return null
+      const base = axis === 'width' ? params.width : params.height
+      if (!(base > 0)) return null
+      const scale = cand.size / base
+      const w = params.width * scale
+      const h = params.height * scale
+      if (w < minWidth || w > maxWidth || h < minHeight || h > maxHeight) return null
+      const induced = Math.max(Math.abs(w - params.width), Math.abs(h - params.height))
+      if (induced >= GUIDE_SNAP_THRESHOLD_IN) return null
+      return { w, h, induced }
+    }
+
+    const xApplied = evaluate(xCand, 'width')
+    const yApplied = evaluate(yCand, 'height')
+    // Ties favour the width candidate, matching the per-axis ordering above.
+    const winner =
+      xApplied && yApplied
+        ? (yApplied.induced < xApplied.induced ? yApplied : xApplied)
+        : (xApplied ?? yApplied)
+
+    if (winner) {
+      width = winner.w
+      height = winner.h
+    }
+  }
+
+  // Re-scan from the FINAL size so a guide is only drawn where the board
+  // actually landed — including the case where the snap was dropped above.
+  const verticalSet = new Set<number>()
+  const horizontalSet = new Set<number>()
+  if (allowEdgeAlign) {
+    const edgeX = anchorX + dirX * width
+    const edgeY = anchorY + dirY * height
+    for (const t of alignTargets) {
+      if (t.id === excludeId) continue
+      for (const line of linesFor(t.centerInchesX, t.widthInches / 2)) {
+        if (Math.abs(edgeX - line) < GUIDE_COINCIDENCE_TOLERANCE_IN) verticalSet.add(guideKey(line))
+      }
+      for (const line of linesFor(t.centerInchesY, t.heightInches / 2)) {
+        if (Math.abs(edgeY - line) < GUIDE_COINCIDENCE_TOLERANCE_IN) horizontalSet.add(guideKey(line))
+      }
+    }
+  }
+
+  const sizeMatches: SizeMatch[] = []
+  for (const t of sizeTargets) {
+    if (t.id === excludeId) continue
+    if (Math.abs(t.widthInches - width) < GUIDE_COINCIDENCE_TOLERANCE_IN) {
+      sizeMatches.push({ targetId: t.id, axis: 'width', valueIn: t.widthInches })
+    }
+    if (Math.abs(t.heightInches - height) < GUIDE_COINCIDENCE_TOLERANCE_IN) {
+      sizeMatches.push({ targetId: t.id, axis: 'height', valueIn: t.heightInches })
+    }
+  }
+
+  return {
+    width,
+    height,
+    guides: { vertical: Array.from(verticalSet), horizontal: Array.from(horizontalSet) },
+    sizeMatches,
   }
 }
