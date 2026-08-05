@@ -1118,38 +1118,23 @@ if (e.intersections && e.intersections.length > 0) {
     () => new THREE.BoxGeometry(boardWidth + 0.3, boardHeight + 0.3, BOARD_THICKNESS + 0.02),
     [boardWidth, boardHeight],
   )
-  // Resolve size matches to drawable geometry. Grouped by target so a board
-  // matching on BOTH axes gets one outline with a `W × H` label rather than
-  // two identical outlines stacked on each other.
+  // Resolve size matches to drawable geometry. De-duplicated by target so a
+  // board matching on BOTH axes gets one outline, not two stacked on each other.
   const sizeMatchHighlights = useMemo(() => {
     if (sizeMatches.length === 0) return []
-    const byTarget = new Map<string, { width?: number; height?: number }>()
-    for (const m of sizeMatches) {
-      const entry = byTarget.get(m.targetId) ?? {}
-      if (m.axis === 'width') entry.width = m.valueIn
-      else entry.height = m.valueIn
-      byTarget.set(m.targetId, entry)
-    }
     const out: Array<{
       id: string
+      halfW: number
+      halfH: number
       centerX: number
       centerY: number
       width: number
       height: number
-      halfW: number
-      halfH: number
       rotation: number
-      label: string
     }> = []
-    for (const [id, axes] of byTarget) {
+    for (const id of new Set(sizeMatches.map((m) => m.targetId))) {
       const target = otherBoardsOnWall?.find((b) => b.id === id)
       if (!target) continue
-      const label =
-        axes.width != null && axes.height != null
-          ? `${Math.round(axes.width)} × ${Math.round(axes.height)}"`
-          : axes.width != null
-            ? `W ${Math.round(axes.width)}"`
-            : `H ${Math.round(axes.height as number)}"`
       out.push({
         id,
         centerX: target.centerInchesX,
@@ -1161,7 +1146,6 @@ if (e.intersections && e.intersections.length > 0) {
         // Raw, unmirrored — matches how each board renders its own inner group
         // (rotation is applied directly; only position is X-mirrored on the back).
         rotation: target.rotationRad ?? 0,
-        label,
       })
     }
     return out
@@ -1219,9 +1203,9 @@ if (e.intersections && e.intersections.length > 0) {
       {/*
        * Size-match highlight. A shared width/height is not a spatial
        * alignment, so this deliberately draws NO line between the two boards —
-       * it outlines the matched board and labels the dimension they now share.
-       * One outline per matched board even when both axes match; the label
-       * then reads `W × H`.
+       * it outlines the matched board instead. The outline is the whole
+       * signal: no dimension readout, since the numbers are not something the
+       * editor should be putting on screen mid-gesture.
        */}
       {isResizing && sizeMatchHighlights.map((hl) => (
         <group
@@ -1244,18 +1228,6 @@ if (e.intersections && e.intersections.length > 0) {
               <meshBasicMaterial color={SNAP_ACCENT} transparent opacity={0.95} depthTest={false} depthWrite={false} />
             </mesh>
           ))}
-          <Text
-            position={[0, hl.halfH + 2, 0]}
-            fontSize={5}
-            color={SNAP_ACCENT}
-            anchorX="center"
-            anchorY="bottom"
-            outlineWidth={0.4}
-            outlineColor="#ffffff"
-            raycast={() => null}
-          >
-            {hl.label}
-          </Text>
         </group>
       ))}
       <group ref={innerGroupRef} position={[boardXRender, boardY, boardZ]} rotation={[0, 0, boardRotation]}>
