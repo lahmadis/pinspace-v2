@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
-import { isAdmin } from '@/lib/auth/isAdmin'
+import { supabaseServiceRole } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/requireAdmin'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,20 +10,6 @@ function orgName(org: OrgRef): string | null {
   if (!org) return null
   const o = Array.isArray(org) ? org[0] : org
   return o?.name ?? null
-}
-
-/** Re-verify the caller is an admin. Defense in depth — the page is already
- *  admin-gated, but the write/read endpoints must not trust that. */
-async function requireAdmin() {
-  const supabase = supabaseServer()
-  const { data: { session }, error } = await supabase.auth.getSession()
-  if (error || !session?.user) {
-    return { ok: false as const, response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
-  }
-  if (!isAdmin(session.user.email)) {
-    return { ok: false as const, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
-  }
-  return { ok: true as const, email: session.user.email }
 }
 
 /** GET /api/admin/users — list onboarded users with email, name, org, and roles. */

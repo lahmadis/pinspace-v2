@@ -20,9 +20,36 @@ import {
   Pencil,
   Trash2,
   UserPlus,
+  GraduationCap,
 } from 'lucide-react'
+import { DEPARTMENTS, YEAR_LEVELS } from '@/lib/constants/departments'
+import { academicYearOptions } from '@/lib/academicYear'
+import { toast } from '@/lib/toast'
 
 type WorkspaceRow = { id: string; name: string; type?: string; created_at?: string }
+
+type AdminStudio = {
+  id: string
+  name: string
+  type: string
+  ownerId: string
+  ownerName: string | null
+  department: string | null
+  academicYear: string | null
+  instructorLabel: string | null
+  createdAt: string
+  provisionedByAdmin: boolean
+  isArchived: boolean
+  adminIsMember: boolean
+}
+
+type UserSearchResult = {
+  userId: string
+  email: string | null
+  fullName: string | null
+  organizationId: string | null
+  hasProfile: boolean
+}
 
 type SignupStatus = 'active' | 'no_profile' | 'unverified'
 
@@ -174,6 +201,368 @@ function RecentSignupsCard({ signups, loading }: { signups: RecentSignup[]; load
                   </tr>
                 )
               })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Search-and-pick an EXISTING account. There is deliberately no free-text
+ * email entry: workspaces.owner_id must point at a real user, or every
+ * owner-gated action on the provisioned studio is dead on arrival.
+ */
+function InstructorPicker({
+  selected,
+  onSelect,
+}: {
+  selected: UserSearchResult | null
+  onSelect: (user: UserSearchResult | null) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<UserSearchResult[]>([])
+  const [searching, setSearching] = useState(false)
+
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 2) {
+      setResults([])
+      setSearching(false)
+      return
+    }
+    let cancelled = false
+    setSearching(true)
+    // Debounced: the search scans the full user list server-side, so firing on
+    // every keystroke would be wasteful.
+    const timer = setTimeout(() => {
+      fetch(`/api/admin/users/search?q=${encodeURIComponent(q)}`, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : { users: [] }))
+        .then((d: { users?: UserSearchResult[] }) => {
+          if (!cancelled) setResults(Array.isArray(d.users) ? d.users : [])
+        })
+        .catch(() => { if (!cancelled) setResults([]) })
+        .finally(() => { if (!cancelled) setSearching(false) })
+    }, 250)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [query])
+
+  if (selected) {
+    return (
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border border-indigo-200 bg-indigo-50 rounded-lg">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-indigo-900 truncate">
+            {selected.fullName || selected.email || selected.userId}
+          </p>
+          {selected.fullName && selected.email && (
+            <p className="text-xs text-indigo-500 truncate">{selected.email}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => { onSelect(null); setQuery('') }}
+          className="p-1 text-indigo-400 hover:text-indigo-600 rounded shrink-0"
+          aria-label="Clear selected instructor"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search by name or email"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+      />
+      {query.trim().length >= 2 && (
+        <div className="mt-1 border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-48 overflow-y-auto">
+          {searching ? (
+            <p className="px-3 py-2 text-xs text-gray-400">Searching…</p>
+          ) : results.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-gray-500">
+              No account matches. They must sign up before you can provision a studio for them.
+            </p>
+          ) : (
+            results.map((u) => (
+              <button
+                key={u.userId}
+                type="button"
+                onClick={() => onSelect(u)}
+                className="w-full text-left px-3 py-2 hover:bg-indigo-50/60"
+              >
+                <p className="text-sm text-gray-900">{u.fullName || u.email || u.userId}</p>
+                {u.fullName && u.email && <p className="text-xs text-gray-400">{u.email}</p>}
+                {!u.hasProfile && (
+                  <p className="text-xs text-amber-600 mt-0.5">Has not completed onboarding</p>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CreateStudioForm({ onCreated }: { onCreated: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [name, setName] = useState('')
+  const [instructor, setInstructor] = useState<UserSearchResult | null>(null)
+  const [department, setDepartment] = useState<string>(DEPARTMENTS[0])
+  const [yearLevel, setYearLevel] = useState<string>(YEAR_LEVELS[0])
+  const years = academicYearOptions(4)
+  const [academicYear, setAcademicYear] = useState<string>(years[0])
+
+  const reset = () => {
+    setName('')
+    setInstructor(null)
+    setDepartment(DEPARTMENTS[0])
+    setYearLevel(YEAR_LEVELS[0])
+    setAcademicYear(years[0])
+    setError('')
+  }
+
+  const close = () => { reset(); setOpen(false) }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    if (!name.trim()) { setError('Studio name is required'); return }
+    if (!instructor) { setError('Pick an instructor'); return }
+    setLoading(true)
+    try {
+      const res = await fetch('/api/admin/studios', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          instructorUserId: instructor.userId,
+          department,
+          yearLevel,
+          academicYear,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Failed to create studio'); return }
+      // The studio exists and is owned correctly even when its explore metadata
+      // failed to write, so this is a warning rather than an error — but it must
+      // not report as a clean success either.
+      if (data.metadataApplied === false) {
+        toast.error('Studio created, but department/year did not save. Set them from the studio.')
+      }
+      close()
+      onCreated()
+    } catch {
+      setError('Request failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
+      >
+        <Plus className="w-4 h-4" />
+        New studio
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={close}>
+          <div
+            className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-semibold text-gray-900">Create studio for an instructor</h3>
+              <button type="button" onClick={close} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Studio name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Studio 3 — Housing"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Instructor</label>
+                <InstructorPicker selected={instructor} onSelect={setInstructor} />
+                <p className="text-xs text-gray-500 mt-1">
+                  They become the owner — the studio is theirs, exactly as if they had made it.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                  <select
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                  >
+                    {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Year level</label>
+                  <select
+                    value={yearLevel}
+                    onChange={(e) => setYearLevel(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                  >
+                    {YEAR_LEVELS.map((y) => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Academic year</label>
+                <select
+                  value={academicYear}
+                  onChange={(e) => setAcademicYear(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                >
+                  {years.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={close}
+                  className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 py-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium text-sm"
+                >
+                  {loading ? 'Creating…' : 'Create studio'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StudiosCard({
+  studios,
+  loading,
+  onChanged,
+}: {
+  studios: AdminStudio[]
+  loading: boolean
+  onChanged: () => void
+}) {
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  const toggleMembership = async (studio: AdminStudio) => {
+    setBusyId(studio.id)
+    try {
+      const res = await fetch(`/api/admin/studios/${studio.id}/membership`, {
+        method: studio.adminIsMember ? 'DELETE' : 'POST',
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Failed to update membership')
+        return
+      }
+      onChanged()
+    } catch {
+      toast.error('Request failed')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+      <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+        <GraduationCap className="w-4 h-4 text-indigo-600" />
+        <h2 className="text-sm font-semibold text-gray-900">Studios</h2>
+        <span className="text-xs text-gray-400 ml-1">newest first</span>
+        <div className="ml-auto">
+          <CreateStudioForm onCreated={onChanged} />
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="p-8 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 mx-auto" />
+        </div>
+      ) : studios.length === 0 ? (
+        <div className="p-8 text-center text-gray-500">No studios yet.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
+                <th className="px-4 py-3 font-medium">Studio</th>
+                <th className="px-4 py-3 font-medium">Owner</th>
+                <th className="px-4 py-3 font-medium">Department</th>
+                <th className="px-4 py-3 font-medium">Year</th>
+                <th className="px-4 py-3 font-medium">Origin</th>
+                <th className="px-4 py-3 font-medium text-right">Access</th>
+              </tr>
+            </thead>
+            <tbody>
+              {studios.map((s) => (
+                <tr key={s.id} className="border-b border-gray-100 last:border-0 hover:bg-indigo-50/30">
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-gray-900">{s.name}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {s.type}
+                      {s.isArchived && ' · archived'}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{s.ownerName || '—'}</td>
+                  <td className="px-4 py-3 text-gray-500">{s.department || '—'}</td>
+                  <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{s.academicYear || '—'}</td>
+                  <td className="px-4 py-3">
+                    {s.provisionedByAdmin ? (
+                      <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-100 text-indigo-800">
+                        Provisioned
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">Organic</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => toggleMembership(s)}
+                      disabled={busyId === s.id}
+                      className={`px-2.5 py-1 rounded text-xs font-medium disabled:opacity-50 ${
+                        s.adminIsMember
+                          ? 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                          : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      }`}
+                    >
+                      {busyId === s.id ? '…' : s.adminIsMember ? 'Leave' : 'Join'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -800,6 +1189,7 @@ export default function AdminDashboardPage() {
   const [signingIn, setSigningIn] = useState(false)
   const [editingInst, setEditingInst] = useState<InstitutionWithCount | null>(null)
   const [recentSignups, setRecentSignups] = useState<RecentSignup[]>([])
+  const [studios, setStudios] = useState<AdminStudio[]>([])
   const [stats, setStats] = useState<{
     total: number
     by_year: Record<string, number>
@@ -850,15 +1240,18 @@ export default function AdminDashboardPage() {
       fetch('/api/admin/overview', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { institutions: [] })),
       fetch('/api/admin/stats', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)),
       fetch('/api/admin/recent-signups', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { signups: [] })),
+      fetch('/api/admin/studios', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { studios: [] })),
     ])
-      .then(([overviewData, statsData, signupsData]) => {
+      .then(([overviewData, statsData, signupsData, studiosData]) => {
         setInstitutions(Array.isArray(overviewData?.institutions) ? overviewData.institutions : [])
         setStats(statsData)
         setRecentSignups(Array.isArray(signupsData?.signups) ? signupsData.signups : [])
+        setStudios(Array.isArray(studiosData?.studios) ? studiosData.studios : [])
       })
       .catch(() => {
         setInstitutions([])
         setRecentSignups([])
+        setStudios([])
       })
       .finally(() => setLoading(false))
   }
@@ -1033,6 +1426,9 @@ export default function AdminDashboardPage() {
             </div>
           </div>
         )}
+
+        {/* Studios — pilot provisioning */}
+        <StudiosCard studios={studios} loading={loading} onChanged={loadData} />
 
         {/* Recent signups */}
         <RecentSignupsCard signups={recentSignups} loading={loading} />
