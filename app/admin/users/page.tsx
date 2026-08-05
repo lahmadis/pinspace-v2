@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
+import PasswordInput from '@/components/ui/PasswordInput'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import { Users, ShieldCheck, GraduationCap } from 'lucide-react'
 
@@ -133,12 +134,10 @@ export default function AdminUsersPage() {
             </div>
             <div>
               <label htmlFor="admin-password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
+              <PasswordInput
                 id="admin-password"
-                type="password"
                 value={signInPassword}
-                onChange={(e) => setSignInPassword(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                onChange={setSignInPassword}
                 autoComplete="current-password"
               />
             </div>

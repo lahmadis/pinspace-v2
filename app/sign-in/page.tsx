@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
+import PasswordInput from '@/components/ui/PasswordInput'
 
 interface OrgMatch {
   id: string
@@ -316,15 +317,12 @@ function SignInInner() {
           {isPassword && (
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
+              <PasswordInput
                 id="password"
-                type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 placeholder="••••••••"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 autoComplete="current-password"
-                // eslint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus={!!email}
               />
               <div className="flex justify-end mt-1">

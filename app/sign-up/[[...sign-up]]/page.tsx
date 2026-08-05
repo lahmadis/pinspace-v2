@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
+import PasswordInput from '@/components/ui/PasswordInput'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import type { Institution } from '@/types'
 
@@ -25,6 +26,10 @@ function SignUpInner() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [settingPassword, setSettingPassword] = useState(false)
   const [passwordError, setPasswordError] = useState('')
+  // Owned here, not in PasswordInput, so one toggle drives both fields — they
+  // hold the same secret, so revealing only one of the pair makes a mismatch
+  // harder to spot, not easier.
+  const [showPassword, setShowPassword] = useState(false)
   const [agreedToTerms, setAgreedToTerms] = useState(false)
   const hasRedirected = useRef(false)
   const pendingSetPasswordRef = useRef(false)
@@ -252,28 +257,28 @@ function SignUpInner() {
           <form onSubmit={handleSetPassword} className="space-y-4">
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
+              <PasswordInput
                 id="password"
-                type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 placeholder="••••••••"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 autoComplete="new-password"
                 minLength={8}
+                shown={showPassword}
+                onShownChange={setShowPassword}
               />
             </div>
             <div>
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">Confirm password</label>
-              <input
+              <PasswordInput
                 id="confirmPassword"
-                type="password"
                 value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                onChange={setConfirmPassword}
                 placeholder="••••••••"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 autoComplete="new-password"
                 minLength={8}
+                shown={showPassword}
+                onShownChange={setShowPassword}
               />
             </div>
             {passwordError && <p className="text-sm text-red-600">{passwordError}</p>}

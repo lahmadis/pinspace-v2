@@ -14,6 +14,14 @@
     @apply font-semibold;
   }
 
+  /* Edge/IE render their own reveal + clear buttons inside password and text
+     inputs. We ship our own toggle (components/ui/PasswordInput), so without
+     this users see two eye icons side by side. */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }
+
   /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 8px;
