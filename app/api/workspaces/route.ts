@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
-import { generateInviteCode } from '@/lib/workspaceUtils'
 import { isInstructorAccount } from '@/lib/auth/getAccountRole'
 import { validateName } from '@/lib/validation/safeName'
-import { currentAcademicYear } from '@/lib/academicYear'
+import { createWorkspace } from '@/lib/workspaces/createWorkspace'
 
 // GET: list workspaces owned by or shared with the current user
 export async function GET() {
@@ -176,83 +175,29 @@ export async function POST(req: Request) {
       if (profile?.organization_id) institutionId = profile.organization_id
     }
 
-    const ensureOwnerMembership = async (workspaceId: string) => {
-      const ownerName =
-        session.user.user_metadata?.full_name ||
-        session.user.email?.split('@')[0] ||
-        'Owner'
-      const admin = supabaseServiceRole()
-      const { data: existingMembership } = await admin
-        .from('workspace_members')
-        .select('user_id')
-        .eq('workspace_id', workspaceId)
-        .eq('user_id', userId)
-        .maybeSingle()
-      if (!existingMembership) {
-        const { error: membershipError } = await admin
-          .from('workspace_members')
-          .insert({
-            workspace_id: workspaceId,
-            user_id: userId,
-            role: 'instructor',
-            name: ownerName,
-          })
-        if (membershipError) {
-          console.error('Error ensuring owner membership:', membershipError)
-        }
-      }
-    }
+    const ownerName =
+      session.user.user_metadata?.full_name ||
+      session.user.email?.split('@')[0] ||
+      'Owner'
 
-    // Insert workspace
-    // Try with type first, if it fails (column doesn't exist), try without type
-    // Stamp the academic year at creation. It was never set here, so it stayed
-    // NULL until (and unless) someone opened the publish modal — which left 31
-    // of 45 workspaces with no year and made the explore year filter drop them
-    // silently. Derived server-side from server time so the stored value cannot
-    // be shaped by the client's clock or timezone; the migration-032 backfill
-    // reads created_at in UTC for the same reason, so both agree.
-    // An instructor can still override it later via network-metadata.
-    const insertData: Record<string, unknown> = {
+    // Shared with the admin provisioning path. `db` stays the RLS-bound client
+    // here, so the owner_id = auth.uid() INSERT policy still applies and this
+    // route cannot create a workspace owned by anyone but the caller.
+    const result = await createWorkspace({
+      db: supabase,
       name,
       description,
-      owner_id: userId,
-      academic_year: currentAcademicYear(),
-    }
-    if (institutionId) insertData.organization_id = institutionId
-    if (type === 'shared') insertData.invite_code = generateInviteCode()
+      type,
+      ownerId: userId,
+      ownerName,
+      organizationId: institutionId,
+    })
 
-    // Only include type if the column exists (we'll try with it first)
-    const { data, error } = await supabase
-      .from('workspaces')
-      .insert({ ...insertData, type })
-      .select()
-      .single()
-
-    if (error) {
-      console.error('Error creating workspace (with type):', error)
-
-      // If error is about column not existing, try without type
-      if (error.message?.includes('column') && error.message?.includes('type')) {
-        const { data: dataWithoutType, error: errorWithoutType } = await supabase
-          .from('workspaces')
-          .insert(insertData)
-          .select()
-          .single()
-
-        if (errorWithoutType) {
-          console.error('Error creating workspace (without type):', errorWithoutType)
-          return NextResponse.json({ error: 'Failed to create workspace' }, { status: 500 })
-        }
-
-        await ensureOwnerMembership(dataWithoutType.id)
-        return NextResponse.json({ workspace: dataWithoutType }, { status: 201 })
-      }
-
-      return NextResponse.json({ error: 'Failed to create workspace' }, { status: 500 })
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 500 })
     }
 
-    await ensureOwnerMembership(data.id)
-    return NextResponse.json({ workspace: data }, { status: 201 })
+    return NextResponse.json({ workspace: result.workspace }, { status: 201 })
   } catch (error) {
     console.error('Unexpected error in POST /api/workspaces:', error)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
