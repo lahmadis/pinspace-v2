@@ -18,9 +18,22 @@ import {
   X,
   Pencil,
   Trash2,
+  UserPlus,
 } from 'lucide-react'
 
 type WorkspaceRow = { id: string; name: string; type?: string; created_at?: string }
+
+type SignupStatus = 'active' | 'no_profile' | 'unverified'
+
+type RecentSignup = {
+  userId: string
+  email: string | null
+  fullName: string | null
+  organization: string | null
+  createdAt: string
+  lastSignInAt: string | null
+  status: SignupStatus
+}
 
 type InstitutionWithCount = {
   id: string
@@ -57,6 +70,113 @@ function StatBlock({ title, data }: { title: string; data: Record<string, number
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+const MINUTE = 60_000
+const HOUR = 60 * MINUTE
+const DAY = 24 * HOUR
+
+/** "Mar 14, 2026" */
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+/** "2 days ago" */
+function timeAgo(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime()
+  if (diff < MINUTE) return 'just now'
+  const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'} ago`
+  if (diff < HOUR) return plural(Math.floor(diff / MINUTE), 'minute')
+  if (diff < DAY) return plural(Math.floor(diff / HOUR), 'hour')
+  const days = Math.floor(diff / DAY)
+  if (days < 30) return plural(days, 'day')
+  if (days < 365) return plural(Math.floor(days / 30), 'month')
+  return plural(Math.floor(days / 365), 'year')
+}
+
+const SIGNUP_STATUS: Record<SignupStatus, { label: string; className: string }> = {
+  active: { label: 'Active', className: 'bg-green-100 text-green-800' },
+  no_profile: { label: 'No profile', className: 'bg-amber-100 text-amber-800' },
+  unverified: { label: 'Unverified', className: 'bg-gray-100 text-gray-600' },
+}
+
+function RecentSignupsCard({ signups, loading }: { signups: RecentSignup[]; loading: boolean }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+      <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+        <UserPlus className="w-4 h-4 text-indigo-600" />
+        <h2 className="text-sm font-semibold text-gray-900">Recent signups</h2>
+        <span className="text-xs text-gray-400 ml-1">newest accounts first</span>
+      </div>
+
+      {loading ? (
+        <div className="p-8 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 mx-auto" />
+        </div>
+      ) : signups.length === 0 ? (
+        <div className="p-8 text-center text-gray-500">No signups yet.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
+                <th className="px-4 py-3 font-medium">User</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Organization</th>
+                <th className="px-4 py-3 font-medium">Signed up</th>
+                <th className="px-4 py-3 font-medium">Last seen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {signups.map((s) => {
+                const status = SIGNUP_STATUS[s.status] ?? SIGNUP_STATUS.unverified
+                return (
+                  <tr key={s.userId} className="border-b border-gray-100 last:border-0 hover:bg-indigo-50/30">
+                    <td className="px-4 py-3">
+                      {s.fullName ? (
+                        <>
+                          <p className="font-medium text-gray-900">{s.fullName}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{s.email || '—'}</p>
+                        </>
+                      ) : (
+                        <p className="font-medium text-gray-900">{s.email || '—'}</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${status.className}`}>
+                        {status.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {s.organization ? (
+                        <span className="text-gray-700">{s.organization}</span>
+                      ) : (
+                        <span className="text-gray-400">Personal</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <p className="text-gray-700">{formatDate(s.createdAt)}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{timeAgo(s.createdAt)}</p>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {s.lastSignInAt ? (
+                        <>
+                          <p className="text-gray-700">{formatDate(s.lastSignInAt)}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{timeAgo(s.lastSignInAt)}</p>
+                        </>
+                      ) : (
+                        <span className="text-gray-400">Never</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -678,6 +798,7 @@ export default function AdminDashboardPage() {
   const [signInError, setSignInError] = useState('')
   const [signingIn, setSigningIn] = useState(false)
   const [editingInst, setEditingInst] = useState<InstitutionWithCount | null>(null)
+  const [recentSignups, setRecentSignups] = useState<RecentSignup[]>([])
   const [stats, setStats] = useState<{
     total: number
     by_year: Record<string, number>
@@ -727,12 +848,17 @@ export default function AdminDashboardPage() {
     Promise.all([
       fetch('/api/admin/overview', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { institutions: [] })),
       fetch('/api/admin/stats', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)),
+      fetch('/api/admin/recent-signups', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { signups: [] })),
     ])
-      .then(([overviewData, statsData]) => {
+      .then(([overviewData, statsData, signupsData]) => {
         setInstitutions(Array.isArray(overviewData?.institutions) ? overviewData.institutions : [])
         setStats(statsData)
+        setRecentSignups(Array.isArray(signupsData?.signups) ? signupsData.signups : [])
       })
-      .catch(() => setInstitutions([]))
+      .catch(() => {
+        setInstitutions([])
+        setRecentSignups([])
+      })
       .finally(() => setLoading(false))
   }
 
@@ -908,6 +1034,9 @@ export default function AdminDashboardPage() {
             </div>
           </div>
         )}
+
+        {/* Recent signups */}
+        <RecentSignupsCard signups={recentSignups} loading={loading} />
 
         {/* Orgs */}
         {renderOrgSection(
