@@ -50,6 +50,25 @@ export interface ActiveGuides {
   horizontal: number[]
 }
 
+/** Sentinel id for the wall-as-snap-target. Never collides with a board id. */
+export const WALL_SNAP_TARGET_ID = '__wall__'
+
+/**
+ * The wall itself as a snap target: a rectangle centered on the wall origin,
+ * so its three lines per axis are left edge / center / right edge (and bottom /
+ * center / top). Both gestures use this — keep it one definition so the two
+ * cannot drift into disagreeing about where the wall's center is.
+ */
+export function wallSnapTarget(wallWidthInches: number, wallHeightInches: number): SnapTarget {
+  return {
+    id: WALL_SNAP_TARGET_ID,
+    centerInchesX: 0,
+    centerInchesY: 0,
+    widthInches: wallWidthInches,
+    heightInches: wallHeightInches,
+  }
+}
+
 /**
  * Edge alignment treats a board's edges as axis-aligned lines in wall space,
  * which only holds at 0° and 180° (at 180° the half-extents are unchanged). At

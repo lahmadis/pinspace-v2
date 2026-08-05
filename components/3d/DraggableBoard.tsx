@@ -21,6 +21,7 @@ import {
   snapCenter,
   snapEdges,
   isAxisAlignedForSnap,
+  wallSnapTarget,
   type ActiveGuides,
   type SizeMatch,
   type SnapTarget,
@@ -90,8 +91,6 @@ interface DraggableBoardProps {
 
 type ResizeCursor = 'nwse-resize' | 'nesw-resize'
 
-/** Sentinel id for the wall-as-snap-target. Never collides with a board id. */
-const WALL_SNAP_TARGET_ID = '__wall__'
 /** Stable empties so a no-snap pointer sample doesn't allocate every frame. */
 const EMPTY_GUIDES: ActiveGuides = { vertical: [], horizontal: [] }
 const EMPTY_SIZE_MATCHES: SizeMatch[] = []
@@ -390,13 +389,13 @@ useEffect(() => {
       // each axis independently and shift the dragged center onto it if
       // within threshold. After snapping, collect every neighbor line the
       // dragged board now coincides with so we can draw a guide for each.
-      // Targets are boards only — the wall is not a move-snap target.
+      // Targets are the other boards plus the wall's own edges and center.
       const snapped = snapCenter({
         centerX: centerInchesX,
         centerY: centerInchesY,
         halfWidth: boardWidth / 2,
         halfHeight: boardHeight / 2,
-        targets: otherBoardsOnWall ?? [],
+        targets: [...(otherBoardsOnWall ?? []), wallSnapTarget(wallWidthInches, wallHeightInches)],
         excludeId: board.id,
       })
       centerInchesX = snapped.centerX
@@ -735,13 +734,7 @@ if (e.intersections && e.intersections.length > 0) {
     const sizeTargets = otherBoardsOnWall ?? []
     const alignTargets: SnapTarget[] = [
       ...sizeTargets,
-      {
-        id: WALL_SNAP_TARGET_ID,
-        centerInchesX: 0,
-        centerInchesY: 0,
-        widthInches: wallWidthInches,
-        heightInches: wallHeightInches,
-      },
+      wallSnapTarget(wallWidthInches, wallHeightInches),
     ]
     // Direction from the anchor to the moving corner on each wall axis, taken
     // from the actual geometry rather than the board-local sign so the
