@@ -17,6 +17,7 @@ import { toast } from '@/lib/toast'
 import { getBoardSizeInches, boardSizeInchesFromSource } from '@/lib/boardDimensions'
 import VideoBadge from './VideoBadge'
 import { useDisposableGeometry } from './useDisposableGeometry'
+import { snapCenter, type ActiveGuides } from './boardSnapping'
 import { enqueueBoardWrite } from '@/lib/boardPositionWriteQueue'
 
 interface DraggableBoardProps {
@@ -319,19 +320,10 @@ useEffect(() => {
   const boardWidth = sizeIn.width
   const boardHeight = sizeIn.height
 
-  /**
-   * Smart-guide soft-snap threshold in wall-local inches. While dragging,
-   * if any of the dragged board's three vertical lines (left edge, center,
-   * right edge) is within this distance of another board's three vertical
-   * lines — or the equivalent on the horizontal axis — the dragged board
-   * snaps to that exact alignment and a Miro-style guide line is drawn.
-   * Outside the threshold the drag is fully free / continuous.
-   */
-  const GUIDE_SNAP_THRESHOLD_IN = 2
-
   // Active alignment guides for the current pointer sample. Cleared on
   // pointer-up. Each entry is a wall-local inch coordinate along its axis.
-  const [activeGuides, setActiveGuides] = useState<{ vertical: number[]; horizontal: number[] }>({
+  // The snap math itself lives in ./boardSnapping so move and resize share it.
+  const [activeGuides, setActiveGuides] = useState<ActiveGuides>({
     vertical: [],
     horizontal: [],
   })
@@ -368,76 +360,18 @@ useEffect(() => {
       // each axis independently and shift the dragged center onto it if
       // within threshold. After snapping, collect every neighbor line the
       // dragged board now coincides with so we can draw a guide for each.
-      const halfW = boardWidth / 2
-      const halfH = boardHeight / 2
-      const others = otherBoardsOnWall ?? []
-
-      let bestXDelta = 0
-      let bestXDeltaAbs = GUIDE_SNAP_THRESHOLD_IN
-      let bestYDelta = 0
-      let bestYDeltaAbs = GUIDE_SNAP_THRESHOLD_IN
-
-      for (const other of others) {
-        if (other.id === board.id) continue
-        const ohw = other.widthInches / 2
-        const ohh = other.heightInches / 2
-        const dragXLines = [centerInchesX - halfW, centerInchesX, centerInchesX + halfW]
-        const otherXLines = [other.centerInchesX - ohw, other.centerInchesX, other.centerInchesX + ohw]
-        for (const dx of dragXLines) {
-          for (const ox of otherXLines) {
-            const delta = ox - dx
-            const absD = Math.abs(delta)
-            if (absD < bestXDeltaAbs) {
-              bestXDeltaAbs = absD
-              bestXDelta = delta
-            }
-          }
-        }
-        const dragYLines = [centerInchesY - halfH, centerInchesY, centerInchesY + halfH]
-        const otherYLines = [other.centerInchesY - ohh, other.centerInchesY, other.centerInchesY + ohh]
-        for (const dy of dragYLines) {
-          for (const oy of otherYLines) {
-            const delta = oy - dy
-            const absD = Math.abs(delta)
-            if (absD < bestYDeltaAbs) {
-              bestYDeltaAbs = absD
-              bestYDelta = delta
-            }
-          }
-        }
-      }
-
-      centerInchesX += bestXDelta
-      centerInchesY += bestYDelta
-
-      // After snap, re-scan to find EVERY active alignment (multiple
-      // neighbors may align simultaneously). Use a tighter tolerance for
-      // "did this pair land on the same line" to avoid drawing guides
-      // that are only loosely near.
-      const verticalSet = new Set<number>()
-      const horizontalSet = new Set<number>()
-      if (others.length > 0) {
-        const dragXLines = [centerInchesX - halfW, centerInchesX, centerInchesX + halfW]
-        const dragYLines = [centerInchesY - halfH, centerInchesY, centerInchesY + halfH]
-        for (const other of others) {
-          if (other.id === board.id) continue
-          const ohw = other.widthInches / 2
-          const ohh = other.heightInches / 2
-          const otherXLines = [other.centerInchesX - ohw, other.centerInchesX, other.centerInchesX + ohw]
-          const otherYLines = [other.centerInchesY - ohh, other.centerInchesY, other.centerInchesY + ohh]
-          for (const dx of dragXLines) {
-            for (const ox of otherXLines) {
-              if (Math.abs(dx - ox) < 0.25) verticalSet.add(Math.round(ox * 100) / 100)
-            }
-          }
-          for (const dy of dragYLines) {
-            for (const oy of otherYLines) {
-              if (Math.abs(dy - oy) < 0.25) horizontalSet.add(Math.round(oy * 100) / 100)
-            }
-          }
-        }
-      }
-      setActiveGuides({ vertical: Array.from(verticalSet), horizontal: Array.from(horizontalSet) })
+      // Targets are boards only — the wall is not a move-snap target.
+      const snapped = snapCenter({
+        centerX: centerInchesX,
+        centerY: centerInchesY,
+        halfWidth: boardWidth / 2,
+        halfHeight: boardHeight / 2,
+        targets: otherBoardsOnWall ?? [],
+        excludeId: board.id,
+      })
+      centerInchesX = snapped.centerX
+      centerInchesY = snapped.centerY
+      setActiveGuides(snapped.guides)
 
       const normalizedX = THREE.MathUtils.clamp(centerInchesX / scaledWallWidth, -0.5, 0.5)
       const normalizedY = THREE.MathUtils.clamp(centerInchesY / scaledWallHeight, -0.5, 0.5)
