@@ -1,0 +1,69 @@
+-- Migration 034: make workspaces.type NOT NULL.
+--
+-- The column has always had DEFAULT 'class' and a CHECK constraint, but it was
+-- nullable — and the CHECK does NOT catch that. workspaces_type_check is
+--
+--   CHECK (type = ANY (ARRAY['class', 'personal', 'shared']))
+--
+-- and `NULL = ANY (...)` evaluates to NULL, not FALSE. A CHECK constraint only
+-- rejects a row when it evaluates to FALSE, so NULL passes. The constraint has
+-- therefore never enforced what it looks like it enforces.
+--
+-- WHY IT MATTERS NOW. The admin Instructors view is scoped to CLASS studios
+-- only: a professor's personal and shared workspaces are private and are
+-- excluded from it deliberately. Because the column is nullable, that filter
+-- has to treat a NULL type as 'class' —
+--
+--   lib/workspaces/classFilter.ts: 'type.eq.class,type.is.null'
+--
+-- which matches how GET /api/admin/studios already renders a NULL type
+-- (`type ?? 'class'`), so the two admin surfaces agree about the same studio.
+-- The cost of that agreement is that a NULL-typed row lands in the class
+-- bucket. Today nothing writes one, so nothing does. But "no write path
+-- produces one" is a property of the current code, not a property of the
+-- schema, and the failure mode is a personal workspace appearing in a view
+-- built to exclude it. Enforce it in the database instead.
+--
+-- NOT a data fix — a guarantee. Verified before writing this migration:
+--
+--   SELECT COUNT(*) FILTER (WHERE type IS NULL)     AS null_type_rows,
+--          COUNT(*) FILTER (WHERE type NOT IN ('class','personal','shared'))
+--                                                    AS unexpected_type_rows
+--   FROM workspaces;
+--   -- 46 rows total, 0 null_type_rows, 0 unexpected_type_rows
+--
+-- so there is nothing to backfill. If a NULL has appeared since, this statement
+-- fails loudly with "column \"type\" of relation \"workspaces\" contains null
+-- values" and changes nothing — safe to run and re-run.
+--
+-- The DEFAULT is untouched. SET NOT NULL does not affect a column default, so
+-- 'class' remains, and the createWorkspace fallback path that omits `type`
+-- entirely (lib/workspaces/createWorkspace.ts:129, used when the column is
+-- reported missing) keeps working exactly as before.
+--
+-- ONE INTERACTION WORTH KNOWING. That fallback is chosen by sniffing the error
+-- message for 'column' and 'type' (createWorkspace.ts:126). After this
+-- migration a not-null violation — "null value in column \"type\" of relation
+-- \"workspaces\"" — also matches that probe, so it is no longer uniquely
+-- identifying. Harmless: the retry omits the column, the DEFAULT supplies
+-- 'class', and the row is still non-NULL. Noted because the probe now means
+-- less than it reads like it means, and nothing today can reach it either way.
+--
+-- No index, no RLS change: this alters an existing column on a table that
+-- already has its full policy set, and policies are unaffected by nullability.
+--
+-- No realtime publication change, for two independent reasons: this migration
+-- creates no table, and workspaces is not in supabase_realtime at all. The
+-- published tables are boards (023), comments (024), and board_comments +
+-- board_traces (028); of those, only boards and comments are actually
+-- subscribed via postgres_changes (app/studio/[id]/page.tsx).
+--
+-- Locking: SET NOT NULL takes an ACCESS EXCLUSIVE lock and scans the table to
+-- verify. At 46 rows that is instant. Worth knowing only if this schema is ever
+-- replayed against a large database.
+
+ALTER TABLE workspaces
+  ALTER COLUMN type SET NOT NULL;
+
+COMMENT ON COLUMN workspaces.type IS
+  'class | personal | shared. NOT NULL with DEFAULT ''class'' — the CHECK constraint alone does not reject NULL, and admin views that scope to class studios must not receive an untyped row.';
