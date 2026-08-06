@@ -628,6 +628,207 @@ export function useBoardState(
   }, [normalizedToApi, decimalToApi, resolveBoardId])
   
   /**
+   * Move MANY boards as one operation — one undo step, one local commit, one
+   * round of writes.
+   *
+   * Exists because updateBoardPosition calls pushUndo() itself, so driving it in
+   * a loop for a group move produces one undo entry PER BOARD: undoing a twelve-
+   * board align would take twelve Ctrl+Z presses, each visibly relocating a
+   * single board. pushUndo snapshots the whole position map, so pushing exactly
+   * once here is all that "one undo step for the whole operation" requires.
+   *
+   * Also one setState per collection rather than one per board — twelve
+   * sequential updateBoardPosition calls mean twelve renders of every board on
+   * the wall.
+   *
+   * Coordinates match updateBoardPosition: x/y normalized -0.5..0.5, width and
+   * height decimal 0..1. The 0..100 API form is derived here, never passed in.
+   *
+   * PARTIAL FAILURE ROLLS BACK ONLY THE BOARDS THAT FAILED. Rolling back all of
+   * them would be worse: the successful writes are already committed server-side,
+   * so a full local revert would leave the screen disagreeing with the database
+   * on every board that actually saved. Reverting just the failures keeps local
+   * state matching what was persisted, and the caller is told how many fell out.
+   *
+   * Returns counts rather than throwing — a group move that half-lands is a real
+   * outcome the caller has to report, not an exception.
+   *
+   * THREE THINGS THE CALLER MUST NOT ASSUME:
+   *
+   *   - The counts do not necessarily sum. Ids that match no known board are
+   *     dropped before any work happens, so `requested` can exceed
+   *     `saved + failed`. Report `failed > 0`; do not derive it by subtraction.
+   *   - `saved` counts local commits, not server writes. Demo/sample/temp boards
+   *     deliberately skip persistence (same rule as the single-board path) and
+   *     are counted as saved, because local state is authoritative for them.
+   *   - Omitting `side` PRESERVES each board's current side. It does not default
+   *     to 'front'. A group move must not silently flip boards from the back of
+   *     a wall to the front, so the fallback chain is
+   *     `u.side ?? board.position?.side ?? 'front'` — deliberately unlike the
+   *     single-board path, whose caller always supplies a side.
+   *
+   * Like the single-board path, this does NOT sync boardsRef synchronously —
+   * that ref is a post-commit mirror (see the effect near the top of this hook).
+   * A caller that chains straight into a save in the same tick would read
+   * pre-move positions from it.
+   */
+  const updateBoardPositionsBulk = useCallback(async (
+    updates: ReadonlyArray<{
+      boardId: string
+      wallIndex: number
+      x: number
+      y: number
+      width?: number
+      height?: number
+      side?: 'front' | 'back'
+    }>
+  ): Promise<{ requested: number; saved: number; failed: number }> => {
+    // Resolve temp->real ids up front, same as the single-board path, and drop
+    // anything that no longer corresponds to a board we know about.
+    const resolved = updates
+      .map(u => ({ ...u, boardId: resolveBoardId(u.boardId) }))
+      .filter(u => boardsRef.current.some(b => b.id === u.boardId))
+
+    if (resolved.length === 0) {
+      return { requested: updates.length, saved: 0, failed: 0 }
+    }
+
+    postrace('updateBoardPositionsBulk ENTER', `count=${resolved.length}`,
+      resolved.map(u => `${u.boardId}:(${u.x.toFixed(3)},${u.y.toFixed(3)})`).join(' '))
+
+    // ONE undo entry for the entire operation. Must happen before any local
+    // mutation — pushUndo snapshots current state as the restore point.
+    pushUndo()
+
+    // Prior state per board, for the per-board rollback described above.
+    const prior = new Map(resolved.map(u => [u.boardId, {
+      position: boardPositionsRef.current.get(u.boardId),
+      boardPosition: boardsRef.current.find(b => b.id === u.boardId)?.position
+        ? { ...boardsRef.current.find(b => b.id === u.boardId)!.position! }
+        : null,
+    }]))
+
+    // Single local commit for the whole group.
+    setBoardPositions(prev => {
+      const next = new Map(prev)
+      for (const u of resolved) {
+        const existing = next.get(u.boardId)
+        next.set(u.boardId, {
+          x: u.x,
+          y: u.y,
+          width: u.width ?? existing?.width ?? 0.3,
+          height: u.height ?? existing?.height ?? 0.3,
+        })
+      }
+      return next
+    })
+
+    const byId = new Map(resolved.map(u => [u.boardId, u]))
+    setBoards(prev => prev.map(b => {
+      const u = byId.get(b.id)
+      if (!u) return b
+      return {
+        ...b,
+        position: {
+          wallIndex: u.wallIndex,
+          x: normalizedToApi(u.x),
+          y: normalizedToApi(u.y),
+          width: u.width != null ? decimalToApi(u.width) : (b.position?.width ?? 30),
+          height: u.height != null ? decimalToApi(u.height) : (b.position?.height ?? 30),
+          side: u.side ?? b.position?.side ?? 'front',
+        },
+      }
+    }))
+
+    // Writes go out in parallel across boards; enqueueBoardWrite still
+    // serializes per board, so this cannot reorder against an in-flight drag
+    // save for the same board.
+    const results = await Promise.all(resolved.map(async (u) => {
+      const board = boardsRef.current.find(b => b.id === u.boardId)
+      if (!board) return { boardId: u.boardId, ok: false as const }
+
+      const boardWorkspaceId = board.workspaceId || board.studioId || ''
+      const shouldSkipPersistence =
+        u.boardId.startsWith('temp-') ||
+        u.boardId.startsWith('demo-') ||
+        u.boardId.startsWith('sample-') ||
+        boardWorkspaceId.startsWith('demo-') ||
+        boardWorkspaceId.startsWith('sample-') ||
+        boardWorkspaceId.startsWith('mock-')
+      // Not a failure: these ids intentionally have no server row, and local
+      // state is authoritative for them. Same rule as the single-board path.
+      if (shouldSkipPersistence) return { boardId: u.boardId, ok: true as const }
+
+      const apiX = normalizedToApi(u.x)
+      const apiY = normalizedToApi(u.y)
+      const apiWidth = u.width != null ? decimalToApi(u.width) : (board.position?.width ?? 30)
+      const apiHeight = u.height != null ? decimalToApi(u.height) : (board.position?.height ?? 30)
+
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { position: _position, comments: _comments, ...boardWithoutPosition } = board
+        const response = await enqueueBoardWrite(u.boardId, () => fetch('/api/boards', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({
+            ...boardWithoutPosition,
+            workspaceId: board.studioId,
+            studioId: board.studioId,
+            boardWidthIn: board.boardWidthIn,
+            boardHeightIn: board.boardHeightIn,
+            position: {
+              wallIndex: u.wallIndex,
+              x: apiX,
+              y: apiY,
+              width: apiWidth,
+              height: apiHeight,
+              side: u.side ?? board.position?.side ?? 'front',
+            },
+          }),
+        }))
+        if (!response.ok) {
+          console.error('❌ [useBoardState] Bulk position save failed', {
+            boardId: u.boardId, status: response.status, statusText: response.statusText,
+          })
+          return { boardId: u.boardId, ok: false as const }
+        }
+        return { boardId: u.boardId, ok: true as const }
+      } catch (error) {
+        console.error('❌ [useBoardState] Bulk position save threw', u.boardId, error)
+        return { boardId: u.boardId, ok: false as const }
+      }
+    }))
+
+    const failedIds = results.filter(r => !r.ok).map(r => r.boardId)
+
+    if (failedIds.length > 0) {
+      const failedSet = new Set(failedIds)
+      setBoardPositions(prev => {
+        const next = new Map(prev)
+        for (const id of failedSet) {
+          const p = prior.get(id)?.position
+          if (p) next.set(id, p)
+          else next.delete(id)
+        }
+        return next
+      })
+      setBoards(prev => prev.map(b => {
+        if (!failedSet.has(b.id)) return b
+        const p = prior.get(b.id)?.boardPosition
+        if (p) return { ...b, position: p }
+        const { position: _drop, ...rest } = b
+        void _drop
+        return rest as Board
+      }))
+    }
+
+    const saved = results.length - failedIds.length
+    postrace('updateBoardPositionsBulk DONE', `saved=${saved} failed=${failedIds.length}`)
+    return { requested: updates.length, saved, failed: failedIds.length }
+  }, [normalizedToApi, decimalToApi, resolveBoardId, pushUndo])
+
+  /**
    * Delete a board
    */
   const deleteBoard = useCallback(async (boardId: string) => {
@@ -978,6 +1179,7 @@ export function useBoardState(
     boardPositions,
     loadWallPositions,
     updateBoardPosition,
+    updateBoardPositionsBulk,
     resolveBoardId,
     applyBoardSizeLocal,
     applyBoardLinkLocal,

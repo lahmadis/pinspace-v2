@@ -89,6 +89,76 @@ export function isAxisAlignedForSnap(rotationRad: number): boolean {
 }
 
 /**
+ * Half-extents of a board's axis-aligned bounding box in wall space, for ANY
+ * rotation.
+ *
+ * The snapping above sidesteps rotation by suppressing edge alignment on
+ * rotated boards (see isAxisAlignedForSnap) — a drag can simply decline to
+ * offer a guide. Align and distribute cannot: silently skipping the rotated
+ * board in a selection is worse than moving it, so they need extents that are
+ * actually correct off-axis. A 40x20 board turned 90° occupies 20x40 of wall,
+ * and using its unrotated half-width to place its left edge is out by 10".
+ *
+ * Standard AABB of a rotated rectangle:
+ *   halfW' = |cos t| * halfW + |sin t| * halfH
+ *   halfH' = |sin t| * halfW + |cos t| * halfH
+ * Exact at every angle, and it collapses to (halfW, halfH) at 0° / 180°, so
+ * callers need no special case for the common orientation.
+ *
+ * NOT used by snapCenter or snapEdges — those keep their existing behaviour
+ * deliberately. This exists so align/distribute can share one definition of a
+ * board's footprint instead of re-deriving extent math.
+ */
+export function rotatedHalfExtents(
+  widthInches: number,
+  heightInches: number,
+  rotationRad: number
+): { halfWidth: number; halfHeight: number } {
+  const halfW = widthInches / 2
+  const halfH = heightInches / 2
+  const c = Math.abs(Math.cos(rotationRad))
+  const s = Math.abs(Math.sin(rotationRad))
+  return {
+    halfWidth: c * halfW + s * halfH,
+    halfHeight: s * halfW + c * halfH,
+  }
+}
+
+/**
+ * The axis-aligned bounding box a board occupies in wall-local inches.
+ *
+ * Convenience over rotatedHalfExtents for callers that want edges rather than
+ * extents — align works in edges (left/right/top/bottom), distribute works in
+ * gaps between them.
+ */
+export function boardBounds(target: SnapTarget, rotationRad = 0): {
+  left: number
+  right: number
+  top: number
+  bottom: number
+  centerX: number
+  centerY: number
+  halfWidth: number
+  halfHeight: number
+} {
+  const { halfWidth, halfHeight } = rotatedHalfExtents(
+    target.widthInches,
+    target.heightInches,
+    rotationRad
+  )
+  return {
+    left: target.centerInchesX - halfWidth,
+    right: target.centerInchesX + halfWidth,
+    bottom: target.centerInchesY - halfHeight,
+    top: target.centerInchesY + halfHeight,
+    centerX: target.centerInchesX,
+    centerY: target.centerInchesY,
+    halfWidth,
+    halfHeight,
+  }
+}
+
+/**
  * A board whose width or height the resized board has matched exactly. Matching
  * size is not a spatial alignment, so this draws no guide line — the caller
  * outlines the matched board instead.
