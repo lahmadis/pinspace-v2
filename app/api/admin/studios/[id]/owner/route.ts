@@ -35,11 +35,105 @@ export const dynamic = 'force-dynamic'
  * keep instructor-level rights, including wall delete. previousOwnerId is
  * returned so a follow-up removal is one call if that is ever wanted.
  *
- * NOT touched: workspaces.instructor, the free-text explore-network label. It
- * goes stale after a transfer, but the owner curates it from the publish modal
- * and may have set it to a co-teacher or the course itself — clobbering a
- * curated value is worse than a stale one its owner can fix.
+ * workspaces.instructor — the free-text explore-network label — is updated ONLY
+ * when it still matches the outgoing owner's name. That label is curated: the
+ * owner can set it to anything from the publish modal, and in practice usually
+ * does. Of the 14 class studios at the time of writing, 7 have no label at all,
+ * 5 name a professor who is NOT the owner (the co-teacher case), and only 2
+ * echo their owner's name. Overwriting unconditionally would destroy those 5;
+ * never touching it leaves the 2 showing the wrong professor in /explore.
+ *
+ * The comparison is trimmed and case-insensitive against the previous owner's
+ * name resolved by the SAME precedence that wrote it (profile -> user_metadata
+ * -> email prefix). One failure mode, and it is the safe direction: if the
+ * previous owner renamed their profile after the label was written, the match
+ * misses and the label stays stale. It can never clobber a curated value.
+ * A NULL label is left alone — absent is not stale.
  */
+
+type AdminClient = ReturnType<typeof supabaseServiceRole>
+
+/** Auth-record shape we read; narrower than the SDK's User so the helper is testable. */
+interface AuthUserLike {
+  email?: string | null
+  user_metadata?: { full_name?: string | null } | null
+}
+
+/** Used where a name is REQUIRED and none could be resolved. Never compared. */
+const UNKNOWN_NAME = 'Instructor'
+
+/**
+ * The display name for an account, by the SAME precedence that wrote every
+ * existing workspaces.instructor and workspace_members.name value: profile
+ * full_name, then the signup metadata name, then the email prefix.
+ *
+ * Run through safeName because user_metadata.full_name is user-controlled at
+ * signup and this lands in rendered labels.
+ *
+ * Returns NULL when nothing resolves, rather than a placeholder. That
+ * distinction is load-bearing for the label logic below: if a placeholder
+ * doubled as a real name, a studio whose curated label happens to read
+ * "Instructor" would match an unresolvable previous owner and be overwritten,
+ * and a transfer to an account with no resolvable name would downgrade a
+ * perfectly good label to the placeholder. Callers that genuinely need a
+ * string — workspace_members.name is NOT NULL-ish in practice — apply
+ * UNKNOWN_NAME themselves.
+ */
+function resolveDisplayName(
+  profileFullName: string | null | undefined,
+  authUser: AuthUserLike | null | undefined
+): string | null {
+  const raw =
+    profileFullName?.trim() ||
+    authUser?.user_metadata?.full_name ||
+    authUser?.email?.split('@')[0] ||
+    null
+  if (!raw) return null
+  const check = validateName(raw, { maxLength: 80, fieldLabel: 'Owner name' })
+  return check.ok ? check.value : null
+}
+
+/** Trimmed, case-insensitive equality — the label was typed by a human. */
+function namesMatch(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase()
+}
+
+/**
+ * Resolve the outgoing owner's display name, or null if it cannot be
+ * determined. Null means "do not touch the label": we cannot prove the label
+ * refers to them, and leaving a stale label beats destroying a curated one.
+ */
+async function resolvePreviousOwnerName(
+  admin: AdminClient,
+  previousOwnerId: string | null
+): Promise<string | null> {
+  // workspaces.owner_id is TEXT and user_profiles.user_id is UUID, so a
+  // non-UUID owner_id would 22P02 the profile read rather than miss.
+  if (!previousOwnerId || !isUuid(previousOwnerId)) return null
+
+  const { data: prevAuth, error: prevAuthErr } = await admin.auth.admin.getUserById(previousOwnerId)
+  if (prevAuthErr) {
+    // Not fatal to the transfer — we just decline to touch the label.
+    console.error('Error resolving previous owner for label check:', previousOwnerId, prevAuthErr)
+  }
+
+  const { data: prevProfile, error: prevProfileErr } = await admin
+    .from('user_profiles')
+    .select('full_name')
+    .eq('user_id', previousOwnerId)
+    .maybeSingle()
+  if (prevProfileErr) {
+    console.error('Error loading previous owner profile for label check:', prevProfileErr)
+  }
+
+  // Nothing resolved at all — a deleted account with no profile. Decline.
+  if (!prevAuth?.user && !prevProfile) return null
+
+  return resolveDisplayName(
+    prevProfile?.full_name as string | null | undefined,
+    prevAuth?.user ?? null
+  )
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -78,7 +172,7 @@ export async function PATCH(
 
     const { data: workspace, error: wsErr } = await admin
       .from('workspaces')
-      .select('id, name, owner_id')
+      .select('id, name, owner_id, instructor')
       .eq('id', workspaceId)
       .maybeSingle()
 
@@ -121,19 +215,40 @@ export async function PATCH(
     // workspace_members.name, a rendered value — exactly what safeName is for.
     // Fall back rather than reject: a bad display name must not block a
     // transfer that fixes who controls a class.
-    const rawName =
-      (targetProfile?.full_name as string | null)?.trim() ||
-      targetAuth.user.user_metadata?.full_name ||
-      targetAuth.user.email?.split('@')[0] ||
-      'Instructor'
-    const nameCheck = validateName(rawName, { maxLength: 80, fieldLabel: 'Owner name' })
-    const ownerName = nameCheck.ok ? nameCheck.value : 'Instructor'
+    const resolvedOwnerName = resolveDisplayName(
+      targetProfile?.full_name as string | null | undefined,
+      targetAuth.user
+    )
+    const ownerName = resolvedOwnerName ?? UNKNOWN_NAME
+
+    // Decide the explore-network label. Only worth resolving the outgoing
+    // owner's name at all when there IS a label to compare against — 7 of 14
+    // class studios have none, and this saves two lookups on each of those.
+    //
+    // Requires a REAL name on both sides. An unresolvable previous owner cannot
+    // be matched against (we can't prove the label refers to them), and an
+    // unresolvable new owner has no name worth writing — replacing a real label
+    // with a placeholder would be a downgrade, not a fix.
+    const currentLabel = (workspace.instructor as string | null) ?? null
+    let instructorLabelUpdated = false
+    if (currentLabel && currentLabel.trim().length > 0 && resolvedOwnerName) {
+      const previousOwnerName = await resolvePreviousOwnerName(admin, previousOwnerId)
+      if (previousOwnerName && namesMatch(currentLabel, previousOwnerName)) {
+        instructorLabelUpdated = true
+      }
+    }
 
     // Ownership first. If this fails nothing else should run — the membership
-    // work below only makes sense once the transfer is real.
+    // work below only makes sense once the transfer is real. The label rides
+    // along in the same UPDATE so it cannot land without the transfer.
+    const workspaceUpdates: Record<string, unknown> = { owner_id: newOwnerId }
+    // resolvedOwnerName is non-null whenever instructorLabelUpdated is true —
+    // the guard above requires it — so the label never receives a placeholder.
+    if (instructorLabelUpdated) workspaceUpdates.instructor = resolvedOwnerName
+
     const { data: updatedWorkspace, error: transferError } = await admin
       .from('workspaces')
-      .update({ owner_id: newOwnerId })
+      .update(workspaceUpdates)
       .eq('id', workspaceId)
       .select('id, owner_id')
       .maybeSingle()
@@ -196,6 +311,7 @@ export async function PATCH(
     return NextResponse.json({
       transferred: true,
       membershipEnsured,
+      instructorLabelUpdated,
       previousOwnerId,
       owner: {
         userId: newOwnerId,

@@ -3,6 +3,7 @@ import { supabaseServiceRole } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/requireAdmin'
 import { validateName } from '@/lib/validation/safeName'
 import { isUuid } from '@/lib/validation/uuid'
+import { orgIdFromEmailDomain } from '@/lib/orgs/resolveOrg'
 import { createWorkspace } from '@/lib/workspaces/createWorkspace'
 import { isDepartment, isYearLevel } from '@/lib/constants/departments'
 import { academicYearOptions } from '@/lib/academicYear'
@@ -187,21 +188,7 @@ export async function POST(req: NextRequest) {
     // the explore network with nothing to backfill it later.
     let organizationId = (instructorProfile?.organization_id as string | null) ?? null
     if (!organizationId) {
-      const domain = instructorAuth.user.email?.split('@')[1]?.toLowerCase()
-      if (domain) {
-        const { data: domainRow, error: domainErr } = await admin
-          .from('org_domains')
-          .select('org_id')
-          .eq('domain', domain)
-          .maybeSingle()
-        // A swallowed failure here is the one that actually costs something:
-        // it orphans the studio off the explore network with nothing left to
-        // backfill it from, and looks identical to "that domain isn't claimed".
-        if (domainErr) {
-          console.error('Error resolving org by email domain for provisioning:', domain, domainErr)
-        }
-        if (domainRow?.org_id) organizationId = domainRow.org_id as string
-      }
+      organizationId = await orgIdFromEmailDomain(admin, instructorAuth.user.email)
     }
 
     // Service role for the insert: the workspaces INSERT policy is

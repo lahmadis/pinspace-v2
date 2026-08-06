@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/requireAdmin'
+import { isUuid } from '@/lib/validation/uuid'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,11 +24,18 @@ export const dynamic = 'force-dynamic'
 
 async function loadWorkspace(id: string) {
   const admin = supabaseServiceRole()
+  // workspaces.id is UUID, so a malformed path segment does NOT come back as
+  // zero rows — it raises 22P02 and fails the statement, turning "no such
+  // studio" into a 500. Reject before the query so the 404 stays reachable.
+  if (!isUuid(id)) return { admin, workspace: null }
   const { data, error } = await admin
     .from('workspaces')
     .select('id, owner_id, name')
     .eq('id', id)
     .maybeSingle()
+  if (error) {
+    console.error('Error loading studio for admin membership:', id, error)
+  }
   return { admin, workspace: error ? null : data }
 }
 

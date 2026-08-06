@@ -21,10 +21,11 @@ import {
   Trash2,
   UserPlus,
   GraduationCap,
+  Search,
 } from 'lucide-react'
-import { DEPARTMENTS, YEAR_LEVELS } from '@/lib/constants/departments'
-import { academicYearOptions } from '@/lib/academicYear'
 import { toast } from '@/lib/toast'
+import CreateStudioForm from '@/components/admin/CreateStudioForm'
+import InstructorPicker, { type UserSearchResult } from '@/components/admin/InstructorPicker'
 
 type WorkspaceRow = { id: string; name: string; type?: string; created_at?: string }
 
@@ -43,11 +44,13 @@ type AdminStudio = {
   adminIsMember: boolean
 }
 
-type UserSearchResult = {
+type AdminInstructor = {
   userId: string
-  email: string | null
   fullName: string | null
-  organizationId: string | null
+  email: string | null
+  organization: string | null
+  accountRole: 'instructor' | 'student'
+  classCount: number
   hasProfile: boolean
 }
 
@@ -210,257 +213,115 @@ function RecentSignupsCard({ signups, loading }: { signups: RecentSignup[]; load
 }
 
 /**
- * Search-and-pick an EXISTING account. There is deliberately no free-text
- * email entry: workspaces.owner_id must point at a real user, or every
- * owner-gated action on the provisioned studio is dead on arrival.
+ * Everyone who teaches, or could — a filtered admin-side VIEW over accounts and
+ * the class studios they own. Not impersonation: nothing here creates, borrows
+ * or swaps a session, and clicking through renders an admin report about a
+ * person, never that person's own view of the app.
+ *
+ * Search is client-side over an already-loaded list. The population is small by
+ * construction (people who own a class or carry the instructor role), so there
+ * is no debounced round trip to justify — unlike InstructorPicker, which
+ * searches every account on the platform.
  */
-function InstructorPicker({
-  selected,
-  onSelect,
-  emptyHint = 'No account matches. They must sign up before you can provision a studio for them.',
+function InstructorsCard({
+  instructors,
+  loading,
+  failed,
 }: {
-  selected: UserSearchResult | null
-  onSelect: (user: UserSearchResult | null) => void
-  /** Copy for the no-results state — the reason an account must already exist
-   *  differs between provisioning a new studio and transferring an existing one. */
-  emptyHint?: string
+  instructors: AdminInstructor[]
+  loading: boolean
+  /** The fetch broke. Distinct from an empty list, and must not read as one. */
+  failed: boolean
 }) {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<UserSearchResult[]>([])
-  const [searching, setSearching] = useState(false)
 
-  useEffect(() => {
-    const q = query.trim()
-    if (q.length < 2) {
-      setResults([])
-      setSearching(false)
-      return
-    }
-    let cancelled = false
-    setSearching(true)
-    // Debounced: the search scans the full user list server-side, so firing on
-    // every keystroke would be wasteful.
-    const timer = setTimeout(() => {
-      fetch(`/api/admin/users/search?q=${encodeURIComponent(q)}`, { cache: 'no-store' })
-        .then((r) => (r.ok ? r.json() : { users: [] }))
-        .then((d: { users?: UserSearchResult[] }) => {
-          if (!cancelled) setResults(Array.isArray(d.users) ? d.users : [])
-        })
-        .catch(() => { if (!cancelled) setResults([]) })
-        .finally(() => { if (!cancelled) setSearching(false) })
-    }, 250)
-    return () => { cancelled = true; clearTimeout(timer) }
-  }, [query])
+  const q = query.trim().toLowerCase()
+  const filtered = q.length === 0
+    ? instructors
+    : instructors.filter((i) =>
+        (i.fullName ?? '').toLowerCase().includes(q) ||
+        (i.email ?? '').toLowerCase().includes(q) ||
+        (i.organization ?? '').toLowerCase().includes(q)
+      )
 
-  if (selected) {
-    return (
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border border-indigo-200 bg-indigo-50 rounded-lg">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-indigo-900 truncate">
-            {selected.fullName || selected.email || selected.userId}
-          </p>
-          {selected.fullName && selected.email && (
-            <p className="text-xs text-indigo-500 truncate">{selected.email}</p>
-          )}
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+      <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+        <UserPlus className="w-4 h-4 text-indigo-600" />
+        <h2 className="text-sm font-semibold text-gray-900">Instructors</h2>
+        <span className="text-xs text-gray-400 ml-1">owns a class, or has the instructor role</span>
+        <div className="ml-auto relative">
+          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search instructors"
+            className="pl-8 pr-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm w-56"
+          />
         </div>
-        <button
-          type="button"
-          onClick={() => { onSelect(null); setQuery('') }}
-          className="p-1 text-indigo-400 hover:text-indigo-600 rounded shrink-0"
-          aria-label="Clear selected instructor"
-        >
-          <X className="w-4 h-4" />
-        </button>
       </div>
-    )
-  }
 
-  return (
-    <div>
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search by name or email"
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
-      />
-      {query.trim().length >= 2 && (
-        <div className="mt-1 border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-48 overflow-y-auto">
-          {searching ? (
-            <p className="px-3 py-2 text-xs text-gray-400">Searching…</p>
-          ) : results.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-gray-500">{emptyHint}</p>
-          ) : (
-            results.map((u) => (
-              <button
-                key={u.userId}
-                type="button"
-                onClick={() => onSelect(u)}
-                className="w-full text-left px-3 py-2 hover:bg-indigo-50/60"
-              >
-                <p className="text-sm text-gray-900">{u.fullName || u.email || u.userId}</p>
-                {u.fullName && u.email && <p className="text-xs text-gray-400">{u.email}</p>}
-                {!u.hasProfile && (
-                  <p className="text-xs text-amber-600 mt-0.5">Has not completed onboarding</p>
-                )}
-              </button>
-            ))
-          )}
+      {loading ? (
+        <div className="p-8 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 mx-auto" />
         </div>
-      )}
-    </div>
-  )
-}
-
-function CreateStudioForm({ onCreated }: { onCreated: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [name, setName] = useState('')
-  const [instructor, setInstructor] = useState<UserSearchResult | null>(null)
-  const [department, setDepartment] = useState<string>(DEPARTMENTS[0])
-  const [yearLevel, setYearLevel] = useState<string>(YEAR_LEVELS[0])
-  const years = academicYearOptions(4)
-  const [academicYear, setAcademicYear] = useState<string>(years[0])
-
-  const reset = () => {
-    setName('')
-    setInstructor(null)
-    setDepartment(DEPARTMENTS[0])
-    setYearLevel(YEAR_LEVELS[0])
-    setAcademicYear(years[0])
-    setError('')
-  }
-
-  const close = () => { reset(); setOpen(false) }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    if (!name.trim()) { setError('Studio name is required'); return }
-    if (!instructor) { setError('Pick an instructor'); return }
-    setLoading(true)
-    try {
-      const res = await fetch('/api/admin/studios', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          instructorUserId: instructor.userId,
-          department,
-          yearLevel,
-          academicYear,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error || 'Failed to create studio'); return }
-      // The studio exists and is owned correctly even when its explore metadata
-      // failed to write, so this is a warning rather than an error — but it must
-      // not report as a clean success either.
-      if (data.metadataApplied === false) {
-        toast.error('Studio created, but department/year did not save. Set them from the studio.')
-      }
-      close()
-      onCreated()
-    } catch {
-      setError('Request failed')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
-      >
-        <Plus className="w-4 h-4" />
-        New studio
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={close}>
-          <div
-            className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-semibold text-gray-900">Create studio for an instructor</h3>
-              <button type="button" onClick={close} className="p-1 text-gray-400 hover:text-gray-600 rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Studio name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Studio 3 — Housing"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Instructor</label>
-                <InstructorPicker selected={instructor} onSelect={setInstructor} />
-                <p className="text-xs text-gray-500 mt-1">
-                  They become the owner — the studio is theirs, exactly as if they had made it.
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                  <select
-                    value={department}
-                    onChange={(e) => setDepartment(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
-                  >
-                    {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Year level</label>
-                  <select
-                    value={yearLevel}
-                    onChange={(e) => setYearLevel(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
-                  >
-                    {YEAR_LEVELS.map((y) => <option key={y} value={y}>{y}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Academic year</label>
-                <select
-                  value={academicYear}
-                  onChange={(e) => setAcademicYear(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
-                >
-                  {years.map((y) => <option key={y} value={y}>{y}</option>)}
-                </select>
-              </div>
-              {error && <p className="text-sm text-red-600">{error}</p>}
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={close}
-                  className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 py-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium text-sm"
-                >
-                  {loading ? 'Creating…' : 'Create studio'}
-                </button>
-              </div>
-            </form>
-          </div>
+      ) : failed ? (
+        <div className="p-8 text-center">
+          <p className="text-sm text-amber-700">Couldn’t load instructors.</p>
+          <p className="text-xs text-gray-500 mt-1">This is a failed request, not an empty list. Reload to try again.</p>
+        </div>
+      ) : instructors.length === 0 ? (
+        <div className="p-8 text-center text-gray-500">No instructors yet.</div>
+      ) : filtered.length === 0 ? (
+        <div className="p-8 text-center text-gray-500">No instructor matches “{query.trim()}”.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
+                <th className="px-4 py-3 font-medium">Instructor</th>
+                <th className="px-4 py-3 font-medium">Email</th>
+                <th className="px-4 py-3 font-medium">Organization</th>
+                <th className="px-4 py-3 font-medium text-right">Studios</th>
+                <th className="px-4 py-3 font-medium text-right"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((i) => (
+                <tr key={i.userId} className="border-b border-gray-100 last:border-0 hover:bg-indigo-50/30">
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-gray-900">{i.fullName || '—'}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {/* Owns a class but cannot create another: POST /api/workspaces
+                          gates class creation on account_role. Admin-actionable
+                          from /admin/users. */}
+                      {i.accountRole !== 'instructor' && (
+                        <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-800">
+                          No instructor role
+                        </span>
+                      )}
+                      {!i.hasProfile && (
+                        <span className="text-xs text-gray-400">Has not onboarded</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500">{i.email || '—'}</td>
+                  <td className="px-4 py-3 text-gray-500">{i.organization || '—'}</td>
+                  <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{i.classCount}</td>
+                  <td className="px-4 py-3 text-right">
+                    <Link
+                      href={`/admin/instructors/${i.userId}`}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                    >
+                      View
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -1306,6 +1167,8 @@ export default function AdminDashboardPage() {
   const [editingInst, setEditingInst] = useState<InstitutionWithCount | null>(null)
   const [recentSignups, setRecentSignups] = useState<RecentSignup[]>([])
   const [studios, setStudios] = useState<AdminStudio[]>([])
+  const [instructors, setInstructors] = useState<AdminInstructor[]>([])
+  const [instructorsFailed, setInstructorsFailed] = useState(false)
   const [stats, setStats] = useState<{
     total: number
     by_year: Record<string, number>
@@ -1357,17 +1220,27 @@ export default function AdminDashboardPage() {
       fetch('/api/admin/stats', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)),
       fetch('/api/admin/recent-signups', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { signups: [] })),
       fetch('/api/admin/studios', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { studios: [] })),
+      // `failed` rather than an empty list: "the request broke" and "there are
+      // no instructors" render as very different things, and the card must not
+      // report the first as the second.
+      fetch('/api/admin/instructors', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : { instructors: [], failed: true }))
+        .catch(() => ({ instructors: [], failed: true })),
     ])
-      .then(([overviewData, statsData, signupsData, studiosData]) => {
+      .then(([overviewData, statsData, signupsData, studiosData, instructorsData]) => {
         setInstitutions(Array.isArray(overviewData?.institutions) ? overviewData.institutions : [])
         setStats(statsData)
         setRecentSignups(Array.isArray(signupsData?.signups) ? signupsData.signups : [])
         setStudios(Array.isArray(studiosData?.studios) ? studiosData.studios : [])
+        setInstructors(Array.isArray(instructorsData?.instructors) ? instructorsData.instructors : [])
+        setInstructorsFailed(instructorsData?.failed === true)
       })
       .catch(() => {
         setInstitutions([])
         setRecentSignups([])
         setStudios([])
+        setInstructors([])
+        setInstructorsFailed(true)
       })
       .finally(() => setLoading(false))
   }
@@ -1544,6 +1417,8 @@ export default function AdminDashboardPage() {
         )}
 
         {/* Studios — pilot provisioning */}
+        <InstructorsCard instructors={instructors} loading={loading} failed={instructorsFailed} />
+
         <StudiosCard studios={studios} loading={loading} onChanged={loadData} />
 
         {/* Recent signups */}
