@@ -217,9 +217,13 @@ function RecentSignupsCard({ signups, loading }: { signups: RecentSignup[]; load
 function InstructorPicker({
   selected,
   onSelect,
+  emptyHint = 'No account matches. They must sign up before you can provision a studio for them.',
 }: {
   selected: UserSearchResult | null
   onSelect: (user: UserSearchResult | null) => void
+  /** Copy for the no-results state — the reason an account must already exist
+   *  differs between provisioning a new studio and transferring an existing one. */
+  emptyHint?: string
 }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<UserSearchResult[]>([])
@@ -285,9 +289,7 @@ function InstructorPicker({
           {searching ? (
             <p className="px-3 py-2 text-xs text-gray-400">Searching…</p>
           ) : results.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-gray-500">
-              No account matches. They must sign up before you can provision a studio for them.
-            </p>
+            <p className="px-3 py-2 text-xs text-gray-500">{emptyHint}</p>
           ) : (
             results.map((u) => (
               <button
@@ -465,6 +467,102 @@ function CreateStudioForm({ onCreated }: { onCreated: () => void }) {
   )
 }
 
+function TransferOwnerModal({
+  studio,
+  onClose,
+  onTransferred,
+}: {
+  studio: AdminStudio
+  onClose: () => void
+  onTransferred: () => void
+}) {
+  const [target, setTarget] = useState<UserSearchResult | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    if (!target) { setError('Pick the new owner'); return }
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/admin/studios/${studio.id}/owner`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ownerId: target.userId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setError(data.error || 'Failed to transfer studio'); return }
+      // Ownership moved even when the membership step didn't — the route says so
+      // explicitly. Surface that rather than reporting a clean success, since the
+      // new owner would be missing from every member-gated query until it's fixed.
+      if (data.membershipEnsured === false) {
+        toast.error('Ownership transferred, but adding them as instructor failed. Check the studio members.')
+      }
+      onClose()
+      onTransferred()
+    } catch {
+      setError('Request failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-lg font-semibold text-gray-900">Transfer ownership</h3>
+          <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+            <p className="text-sm font-medium text-gray-900">{studio.name}</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Currently owned by {studio.ownerName || 'an unresolved account'}
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">New owner</label>
+            <InstructorPicker
+              selected={target}
+              onSelect={setTarget}
+              emptyHint="No account matches. They must sign up before a studio can be transferred to them."
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              They become the owner and are added as an instructor. The previous owner keeps
+              instructor access — their boards stay in this studio — but loses publish, archive,
+              delete and enrol.
+            </p>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 py-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium text-sm"
+            >
+              {loading ? 'Transferring…' : 'Transfer'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 function StudiosCard({
   studios,
   loading,
@@ -475,6 +573,7 @@ function StudiosCard({
   onChanged: () => void
 }) {
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [transferring, setTransferring] = useState<AdminStudio | null>(null)
 
   const toggleMembership = async (studio: AdminStudio) => {
     setBusyId(studio.id)
@@ -535,7 +634,16 @@ function StudiosCard({
                       {s.isArchived && ' · archived'}
                     </p>
                   </td>
-                  <td className="px-4 py-3 text-gray-700">{s.ownerName || '—'}</td>
+                  <td className="px-4 py-3 text-gray-700">
+                    <p>{s.ownerName || '—'}</p>
+                    <button
+                      type="button"
+                      onClick={() => setTransferring(s)}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline mt-0.5"
+                    >
+                      Transfer
+                    </button>
+                  </td>
                   <td className="px-4 py-3 text-gray-500">{s.department || '—'}</td>
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{s.academicYear || '—'}</td>
                   <td className="px-4 py-3">
@@ -566,6 +674,14 @@ function StudiosCard({
             </tbody>
           </table>
         </div>
+      )}
+
+      {transferring && (
+        <TransferOwnerModal
+          studio={transferring}
+          onClose={() => setTransferring(null)}
+          onTransferred={onChanged}
+        />
       )}
     </div>
   )

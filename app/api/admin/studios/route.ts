@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/requireAdmin'
 import { validateName } from '@/lib/validation/safeName'
+import { isUuid } from '@/lib/validation/uuid'
 import { createWorkspace } from '@/lib/workspaces/createWorkspace'
 import { isDepartment, isYearLevel } from '@/lib/constants/departments'
 import { academicYearOptions } from '@/lib/academicYear'
@@ -48,10 +49,7 @@ export async function GET() {
     // holding a non-UUID owner_id would make Postgres reject the whole .in()
     // with 22P02 and blank the owner column for EVERY studio. Filter to
     // well-formed uuids rather than letting one bad row poison the list.
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-    const ownerIds = Array.from(new Set(rows.map((w) => w.owner_id as string))).filter((id) =>
-      UUID_RE.test(id)
-    )
+    const ownerIds = Array.from(new Set(rows.map((w) => w.owner_id as string))).filter(isUuid)
 
     const [profilesResult, myMembershipsResult] = await Promise.all([
       ownerIds.length > 0
@@ -156,11 +154,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Instructor account not found' }, { status: 404 })
     }
 
-    const { data: instructorProfile } = await admin
+    const { data: instructorProfile, error: instructorProfileErr } = await admin
       .from('user_profiles')
       .select('full_name, organization_id')
       .eq('user_id', instructorUserId)
       .maybeSingle()
+    // Non-fatal — both values below have fallbacks — but a swallowed failure
+    // here silently names the studio after an email prefix AND drops the org,
+    // which then reads as "this instructor hasn't onboarded" rather than "the
+    // lookup broke".
+    if (instructorProfileErr) {
+      console.error('Error loading instructor profile for provisioning:', instructorProfileErr)
+    }
 
     // user_metadata.full_name is user-controlled at signup, and this value is
     // written to workspaces.instructor (an explore-network label) and to
@@ -184,11 +189,17 @@ export async function POST(req: NextRequest) {
     if (!organizationId) {
       const domain = instructorAuth.user.email?.split('@')[1]?.toLowerCase()
       if (domain) {
-        const { data: domainRow } = await admin
+        const { data: domainRow, error: domainErr } = await admin
           .from('org_domains')
           .select('org_id')
           .eq('domain', domain)
           .maybeSingle()
+        // A swallowed failure here is the one that actually costs something:
+        // it orphans the studio off the explore network with nothing left to
+        // backfill it from, and looks identical to "that domain isn't claimed".
+        if (domainErr) {
+          console.error('Error resolving org by email domain for provisioning:', domain, domainErr)
+        }
         if (domainRow?.org_id) organizationId = domainRow.org_id as string
       }
     }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { isSuperadmin } from '@/lib/auth/superadmin'
+import { getVerifiedUser } from '@/lib/auth/requireAdmin'
 import { validateName } from '@/lib/validation/safeName'
 
 export async function GET(
@@ -107,25 +108,32 @@ export async function GET(
 }
 
 // PATCH — rename a single board (title only). Auth: the board's uploader, the
-// workspace owner, or a platform superadmin. Plain workspace members are NOT
-// permitted to rename (narrower than the collection PUT). Access is resolved
-// via the service role — RLS has no membership/ownership SELECT on workspaces —
-// with the check enforced in app code (no new RLS policies).
+// workspace owner, ANY workspace member, or a platform superadmin.
+//
+// Widened from uploader/owner/superadmin to match the collection PUT
+// (app/api/boards/route.ts:428) and DELETE (:548), which have both admitted any
+// member for some time. Being narrower here was incoherent, not safer: a member
+// could already retitle the same board through PUT — it writes `title` from the
+// same request shape — so the narrow gate blocked one route to an edit that
+// stayed open on another, while making the affordance in the UI disappear for
+// people who could still perform the edit. Rename, edit and delete now agree.
+//
+// Access is resolved via the service role — RLS has no membership/ownership
+// SELECT on workspaces — with the check enforced in app code (no new RLS
+// policies).
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = supabaseServer()
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
-
-    if (sessionError || !session?.user?.id) {
+    // getUser(), not getSession(): this route ends in a service-role write, so
+    // the identity behind it is re-verified against GoTrue rather than read off
+    // an unverified cookie claim.
+    const caller = await getVerifiedUser()
+    if (!caller) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    const userId = session.user.id
+    const userId = caller.userId
     const boardId = params.id
 
     const body = await request.json().catch(() => null)
@@ -151,21 +159,48 @@ export async function PATCH(
       .from('boards')
       .select('workspace_id, owner_id')
       .eq('id', boardId)
-      .single()
+      .maybeSingle()
 
-    if (boardErr || !board) {
+    if (boardErr) {
+      console.error('Error loading board for rename:', boardId, boardErr)
+      return NextResponse.json({ error: 'Failed to load board' }, { status: 500 })
+    }
+    if (!board) {
       return NextResponse.json({ error: 'Board not found' }, { status: 404 })
     }
 
-    const { data: workspace } = await admin
+    const { data: workspace, error: workspaceErr } = await admin
       .from('workspaces')
       .select('owner_id')
       .eq('id', board.workspace_id)
-      .single()
+      .maybeSingle()
+
+    // A swallowed failure here reads as "not the owner" and denies a rename the
+    // caller is entitled to, so it is a 500 rather than a silent 403.
+    if (workspaceErr) {
+      console.error('Error loading workspace for rename:', board.workspace_id, workspaceErr)
+      return NextResponse.json({ error: 'Failed to verify access' }, { status: 500 })
+    }
 
     const isUploader = board.owner_id === userId
     const isWorkspaceOwner = workspace?.owner_id === userId
     let authorized = isUploader || isWorkspaceOwner
+
+    // Any member of the workspace — same rule as the collection PUT/DELETE.
+    if (!authorized) {
+      const { data: membership, error: membershipError } = await admin
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', board.workspace_id)
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (membershipError) {
+        console.error('Error checking workspace membership for rename:', membershipError)
+        return NextResponse.json({ error: 'Failed to verify access' }, { status: 500 })
+      }
+      authorized = membership !== null
+    }
+
     if (!authorized) {
       authorized = await isSuperadmin(userId, admin)
     }

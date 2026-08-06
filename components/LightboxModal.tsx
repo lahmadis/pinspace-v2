@@ -1693,14 +1693,19 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // in BOTH view and edit mode to exactly who the PATCH /api/boards/[id] route
   // accepts: the board's uploader, the workspace/room owner (surfaced as the
   // 'instructor' role — /api/workspaces guarantees the owner appears as
-  // instructor), or a platform superadmin. Everyone else (members, guests,
-  // logged-out) sees plain static text — no affordance, no cursor change. The
-  // server re-checks, so a stale affordance just round-trips to a 403 → revert +
-  // toast. NB: a STRICT uploader match, not isBoardOwner — its no-owner fallback
-  // would over-grant to any viewer of an owner-less board now that this is no
-  // longer edit-gated.
+  // instructor), ANY workspace member, or a platform superadmin. Guests and
+  // logged-out viewers see plain static text — no affordance, no cursor change.
+  // The server re-checks, so a stale affordance just round-trips to a 403 →
+  // revert + toast. NB: a STRICT uploader match, not isBoardOwner — its no-owner
+  // fallback would over-grant to any viewer of an owner-less board now that this
+  // is no longer edit-gated.
+  //
+  // `currentUserRole !== null` IS the membership test: it is resolved from the
+  // workspace members list (app/studio/[id]/page.tsx:396-401) and stays null for
+  // anyone not in it — which is what the share/crit/gallery callers pass. Widened
+  // in step with the route; the two must not drift apart again.
   const isBoardUploader = !!user && !!board.ownerId && board.ownerId === user.id
-  const canEditTitle = isBoardUploader || currentUserRole === 'instructor' || isSuperadminViewer
+  const canEditTitle = isBoardUploader || currentUserRole !== null || isSuperadminViewer
   // Optimistic override wins over the stored value so a rename shows instantly.
   const resolvedTitle = titleOverride ?? board.title
 
