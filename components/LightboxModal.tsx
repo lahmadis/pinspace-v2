@@ -1888,6 +1888,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               className="text-slate-50 font-semibold text-sm sm:text-[15px] flex items-center gap-1 min-w-0 group/title cursor-pointer hover:text-white"
               onClick={(e) => {
                 e.stopPropagation()
+                // Clear a cancel flag left set by a prior Esc: the unmount that
+                // followed it may never have fired blur, and a stale true would
+                // silently cancel THIS edit's commit.
+                titleEditCancelRef.current = false
                 setTitleInput(resolvedTitle)
                 setEditingTitle(true)
               }}
@@ -2012,6 +2016,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       onClick={(e) => {
                         e.stopPropagation()
                         if (savingPosition) return
+                        // Clear a cancel flag left set by a prior Esc: the
+                        // unmount that followed it may never have fired blur,
+                        // and a stale true would silently cancel THIS edit's
+                        // commit.
+                        positionEditCancelRef.current = false
                         setPositionInput(String(currentIndex + 1))
                         setEditingPosition(true)
                       }}
