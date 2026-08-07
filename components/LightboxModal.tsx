@@ -47,6 +47,23 @@ interface LightboxModalProps {
   /** Role of the currently authenticated user in this workspace. Instructors may resolve/delete any callout. */
   currentUserRole?: 'instructor' | 'student' | null
   /**
+   * Phase 2: turns the leading number of the "06 / 07" counter into a
+   * click-to-edit slideshow position. Default false, and when false the counter
+   * renders EXACTLY as before — no affordance, no markup change. Only the
+   * member studio surfaces (edit via StudioRoom, and the view page) opt in;
+   * share/crit/gallery are read-only and leave it default.
+   *
+   * Affordance-only: /api/boards/reorder re-checks owner/superadmin server-side,
+   * so a stale flag just round-trips to a 403 and the number reverts.
+   */
+  canReorder?: boolean
+  /**
+   * Persists a new 1-based slideshow position for a board. Resolve true on
+   * success, false to revert the displayed number and toast. The caller is
+   * expected to refetch its boards so the sorted allBoards recomputes.
+   */
+  onReorder?: (boardId: string, targetPosition: number) => Promise<boolean>
+  /**
    * Called after a video link save persists (PUT ok). The parent uses it to
    * write the new linkUrl into its local boards cache (and the open-lightbox
    * snapshot) so reopening the lightbox shows the link without a refresh —
@@ -190,7 +207,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, hideCallouts = false, currentUserRole = null, onLinkSaved, onBoardSizeSaved, onTitleSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, hideCallouts = false, currentUserRole = null, canReorder = false, onReorder, onLinkSaved, onBoardSizeSaved, onTitleSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -253,6 +270,19 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // Set true by an Esc keypress so the ensuing unmount-blur cancels instead of
   // saving (Enter/blur save; Esc cancels).
   const titleEditCancelRef = useRef(false)
+
+  // Inline slideshow-position edit on the nav counter (Phase 2, gated on
+  // canReorder). pendingPosition holds the typed value while the write is in
+  // flight so the counter shows the destination immediately; it clears on
+  // settle, which is also what "reverts" the number on failure — the real
+  // index comes back from allBoards either way. Mirrors the title edit,
+  // including the Esc-cancel ref that stops the unmount-blur from committing.
+  const [editingPosition, setEditingPosition] = useState(false)
+  const [positionInput, setPositionInput] = useState('')
+  const [pendingPosition, setPendingPosition] = useState<number | null>(null)
+  const [savingPosition, setSavingPosition] = useState(false)
+  const positionSaveInFlightRef = useRef(false)
+  const positionEditCancelRef = useRef(false)
 
   // Single-image zoom/pan + image-rect measurement (Phase A.2). Only the
   // single-image branch below consumes it; PDF/compare are untouched. The board's
@@ -445,6 +475,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     setEditingTitle(false)
     setTitleInput('')
     titleEditCancelRef.current = false
+    setEditingPosition(false)
+    setPositionInput('')
+    setPendingPosition(null)
+    positionEditCancelRef.current = false
     // Reset the callout overlay on every board change (covers arrow nav).
     setCalloutMode(false)
     setComposer(null)
@@ -653,6 +687,59 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       setSavingTitle(false)
     }
   }, [board, titleInput, titleOverride, onTitleSaved])
+
+  // Commit a typed slideshow position. Enter/blur call this; Esc sets
+  // positionEditCancelRef so the unmount-blur cancels without writing.
+  //
+  // Junk, out-of-range and no-op values close the editor WITHOUT a request —
+  // there is nothing to persist and a 1..N clamp server-side would silently do
+  // something the user didn't type. Only a real move round-trips.
+  const handleCommitPosition = useCallback(async () => {
+    if (positionEditCancelRef.current) {
+      positionEditCancelRef.current = false
+      setEditingPosition(false)
+      setPositionInput('')
+      return
+    }
+    if (positionSaveInFlightRef.current || !board) {
+      setEditingPosition(false)
+      return
+    }
+    const raw = positionInput.trim()
+    const total = allBoards.length
+    const parsed = Number.parseInt(raw, 10)
+    const isValid =
+      /^\d+$/.test(raw) &&
+      Number.isInteger(parsed) &&
+      parsed >= 1 &&
+      parsed <= total &&
+      parsed !== currentIndex + 1
+    if (!isValid) {
+      setEditingPosition(false)
+      setPositionInput('')
+      return
+    }
+
+    positionSaveInFlightRef.current = true
+    setSavingPosition(true)
+    // Optimistic: show the destination slot and close the input while the
+    // write is in flight.
+    setPendingPosition(parsed)
+    setEditingPosition(false)
+    try {
+      const ok = await onReorder?.(board.id, parsed)
+      if (ok === false) toast.error('Couldn’t move this board.')
+    } catch {
+      toast.error('Couldn’t move this board.')
+    } finally {
+      positionSaveInFlightRef.current = false
+      setSavingPosition(false)
+      // Clearing the optimistic value hands the counter back to allBoards: the
+      // new slot on success, the unchanged old one on failure.
+      setPendingPosition(null)
+      setPositionInput('')
+    }
+  }, [board, positionInput, allBoards.length, currentIndex, onReorder])
 
   // Persist a manual board size (inches) through the EXISTING position PATCH,
   // which already accepts boardWidthIn/boardHeightIn. Sends the board's current
@@ -1670,10 +1757,15 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // ---- Header / tool-dock derivations (Pass A: layout only) --------------
   // Nav counter "03 / 05" from the existing index/total; null when the current
   // board isn't in allBoards (e.g. a compare selection) so no state is invented.
-  const navCounter =
+  const navTotalLabel = String(allBoards.length).padStart(2, '0')
+  const navPositionLabel =
     currentIndex >= 0 && allBoards.length > 0
-      ? `${String(currentIndex + 1).padStart(2, '0')} / ${String(allBoards.length).padStart(2, '0')}`
+      ? String((pendingPosition ?? currentIndex + 1)).padStart(2, '0')
       : null
+  const navCounter = navPositionLabel ? `${navPositionLabel} / ${navTotalLabel}` : null
+  // Reserve the input at the widest the position can get, so entering and
+  // leaving edit mode never reflows the header. +1ch of breathing room.
+  const navPositionWidthCh = Math.max(2, navTotalLabel.length) + 1
   // Title-block board size + provenance. Honors an optimistic override from a
   // just-saved manual size. TRUE/SET show the plain size; ASSUMED (aspect-ratio
   // 36" default — no measurement) is flagged so a test-fit stays honest.
@@ -1880,9 +1972,64 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               </svg>
             </button>
             {navCounter && (
-              <span className="px-1 text-[11px] font-mono tabular-nums text-slate-300/80 select-none whitespace-nowrap">
-                {navCounter}
-              </span>
+              canReorder && navPositionLabel ? (
+                // Editable slideshow position. Same shell/typography as the
+                // read-only counter below, so the header is pixel-identical
+                // apart from the hover affordance.
+                <span className="px-1 text-[11px] font-mono tabular-nums text-slate-300/80 select-none whitespace-nowrap inline-flex items-center gap-1">
+                  {editingPosition ? (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={positionInput}
+                      onChange={(e) => setPositionInput(e.target.value.replace(/[^\d]/g, ''))}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        // Swallow every key: unhandled arrows would reach the
+                        // lightbox's window-level prev/next handler and navigate
+                        // away mid-edit, and Esc would close the modal.
+                        e.stopPropagation()
+                        if (e.key === 'Enter') { e.preventDefault(); handleCommitPosition() }
+                        else if (e.key === 'Escape') {
+                          e.preventDefault()
+                          positionEditCancelRef.current = true
+                          setEditingPosition(false)
+                          setPositionInput('')
+                        }
+                      }}
+                      onBlur={handleCommitPosition}
+                      autoFocus
+                      onFocus={(e) => e.currentTarget.select()}
+                      maxLength={navTotalLabel.length + 1}
+                      disabled={savingPosition}
+                      style={{ width: `${navPositionWidthCh}ch` }}
+                      className="text-slate-900 bg-white/95 border border-indigo-400 rounded px-1 py-0 text-[11px] font-mono tabular-nums text-center focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+                      aria-label="Slideshow position"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (savingPosition) return
+                        setPositionInput(String(currentIndex + 1))
+                        setEditingPosition(true)
+                      }}
+                      disabled={savingPosition}
+                      style={{ width: `${navPositionWidthCh}ch` }}
+                      className="text-center rounded hover:bg-white/15 hover:text-white transition-colors disabled:opacity-60 disabled:cursor-wait"
+                      title="Set slideshow position"
+                    >
+                      {navPositionLabel}
+                    </button>
+                  )}
+                  <span>/ {navTotalLabel}</span>
+                </span>
+              ) : (
+                <span className="px-1 text-[11px] font-mono tabular-nums text-slate-300/80 select-none whitespace-nowrap">
+                  {navCounter}
+                </span>
+              )
             )}
             <button
               onClick={(e) => { e.stopPropagation(); onNavigate('next') }}

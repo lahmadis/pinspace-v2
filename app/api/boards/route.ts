@@ -481,6 +481,10 @@ export async function PUT(request: NextRequest) {
       boardWidthIn: updatedBoard.board_width_in != null ? Number(updatedBoard.board_width_in) : undefined,
       boardHeightIn: updatedBoard.board_height_in != null ? Number(updatedBoard.board_height_in) : undefined,
       linkUrl: updatedBoard.link_url ?? undefined,
+      // Carried so a caller merging this response into its boards cache keeps
+      // the board's slideshow slot. Omitting it would merge in as null and send
+      // the board to the end of the lightbox sequence (lib/boardOrder.ts).
+      sortOrder: updatedBoard.sort_order ?? null,
     }
 
     return NextResponse.json({ success: true, board: transformedBoard })
@@ -1035,6 +1039,10 @@ export async function POST(request: NextRequest) {
       boardWidthIn:   savedBoard.board_width_in  != null ? Number(savedBoard.board_width_in)  : undefined,
       boardHeightIn:  savedBoard.board_height_in != null ? Number(savedBoard.board_height_in) : undefined,
       linkUrl:        savedBoard.link_url ?? undefined,
+      // Assigned by the boards_set_default_sort_order trigger (migration 035),
+      // so a freshly inserted board merges into the caller's cache already
+      // holding its slideshow slot instead of null-ranking to the end.
+      sortOrder:      savedBoard.sort_order ?? null,
     }
 
     return NextResponse.json({ board, fullUrl, thumbnailUrl })

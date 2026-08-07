@@ -195,6 +195,12 @@ export default function StudioViewPage() {
   // can inline-edit a board title from this read-only view. null for public /
   // non-member viewers → no title-edit affordance.
   const [currentUserRole, setCurrentUserRole] = useState<'instructor' | 'student' | null>(null)
+  /**
+   * May this user set a board's slideshow position from the lightbox counter?
+   * Owner or platform superadmin — the exact rule /api/boards/reorder enforces.
+   * Fail-closed: stays false for guests, students and unresolved ownership.
+   */
+  const [canReorderBoards, setCanReorderBoards] = useState(false)
   const [compareBoardIds, setCompareBoardIds] = useState<string[]>([])
   const shiftPressedRef = useRef(false)
   const compareBoardIdsRef = useRef<string[]>([])
@@ -402,7 +408,7 @@ export default function StudioViewPage() {
       try {
         const res = await fetch(`/api/workspaces/${resolvedWorkspaceId}`)
         if (!res.ok) {
-          if (!cancelled) setCurrentUserRole(null)
+          if (!cancelled) { setCurrentUserRole(null); setCanReorderBoards(false) }
           return
         }
         const data = await res.json()
@@ -416,8 +422,16 @@ export default function StudioViewPage() {
         } else {
           setCurrentUserRole(null)
         }
+        // Reorder affordance: owner or platform superadmin, the exact rule
+        // /api/boards/reorder enforces. Read off the SAME response the role
+        // lookup already fetched — no extra round trip. `createdBy` is owner_id
+        // and is read independently of `members`, so an owner keeps the
+        // affordance even if the members array is missing or malformed.
+        setCanReorderBoards(
+          data?.workspace?.createdBy === myUserId || data?.isSuperadmin === true
+        )
       } catch {
-        if (!cancelled) setCurrentUserRole(null)
+        if (!cancelled) { setCurrentUserRole(null); setCanReorderBoards(false) }
       }
     })()
     return () => {
@@ -686,6 +700,26 @@ export default function StudioViewPage() {
         // Only the view page opts in; editor (via StudioRoom) and guest crit leave it default false.
         hideCallouts={true}
         currentUserRole={currentUserRole}
+        canReorder={canReorderBoards}
+        onReorder={async (boardId, targetPosition) => {
+          // studioId IS the room id on this route — a legacy /studio/{ws} URL
+          // is redirected to the canonical room URL in fetchBoards, and the
+          // boards fetch above already keys off it the same way.
+          try {
+            const res = await fetch('/api/boards/reorder', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ roomId: studioId, boardId, targetPosition }),
+              credentials: 'include',
+            })
+            if (!res.ok) return false
+            // Existing refetch path: sortOrder lands and lightboxBoards recomputes.
+            await fetchBoards()
+            return true
+          } catch {
+            return false
+          }
+        }}
         onTitleSaved={(boardId, title) => {
           // Rename persisted server-side already. Mirror into local boards + the
           // open snapshot so the header stays correct on reopen/navigation

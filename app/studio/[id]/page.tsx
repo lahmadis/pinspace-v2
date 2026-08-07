@@ -108,6 +108,13 @@ export default function StudioPage() {
    * and there are no edits to lose.
    */
   const [canEditWalls, setCanEditWalls] = useState(false)
+  /**
+   * May this user set a board's slideshow position from the lightbox counter?
+   * Owner or platform superadmin — the exact rule /api/boards/reorder enforces.
+   * Fail-closed like the wall predicates: a host that hasn't resolved ownership
+   * shows no affordance.
+   */
+  const [canReorderBoards, setCanReorderBoards] = useState(false)
   // Ref mirror so the persist/flush callbacks can read permission without taking
   // it as a dep — their identity feeds the unmount-flush effect below, and
   // rebuilding that on a permission change would tear down an armed autosave.
@@ -381,6 +388,10 @@ export default function StudioPage() {
         // sandbox, so keep them editable rather than gating them into read-only.
         let canEdit = isDemo
         let canDelete = isDemo
+        // REORDER (a board's slideshow slot): owner or superadmin only —
+        // deliberately narrower than canEdit/canDelete so the affordance
+        // matches /api/boards/reorder and never shows to someone who'd 403.
+        let canReorder = false
         if (!isDemo && wsIdForFetch) {
           try {
             const wsRes = await fetch(`/api/workspaces/${wsIdForFetch}`, { signal })
@@ -423,6 +434,7 @@ export default function StudioPage() {
               // DELETE (a wall, and the boards on it): owner, superadmin, or an
               // instructor only. A student member is intentionally excluded.
               canDelete = isOwner || viewerIsSuperadmin || myRole === 'instructor'
+              canReorder = isOwner || viewerIsSuperadmin
             }
           } catch {
             // Non-fatal: breadcrumb + archive status are best-effort. canEdit and
@@ -432,6 +444,7 @@ export default function StudioPage() {
         }
         setCanEditWalls(canEdit)
         setCanDeleteWalls(canDelete)
+        setCanReorderBoards(canReorder)
 
         // Phase 2a: wall-config is now per-room. The endpoint path segment is
         // still the workspace id (for the auth check); the room id is appended
@@ -1395,6 +1408,7 @@ export default function StudioPage() {
             commentNonce={commentNonce}
             currentUserRole={currentUserRole}
             canEditWalls={canEditWalls}
+            canReorderBoards={canReorderBoards}
             canDeleteWalls={canDeleteWalls}
             wallColor={wallColor}
             wallConfigWriter={wallConfigWriter}

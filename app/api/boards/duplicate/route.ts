@@ -174,6 +174,10 @@ export async function POST(request: NextRequest) {
       physicalHeight: saved.physical_height,
       boardWidthIn: saved.board_width_in != null ? Number(saved.board_width_in) : undefined,
       boardHeightIn: saved.board_height_in != null ? Number(saved.board_height_in) : undefined,
+      // Assigned by the boards_set_default_sort_order trigger (migration 035),
+      // so the duplicate merges into the caller's cache already holding its
+      // slideshow slot instead of null-ranking to the end (lib/boardOrder.ts).
+      sortOrder: saved.sort_order ?? null,
     }
 
     return NextResponse.json({ success: true, board })

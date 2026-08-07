@@ -129,6 +129,14 @@ interface StudioRoomProps {
    * editor. Defaults to false (fail-closed).
    */
   canDeleteWalls?: boolean
+  /**
+   * May this user set a board's slideshow position from the lightbox counter?
+   * Narrower than both wall predicates: workspace owner or platform superadmin
+   * only, matching /api/boards/reorder exactly — reordering rewrites every row
+   * in the room, so it is a room-wide act rather than a per-board edit.
+   * Affordance-only (the route re-checks); defaults to false (fail-closed).
+   */
+  canReorderBoards?: boolean
   /** Room-level wall color for the 3D walls. Defaults to 'grey' (current look). */
   wallColor?: 'grey' | 'white'
   /**
@@ -1482,6 +1490,30 @@ export default function StudioRoom(props: StudioRoomProps) {
   // inside the modal must read THIS array or they'd disagree.
   const lightboxBoards = useMemo(() => orderBoardsForLightbox(localBoards), [localBoards])
 
+  /**
+   * Persist a new slideshow position, then let the existing refetch path
+   * recompute the sorted array. onBoardUpdate is the same GET → setBoards →
+   * parent-sync route every other board mutation already uses, and sortOrder
+   * rides through that merge as a server-authoritative field, so the counter
+   * lands on the new value without any local reordering here.
+   */
+  const handleReorderBoard = useCallback(async (boardId: string, targetPosition: number) => {
+    if (!props.roomId) return false
+    try {
+      const res = await fetch('/api/boards/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: props.roomId, boardId, targetPosition }),
+        credentials: 'include',
+      })
+      if (!res.ok) return false
+      await props.onBoardUpdate()
+      return true
+    } catch {
+      return false
+    }
+  }, [props.roomId, props.onBoardUpdate])
+
   const handleLightboxNavigate = (direction: 'prev' | 'next') => {
     if (!lightboxBoard) return
     const idx = lightboxBoards.findIndex(b => b.id === lightboxBoard.id)
@@ -2415,6 +2447,8 @@ export default function StudioRoom(props: StudioRoomProps) {
       onNavigate={handleLightboxNavigate}
       isEditMode={!props.isArchived}
       currentUserRole={props.currentUserRole ?? null}
+      canReorder={!props.isArchived && !!props.canReorderBoards}
+      onReorder={handleReorderBoard}
       liveChannelRef={props.liveChannelRef}
       isPresenter={!!props.isPresenter}
       viewportDriven={!!props.isFollowing && lightboxBoard !== null}
