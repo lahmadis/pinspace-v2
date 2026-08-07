@@ -49,7 +49,7 @@ export interface DirectUploadOptions {
    * Intended for sources that are already controlled-quality JPEGs at the
    * right dimensions (e.g. PDF pages rasterized via pdfToImage.ts) — running
    * them through imageCompression is a decode+re-encode no-op. Phone-camera
-   * images must NOT set this — they need the 2400px / q0.85 main pass.
+   * images must NOT set this — they need the 4000px / q0.92 main pass.
    */
   skipMainCompression?: boolean
 }
@@ -239,12 +239,15 @@ export function useDirectUpload(): DirectUploadState & {
         // Caller can opt out of the main compression pass when the source is
         // already a controlled-quality JPEG (e.g. rasterized PDF pages); thumb
         // generation is still a real downsample so it always runs.
+        // maxWidthOrHeight MUST stay equal to MAX_DIMENSION in lib/pdfToImage.ts:
+        // a rasterized page arrives already at that ceiling, and a smaller value
+        // here would downsample it a second time.
         const mainPromise: Promise<Blob> = options?.skipMainCompression
           ? Promise.resolve(file)
-          : imageCompression(file, { maxWidthOrHeight: 2400, initialQuality: 0.85, useWebWorker: true })
+          : imageCompression(file, { maxWidthOrHeight: 4000, initialQuality: 0.92, useWebWorker: true })
         const [mainBlob, tbBlob] = await Promise.all([
           mainPromise,
-          imageCompression(file, { maxWidthOrHeight: 800, initialQuality: 0.75, useWebWorker: true, fileType: 'image/jpeg' }),
+          imageCompression(file, { maxWidthOrHeight: 1200, initialQuality: 0.75, useWebWorker: true, fileType: 'image/jpeg' }),
         ])
         uploadBlob = mainBlob
         thumbBlob = tbBlob

@@ -22,12 +22,79 @@ import * as THREE from 'three'
 const resolvedCache = new Map<string, THREE.Texture>()
 const inFlightCache = new Map<string, Promise<THREE.Texture>>()
 
+/** Used when the GPU's real limit can't be read (SSR, no WebGL, no extension). */
+const ANISOTROPY_FALLBACK = 2
+/**
+ * Ceiling on what we'll actually ask for. Hardware commonly reports 16, and
+ * past that the sampling cost keeps rising while the visible gain on a
+ * wall-mounted board does not.
+ */
+const ANISOTROPY_CAP = 16
+
+let maxAnisotropyCache: number | null = null
+
+/**
+ * The GPU's max anisotropic filtering, clamped to ANISOTROPY_CAP.
+ *
+ * Boards hang flat on walls the camera almost always views at an angle, which
+ * is precisely the case trilinear mipmapping blurs — so the previous hard-coded
+ * 2 was throwing away most of the sharpness the hardware can give for free.
+ *
+ * Resolved once, lazily, from a throwaway WebGL context rather than a renderer:
+ * configureTexture runs inside a module-level cache reached from non-component
+ * callers (the upload pre-warm in hooks/useBoardUpload.ts, the wall-hover
+ * pre-warm in StudioRoom), none of which hold a renderer reference. This is the
+ * same query THREE.WebGLCapabilities.getMaxAnisotropy() performs internally, so
+ * the number matches what the real renderer would report.
+ *
+ * Note three returns 0 — not 1 — when the extension is absent, hence the
+ * `> 0` guard before trusting the value.
+ */
+function resolveMaxAnisotropy(): number {
+  if (maxAnisotropyCache !== null) return maxAnisotropyCache
+  // SSR / prerender: no document. Return the fallback WITHOUT caching, so the
+  // first real call in the browser still resolves the true value.
+  if (typeof document === 'undefined') return ANISOTROPY_FALLBACK
+
+  let resolved = ANISOTROPY_FALLBACK
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1
+    canvas.height = 1
+    const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as
+      | WebGLRenderingContext
+      | WebGL2RenderingContext
+      | null
+    if (gl) {
+      const ext =
+        gl.getExtension('EXT_texture_filter_anisotropic') ??
+        gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic') ??
+        gl.getExtension('MOZ_EXT_texture_filter_anisotropic')
+      if (ext) {
+        const max = gl.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT) as number
+        if (Number.isFinite(max) && max > 0) {
+          resolved = Math.min(ANISOTROPY_CAP, Math.floor(max))
+        }
+      }
+      // Hand the context back immediately — browsers cap concurrent WebGL
+      // contexts, and this one exists only to read a constant.
+      gl.getExtension('WEBGL_lose_context')?.loseContext()
+    }
+  } catch {
+    // Blocked/unavailable WebGL — keep the fallback.
+    resolved = ANISOTROPY_FALLBACK
+  }
+
+  maxAnisotropyCache = resolved
+  return resolved
+}
+
 function configureTexture(tex: THREE.Texture): THREE.Texture {
   tex.colorSpace = THREE.SRGBColorSpace
   tex.generateMipmaps = true
   tex.minFilter = THREE.LinearMipmapLinearFilter
   tex.magFilter = THREE.LinearFilter
-  tex.anisotropy = 2
+  tex.anisotropy = resolveMaxAnisotropy()
   tex.needsUpdate = true
   return tex
 }

@@ -56,14 +56,19 @@ const loadPdfJs = (() => {
 })()
 
 /**
- * Convert ALL pages of a PDF file to JPEG images (optimized for performance)
- * Returns an array of image files with dimensions
- * 
- * Optimizations:
- * - Uses JPEG instead of PNG (much smaller file sizes)
- * - Limits max dimension to 2000px to prevent huge images
- * - Uses 1.5x scale by default (reduced from 2.5x)
- * - 85% JPEG quality for good balance
+ * Convert ALL pages of a PDF file to JPEG images.
+ * Returns an array of image files with dimensions.
+ *
+ * Rasterization policy (kept in step with the main image pass in
+ * lib/useDirectUpload.ts — the two ceilings must match, see MAX_DIMENSION below):
+ * - JPEG, not PNG: vector art flattened to a photo-like raster compresses far
+ *   better as JPEG, and the canvas is opaque so there is no alpha to preserve.
+ * - Longest side capped at 4000px. Pages under the cap render 1:1 with their
+ *   own point size (72 points = 1 inch), so scale is never > 1 — upsampling a
+ *   vector source here would only inflate bytes, not add detail.
+ * - JPEG quality 0.92, matching the main image pass. Line work and type on a
+ *   CAD/Illustrator sheet sit right where JPEG ringing is most visible, so this
+ *   is the floor for a legible sheet rather than a tunable.
  */
 export async function convertPDFToImages(pdfFile: File): Promise<Array<{
   imageFile: File
@@ -110,13 +115,18 @@ export async function convertPDFToImages(pdfFile: File): Promise<Array<{
       
       console.log(`📐 [PDF] Page ${pageNum} dimensions: ${widthInPoints.toFixed(2)}pt x ${heightInPoints.toFixed(2)}pt = ${physicalWidth.toFixed(2)}" x ${physicalHeight.toFixed(2)}"`)
       
-      // Cap rasterization at 2400px on the longest dimension — the same
+      // Cap rasterization at 4000px on the longest dimension — the same
       // ceiling browser-image-compression uses for the main upload, so
       // rendering bigger is throwaway work. Small PDFs render at 1:1 (no
       // upsampling); large architecture sheets get scaled down once here
       // instead of being downsampled again downstream. See section 22 of
       // docs/storage-audit-P1.md.
-      const MAX_DIMENSION = 2400
+      //
+      // Raised from 2400: at that ceiling a 24x36" sheet rasterized to roughly
+      // 66 DPI, which is what made Illustrator exports read as pixelated. This
+      // MUST stay equal to maxWidthOrHeight in lib/useDirectUpload.ts, or the
+      // main compression pass silently downsamples the page a second time.
+      const MAX_DIMENSION = 4000
       const viewport1x = page.getViewport({ scale: 1 })
       const naturalMax = Math.max(viewport1x.width, viewport1x.height)
       const scale = naturalMax > MAX_DIMENSION ? MAX_DIMENSION / naturalMax : 1
@@ -142,13 +152,14 @@ export async function convertPDFToImages(pdfFile: File): Promise<Array<{
         viewport: viewport,
       }).promise
       
-      // Convert canvas to JPEG blob (much smaller than PNG)
-      // Use 0.85 quality for good balance between quality and file size
+      // Convert canvas to JPEG blob (much smaller than PNG).
+      // 0.92, raised from 0.85: this raster is line work and type, where JPEG
+      // ringing shows up first. Matches the main pass in lib/useDirectUpload.ts.
       const blob = await new Promise<Blob>((resolve, reject) => {
         canvas.toBlob((b) => {
           if (b) resolve(b)
           else reject(new Error('Failed to create blob'))
-        }, 'image/jpeg', 0.85)
+        }, 'image/jpeg', 0.92)
       })
       
       // Create image file with page number (JPEG extension)

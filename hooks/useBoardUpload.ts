@@ -626,7 +626,7 @@ const uploadPDF = async (
     }
 
     // Upload page. skipMainCompression: the page is already a controlled-
-    // quality JPEG out of canvas.toBlob('image/jpeg', 0.85) capped at 2400px
+    // quality JPEG out of canvas.toBlob('image/jpeg', 0.92) capped at 4000px
     // (see lib/pdfToImage.ts) — running it through imageCompression again
     // would be a decode+re-encode no-op. Thumb still generates.
     try {
