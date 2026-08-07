@@ -10,6 +10,7 @@ import { X } from 'lucide-react'
 import WallSystem from './3d/WallSystem'
 import LightboxModal from './LightboxModal'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
+import { orderBoardsForLightbox } from '@/lib/boardOrder'
 
 type Vec3 = { x: number; y: number; z: number }
 
@@ -745,6 +746,14 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
   const [promptStudio, setPromptStudio] = useState<{ studio: GalleryStudio; entrance: THREE.Vector3 } | null>(null)
   const [selectedBoard, setSelectedBoard] = useState<{ board: Board; studio: GalleryStudio } | null>(null)
   const [nearbyBoard, setNearbyBoard] = useState<{ board: Board; studio: GalleryStudio; position: THREE.Vector3 } | null>(null)
+  // Lightbox-only slideshow order (boards.sort_order) for the open studio. A
+  // SEPARATE sorted copy — each studio's own `boards` array stays in server
+  // order for its 3D pod. The arrows below and the counter inside the modal must
+  // read THIS array or they'd disagree.
+  const lightboxBoards = useMemo(
+    () => orderBoardsForLightbox(selectedBoard?.studio.boards),
+    [selectedBoard?.studio.boards]
+  )
   const nearbyBoardRef = useRef<{ board: Board; studio: GalleryStudio; position: THREE.Vector3 } | null>(null)
   const router = useRouter()
   
@@ -1153,23 +1162,23 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
       {selectedBoard && (
         <LightboxModal
           board={selectedBoard.board}
-          allBoards={selectedBoard.studio.boards || []}
+          allBoards={lightboxBoards}
           onClose={() => setSelectedBoard(null)}
           isEditMode={false}
           currentUserRole={null}
           onNavigate={(direction) => {
             if (!selectedBoard) return
-            const currentIndex = selectedBoard.studio.boards?.findIndex(b => b.id === selectedBoard.board.id) ?? -1
+            const currentIndex = lightboxBoards.findIndex(b => b.id === selectedBoard.board.id)
             if (currentIndex === -1) return
-            
+
             let newIndex = currentIndex
             if (direction === 'prev' && currentIndex > 0) {
               newIndex = currentIndex - 1
-            } else if (direction === 'next' && currentIndex < (selectedBoard.studio.boards?.length ?? 0) - 1) {
+            } else if (direction === 'next' && currentIndex < lightboxBoards.length - 1) {
               newIndex = currentIndex + 1
             }
-            
-            const newBoard = selectedBoard.studio.boards?.[newIndex]
+
+            const newBoard = lightboxBoards[newIndex]
             if (newBoard) {
               setSelectedBoard({ ...selectedBoard, board: newBoard })
             }

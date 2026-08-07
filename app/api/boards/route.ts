@@ -284,6 +284,10 @@ export async function GET(request: NextRequest) {
       // Present only for permitted viewers; undefined omits it from JSON so
       // guests/public viewers never receive a count (and the client renders no badge).
       calloutCount: canSeeCallouts ? (calloutCountByBoard.get(board.id) ?? 0) : undefined,
+      // Per-room slideshow position. The ORDER BY above stays uploaded_at DESC
+      // (the 3D room and wall editor consume that order); only the lightbox
+      // re-sorts on this, client-side via lib/boardOrder.ts.
+      sortOrder: board.sort_order ?? null,
     }))
 
     // Room-level wall color (migration 031) so the 3D renderer can paint the

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
@@ -13,6 +13,7 @@ import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
 import DemoBanner from '@/components/DemoBanner'
 import { getCachedStudioData } from '@/lib/studioViewCache'
+import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import { useAuthSession } from '@/hooks/useAuthSession'
 import { useAccountMode } from '@/lib/useAccountMode'
 import { ArrowLeft } from 'lucide-react'
@@ -441,20 +442,25 @@ export default function StudioViewPage() {
     setSelectedBoard(board)
   }
 
+  // Lightbox-only slideshow order (boards.sort_order). A SEPARATE sorted copy —
+  // `boards` itself stays in server order for the 3D scene. The arrows here and
+  // the counter inside the modal must read THIS array or they'd disagree.
+  const lightboxBoards = useMemo(() => orderBoardsForLightbox(boards), [boards])
+
   const handleNavigate = (direction: 'prev' | 'next') => {
     if (!selectedBoard) return
-    
-    const currentIndex = boards.findIndex(b => b.id === selectedBoard.id)
+
+    const currentIndex = lightboxBoards.findIndex(b => b.id === selectedBoard.id)
     let newIndex: number
-    
+
     if (direction === 'prev') {
       newIndex = currentIndex - 1
     } else {
       newIndex = currentIndex + 1
     }
-    
-    if (newIndex >= 0 && newIndex < boards.length) {
-      setSelectedBoard(boards[newIndex])
+
+    if (newIndex >= 0 && newIndex < lightboxBoards.length) {
+      setSelectedBoard(lightboxBoards[newIndex])
     }
   }
 
@@ -664,7 +670,7 @@ export default function StudioViewPage() {
       {/* Lightbox Modal */}
       <LightboxModal
         board={selectedBoard}
-        allBoards={boards}
+        allBoards={lightboxBoards}
         autoEnterPresentCompare={autoEnterPresentCompare}
         compareBoards={compareBoardIds
           .map((id) => boards.find((board) => board.id === id))

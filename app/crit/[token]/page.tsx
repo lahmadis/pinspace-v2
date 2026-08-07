@@ -12,6 +12,7 @@ import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
 import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
+import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import PresenceBar, { type PresentUser, friendlyName, colorFor } from '@/components/3d/PresenceBar'
 import { LaserPointer } from '@/components/3d/LaserPointer'
@@ -600,11 +601,16 @@ export default function CritPage() {
     setSelectedBoard(board)
   }
 
+  // Lightbox-only slideshow order (boards.sort_order). A SEPARATE sorted copy —
+  // `boards` itself stays in server order for the 3D scene. The arrows here and
+  // the counter inside the modal must read THIS array or they'd disagree.
+  const lightboxBoards = useMemo(() => orderBoardsForLightbox(boards), [boards])
+
   const handleNavigate = (direction: 'prev' | 'next') => {
     if (!selectedBoard) return
-    const currentIndex = boards.findIndex((b) => b.id === selectedBoard.id)
+    const currentIndex = lightboxBoards.findIndex((b) => b.id === selectedBoard.id)
     const newIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1
-    if (newIndex >= 0 && newIndex < boards.length) setSelectedBoard(boards[newIndex])
+    if (newIndex >= 0 && newIndex < lightboxBoards.length) setSelectedBoard(lightboxBoards[newIndex])
   }
 
   if (loadState === 'loading') {
@@ -822,7 +828,7 @@ export default function CritPage() {
 
       <LightboxModal
         board={selectedBoard}
-        allBoards={boards}
+        allBoards={lightboxBoards}
         autoEnterPresentCompare={autoEnterPresentCompare}
         compareBoards={compareBoardIds
           .map((id) => boards.find((b) => b.id === id))

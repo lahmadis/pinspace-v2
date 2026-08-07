@@ -14,6 +14,7 @@ import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { supabase } from '@/lib/supabase/client'
 import { Board, FloorTable } from '@/types'
+import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import WallSystem from './WallSystem'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
@@ -1475,13 +1476,19 @@ export default function StudioRoom(props: StudioRoomProps) {
     setLightboxBoard(board)
   }
 
+  // Lightbox-only slideshow order (boards.sort_order). A SEPARATE sorted copy —
+  // localBoards itself is untouched and keeps feeding WallSystem, the 2D editor
+  // and the sidebar in server order. Both the arrows below and the counter
+  // inside the modal must read THIS array or they'd disagree.
+  const lightboxBoards = useMemo(() => orderBoardsForLightbox(localBoards), [localBoards])
+
   const handleLightboxNavigate = (direction: 'prev' | 'next') => {
     if (!lightboxBoard) return
-    const idx = localBoards.findIndex(b => b.id === lightboxBoard.id)
+    const idx = lightboxBoards.findIndex(b => b.id === lightboxBoard.id)
     if (idx === -1) return
     const nextIdx = direction === 'prev' ? idx - 1 : idx + 1
-    if (nextIdx < 0 || nextIdx >= localBoards.length) return
-    setLightboxBoard(localBoards[nextIdx])
+    if (nextIdx < 0 || nextIdx >= lightboxBoards.length) return
+    setLightboxBoard(lightboxBoards[nextIdx])
   }
 
   // Phase B.3.1: presenter broadcasts lightbox open/close/navigate as "lb" so
@@ -2397,7 +2404,7 @@ export default function StudioRoom(props: StudioRoomProps) {
 
     <LightboxModal
       board={lightboxBoard}
-      allBoards={localBoards}
+      allBoards={lightboxBoards}
       compareBoards={compareBoardIds
         .map((id) => localBoards.find((board) => board.id === id))
         .filter((board): board is Board => Boolean(board))}

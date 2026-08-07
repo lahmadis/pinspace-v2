@@ -84,6 +84,11 @@ export async function GET(
     boardWidthIn: board.board_width_in != null ? Number(board.board_width_in) : undefined,
     boardHeightIn: board.board_height_in != null ? Number(board.board_height_in) : undefined,
     linkUrl: board.link_url ?? undefined,
+    // Per-room slideshow position, consumed by the lightbox only (see
+    // lib/boardOrder.ts). Must be returned here too: the share page runs the
+    // same lightbox, and without it every board would rank null and the
+    // sequence would fall through to the upload-time tiebreaker.
+    sortOrder: board.sort_order ?? null,
   }))
 
   const response = NextResponse.json({

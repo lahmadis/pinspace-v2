@@ -98,6 +98,14 @@ export interface Board {
    * badge; 0 = permitted but no callouts.
    */
   calloutCount?: number
+  /**
+   * Per-room slideshow position, from the boards.sort_order column. Drives ONLY
+   * the lightbox prev/next sequence and its counter, via lib/boardOrder.ts — 3D
+   * placement and wall assignment stay entirely position-derived. null (or
+   * absent, e.g. an optimistic temp board that hasn't been persisted) sorts to
+   * the end of the sequence.
+   */
+  sortOrder?: number | null
 }
 
 export interface Comment {
