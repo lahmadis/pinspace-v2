@@ -1,5 +1,5 @@
 -- Delete all data for a user by email (for testing: start fresh with same email).
--- Replace 'lahmadis@wit.edu' with the email to remove.
+-- Replace 'REPLACE_ME@example.com' with the email to remove.
 -- Run in Supabase SQL Editor.
 --
 -- If DELETE FROM auth.users fails (permission denied), run only the first 3 deletes
@@ -7,7 +7,8 @@
 
 DO $$
 DECLARE
-  target_email TEXT := 'lahmadis@wit.edu';
+  -- Set the target address before running. Destructive.
+  target_email TEXT := 'REPLACE_ME@example.com';
   uid UUID;
 BEGIN
   SELECT id INTO uid FROM auth.users WHERE email = target_email;
