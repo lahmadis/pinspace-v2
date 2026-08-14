@@ -95,6 +95,23 @@ export function collectBoardStoragePaths(rows: BoardObjectRow[]): Set<string> {
   return paths
 }
 
+export function collectWallConfigModelPaths(configs: unknown[]): Set<string> {
+  const paths = new Set<string>()
+  for (const config of configs) {
+    if (!config || typeof config !== 'object' || Array.isArray(config)) continue
+    const tables = (config as { tables?: unknown }).tables
+    if (!Array.isArray(tables)) continue
+    for (const table of tables) {
+      if (!table || typeof table !== 'object' || Array.isArray(table)) continue
+      const modelUrl = (table as { modelUrl?: unknown }).modelUrl
+      if (typeof modelUrl !== 'string' || modelUrl.startsWith('blob:') || modelUrl.startsWith('data:')) continue
+      const path = extractBoardStoragePath(modelUrl)
+      if (path) paths.add(path)
+    }
+  }
+  return paths
+}
+
 export function unreferencedBoardStoragePaths(
   candidates: Iterable<string>,
   remainingRows: BoardObjectRow[]

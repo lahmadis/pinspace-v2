@@ -18,6 +18,14 @@ describe('storage route contracts', () => {
     expect(source).toContain(".storage.from('board-images').remove(unreferencedPaths)")
   })
 
+  it('workspace deletion cleans board media, wall configs, and unreferenced models', () => {
+    const source = readFileSync('app/api/workspaces/[id]/route.ts', 'utf8')
+    expect(source).toContain('workspaceBoardPaths')
+    expect(source).toContain('workspaceConfigPaths')
+    expect(source).toContain('workspaceModelPaths')
+    expect(source).toContain('unreferencedWorkspaceObjects')
+  })
+
   it('metadata creation enforces verified-user path ownership and rejects aliases', () => {
     const source = readFileSync('app/api/boards/route.ts', 'utf8')
     expect(source).toContain('isOwnedBoardStoragePath(storagePath, userId)')

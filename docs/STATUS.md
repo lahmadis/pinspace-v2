@@ -23,11 +23,12 @@
 - [x] Added a 24-hour age floor, pagination, and per-batch reference rechecks to orphan cleanup
 - [x] Replaced unverified session payloads across every service-role API route with GoTrue-verified users
 - [x] Added a repository-wide contract that rejects future service-role plus `getSession()` combinations
-- [x] Verified the current code with 45 passing tests and a clean TypeScript check
+- [x] Added fail-safe workspace deletion cleanup for board media, wall configs, and unreferenced 3D models
+- [x] Verified the current code with 47 passing tests and a clean TypeScript check
 
 ## In Progress
 
-- [ ] Stabilization Phase 3: harden workspace deletion and core room/board flows
+- [ ] Stabilization Phase 3: harden remaining core room, board, comments, sharing, and account flows
 
 ## Blocked
 
@@ -46,6 +47,7 @@
 - P1: Production isolation and schema parity cannot be launch-verified without an isolated Supabase project
 - P2 partially resolved in code: New duplicates own independent objects; legacy aliased rows remain guarded and require a data audit
 - P2 resolved in code: Room deletion removes only objects proven unreferenced after cascade
+- P2 resolved in code: Workspace deletion cleans board media, wall configs, and models without removing surviving references
 - P2 mitigated in code: Orphan cleanup protects recent uploads and rechecks references; `--apply` remains a manual high-impact operation
 - P2 resolved in code: Room/workspace prefetch identifiers and cache failure behavior are corrected
 - P2 partially resolved in code: 3D failures are contained and realtime lifecycle contracts are covered
@@ -62,5 +64,5 @@
 
 - Configure an isolated Supabase project and apply/verify migration 036.
 - Validate cross-institution RLS and storage behavior with representative roles.
-- Harden and test workspace deletion plus core room, board, upload, comments, sharing, and account flows.
+- Harden and test remaining core room, board, upload, comments, sharing, and account flows.
 - Run production-like 3D, texture-failure, reconnect, and presenter tests once the isolated backend is available.

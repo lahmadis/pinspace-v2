@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildBoardStorageCopyPlan,
   collectBoardStoragePaths,
+  collectWallConfigModelPaths,
   extractBoardStoragePath,
   isOwnedBoardStoragePath,
   unreferencedBoardStoragePaths,
@@ -61,5 +62,17 @@ describe('board storage objects', () => {
       new Set(['user/a.jpg', 'user/other.jpg', 'user/b.jpg'])
     )
     expect(unreferencedBoardStoragePaths(candidates, remaining)).toEqual(['user/c.jpg'])
+  })
+
+  it('collects model objects from valid wall configurations only', () => {
+    expect(collectWallConfigModelPaths([
+      { tables: [
+        { modelUrl: bucketUrl('user/models/table.glb') },
+        { modelUrl: 'blob:local-preview' },
+        { modelUrl: null },
+      ] },
+      { tables: [{ modelUrl: bucketUrl('user/models/chair.stl') }] },
+      null,
+    ])).toEqual(new Set(['user/models/table.glb', 'user/models/chair.stl']))
   })
 })

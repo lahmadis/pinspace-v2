@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { validateName } from '@/lib/validation/safeName'
 import { isSuperadmin, isNetworkPublished } from '@/lib/auth/superadmin'
+import { collectBoardStoragePaths } from '@/lib/storage/boardObjects'
+import {
+  listStorageObjectPaths,
+  loadBoardObjectRows,
+  loadWallConfigModelPaths,
+} from '@/lib/storage/supabaseCleanup'
 
 // GET specific workspace
 export async function GET(
@@ -369,6 +375,29 @@ export async function DELETE(
       }, { status: 403 })
     }
 
+    // Inventory every object the database cascade will stop referencing before
+    // the destructive write. If this fails, leave the workspace intact so the
+    // cleanup can be retried safely rather than knowingly creating orphans.
+    const admin = supabaseServiceRole()
+    let workspaceBoardPaths: Set<string>
+    let workspaceConfigPaths: string[]
+    let workspaceModelPaths: Set<string>
+    try {
+      workspaceBoardPaths = collectBoardStoragePaths(
+        await loadBoardObjectRows(admin, workspaceId)
+      )
+      const allConfigPaths = await listStorageObjectPaths(admin, 'wall-configs')
+      const legacyConfigPath = `wall-configs/${workspaceId}.json`
+      const roomConfigPrefix = `wall-configs/${workspaceId}/`
+      workspaceConfigPaths = allConfigPaths.filter(
+        (path) => path === legacyConfigPath || path.startsWith(roomConfigPrefix)
+      )
+      workspaceModelPaths = await loadWallConfigModelPaths(admin, workspaceConfigPaths)
+    } catch (inventoryError) {
+      console.error('Failed to inventory workspace storage before deletion:', inventoryError)
+      return NextResponse.json({ error: 'Failed to prepare workspace deletion' }, { status: 500 })
+    }
+
     // Delete all workspace members first (cascade delete should handle this, but being explicit)
     const { error: membersError } = await supabase
       .from('workspace_members')
@@ -390,6 +419,40 @@ export async function DELETE(
     if (deleteError) {
       console.error('Error deleting workspace:', deleteError)
       return NextResponse.json({ error: 'Failed to delete workspace' }, { status: 500 })
+    }
+
+    // Database deletion has succeeded. Cleanup is now best-effort and fail-safe:
+    // never return a retryable 500 for an already-deleted workspace, and never
+    // remove a candidate still referenced by a surviving board or wall config.
+    try {
+      if (workspaceConfigPaths.length > 0) {
+        const { error: configCleanupError } = await admin.storage
+          .from('board-images')
+          .remove(workspaceConfigPaths)
+        if (configCleanupError) {
+          console.error('Failed to remove deleted workspace wall configs:', configCleanupError)
+        }
+      }
+
+      const remainingBoardPaths = collectBoardStoragePaths(await loadBoardObjectRows(admin))
+      const remainingConfigPaths = await listStorageObjectPaths(admin, 'wall-configs')
+      const remainingModelPaths = await loadWallConfigModelPaths(admin, remainingConfigPaths)
+      const unreferencedWorkspaceObjects = Array.from(
+        new Set([...workspaceBoardPaths, ...workspaceModelPaths])
+      ).filter(
+        (path) => !remainingBoardPaths.has(path) && !remainingModelPaths.has(path)
+      )
+
+      if (unreferencedWorkspaceObjects.length > 0) {
+        const { error: objectCleanupError } = await admin.storage
+          .from('board-images')
+          .remove(unreferencedWorkspaceObjects)
+        if (objectCleanupError) {
+          console.error('Failed to remove deleted workspace objects:', objectCleanupError)
+        }
+      }
+    } catch (cleanupError) {
+      console.error('Workspace deleted but storage cleanup could not complete:', cleanupError)
     }
 
     return NextResponse.json({ success: true })
