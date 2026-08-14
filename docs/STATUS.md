@@ -24,11 +24,14 @@
 - [x] Replaced unverified session payloads across every service-role API route with GoTrue-verified users
 - [x] Added a repository-wide contract that rejects future service-role plus `getSession()` combinations
 - [x] Added fail-safe workspace deletion cleanup for board media, wall configs, and unreferenced 3D models
-- [x] Verified the current code with 47 passing tests and a clean TypeScript check
+- [x] Upgraded from Next.js 14 to 16.3.1 and migrated every server cookie and dynamic route parameter boundary
+- [x] Replaced the removed `next lint` command with an ESLint 9 flat configuration and cleared all blocking lint errors
+- [x] Reduced the dependency audit from 26 advisories (one critical) to zero known vulnerabilities
+- [x] Verified the current code with 47 passing tests, a clean TypeScript check, a clean blocking-error lint check, and a Next.js 16 HTTP 200 smoke test
 
 ## In Progress
 
-- [ ] Stabilization Phase 3: harden remaining core room, board, comments, sharing, and account flows
+- [ ] Stabilization Phase 3: harden remaining core room, board, comments, sharing, and account failure paths
 
 ## Blocked
 
@@ -52,8 +55,8 @@
 - P2 resolved in code: Room/workspace prefetch identifiers and cache failure behavior are corrected
 - P2 partially resolved in code: 3D failures are contained and realtime lifecycle contracts are covered
 - P2: 3D/realtime behavior still lacks production-like multi-client runtime evidence
-- P2: Dependency advisories require reachability triage
-- P3: Debug logs, legacy styling, inconsistent status UI, and existing lint warnings
+- P2 resolved in code: Dependency audit reports zero known vulnerabilities after the supported Next.js 16 migration
+- P3: Debug logs, legacy styling, inconsistent status UI, hook dependency warnings, raw-image warnings, and React Compiler-readiness warnings
 
 ## Decisions Needed
 
@@ -64,5 +67,7 @@
 
 - Configure an isolated Supabase project and apply/verify migration 036.
 - Validate cross-institution RLS and storage behavior with representative roles.
-- Harden and test remaining core room, board, upload, comments, sharing, and account flows.
+- Harden and contract-test the remaining comments, sharing, and account failure paths.
+- Complete the Kova route-group migration and shared state treatment.
+- Reduce the remaining non-blocking lint warnings while migrating each affected UI surface.
 - Run production-like 3D, texture-failure, reconnect, and presenter tests once the isolated backend is available.

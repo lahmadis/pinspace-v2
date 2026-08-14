@@ -134,6 +134,8 @@ The new branch has token tests and browser-test scaffolding, but core API author
 
 Dependency installation reported 26 advisories, including one critical, but affected runtime paths and production reachability have not yet been established. Do not run a forced upgrade; capture `npm audit --json`, classify direct versus transitive packages, and upgrade surgically.
 
+**Resolved in code (2026-08-14):** Upgraded surgically to Next.js 16.3.1, Sentry 10.70, Vitest 3.2, PostCSS 8.5, and ESLint 9; migrated async request APIs and proxy conventions; then applied non-breaking transitive fixes. `npm audit` now reports zero known vulnerabilities.
+
 ### P3 — Polish
 
 - Debug logging remains in PDF, gallery, wall-drop, board-state, and studio paths; several logs can be noisy in interaction-heavy flows.

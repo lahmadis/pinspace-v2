@@ -35,10 +35,10 @@ function extFromContent(url: string, contentType: string | null): string {
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
       error: userError,
@@ -49,7 +49,7 @@ export async function GET(
     }
     const userId = user.id
 
-    const workspaceId = params.id
+    const workspaceId = (await params).id
     const adminDb = supabaseServiceRole()
 
     const { data: workspace, error: wsError } = await adminDb

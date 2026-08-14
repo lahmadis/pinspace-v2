@@ -38,7 +38,7 @@ async function authorizeRoomMutation(
   | { ok: false; response: NextResponse }
 > {
   void request
-  const supabase = supabaseServer()
+  const supabase = await supabaseServer()
   const {
     data: { user },
     error: userError,
@@ -113,8 +113,9 @@ async function authorizeRoomMutation(
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const body = await request.json().catch(() => ({}))
 
@@ -138,7 +139,7 @@ export async function PATCH(
     // Wall color is owner-OR-superadmin (never plain members). isNameOnlyRename
     // is false whenever wall color is present, so the member relaxation can't
     // leak to it.
-    const auth = await authorizeRoomMutation(request, params.id, {
+    const auth = await authorizeRoomMutation(request, id, {
       allowMembers: isNameOnlyRename,
       allowSuperadmin: wantsWallColor,
     })
@@ -191,7 +192,7 @@ export async function PATCH(
       const { error: updateError } = await admin
         .from('rooms')
         .update(updates)
-        .eq('id', params.id)
+        .eq('id', id)
       if (updateError) {
         console.error('Error updating room:', updateError)
         return NextResponse.json({ error: 'Failed to update room' }, { status: 500 })
@@ -201,7 +202,7 @@ export async function PATCH(
     const { data: updated } = await admin
       .from('rooms')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', id)
       .single()
 
     return NextResponse.json({ room: updated ?? room })
@@ -221,10 +222,11 @@ export async function PATCH(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
-    const auth = await authorizeRoomMutation(request, params.id)
+    const auth = await authorizeRoomMutation(request, id)
     if (!auth.ok) return auth.response
     const { workspaceId } = auth
 
@@ -249,7 +251,7 @@ export async function DELETE(
       const { data, error } = await admin
         .from('boards')
         .select('thumbnail_url, full_image_url')
-        .eq('room_id', params.id)
+        .eq('room_id', id)
         .range(from, from + inventoryPageSize - 1)
       if (error) {
         console.error('Failed to inventory room board objects:', error)
@@ -264,7 +266,7 @@ export async function DELETE(
     const { error: deleteError } = await admin
       .from('rooms')
       .delete()
-      .eq('id', params.id)
+      .eq('id', id)
     if (deleteError) {
       console.error('Error deleting room:', deleteError)
       return NextResponse.json({ error: 'Failed to delete room' }, { status: 500 })

@@ -54,10 +54,10 @@ function transformRow(c: BoardCommentRow) {
 // GET /api/boards/[id]/board-comments — all anchored comments for the board, created_at asc.
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const boardId = params.id
+    const boardId = (await params).id
 
     // Guest path: a valid X-Guest-Token whose room matches this board grants
     // read access to the critique layer (no session needed).
@@ -96,7 +96,7 @@ export async function GET(
     // (not 401) for the no-session case on purpose: a logged-out visitor of a
     // public board whose IMAGE they can legitimately see should not be bounced
     // into a login flow just because the private critique layer is hidden.
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -182,10 +182,10 @@ export async function GET(
 // Reply: parentId required (must belong to this board), anchors forced null.
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const boardId = params.id
+    const boardId = (await params).id
     const guestToken = getGuestTokenFromRequest(request)
     const { anchorX, anchorY, body, parentId, guestName } = await request.json()
 
@@ -242,7 +242,7 @@ export async function POST(
       const nm = typeof guestName === 'string' ? guestName.trim() : ''
       authorName = (nm || guest.label || 'Guest').slice(0, 80)
     } else {
-      const supabase = supabaseServer()
+      const supabase = await supabaseServer()
       const {
         data: { user },
         error: userError,

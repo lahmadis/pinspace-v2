@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   try {
     // Pilot pass 7: scope to the verified user's own org.
-    const userClient = supabaseServer()
+    const userClient = await supabaseServer()
     const { data: { user } } = await userClient.auth.getUser()
     let institutionFilterId: string | null = null
     if (user?.id) {

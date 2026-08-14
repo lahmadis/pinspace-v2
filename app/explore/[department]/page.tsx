@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { notFound, useSearchParams, useRouter } from 'next/navigation'
+import { notFound, useParams, useSearchParams, useRouter } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
 
 const DEPT_MAP: Record<string, { name: string; color: string; accent: string }> = {
@@ -38,7 +38,8 @@ type StudioItem = {
   networkMetadata?: { year?: string }
 }
 
-export default function DepartmentPage({ params }: { params: { department: string } }) {
+export default function DepartmentPage() {
+  const params = useParams<{ department: string }>()
   const searchParams = useSearchParams()
   const router = useRouter()
   const viewParam = searchParams.get('view')

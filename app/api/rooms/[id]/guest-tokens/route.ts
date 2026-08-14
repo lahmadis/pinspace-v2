@@ -32,7 +32,7 @@ async function requireRoomOwner(
 }
 
 async function requireVerifiedUser(): Promise<{ userId: string } | { error: NextResponse }> {
-  const supabase = supabaseServer()
+  const supabase = await supabaseServer()
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user?.id) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   return { userId: user.id }
@@ -41,9 +41,9 @@ async function requireVerifiedUser(): Promise<{ userId: string } | { error: Next
 // POST — create a guest token for the room.
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const roomId = params.id
+  const roomId = (await params).id
   const auth = await requireVerifiedUser()
   if ('error' in auth) return auth.error
   const admin = supabaseServiceRole()
@@ -98,9 +98,9 @@ export async function POST(
 // GET — list the room's guest tokens (owner only). Token VALUE is not returned.
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const roomId = params.id
+  const roomId = (await params).id
   const auth = await requireVerifiedUser()
   if ('error' in auth) return auth.error
   const admin = supabaseServiceRole()
@@ -133,9 +133,9 @@ export async function GET(
 // PATCH — revoke a token by id (owner only).
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const roomId = params.id
+  const roomId = (await params).id
   const auth = await requireVerifiedUser()
   if ('error' in auth) return auth.error
   const admin = supabaseServiceRole()
@@ -170,9 +170,9 @@ export async function PATCH(
 // NULL and the rows render from the stored author_name (see migration 029).
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const roomId = params.id
+  const roomId = (await params).id
   const auth = await requireVerifiedUser()
   if ('error' in auth) return auth.error
   const admin = supabaseServiceRole()

@@ -9,9 +9,9 @@ export const dynamic = 'force-dynamic'
 // Student emails are intentionally omitted (guests are external critics).
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { token: string } }
+  { params }: { params: Promise<{ token: string }> }
 ) {
-  const { token } = params
+  const { token } = await params
   const guest = await resolveGuestToken(token)
   if (!guest) {
     return NextResponse.json({ error: 'Invalid or expired guest link' }, { status: 404 })

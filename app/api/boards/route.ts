@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
 
     // Normal mode: use Supabase
     // For public workspaces, we should allow unauthenticated access
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
 
     // Check if this workspace is public (allow unauthenticated access for public workspaces)
     const { data: workspace, error: workspaceError } = await supabase
@@ -323,7 +323,7 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
       error: userError,
@@ -492,7 +492,7 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
       error: userError,
@@ -792,7 +792,7 @@ interface BoardsPostBody {
 export async function POST(request: NextRequest) {
   try {
     // 1. Auth — mirrors upload/route.ts:8-22
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

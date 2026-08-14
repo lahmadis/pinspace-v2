@@ -23,7 +23,7 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { userId: string } }
+  { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
     const auth = await requireAdmin()
@@ -32,7 +32,7 @@ export async function GET(
     // user_profiles.user_id is UUID and the auth admin API expects one, so a
     // malformed path segment would 22P02 rather than miss. Reject it here and
     // the 404 below stays reachable.
-    const userId = params.userId
+    const userId = (await params).userId
     if (!isUuid(userId)) {
       return NextResponse.json({ error: 'Instructor not found' }, { status: 404 })
     }

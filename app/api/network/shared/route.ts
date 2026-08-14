@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 /** GET /api/network/shared — returns shared workspaces the caller owns or is a member of. */
 export async function GET() {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const { data: { user }, error: userErr } = await supabase.auth.getUser()
     if (userErr || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

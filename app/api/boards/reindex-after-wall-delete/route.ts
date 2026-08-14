@@ -27,7 +27,7 @@ export async function PATCH(request: NextRequest) {
   // nothing changed, while their boards were already gone.
   let mutated = false
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

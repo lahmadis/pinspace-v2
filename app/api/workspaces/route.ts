@@ -7,7 +7,7 @@ import { createWorkspace } from '@/lib/workspaces/createWorkspace'
 // GET: list workspaces owned by or shared with the current user
 export async function GET() {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
       error: userError,
@@ -98,7 +98,7 @@ export async function GET() {
 // POST: create a workspace owned by the current user
 export async function POST(req: Request) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
       error: userError,

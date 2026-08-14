@@ -82,10 +82,10 @@ async function resolveWorkspaceOwnerId(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { commentId: string } }
+  { params }: { params: Promise<{ commentId: string }> }
 ) {
   try {
-    const commentId = params.commentId
+    const commentId = (await params).commentId
     const { body, resolved } = await request.json()
 
     const wantsBodyEdit = body !== undefined
@@ -123,7 +123,7 @@ export async function PATCH(
       }
       isAuthor = comment.guest_token_id != null && comment.guest_token_id === guest.tokenId
     } else {
-      const supabase = supabaseServer()
+      const supabase = await supabaseServer()
       const {
         data: { user },
         error: userError,
@@ -176,10 +176,10 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { commentId: string } }
+  { params }: { params: Promise<{ commentId: string }> }
 ) {
   try {
-    const commentId = params.commentId
+    const commentId = (await params).commentId
 
     const guestToken = getGuestTokenFromRequest(request)
     const admin = supabaseServiceRole()
@@ -201,7 +201,7 @@ export async function DELETE(
       }
       allowed = comment.guest_token_id != null && comment.guest_token_id === guest.tokenId
     } else {
-      const supabase = supabaseServer()
+      const supabase = await supabaseServer()
       const {
         data: { user },
         error: userError,

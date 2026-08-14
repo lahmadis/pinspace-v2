@@ -17,7 +17,7 @@ const PROTECTED_PREFIXES = [
 // Routes under /studio that are public (view mode)
 const PUBLIC_STUDIO_PATTERN = /^\/studio\/[^/]+\/view(\/|$)/
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
 
   // Allow public studio view routes through without auth
@@ -47,7 +47,7 @@ export function middleware(req: NextRequest) {
 export const config = {
   // `monitoring` is excluded so Sentry's tunnelRoute (next.config.js) can
   // pass events through to ingest.*.sentry.io without this auth-cookie
-  // middleware swallowing them. Sentry's docs require the tunnelRoute not
-  // match any middleware matcher.
+  // proxy swallowing them. Sentry's docs require the tunnelRoute not
+  // match any proxy matcher.
   matcher: ['/((?!_next/static|_next/image|favicon.ico|api/|monitoring).*)'],
 }

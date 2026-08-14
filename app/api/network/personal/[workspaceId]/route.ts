@@ -8,10 +8,11 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(
   _req: Request,
-  { params }: { params: { workspaceId: string } }
+  { params }: { params: Promise<{ workspaceId: string }> }
 ) {
+  const { workspaceId } = await params
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const { data: { user }, error: userErr } = await supabase.auth.getUser()
     if (userErr || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -22,7 +23,7 @@ export async function GET(
     const { data: workspace } = await admin
       .from('workspaces')
       .select('id, name')
-      .eq('id', params.workspaceId)
+      .eq('id', workspaceId)
       .eq('owner_id', user.id)
       .eq('type', 'personal')
       .maybeSingle()
@@ -34,7 +35,7 @@ export async function GET(
     const { data: rooms, error: roomsErr } = await admin
       .from('rooms')
       .select('id, name')
-      .eq('workspace_id', params.workspaceId)
+      .eq('workspace_id', workspaceId)
       .order('display_order', { ascending: true })
 
     if (roomsErr) {

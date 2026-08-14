@@ -80,10 +80,10 @@ function normalizeStrokes(
 // GET /api/boards/[id]/traces — all traces for the board (every author's layer).
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const boardId = params.id
+    const boardId = (await params).id
 
     // Guest path: valid token whose room matches this board grants read access.
     const guestToken = getGuestTokenFromRequest(request)
@@ -114,7 +114,7 @@ export async function GET(
       })
     }
 
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -193,10 +193,10 @@ export async function GET(
 // PUT /api/boards/[id]/traces — upsert the current user's single trace row.
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const boardId = params.id
+    const boardId = (await params).id
 
     const guestToken = getGuestTokenFromRequest(request)
 
@@ -249,7 +249,7 @@ export async function PUT(
       const nm = typeof body?.guestName === 'string' ? body.guestName.trim() : ''
       authorName = (nm || guest.label || 'Guest').slice(0, 80)
     } else {
-      const supabase = supabaseServer()
+      const supabase = await supabaseServer()
       const {
         data: { user },
         error: userError,
@@ -363,10 +363,10 @@ export async function PUT(
 // DELETE /api/boards/[id]/traces — clear the caller's own trace (session OR guest).
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const boardId = params.id
+    const boardId = (await params).id
     const admin = supabaseServiceRole()
     const guestToken = getGuestTokenFromRequest(request)
 
@@ -388,7 +388,7 @@ export async function DELETE(
       return NextResponse.json({ success: true })
     }
 
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
       error: userError,

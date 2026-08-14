@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import PasswordInput from '@/components/ui/PasswordInput'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
@@ -50,7 +51,8 @@ function formatDate(iso: string) {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-export default function AdminInstructorPage({ params }: { params: { userId: string } }) {
+export default function AdminInstructorPage() {
+  const params = useParams<{ userId: string }>()
   const [user, setUser] = useState<User | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)

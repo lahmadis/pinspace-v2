@@ -13,9 +13,6 @@ const nextConfig = {
       : !isVercelBuild
         ? '.next-local'
         : '.next',
-  eslint: {
-    ignoreDuringBuilds: false,
-  },
   typescript: {
     // Allow deployment even if there are TypeScript errors
     // (We've fixed the critical ones, but this is a safety net)

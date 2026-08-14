@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
     // Pilot pass 7: scope strictly to the signed-in user's own institution.
     // Resolved server-side from user_profiles.organization_id — clients no
     // longer choose an institution.
-    const userClient = supabaseServer()
+    const userClient = await supabaseServer()
     const { data: { user } } = await userClient.auth.getUser()
     let institutionFilterId: string | null = null
     if (user?.id) {

@@ -23,11 +23,11 @@ function extractInviteCode(input: string): string {
 // Uses service role to bypass RLS since this is a public lookup
 export async function GET(
   request: NextRequest,
-  { params }: { params: { code: string } }
+  { params }: { params: Promise<{ code: string }> }
 ) {
   try {
     const supabase = supabaseServiceRole()
-    const inviteCode = extractInviteCode(params.code || '')
+    const inviteCode = extractInviteCode((await params).code || '')
     if (!inviteCode) {
       return NextResponse.json({ error: 'Invalid invite code' }, { status: 404 })
     }
@@ -113,4 +113,3 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to find workspace' }, { status: 500 })
   }
 }
-

@@ -8,10 +8,10 @@ import { validateName } from '@/lib/validation/safeName'
 // accept any signed-in account.
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
       error: userError,
@@ -29,7 +29,7 @@ export async function POST(
       return NextResponse.json({ error: nameResult.error }, { status: 400 })
     }
     const userName = nameResult.value
-    const workspaceId = params.id
+    const workspaceId = (await params).id
 
     // Fetch workspace and its institution (use service role so we can read institution for non-members)
     const admin = supabaseServiceRole()

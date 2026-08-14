@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, useParams } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
 
 const DEPT_MAP: Record<string, { name: string; color: string; accent: string }> = {
@@ -32,7 +32,8 @@ const YEAR_COLORS: Record<string, string> = {
   'Masters': '#EC4899',
 }
 
-export default function YearPage({ params }: { params: { department: string; year: string } }) {
+export default function YearPage() {
+  const params = useParams<{ department: string; year: string }>()
   const deptMeta = DEPT_MAP[params.department]
   const yearInfo = YEAR_MAP[params.year]
 

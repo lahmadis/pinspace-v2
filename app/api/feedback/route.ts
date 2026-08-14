@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     let userId: string | null = null
     let userEmail: string | null = null
     try {
-      const { data: { user } } = await supabaseServer().auth.getUser()
+      const { data: { user } } = await (await supabaseServer()).auth.getUser()
       if (user) {
         userId = user.id
         userEmail = user.email ?? null

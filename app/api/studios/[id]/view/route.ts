@@ -6,8 +6,9 @@ export const dynamic = 'force-dynamic'
 // POST /api/studios/[id]/view — increment view counter for a public studio
 export async function POST(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const admin = supabaseServiceRole()
 
@@ -15,14 +16,14 @@ export async function POST(
     const { data: workspace } = await admin
       .from('workspaces')
       .select('is_public, published_at')
-      .eq('id', params.id)
+      .eq('id', id)
       .single()
 
     if (!workspace?.is_public || !workspace?.published_at) {
       return NextResponse.json({ ok: false })
     }
 
-    await admin.rpc('increment_view_count', { workspace_id: params.id })
+    await admin.rpc('increment_view_count', { workspace_id: id })
 
     return NextResponse.json({ ok: true })
   } catch {

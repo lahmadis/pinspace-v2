@@ -12,10 +12,10 @@ import {
 // GET specific workspace
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
       error: userError,
@@ -26,7 +26,7 @@ export async function GET(
     }
     const userId = user.id
 
-    const workspaceId = params.id
+    const workspaceId = (await params).id
 
     // Read via service role and enforce access in application code. The
     // workspaces RLS has no membership-based SELECT policy, so a member —
@@ -245,10 +245,10 @@ export async function GET(
 // PATCH workspace (e.g. rename)
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
       error: userError,
@@ -259,7 +259,7 @@ export async function PATCH(
     }
     const userId = user.id
 
-    const workspaceId = params.id
+    const workspaceId = (await params).id
     const body = await request.json().catch(() => ({}))
     const { name, description } = body
 
@@ -338,10 +338,10 @@ export async function PATCH(
 // DELETE workspace
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
       error: userError,
@@ -352,7 +352,7 @@ export async function DELETE(
     }
     const userId = user.id
 
-    const workspaceId = params.id
+    const workspaceId = (await params).id
 
     // Fetch workspace to check ownership
     const { data: workspace, error: fetchError } = await supabase

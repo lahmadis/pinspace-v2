@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     }
     const auth = await requireAdmin()
     if (!auth.ok) return auth.response
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
 
     const searchParams = request.nextUrl.searchParams
     const workspaceId = searchParams.get('workspaceId') || searchParams.get('studioId')
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
     }
     const auth = await requireAdmin()
     if (!auth.ok) return auth.response
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
 
     const body = await request.json()
     const { workspaceId, dryRun = true } = body

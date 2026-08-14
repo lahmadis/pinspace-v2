@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
  */
 export async function POST() {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const { data: { user }, error: userErr } = await supabase.auth.getUser()
     if (userErr || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -23,10 +23,10 @@ function slugToDept(slug: string) {
 
 export async function GET(
   req: Request,
-  { params }: { params: { department: string } }
+  { params }: { params: Promise<{ department: string }> }
 ) {
   try {
-    const deptSlug = params.department
+    const deptSlug = (await params).department
     const deptName = slugToDept(deptSlug)
     if (!deptName) {
       return NextResponse.json({ error: 'Invalid department' }, { status: 400 })
@@ -72,7 +72,6 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to fetch years' }, { status: 500 })
   }
 }
-
 
 
 

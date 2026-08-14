@@ -47,10 +47,10 @@ export const dynamic = 'force-dynamic'
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
       error: userError,
@@ -61,7 +61,7 @@ export async function POST(
     }
     const userId = user.id
 
-    const workspaceId = params.id
+    const workspaceId = (await params).id
     const body = await request.json().catch(() => ({}))
     const nameResult = validateName(body?.name, { maxLength: 100, fieldLabel: 'Room name' })
     if (!nameResult.ok) {

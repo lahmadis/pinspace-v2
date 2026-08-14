@@ -108,7 +108,7 @@ Instead of scrolling through a flat grid, you **walk through a studio space** wi
 
 ## Technical Stack
 
-- Next.js 14 + TypeScript
+- Next.js 16 + TypeScript
 - React Three Fiber (3D)
 - Framer Motion (animations)
 - Tailwind CSS (styling)

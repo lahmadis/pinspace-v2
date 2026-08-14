@@ -25,7 +25,7 @@ function getSafeName(name: string): string {
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { session },
       error: sessionError,
@@ -113,4 +113,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
   }
 }
-

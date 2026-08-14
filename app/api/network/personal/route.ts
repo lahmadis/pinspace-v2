@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 /** GET /api/network/personal — returns the calling user's personal workspaces with sub-room counts. */
 export async function GET() {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const { data: { user }, error: userErr } = await supabase.auth.getUser()
     if (userErr || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

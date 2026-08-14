@@ -10,7 +10,7 @@ import { buildBoardStorageCopyPlan } from '@/lib/storage/boardObjects'
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { user },
       error: userError,
