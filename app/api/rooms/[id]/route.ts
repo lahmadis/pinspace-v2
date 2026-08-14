@@ -3,6 +3,11 @@ import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { isInstructorAccount } from '@/lib/auth/getAccountRole'
 import { isSuperadmin } from '@/lib/auth/superadmin'
 import { validateName } from '@/lib/validation/safeName'
+import {
+  collectBoardStoragePaths,
+  type BoardObjectRow,
+  unreferencedBoardStoragePaths,
+} from '@/lib/storage/boardObjects'
 
 // Room wall color — the two supported values, mirrored by the DB CHECK
 // constraint (migration 031). Shared by the validation below.
@@ -35,18 +40,14 @@ async function authorizeRoomMutation(
   void request
   const supabase = supabaseServer()
   const {
-    data: { session },
-    error: sessionError,
-  } = await supabase.auth.getSession()
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
 
-  if (sessionError) {
-    console.error('Session error:', sessionError)
-    return { ok: false, response: NextResponse.json({ error: 'Failed to get session' }, { status: 500 }) }
-  }
-  const userId = session?.user?.id
-  if (!userId) {
+  if (userError || !user?.id) {
     return { ok: false, response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   }
+  const userId = user.id
 
   const admin = supabaseServiceRole()
   const { data: room, error: roomError } = await admin
@@ -214,11 +215,9 @@ export async function PATCH(
  * DELETE /api/rooms/[id] — workspace owner only.
  *
  * Boards in this room cascade-delete via the boards.room_id FK from migration
- * 014. We do NOT clean up the orphaned storage objects here this phase — the
- * existing board-delete code path (with storage cleanup) is the source of
- * truth for that, and a follow-up can wire room deletion through it. For now,
- * instructors deleting a room understand boards disappear; storage cost of
- * orphans is a known follow-up.
+ * 014. Their storage objects are inventoried before the cascade and removed
+ * only after a post-delete service-role scan proves no surviving board refers
+ * to them. Query/removal failure leaks an object rather than risking data loss.
  */
 export async function DELETE(
   request: NextRequest,
@@ -244,6 +243,24 @@ export async function DELETE(
       )
     }
 
+    const roomBoards: BoardObjectRow[] = []
+    const inventoryPageSize = 1000
+    for (let from = 0; ; from += inventoryPageSize) {
+      const { data, error } = await admin
+        .from('boards')
+        .select('thumbnail_url, full_image_url')
+        .eq('room_id', params.id)
+        .range(from, from + inventoryPageSize - 1)
+      if (error) {
+        console.error('Failed to inventory room board objects:', error)
+        return NextResponse.json({ error: 'Failed to prepare room deletion' }, { status: 500 })
+      }
+      const page = (data ?? []) as BoardObjectRow[]
+      roomBoards.push(...page)
+      if (page.length < inventoryPageSize) break
+    }
+    const candidatePaths = collectBoardStoragePaths(roomBoards)
+
     const { error: deleteError } = await admin
       .from('rooms')
       .delete()
@@ -251,6 +268,40 @@ export async function DELETE(
     if (deleteError) {
       console.error('Error deleting room:', deleteError)
       return NextResponse.json({ error: 'Failed to delete room' }, { status: 500 })
+    }
+
+    if (candidatePaths.size > 0) {
+      const remainingBoards: BoardObjectRow[] = []
+      const pageSize = 1000
+      let referenceScanFailed = false
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await admin
+          .from('boards')
+          .select('thumbnail_url, full_image_url')
+          .range(from, from + pageSize - 1)
+        if (error) {
+          console.error('Failed to verify room object references; skipping cleanup:', error)
+          referenceScanFailed = true
+          break
+        }
+        const page = (data ?? []) as BoardObjectRow[]
+        remainingBoards.push(...page)
+        if (page.length < pageSize) break
+      }
+
+      if (!referenceScanFailed) {
+        const unreferencedPaths = unreferencedBoardStoragePaths(candidatePaths, remainingBoards)
+        if (unreferencedPaths.length > 0) {
+          try {
+            const { error: storageError } = await admin.storage.from('board-images').remove(unreferencedPaths)
+            if (storageError) {
+              console.error('Failed to remove unreferenced room board objects:', storageError)
+            }
+          } catch (storageError) {
+            console.error('Room board object cleanup threw after successful deletion:', storageError)
+          }
+        }
+      }
     }
 
     return NextResponse.json({ success: true })

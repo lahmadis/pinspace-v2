@@ -13,12 +13,26 @@ const privilegedRoutes = [
   'app/api/debug/check-types/route.ts',
 ]
 
+const storageCriticalRoutes = [
+  'app/api/boards/route.ts',
+  'app/api/boards/duplicate/route.ts',
+  'app/api/rooms/[id]/route.ts',
+]
+
 describe('privileged route identity verification', () => {
   for (const route of privilegedRoutes) {
     it(`${route} uses the verified admin boundary`, () => {
       const source = readFileSync(route, 'utf8')
       expect(source).not.toContain('auth.getSession()')
       expect(source).toContain('requireAdmin')
+    })
+  }
+
+  for (const route of storageCriticalRoutes) {
+    it(`${route} verifies the user before service-role storage or data writes`, () => {
+      const source = readFileSync(route, 'utf8')
+      expect(source).not.toContain('auth.getSession()')
+      expect(source).toContain('auth.getUser()')
     })
   }
 })

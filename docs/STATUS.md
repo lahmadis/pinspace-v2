@@ -16,11 +16,16 @@
 - [x] Prevented failed board prefetches and placeholder wall layouts from poisoning the viewer cache
 - [x] Added accessible crash containment and retry states around all critical 3D canvases
 - [x] Hardened member and guest realtime cleanup against stale channel/ref teardown
-- [x] Verified the current batch with 32 passing tests and a clean TypeScript check
+- [x] Verified storage-critical board and room routes against GoTrue before service-role work
+- [x] Made new duplicated boards copy their storage objects with rollback on failure
+- [x] Enforced verified-user storage paths and rejected already-attached direct-upload objects
+- [x] Added fail-safe, paginated storage cleanup to room deletion
+- [x] Added a 24-hour age floor, pagination, and per-batch reference rechecks to orphan cleanup
+- [x] Verified the current code with 44 passing tests and a clean TypeScript check
 
 ## In Progress
 
-- [ ] Stabilization Phase 2: investigate P2 storage lifecycle risks and harden core room/board flows
+- [ ] Stabilization Phase 3: complete verified-identity inventory and harden core room/board flows
 
 ## Blocked
 
@@ -36,9 +41,9 @@
 - P1 migration pending: Board reorder text-ID correction is committed but unapplied
 - P1 resolved in code: Undo/redo now persists restored positions and reports failures
 - P1: Production isolation and schema parity cannot be launch-verified without an isolated Supabase project
-- P2: Duplicated boards alias storage objects
-- P2: Room deletion leaks board storage objects
-- P2: Orphan cleanup can race direct uploads when run with `--apply`
+- P2 partially resolved in code: New duplicates own independent objects; legacy aliased rows remain guarded and require a data audit
+- P2 resolved in code: Room deletion removes only objects proven unreferenced after cascade
+- P2 mitigated in code: Orphan cleanup protects recent uploads and rechecks references; `--apply` remains a manual high-impact operation
 - P2 resolved in code: Room/workspace prefetch identifiers and cache failure behavior are corrected
 - P2 partially resolved in code: 3D failures are contained and realtime lifecycle contracts are covered
 - P2: 3D/realtime behavior still lacks production-like multi-client runtime evidence
@@ -54,6 +59,6 @@
 
 - Configure an isolated Supabase project and apply/verify migration 036.
 - Validate cross-institution RLS and storage behavior with representative roles.
-- Audit storage alias/reference handling and room-deletion object lifecycle.
-- Harden and test core room, board, upload, comments, sharing, and account flows.
+- Complete the verified-identity inventory for remaining service-role API routes.
+- Harden and test workspace deletion plus core room, board, upload, comments, sharing, and account flows.
 - Run production-like 3D, texture-failure, reconnect, and presenter tests once the isolated backend is available.

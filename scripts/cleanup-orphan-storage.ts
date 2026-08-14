@@ -9,6 +9,7 @@
  * Recommended invocation (works on Node 20.6+, which supports `--env-file` natively):
  *   npx tsx --env-file=.env.local scripts/cleanup-orphan-storage.ts          # dry-run (default)
  *   npx tsx --env-file=.env.local scripts/cleanup-orphan-storage.ts --apply  # actually delete
+ *   npx tsx --env-file=.env.local scripts/cleanup-orphan-storage.ts --apply --min-age-hours=48
  *
  * On Node 22+, you can also use the experimental built-in TS stripper instead of tsx:
  *   node --env-file=.env.local --experimental-strip-types scripts/cleanup-orphan-storage.ts
@@ -32,6 +33,16 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
 
 const BUCKET = 'board-images'
 const APPLY = process.argv.includes('--apply')
+const DEFAULT_MIN_AGE_HOURS = 24
+const minAgeArg = process.argv.find((arg) => arg.startsWith('--min-age-hours='))
+const MIN_AGE_HOURS = minAgeArg
+  ? Number(minAgeArg.slice('--min-age-hours='.length))
+  : DEFAULT_MIN_AGE_HOURS
+
+if (!Number.isFinite(MIN_AGE_HOURS) || MIN_AGE_HOURS < 1) {
+  console.error('--min-age-hours must be a number greater than or equal to 1.')
+  process.exit(1)
+}
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
 
@@ -39,25 +50,38 @@ interface StorageObject {
   name: string
   id?: string
   metadata?: Record<string, unknown>
+  created_at?: string
+  updated_at?: string
 }
 
-async function listAllObjects(prefix = ''): Promise<string[]> {
+interface ListedStorageObject {
+  path: string
+  createdAt: string | null
+}
+
+async function listAllObjects(prefix = ''): Promise<ListedStorageObject[]> {
   // Storage `list` is shallow per-prefix; recurse into folders.
-  const out: string[] = []
-  const { data, error } = await supabase.storage.from(BUCKET).list(prefix, { limit: 1000 })
-  if (error) {
-    console.error(`Failed to list "${prefix}":`, error)
-    return out
-  }
-  for (const obj of (data || []) as StorageObject[]) {
-    const fullPath = prefix ? `${prefix}/${obj.name}` : obj.name
-    // A folder has no metadata + no id; recurse.
-    if (!obj.id && !obj.metadata) {
-      const nested = await listAllObjects(fullPath)
-      out.push(...nested)
-    } else {
-      out.push(fullPath)
+  const out: ListedStorageObject[] = []
+  const pageSize = 1000
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .list(prefix, { limit: pageSize, offset, sortBy: { column: 'name', order: 'asc' } })
+    if (error) {
+      throw new Error(`Failed to list "${prefix}": ${error.message}`)
     }
+    const page = (data || []) as StorageObject[]
+    for (const obj of page) {
+      const fullPath = prefix ? `${prefix}/${obj.name}` : obj.name
+      // A folder has no metadata + no id; recurse.
+      if (!obj.id && !obj.metadata) {
+        const nested = await listAllObjects(fullPath)
+        out.push(...nested)
+      } else {
+        out.push({ path: fullPath, createdAt: obj.created_at ?? obj.updated_at ?? null })
+      }
+    }
+    if (page.length < pageSize) break
   }
   return out
 }
@@ -67,7 +91,12 @@ function extractStoragePath(url: string | null | undefined): string | null {
   const marker = `/${BUCKET}/`
   const idx = url.indexOf(marker)
   if (idx === -1) return null
-  return decodeURIComponent(url.slice(idx + marker.length).split('?')[0])
+  const raw = url.slice(idx + marker.length).split('?')[0]
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
 }
 
 async function loadReferencedPaths(): Promise<Set<string>> {
@@ -100,39 +129,27 @@ async function loadReferencedPaths(): Promise<Set<string>> {
  */
 async function loadWallConfigModelRefs(): Promise<Set<string>> {
   const referenced = new Set<string>()
-  const { data: entries, error: listErr } = await supabase
-    .storage
-    .from(BUCKET)
-    .list('wall-configs', { limit: 1000 })
-
-  if (listErr) {
-    console.warn('Failed to list wall-configs/ — skipping model-ref scan:', listErr)
-    return referenced
-  }
+  const entries = await listAllObjects('wall-configs')
 
   let scanned = 0
-  for (const entry of (entries || []) as StorageObject[]) {
-    // Skip nested folders (shouldn't exist) and non-JSON files.
-    if (!entry.name || !entry.name.endsWith('.json')) continue
-    const filePath = `wall-configs/${entry.name}`
+  for (const entry of entries) {
+    if (!entry.path.endsWith('.json')) continue
+    const filePath = entry.path
     const { data: blob, error: dlErr } = await supabase.storage.from(BUCKET).download(filePath)
     if (dlErr || !blob) {
-      console.warn(`  Skipped ${filePath}: ${dlErr?.message || 'no data'}`)
-      continue
+      throw new Error(`Failed to read ${filePath}: ${dlErr?.message || 'no data'}`)
     }
     let text: string
     try {
       text = await blob.text()
     } catch (e) {
-      console.warn(`  Skipped ${filePath}: failed to read text`, e)
-      continue
+      throw new Error(`Failed to read ${filePath} as text`, { cause: e })
     }
     let parsed: unknown
     try {
       parsed = JSON.parse(text)
     } catch (e) {
-      console.warn(`  Skipped ${filePath}: invalid JSON`, e)
-      continue
+      throw new Error(`Invalid JSON in ${filePath}`, { cause: e })
     }
     scanned += 1
     const tables = (parsed as { tables?: Array<{ modelUrl?: unknown }> } | null)?.tables
@@ -152,10 +169,11 @@ async function loadWallConfigModelRefs(): Promise<Set<string>> {
 
 async function main() {
   console.log(`Mode: ${APPLY ? 'APPLY (will delete)' : 'DRY-RUN (will not delete)'}`)
+  console.log(`Minimum object age: ${MIN_AGE_HOURS} hour(s).`)
 
   console.log('Listing all storage objects...')
-  const allPaths = await listAllObjects('')
-  console.log(`Found ${allPaths.length} storage object(s).`)
+  const allObjects = await listAllObjects('')
+  console.log(`Found ${allObjects.length} storage object(s).`)
 
   console.log('Loading referenced paths from boards table...')
   const referenced = await loadReferencedPaths()
@@ -166,8 +184,18 @@ async function main() {
   for (const p of modelRefs) referenced.add(p)
   console.log(`Combined referenced path(s): ${referenced.size}.`)
 
-  // Skip wall-configs/* — those are stored in this bucket too and should not be touched.
-  const orphans = allPaths.filter((p) => !p.startsWith('wall-configs/') && !referenced.has(p))
+  // A direct upload exists briefly before its boards row. The age floor prevents
+  // that normal gap from looking orphaned. Missing/invalid timestamps fail safe.
+  const oldestAllowedTimestamp = Date.now() - MIN_AGE_HOURS * 60 * 60 * 1000
+  const orphans = allObjects
+    .filter(({ path }) => !path.startsWith('wall-configs/') && !referenced.has(path))
+    .filter(({ path, createdAt }) => {
+      const createdAtMs = createdAt ? Date.parse(createdAt) : Number.NaN
+      const oldEnough = Number.isFinite(createdAtMs) && createdAtMs <= oldestAllowedTimestamp
+      if (!oldEnough) console.log(`Skipping recent or timestamp-unknown object: ${path}`)
+      return oldEnough
+    })
+    .map(({ path }) => path)
   console.log(`Identified ${orphans.length} orphaned object(s).`)
   for (const p of orphans) console.log(`  ${p}`)
 
@@ -183,7 +211,15 @@ async function main() {
   // Storage `remove` accepts up to ~1000 paths per call.
   const batchSize = 500
   for (let i = 0; i < orphans.length; i += batchSize) {
-    const batch = orphans.slice(i, i + batchSize)
+    console.log(`Re-checking references before deletion batch ${i}–${Math.min(i + batchSize, orphans.length)}...`)
+    const latestReferenced = await loadReferencedPaths()
+    const latestModelRefs = await loadWallConfigModelRefs()
+    for (const path of latestModelRefs) latestReferenced.add(path)
+    const batch = orphans.slice(i, i + batchSize).filter((path) => !latestReferenced.has(path))
+    if (batch.length === 0) {
+      console.log('Batch skipped: every candidate is now referenced.')
+      continue
+    }
     const { error } = await supabase.storage.from(BUCKET).remove(batch)
     if (error) {
       console.error(`Batch ${i}–${i + batch.length} failed:`, error)

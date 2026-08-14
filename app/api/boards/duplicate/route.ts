@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { resolveMainRoomId } from '@/lib/rooms'
+import { buildBoardStorageCopyPlan } from '@/lib/storage/boardObjects'
 
 /**
  * POST /api/boards/duplicate
@@ -11,19 +12,15 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
+    if (userError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const userId = user.id
 
     const body = await request.json()
     const {
@@ -93,14 +90,54 @@ export async function POST(request: NextRequest) {
     // not disagree about how a board id is built.
     const timestamp = Date.now()
     const newId = `board-${timestamp}-${Math.random().toString(36).slice(2, 8)}`
-    const ownerName = session?.user?.user_metadata?.full_name ?? session?.user?.user_metadata?.email?.split('@')[0] ?? 'User'
+    const ownerName = user.user_metadata?.full_name ?? user.email?.split('@')[0] ?? 'User'
+    const admin = supabaseServiceRole()
 
     // Mirror Phase 6.1 boards.room_id alongside workspace_id. Reuse the source
     // board's room_id when present (so duplicates land in the same room as the
     // original); otherwise resolve the workspace's Main Room.
-    const adminForRoomLookup = supabaseServiceRole()
     const sourceRoomId = (source as { room_id?: string | null }).room_id ?? null
-    const resolvedRoomId = sourceRoomId ?? (await resolveMainRoomId(adminForRoomLookup, workspaceId))
+    const resolvedRoomId = sourceRoomId ?? (await resolveMainRoomId(admin, workspaceId))
+
+    // Each duplicate owns its storage objects. Reusing the source URLs made
+    // deleting either row capable of blanking the other and forced every delete
+    // path to reason about aliases forever.
+    const copyPlan = buildBoardStorageCopyPlan(
+      source.thumbnail_url,
+      source.full_image_url,
+      userId,
+      newId
+    )
+    const copiedPaths: string[] = []
+    for (const copy of copyPlan.copies) {
+      const { error: copyError } = await admin.storage
+        .from('board-images')
+        .copy(copy.sourcePath, copy.destinationPath)
+      if (copyError) {
+        if (copiedPaths.length > 0) {
+          const { error: cleanupError } = await admin.storage
+            .from('board-images')
+            .remove(copiedPaths)
+          if (cleanupError) console.error('Failed to roll back partial board copy', cleanupError)
+        }
+        console.error('Duplicate board storage copy failed:', copyError)
+        return NextResponse.json({ error: 'Failed to copy board media' }, { status: 500 })
+      }
+      copiedPaths.push(copy.destinationPath)
+    }
+
+    const publicUrl = (path: string | null, fallback: string | null) =>
+      path
+        ? admin.storage.from('board-images').getPublicUrl(path).data.publicUrl
+        : fallback
+    const duplicatedThumbnailUrl = publicUrl(
+      copyPlan.thumbnailDestinationPath,
+      source.thumbnail_url
+    )
+    const duplicatedFullImageUrl = publicUrl(
+      copyPlan.fullDestinationPath,
+      source.full_image_url
+    )
 
     const insertData = {
       id: newId,
@@ -113,8 +150,8 @@ export async function POST(request: NextRequest) {
       student_email: source.student_email ?? null,
       title: (source.title || 'Board').trimEnd() + ' (copy)',
       description: source.description ?? null,
-      thumbnail_url: source.thumbnail_url,
-      full_image_url: source.full_image_url,
+      thumbnail_url: duplicatedThumbnailUrl,
+      full_image_url: duplicatedFullImageUrl,
       tags: source.tags ?? [],
       uploaded_at: new Date().toISOString(),
       position_wall_index: wallIndex,
@@ -132,7 +169,6 @@ export async function POST(request: NextRequest) {
       board_height_in: source.board_height_in,
     }
 
-    const admin = supabaseServiceRole()
     const { data: saved, error: insertError } = await admin
       .from('boards')
       .insert(insertData)
@@ -140,6 +176,12 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (insertError) {
+      if (copiedPaths.length > 0) {
+        const { error: cleanupError } = await admin.storage
+          .from('board-images')
+          .remove(copiedPaths)
+        if (cleanupError) console.error('Failed to roll back duplicated board media', cleanupError)
+      }
       console.error('Duplicate board insert error:', insertError)
       return NextResponse.json({ error: 'Failed to duplicate board' }, { status: 500 })
     }
