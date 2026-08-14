@@ -9,6 +9,7 @@ import { PDFTextureMaterial } from './PDFTexture'
 import { useBoardTexture } from './useBoardTexture'
 import { useDisposableGeometry } from './useDisposableGeometry'
 import VideoBadge from './VideoBadge'
+import { ENGINE_PALETTE } from './enginePalette'
 
 interface BoardThumbnailProps {
   board: Board
@@ -47,12 +48,12 @@ function BoardSkeletonMaterial({ hovered, isHighlighted }: { hovered: boolean; i
   return (
     <meshStandardMaterial
       ref={matRef}
-      color="#ffffff"
+      color={ENGINE_PALETTE.paper}
       transparent
       opacity={0.24}
       roughness={0.85}
       metalness={0.0}
-      emissive={isHighlighted || hovered ? '#6366f1' : '#000000'}
+      emissive={isHighlighted || hovered ? ENGINE_PALETTE.selection : ENGINE_PALETTE.black}
       emissiveIntensity={0}
       depthWrite={false}
     />
@@ -73,7 +74,7 @@ function BoardImageMaterial({
       map={texture}
       roughness={0.7}
       metalness={0.0}
-      emissive={isHighlighted ? '#6366f1' : (hovered ? '#6366f1' : '#000000')}
+      emissive={isHighlighted || hovered ? ENGINE_PALETTE.selection : ENGINE_PALETTE.black}
       emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
       depthWrite={true}
       depthTest={true}
@@ -193,10 +194,10 @@ export default function BoardThumbnail({ board, position, width, height, onClick
             <BoardSkeletonMaterial hovered={isHovered} isHighlighted={isHighlighted} />
           ) : (
             <meshStandardMaterial
-              color={hovered ? '#f8f8f8' : '#ffffff'}
+              color={hovered ? ENGINE_PALETTE.paperHover : ENGINE_PALETTE.paper}
               roughness={0.7}
               metalness={0.0}
-              emissive={isHighlighted ? '#6366f1' : (hovered ? '#6366f1' : '#000000')}
+              emissive={isHighlighted || hovered ? ENGINE_PALETTE.selection : ENGINE_PALETTE.black}
               emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
             />
           )
@@ -210,7 +211,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
             attach="geometry"
             args={[skeletonEdgeGeometry]}
           />
-          <lineBasicMaterial attach="material" color="#94a3b8" transparent opacity={0.5} />
+          <lineBasicMaterial attach="material" color={ENGINE_PALETTE.guide} transparent opacity={0.5} />
         </lineSegments>
       )}
 
@@ -252,8 +253,8 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               // pink-500 — reads as a distinct callout marker rather than
               // blending into the indigo hover/highlight frame (#6366f1). The
               // white ring keeps it legible on BOTH the grey and white walls.
-              background: '#ec4899',
-              color: '#fff',
+              background: ENGINE_PALETTE.snap,
+              color: ENGINE_PALETTE.paper,
               fontSize: '13px',
               fontWeight: 600,
               lineHeight: 1,
@@ -302,13 +303,13 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               attach="geometry"
               args={[frameEdgeGeometry]}
             />
-            <lineBasicMaterial attach="material" color="#6366f1" linewidth={3} />
+            <lineBasicMaterial attach="material" color={ENGINE_PALETTE.selection} linewidth={3} />
           </lineSegments>
 
           <mesh position={[0, 0, -0.001]}>
             <planeGeometry args={[width + 0.1, height + 0.1]} />
             <meshBasicMaterial
-              color="#6366f1"
+              color={ENGINE_PALETTE.selection}
               transparent
               opacity={0.1}
             />

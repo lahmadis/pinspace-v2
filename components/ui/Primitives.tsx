@@ -27,7 +27,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     primary: 'border-kova-ink bg-primary text-kova-ink hover:bg-primary-light',
     secondary: 'border-accent bg-accent text-white hover:bg-accent-light',
     ghost: 'border-transparent bg-transparent text-text-primary hover:bg-background-lighter',
-    danger: 'border-red-800 bg-red-700 text-white hover:bg-red-800',
+    danger: 'border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger))] text-white hover:bg-[rgb(var(--color-danger)/0.9)]',
   }
   const sizes = {
     sm: 'min-h-9 px-3 py-1.5 text-sm',
@@ -92,7 +92,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       <input
         ref={ref}
         className={cn(
-          'min-h-11 w-full rounded-kova border border-border bg-background-light px-3.5 py-2 text-text-primary placeholder:text-text-dim shadow-sm transition-colors hover:border-text-muted disabled:cursor-not-allowed disabled:bg-background-lighter disabled:text-text-muted aria-[invalid=true]:border-red-700 aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-red-700',
+          'min-h-11 w-full rounded-kova border border-border bg-background-light px-3.5 py-2 text-text-primary placeholder:text-text-dim shadow-sm transition-colors hover:border-text-muted disabled:cursor-not-allowed disabled:bg-background-lighter disabled:text-text-muted aria-[invalid=true]:border-[rgb(var(--color-danger))] aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-[rgb(var(--color-danger))]',
           focus,
           className
         )}
@@ -108,7 +108,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
       <select
         ref={ref}
         className={cn(
-          'min-h-11 w-full rounded-kova border border-border bg-background-light px-3.5 py-2 text-text-primary shadow-sm transition-colors hover:border-text-muted disabled:cursor-not-allowed disabled:bg-background-lighter disabled:text-text-muted aria-[invalid=true]:border-red-700',
+          'min-h-11 w-full rounded-kova border border-border bg-background-light px-3.5 py-2 text-text-primary shadow-sm transition-colors hover:border-text-muted disabled:cursor-not-allowed disabled:bg-background-lighter disabled:text-text-muted aria-[invalid=true]:border-[rgb(var(--color-danger))]',
           focus,
           className
         )}
@@ -142,9 +142,9 @@ export function Badge({ className, variant = 'neutral', ...props }: BadgeProps) 
   const variants = {
     neutral: 'bg-background-lighter text-text-secondary',
     accent: 'bg-primary-muted text-kova-ink',
-    success: 'bg-emerald-100 text-emerald-900',
-    warning: 'bg-amber-100 text-amber-900',
-    danger: 'bg-red-100 text-red-900',
+    success: 'bg-[rgb(var(--color-success)/0.12)] text-[rgb(var(--color-success))]',
+    warning: 'bg-[rgb(var(--color-warning)/0.12)] text-[rgb(var(--color-warning))]',
+    danger: 'bg-[rgb(var(--color-danger)/0.12)] text-[rgb(var(--color-danger))]',
   }
   return (
     <span

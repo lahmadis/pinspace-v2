@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { ENGINE_PALETTE } from '@/components/3d/enginePalette'
 
 interface PDFRendererProps {
   pdfUrl: string
@@ -118,8 +119,8 @@ export default function PDFRenderer({ pdfUrl, className, scale = 1.5 }: PDFRende
         canvas.width = Math.floor(viewport.width)
         canvas.height = Math.floor(viewport.height)
         
-        // White background
-        context.fillStyle = '#ffffff'
+        // Canvas PDF backing remains opaque white behind page pixels.
+        context.fillStyle = ENGINE_PALETTE.paper
         context.fillRect(0, 0, canvas.width, canvas.height)
 
         console.log('📄 [PDFRenderer] Rendering page to canvas...')
@@ -153,12 +154,12 @@ export default function PDFRenderer({ pdfUrl, className, scale = 1.5 }: PDFRende
 
   if (error) {
     return (
-      <div className={`flex items-center justify-center bg-red-50 ${className}`}>
+      <div className={`flex items-center justify-center bg-[rgb(var(--color-danger)/0.08)] ${className}`}>
         <div className="text-center p-4">
-          <svg className="w-10 h-10 text-red-400 mx-auto mb-2" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="mx-auto mb-2 h-10 w-10 text-[rgb(var(--color-danger))]" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
           </svg>
-          <p className="text-xs text-red-600">{error}</p>
+          <p className="text-xs text-[rgb(var(--color-danger))]">{error}</p>
         </div>
       </div>
     )
@@ -167,10 +168,10 @@ export default function PDFRenderer({ pdfUrl, className, scale = 1.5 }: PDFRende
   return (
     <div className={`relative ${className}`}>
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+        <div className="absolute inset-0 flex items-center justify-center bg-background-lighter">
           <div className="text-center">
-            <div className="animate-spin w-8 h-8 border-2 border-gray-300 border-t-indigo-600 rounded-full mx-auto mb-2" />
-            <span className="text-xs text-gray-500">Loading PDF...</span>
+            <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-2 border-border border-t-accent motion-reduce:animate-none" />
+            <span className="text-xs text-text-secondary">Loading PDF...</span>
           </div>
         </div>
       )}
@@ -182,4 +183,3 @@ export default function PDFRenderer({ pdfUrl, className, scale = 1.5 }: PDFRende
     </div>
   )
 }
-

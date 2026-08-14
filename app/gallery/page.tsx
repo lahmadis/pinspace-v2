@@ -6,13 +6,14 @@ import { Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import Gallery3D from '@/components/Gallery3D'
+import { DEFAULT_GALLERY_AVATAR_COLOR } from '@/components/GalleryAvatarModal'
 import DemoBanner from '@/components/DemoBanner'
 import { StatusState } from '@/components/ui'
 import { addDemoParam } from '@/lib/demoMode'
 
 function GalleryContent() {
   const searchParams = useSearchParams()
-  const avatarColor = searchParams?.get('color') || '#FFC800'
+  const avatarColor = searchParams?.get('color') || DEFAULT_GALLERY_AVATAR_COLOR
   return <Gallery3D avatarColor={avatarColor} department={searchParams?.get('department') || null} year={searchParams?.get('year') || null} />
 }
 

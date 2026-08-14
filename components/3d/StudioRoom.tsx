@@ -38,9 +38,9 @@ import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import { toast } from '@/lib/toast'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
 import { Dialog } from '@/components/ui'
+import { ENGINE_PALETTE } from './enginePalette'
 
-// Intentional WebGL scene color. Keep canvas materials separate from UI tokens.
-const STUDIO_SCENE_BACKGROUND = '#D7E2DD'
+const STUDIO_SCENE_BACKGROUND = ENGINE_PALETTE.sceneNeutral
 
 interface WallDimensions {
   height: number
@@ -345,11 +345,11 @@ function SceneContent({
       <directionalLight position={[0, 25, 0]} intensity={0.4} />
       
       {/* Rim lighting for wall edges - enhances depth */}
-      <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
-      <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
+      <directionalLight position={[-8, 10, -12]} intensity={0.3} color={ENGINE_PALETTE.paper} />
+      <directionalLight position={[8, 10, 12]} intensity={0.3} color={ENGINE_PALETTE.paper} />
       
       {/* Hemisphere light for natural ambient */}
-      <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
+      <hemisphereLight args={[ENGINE_PALETTE.paper, ENGINE_PALETTE.groundLight, 0.3]} />
       
       {/* Floor is now created dynamically in WallSystem based on wall configuration */}
       
@@ -2358,7 +2358,7 @@ export default function StudioRoom(props: StudioRoomProps) {
                 <button
                   type="button"
                   onClick={() => handleRemoveText(sel.id)}
-                  className="min-h-11 rounded-kova border border-red-800 bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+                  className="min-h-11 rounded-kova border border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger))] px-3 py-2 text-sm font-semibold text-white hover:bg-[rgb(var(--color-danger)/0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
                 >
                   Remove text
                 </button>
@@ -2402,7 +2402,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             isPresenter={!!props.isPresenter}
             editingWall={editingWall}
           />
-          <LaserPointer laserRef={props.laserRef} color={props.laserColor ?? '#22d3ee'} />
+          <LaserPointer laserRef={props.laserRef} color={props.laserColor ?? ENGINE_PALETTE.cursor} />
           <SceneContent
             {...props}
             orbitControlsRef={orbitControlsRef}
@@ -2479,7 +2479,7 @@ export default function StudioRoom(props: StudioRoomProps) {
       viewportDriven={!!props.isFollowing && lightboxBoard !== null}
       viewportTargetRef={props.lbViewportRef}
       lbCursorRef={props.lbCursorRef}
-      cursorColor={props.laserColor ?? '#22d3ee'}
+      cursorColor={props.laserColor ?? ENGINE_PALETTE.cursor}
       critDirty={props.critDirty}
       traceStreamRef={props.traceStreamRef}
       onLinkSaved={(boardId, linkUrl) => {

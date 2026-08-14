@@ -18,10 +18,15 @@ import type { TraceStreamEntry } from '@/components/3d/CameraController'
 import { toast } from '@/lib/toast'
 import { Download, ExternalLink } from 'lucide-react'
 
-// Trace ink palette + brush widths (width = fraction of image width).
-const TRACE_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6']
-const DEFAULT_MEDIA_CURSOR_COLOR = '#22d3ee'
-const DEFAULT_TRACE_AUTHOR_COLOR = '#94a3b8'
+// Canvas scene colors keep concurrent trace authors distinct on light and dark media.
+export const MEDIA_ANNOTATION_PALETTE = {
+  trace: ['#EF4444', '#F59E0B', '#22C55E', '#3B82F6'],
+  cursor: '#22D3EE',
+  fallbackAuthor: '#94A3B8',
+} as const
+const TRACE_COLORS = MEDIA_ANNOTATION_PALETTE.trace
+const DEFAULT_MEDIA_CURSOR_COLOR = MEDIA_ANNOTATION_PALETTE.cursor
+const DEFAULT_TRACE_AUTHOR_COLOR = MEDIA_ANNOTATION_PALETTE.fallbackAuthor
 const MEDIA_CURSOR_HALO = '0 0 0 2px rgba(255,255,255,0.75)'
 const TRACE_WIDTHS: Array<{ label: string; value: number }> = [
   { label: 'Thin', value: 0.004 },
@@ -364,7 +369,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const [myStrokes, setMyStrokes] = useState<TraceStroke[]>([])      // local authoritative copy of MY strokes
   const [drawingPoints, setDrawingPoints] = useState<[number, number][] | null>(null) // in-progress stroke
   const [hiddenTraceAuthors, setHiddenTraceAuthors] = useState<Set<string>>(new Set())
-  const [traceColor, setTraceColor] = useState(TRACE_COLORS[0])
+  const [traceColor, setTraceColor] = useState<string>(TRACE_COLORS[0])
   const [traceWidth, setTraceWidth] = useState(TRACE_WIDTHS[0].value)
   const [pendingClearTrace, setPendingClearTrace] = useState(false)
   const [tracesLoaded, setTracesLoaded] = useState(false)
@@ -1948,23 +1953,23 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               placeholder="Board title"
             />
           ) : canEditTitle ? (
-            <h2
-              className="text-background-light font-semibold text-sm sm:text-[15px] flex items-center gap-1 min-w-0 group/title cursor-pointer hover:text-kova-cream"
-              onClick={(e) => {
-                e.stopPropagation()
-                // Clear a cancel flag left set by a prior Esc: the unmount that
-                // followed it may never have fired blur, and a stale true would
-                // silently cancel THIS edit's commit.
-                titleEditCancelRef.current = false
-                setTitleInput(resolvedTitle)
-                setEditingTitle(true)
-              }}
-              title="Rename board"
-            >
-              <span className="truncate">{resolvedTitle}</span>
-              <svg className="w-3.5 h-3.5 opacity-0 group-hover/title:opacity-60 transition-opacity flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
-              </svg>
+            <h2 className="min-w-0 text-sm font-semibold text-background-light sm:text-[15px]">
+              <button
+                type="button"
+                className="group/title flex min-h-11 min-w-0 items-center gap-1 rounded-kova text-left hover:text-kova-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  titleEditCancelRef.current = false
+                  setTitleInput(resolvedTitle)
+                  setEditingTitle(true)
+                }}
+                title="Rename board"
+              >
+                <span className="truncate">{resolvedTitle}</span>
+                <svg className="h-3.5 w-3.5 flex-shrink-0 opacity-60 transition-opacity group-hover/title:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
+                </svg>
+              </button>
             </h2>
           ) : (
             <h2 className="text-background-light font-semibold text-sm sm:text-[15px] truncate">
@@ -2000,20 +2005,24 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
             return (
               <p className="text-[11px] text-background-light/80 truncate mt-0.5 flex items-center gap-1.5">
-                <span
-                  className={`inline-flex items-center gap-1 ${isEditMode ? 'group/author cursor-pointer hover:text-white' : ''}`}
-                  onClick={isEditMode ? () => {
-                    setAuthorNameInput(resolvedName === 'Unknown' ? '' : resolvedName)
-                    setEditingAuthorName(true)
-                  } : undefined}
-                >
-                  {resolvedName}
-                  {isEditMode && (
+                {isEditMode ? (
+                  <button
+                    type="button"
+                    aria-label="Rename board author"
+                    className="group/author inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-kova hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    onClick={() => {
+                      setAuthorNameInput(resolvedName === 'Unknown' ? '' : resolvedName)
+                      setEditingAuthorName(true)
+                    }}
+                  >
+                    {resolvedName}
                     <svg className="w-3 h-3 opacity-0 group-hover/author:opacity-60 transition-opacity flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
                     </svg>
-                  )}
-                </span>
+                  </button>
+                ) : (
+                  <span>{resolvedName}</span>
+                )}
                 <span className="font-mono uppercase tracking-wider text-[10px] text-background-light/70 flex-shrink-0">
                   · {sizeDisplay.label}
                   {sizeDisplay.provenance === 'assumed' && (

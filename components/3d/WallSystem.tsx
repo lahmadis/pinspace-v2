@@ -7,6 +7,7 @@ import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
 import { getWallTransformResolved, calculateFloorBounds, type WallTextItem } from '@/lib/wallLayout'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
+import { ENGINE_PALETTE } from './enginePalette'
 
 interface WallDimensions {
   height: number
@@ -93,8 +94,8 @@ const WALL_PALETTES: Record<'grey' | 'white', {
   topEdge: string
   bottomEdge: string
 }> = {
-  grey: { main: '#D8DEFF', sideEdge: '#B3C4FF', topEdge: '#A1B2FF', bottomEdge: '#E0E0DB' },
-  white: { main: '#FFFFFF', sideEdge: '#FAFAF9', topEdge: '#F7F7F5', bottomEdge: '#F3F3F0' },
+  grey: { main: ENGINE_PALETTE.wallMain, sideEdge: ENGINE_PALETTE.wallSideEdge, topEdge: ENGINE_PALETTE.wallTopEdge, bottomEdge: ENGINE_PALETTE.wallBottomEdge },
+  white: { main: ENGINE_PALETTE.paper, sideEdge: ENGINE_PALETTE.wallWhiteSideEdge, topEdge: ENGINE_PALETTE.wallWhiteTopEdge, bottomEdge: ENGINE_PALETTE.wallWhiteBottomEdge },
 }
 
 
@@ -116,7 +117,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
       >
         <boxGeometry args={[floorBounds.floorWidth, floorThickness, floorBounds.floorDepth]} />
         <meshStandardMaterial 
-          color="#D8DEFF" // very light, white-leaning blue for floor
+          color={ENGINE_PALETTE.wallMain}
           roughness={0.9}
           metalness={0.0}
         />
@@ -179,7 +180,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                 depthTest={true}
                 // Presence highlight: soft brand-violet glow on walls another
                 // user is editing. Black/0 = no glow (default). Tunable.
-                emissive={isOthersEditing ? '#6366f1' : '#000000'}
+                emissive={isOthersEditing ? ENGINE_PALETTE.selection : ENGINE_PALETTE.black}
                 emissiveIntensity={isOthersEditing ? 0.45 : 0}
               />
             </mesh>
@@ -320,7 +321,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                     // Back labels face into the back room so they read correctly.
                     rotation={isBack ? [0, Math.PI, 0] : [0, 0, 0]}
                     fontSize={t.fontSize}
-                    color="#111827"
+                    color={ENGINE_PALETTE.darkText}
                     anchorX="center"
                     anchorY="middle"
                     maxWidth={transform.width}

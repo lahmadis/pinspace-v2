@@ -20,9 +20,9 @@ import { useAccountMode } from '@/lib/useAccountMode'
 import { ArrowLeft } from 'lucide-react'
 import { StudioShell } from '@/components/layout/StudioShell'
 import { Button, Dialog, StatusState } from '@/components/ui'
+import { ENGINE_PALETTE } from '@/components/3d/enginePalette'
 
-// Intentional WebGL material color: a calm neutral background for the 3D scene.
-const STUDIO_SCENE_BACKGROUND = '#D7E2DD'
+const STUDIO_SCENE_BACKGROUND = ENGINE_PALETTE.sceneNeutral
 
 interface WallDimensions {
   height: number
@@ -644,11 +644,11 @@ export default function StudioViewPage() {
         <directionalLight position={[0, 25, 0]} intensity={0.4} />
         
         {/* Rim lighting for wall edges - enhances depth */}
-        <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
-        <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
+        <directionalLight position={[-8, 10, -12]} intensity={0.3} color={ENGINE_PALETTE.paper} />
+        <directionalLight position={[8, 10, 12]} intensity={0.3} color={ENGINE_PALETTE.paper} />
         
         {/* Hemisphere light for natural ambient */}
-        <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
+        <hemisphereLight args={[ENGINE_PALETTE.paper, ENGINE_PALETTE.groundLight, 0.3]} />
         
         {/* Wall System with Boards */}
         {wallConfig && (

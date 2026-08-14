@@ -1,5 +1,7 @@
 'use client'
 
+import { ENGINE_PALETTE } from './enginePalette'
+
 /**
  * Tier 1 presence indicator: shows initials/avatars of OTHER members currently
  * in the same room (the current user is excluded). Fed by the
@@ -20,11 +22,9 @@ export interface PresentUser {
 
 /** Deterministic avatar color from a user id, so a given user is always the same hue. */
 export function colorFor(userId: string): string {
-  // Intentional data-visualization colors: avatar hue distinguishes concurrent users.
-  const palette = ['#14705C', '#A34A28', '#7B5B12', '#246B8E', '#8C4165', '#39735A', '#6E5A9B', '#9B3E35']
   let hash = 0
   for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) >>> 0
-  return palette[hash % palette.length]
+  return ENGINE_PALETTE.collaborator[hash % ENGINE_PALETTE.collaborator.length]
 }
 
 /**

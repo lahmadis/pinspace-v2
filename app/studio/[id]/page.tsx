@@ -16,6 +16,7 @@ import { DEFAULT_WALL_CONFIG, type WallConfig } from '@/lib/wallLayout'
 import { useWallConfigWriter } from '@/lib/wallConfigWriter'
 import { StudioShell } from '@/components/layout/StudioShell'
 import { Button, StatusState } from '@/components/ui'
+import { ENGINE_PALETTE } from '@/components/3d/enginePalette'
 
 type RealtimeBoardPayload = {
   eventType: 'INSERT' | 'UPDATE' | 'DELETE'
@@ -822,7 +823,7 @@ export default function StudioPage() {
         const key = `${p.boardId}|${p.authorKey}`
         let e = map.get(key)
         if (!e) {
-          e = { boardId: p.boardId, authorKey: p.authorKey, color: typeof p.color === 'string' ? p.color : '#94a3b8', completed: [], live: null }
+          e = { boardId: p.boardId, authorKey: p.authorKey, color: typeof p.color === 'string' ? p.color : ENGINE_PALETTE.guide, completed: [], live: null }
           map.set(key, e)
         }
         if (typeof p.color === 'string') e.color = p.color
@@ -941,7 +942,7 @@ export default function StudioPage() {
 
   // Phase B.3.1: deterministic cursor-dot color for the active presenter (same
   // palette as PresenceBar avatars). Irrelevant when nobody is presenting.
-  const laserColor = presenter ? colorFor(presenter.userId) : '#22d3ee'
+  const laserColor = presenter ? colorFor(presenter.userId) : ENGINE_PALETTE.cursor
 
   // Every action inside the options menu is permission-gated; Share, which is
   // not, stays out as a standalone button. So when a viewer can edit nothing
@@ -1238,9 +1239,11 @@ export default function StudioPage() {
                       {/* Click-outside backdrop — sits under the panel, above
                           the canvas, so a click anywhere else closes rather than
                           orbiting the 3D view behind it. */}
-                      <div
+                      <button
+                        type="button"
+                        tabIndex={-1}
                         className="fixed inset-0 z-[-1] cursor-default"
-                        aria-hidden="true"
+                        aria-label="Close studio options"
                         onClick={() => setShowStudioMenu(false)}
                       />
                       <div
@@ -1333,9 +1336,11 @@ export default function StudioPage() {
                 <>
                   {/* Tap-outside backdrop — sits under the panel, above the
                       canvas; pointer-events catches the tap and closes. */}
-                  <div
+                  <button
+                    type="button"
+                    tabIndex={-1}
                     className="fixed inset-0 z-[-1] cursor-default"
-                    aria-hidden="true"
+                    aria-label="Close studio menu"
                     onClick={() => setShowStudioMenu(false)}
                   />
                   <div

@@ -1279,17 +1279,23 @@ export default function FloorEditorOverlay({
               const stretchCursor = Math.abs(dy) > Math.abs(dx) ? 'ns-resize' : 'ew-resize'
               void centerPx; void centerPy
               return [
-                <div
+                <button
+                  type="button"
                   key={`sh-start-${index}`}
-                  className="absolute"
+                  className="absolute rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   style={{ left: startPx - 22, top: startPy - 22, width: 44, height: 44, cursor: stretchCursor }}
+                  aria-label={"Select start resize handle for wall " + (index + 1)}
                   onPointerDown={(e) => handleWallStretchPointerDown(index, 'start', e)}
+                  onClick={() => setSelectedWallIndex(index)}
                 />,
-                <div
+                <button
+                  type="button"
                   key={`sh-end-${index}`}
-                  className="absolute"
+                  className="absolute rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   style={{ left: endPx - 22, top: endPy - 22, width: 44, height: 44, cursor: stretchCursor }}
+                  aria-label={"Select end resize handle for wall " + (index + 1)}
                   onPointerDown={(e) => handleWallStretchPointerDown(index, 'end', e)}
+                  onClick={() => setSelectedWallIndex(index)}
                 />,
               ]
             })}
@@ -1328,7 +1334,7 @@ export default function FloorEditorOverlay({
                       setSelectedTableId(table.id)
                     }
                   }}
-                  className="absolute cursor-move rounded-lg border-2 flex flex-col items-center justify-center overflow-visible"
+                  className="absolute flex cursor-move flex-col items-center justify-center overflow-visible rounded-lg border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   style={{
                     left: px - w / 2, top: py - h / 2,
                     width: w, height: h, minWidth: 24, minHeight: 18,
@@ -1344,9 +1350,9 @@ export default function FloorEditorOverlay({
                   {[['0%', '0%'], ['100%', '0%'], ['100%', '100%'], ['0%', '100%']].map(([left, top], i) => (
                     <div
                       key={i}
-                      className="absolute w-6 h-6 cursor-pointer"
+                      className="absolute h-11 w-11 cursor-pointer rounded-full"
                       style={{ left, top, transform: 'translate(-50%,-50%)' }}
-                      title="Rotate 90°"
+                      aria-hidden="true"
                       onPointerDown={(e) => handleRotateTable(table.id, e)}
                       onClick={(e) => e.stopPropagation()}
                     />
@@ -1395,7 +1401,7 @@ export default function FloorEditorOverlay({
               <button
                 type="button"
                 onClick={() => { setTables((prev) => prev.filter((t) => t.id !== selectedTableId)); setSelectedTableId(null) }}
-                className="min-h-11 rounded-kova px-3 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-11 rounded-kova px-3 py-2 text-sm font-semibold text-[rgb(var(--color-danger))] hover:bg-[rgb(var(--color-danger)/0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 Remove table
               </button>

@@ -291,7 +291,7 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
                         <button
                           type="button"
                           onClick={() => deleteGuestLink(t.id)}
-                          className="min-h-11 flex-shrink-0 rounded-kova px-3 text-xs font-semibold text-red-800 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          className="min-h-11 flex-shrink-0 rounded-kova px-3 text-xs font-semibold text-[rgb(var(--color-danger))] hover:bg-[rgb(var(--color-danger)/0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                           Delete
                         </button>
@@ -299,7 +299,7 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
                         <button
                           type="button"
                           onClick={() => revokeGuestLink(t.id)}
-                          className="min-h-11 flex-shrink-0 rounded-kova px-3 text-xs font-semibold text-red-800 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          className="min-h-11 flex-shrink-0 rounded-kova px-3 text-xs font-semibold text-[rgb(var(--color-danger))] hover:bg-[rgb(var(--color-danger)/0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                           Revoke
                         </button>

@@ -1,11 +1,14 @@
 'use client'
 
+/* eslint-disable react-hooks/immutability, react-hooks/set-state-in-effect -- Frozen R3F drag semantics synchronize local geometry and the renderer cursor imperatively. */
+
 import { useRef, useState, useEffect } from 'react'
 import { useThree, ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import { Text } from '@react-three/drei'
 import type { WallTextItem } from '@/lib/wallLayout'
 import { useDisposableGeometry } from './useDisposableGeometry'
+import { ENGINE_PALETTE } from './enginePalette'
 
 interface DraggableTextProps {
   item: WallTextItem
@@ -197,7 +200,7 @@ export function DraggableText({
           position={[0, 0, 0.05]}
           raycast={() => null}
           fontSize={item.fontSize}
-          color="#111827"
+          color={ENGINE_PALETTE.darkText}
           anchorX="center"
           anchorY="middle"
           maxWidth={scaledWallWidth}
@@ -208,7 +211,7 @@ export function DraggableText({
         {isSelected && (
           <lineSegments position={[0, 0, 0.06]} raycast={() => null}>
             <edgesGeometry args={[outlineGeom]} />
-            <lineBasicMaterial color="#4444ff" />
+            <lineBasicMaterial color={ENGINE_PALETTE.selection} />
           </lineSegments>
         )}
       </group>

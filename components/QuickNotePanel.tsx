@@ -38,7 +38,7 @@ export default function QuickNotePanel({ boardTitle, onAddNote }: QuickNotePanel
       className="fixed inset-x-[max(1rem,env(safe-area-inset-left))] bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 max-h-[min(70dvh,30rem)] overflow-y-auto rounded-kova-lg border border-border bg-background-light p-4 text-text-primary shadow-[var(--shadow-raised)] motion-reduce:transition-none sm:left-auto sm:right-[max(1rem,env(safe-area-inset-right))] sm:w-96"
     >
       <div className="flex items-center gap-2 mb-3">
-        <div className="h-2 w-2 rounded-full bg-red-700 motion-safe:animate-pulse" aria-hidden="true" />
+        <div className="h-2 w-2 rounded-full bg-[rgb(var(--color-danger))] motion-safe:animate-pulse" aria-hidden="true" />
         <h3 className="font-semibold text-text-primary text-sm">
           Taking Notes: {boardTitle}
         </h3>

@@ -3,6 +3,7 @@
 import * as THREE from 'three'
 import { Board } from '@/types'
 import BoardThumbnail from './BoardThumbnail'
+import { ENGINE_PALETTE } from './enginePalette'
 
 interface WallProps {
   position: [number, number, number]
@@ -22,7 +23,7 @@ export default function Wall({ position, rotation, boards }: WallProps) {
       <mesh castShadow receiveShadow>
         <boxGeometry args={[wallWidth, wallHeight, wallDepth]} />
         <meshStandardMaterial
-          color="#f8f9fa"
+          color={ENGINE_PALETTE.paperHover}
           roughness={0.9}
           metalness={0.0}
         />
@@ -34,7 +35,7 @@ export default function Wall({ position, rotation, boards }: WallProps) {
           attach="geometry"
           args={[new THREE.BoxGeometry(wallWidth, wallHeight, wallDepth)]}
         />
-        <lineBasicMaterial attach="material" color="#cbd5e1" />
+        <lineBasicMaterial attach="material" color={ENGINE_PALETTE.floorEdge} />
       </lineSegments>
 
       {/* Boards on this wall */}

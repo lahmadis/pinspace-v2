@@ -3,15 +3,17 @@
 import { useMemo, useRef, useState } from 'react'
 import { Button, Dialog, Select } from '@/components/ui'
 
-// Named, intentional data-visualisation choices used by the Three.js avatar material.
-const AVATAR_COLORS = [
-  { name: 'Kova yellow', value: '#FFC800' },
-  { name: 'Deep green', value: '#14705C' },
-  { name: 'Forest', value: '#0A2F28' },
-  { name: 'Ocean blue', value: '#176B87' },
-  { name: 'Terracotta', value: '#A84432' },
-  { name: 'Umber', value: '#73563C' },
-] as const
+// Named 3D avatar material colors maintain readable contrast in the gallery scene.
+export const GALLERY_AVATAR_COLOR_OPTIONS = {
+  yellow: { name: 'Kova yellow', value: '#FFC800' },
+  green: { name: 'Deep green', value: '#14705C' },
+  forest: { name: 'Forest', value: '#0A2F28' },
+  ocean: { name: 'Ocean blue', value: '#176B87' },
+  terracotta: { name: 'Terracotta', value: '#A84432' },
+  umber: { name: 'Umber', value: '#73563C' },
+} as const
+export const DEFAULT_GALLERY_AVATAR_COLOR = GALLERY_AVATAR_COLOR_OPTIONS.yellow.value
+const AVATAR_COLORS = Object.values(GALLERY_AVATAR_COLOR_OPTIONS)
 const APPEARANCES = ['Explorer', 'Builder', 'Critic']
 const DEPARTMENTS = ['Architecture', 'Interior Design', 'Industrial Design']
 const YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Masters']
@@ -31,7 +33,7 @@ interface GalleryAvatarModalProps {
 }
 
 export default function GalleryAvatarModal({ isOpen, onClose, onEnter, pending = false }: GalleryAvatarModalProps) {
-  const [color, setColor] = useState<string>(AVATAR_COLORS[0].value)
+  const [color, setColor] = useState<string>(DEFAULT_GALLERY_AVATAR_COLOR)
   const appearance = APPEARANCES[0]
   const [department, setDepartment] = useState('')
   const [year, setYear] = useState('')
@@ -69,7 +71,7 @@ export default function GalleryAvatarModal({ isOpen, onClose, onEnter, pending =
               {AVATAR_COLORS.map((choice) => (
                 <label key={choice.value} className="cursor-pointer rounded-kova focus-within:outline-none focus-within:ring-2 focus-within:ring-accent">
                   <input type="radio" name="avatar-color" value={choice.value} checked={color === choice.value} onChange={() => setColor(choice.value)} className="sr-only" />
-                  <span className="flex min-h-11 items-center justify-center rounded-kova border-2 px-2 text-center text-[11px] font-semibold" style={{ backgroundColor: choice.value, borderColor: color === choice.value ? 'rgb(var(--color-ink))' : 'transparent', color: choice.value === '#FFC800' ? 'rgb(var(--color-ink))' : 'white' }}>
+                  <span className="flex min-h-11 items-center justify-center rounded-kova border-2 px-2 text-center text-[11px] font-semibold" style={{ backgroundColor: choice.value, borderColor: color === choice.value ? 'rgb(var(--color-ink))' : 'transparent', color: choice.value === DEFAULT_GALLERY_AVATAR_COLOR ? 'rgb(var(--color-ink))' : 'white' }}>
                     {choice.name}
                   </span>
                 </label>

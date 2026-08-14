@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable react-hooks/immutability -- R3F camera framing must update the Three.js camera instance after model geometry resolves. */
+
 import '@/components/3d/setupDraco'
 import { Suspense, useRef, useMemo, useEffect } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
@@ -10,6 +12,7 @@ import { useRhino3dm } from '@/components/3d/useRhino3dm'
 import { SceneErrorBoundary } from '@/components/3d/SceneErrorBoundary'
 import { useStlLoader } from '@/components/3d/useStlLoader'
 import { fitToScene } from '@/lib/3d/fitToScene'
+import { ENGINE_PALETTE } from './enginePalette'
 
 function is3dm(url: string) { return url.toLowerCase().endsWith('.3dm') }
 function isStl(url: string) { return url.toLowerCase().endsWith('.stl') }
@@ -190,9 +193,9 @@ function Scene({ url }: { url: string }) {
           <group>
             <mesh>
               <boxGeometry args={[2, 2, 2]} />
-              <meshStandardMaterial color="#888" wireframe />
+              <meshStandardMaterial color={ENGINE_PALETTE.modelWire} wireframe />
             </mesh>
-            <Html center position={[0, 2, 0]} style={{ color: '#333', fontSize: 14, fontFamily: 'system-ui', whiteSpace: 'nowrap' }}>
+            <Html center position={[0, 2, 0]} style={{ color: ENGINE_PALETTE.owned, fontSize: 14, fontFamily: 'system-ui', whiteSpace: 'nowrap' }}>
               Loading model...
             </Html>
           </group>
@@ -224,7 +227,7 @@ export default function ModelViewer({ modelUrl }: ModelViewerProps) {
 
   if (!modelUrl || modelUrl.startsWith('blob:')) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-[#D8DEFF] text-gray-700 p-4 text-center">
+      <div className="flex h-full w-full items-center justify-center bg-background-lighter p-4 text-center text-text-primary">
         <p>This model link is no longer valid. Add the model again from the floor editor (Place tables → select table → Add model).</p>
       </div>
     )
@@ -236,7 +239,7 @@ export default function ModelViewer({ modelUrl }: ModelViewerProps) {
         shadows
         gl={{ antialias: true }}
         camera={{ position: [3, 2, 3], fov: 50 }}
-        style={{ background: '#D8DEFF' }}
+        style={{ background: ENGINE_PALETTE.wallMain }}
       >
         <Scene url={modelUrl} />
       </Canvas>

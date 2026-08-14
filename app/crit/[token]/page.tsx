@@ -13,6 +13,7 @@ import WallSystem from '@/components/3d/WallSystem'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
 import { SceneErrorBoundary } from '@/components/3d/SceneErrorBoundary'
+import { ENGINE_PALETTE } from '@/components/3d/enginePalette'
 import LightboxModal from '@/components/LightboxModal'
 import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
@@ -31,12 +32,11 @@ import {
   PublicStudioNavigator,
 } from '@/components/public/PublicStudioShell'
 
-// Intentional WebGL scene color: CSS variables cannot be passed to Three.js.
-const KOVA_FOREST_SCENE_COLOR = '#123C33'
-const MEDIA_KEY_LIGHT_COLOR = '#ffffff'
-const MEDIA_GROUND_LIGHT_COLOR = '#e5e7eb'
-const LIVE_CURSOR_COLOR = '#22d3ee'
-const TRACE_STREAM_FALLBACK_COLOR = '#94a3b8'
+const KOVA_FOREST_SCENE_COLOR = ENGINE_PALETTE.forestScene
+const MEDIA_KEY_LIGHT_COLOR = ENGINE_PALETTE.paper
+const MEDIA_GROUND_LIGHT_COLOR = ENGINE_PALETTE.groundLight
+const LIVE_CURSOR_COLOR = ENGINE_PALETTE.cursor
+const TRACE_STREAM_FALLBACK_COLOR = ENGINE_PALETTE.guide
 
 interface WallDimensions {
   height: number

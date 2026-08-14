@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable react-hooks/exhaustive-deps, react-hooks/immutability, react-hooks/refs -- Frozen R3F gesture semantics intentionally mutate the renderer cursor and mesh refs outside React state. */
+
 const isDev = process.env.NODE_ENV === 'development'
 const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
 
@@ -27,6 +29,7 @@ import {
   type SnapTarget,
 } from './boardSnapping'
 import { enqueueBoardWrite } from '@/lib/boardPositionWriteQueue'
+import { ENGINE_PALETTE } from './enginePalette'
 
 interface DraggableBoardProps {
   board: Board
@@ -95,7 +98,7 @@ type ResizeCursor = 'nwse-resize' | 'nesw-resize'
 const EMPTY_GUIDES: ActiveGuides = { vertical: [], horizontal: [] }
 const EMPTY_SIZE_MATCHES: SizeMatch[] = []
 /** Pink shared with the alignment guides. */
-const SNAP_ACCENT = '#ec4899'
+const SNAP_ACCENT = ENGINE_PALETTE.snap
 /** Thickness of guide lines and the size-match outline, in wall inches. */
 const SNAP_LINE_THICKNESS_IN = 0.5
 
@@ -125,7 +128,7 @@ function BoardTextureMaterial({ imageUrl }: { imageUrl: string }) {
     // faint plate. Avoid a pulsing animation here — the edit-mode view is busy enough already.
     return (
       <meshStandardMaterial
-        color="#ffffff"
+        color={ENGINE_PALETTE.paper}
         transparent
         opacity={0.22}
         roughness={0.85}
@@ -134,7 +137,7 @@ function BoardTextureMaterial({ imageUrl }: { imageUrl: string }) {
       />
     )
   }
-  return <meshStandardMaterial color="#ffffff" side={THREE.DoubleSide} />
+  return <meshStandardMaterial color={ENGINE_PALETTE.paper} side={THREE.DoubleSide} />
 }
 
 export function DraggableBoard({
@@ -223,7 +226,6 @@ export function DraggableBoard({
     const next = { width: s.widthIn, height: s.heightIn }
     sizeRef.current = next
     setSizeIn(next)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board.boardWidthIn, board.boardHeightIn, board.physicalWidth, board.physicalHeight, board.aspectRatio])
 
   const resizeStartRef = useRef<{
@@ -1269,15 +1271,15 @@ if (e.intersections && e.intersections.length > 0) {
           {/* Use boxGeometry instead of planeGeometry to give boards thickness */}
           <boxGeometry args={[boardWidth, boardHeight, BOARD_THICKNESS]} />
           {isPDF ? (
-            <Suspense fallback={<meshStandardMaterial color="#f3f4f6" />}>
+            <Suspense fallback={<meshStandardMaterial color={ENGINE_PALETTE.paperSkeleton} />}>
               <PDFTextureMaterial pdfUrl={imageUrl} hovered={isHovered} />
             </Suspense>
           ) : hasImage ? (
             <BoardTextureMaterial imageUrl={imageUrl} />
           ) : (
             <meshStandardMaterial 
-              color={isHovered ? "#f8f8f8" : "#ffffff"} 
-              emissive={isHovered ? "#444444" : "#000000"}
+              color={isHovered ? ENGINE_PALETTE.paperHover : ENGINE_PALETTE.paper}
+              emissive={isHovered ? ENGINE_PALETTE.boardEmission : ENGINE_PALETTE.black}
               emissiveIntensity={0.1}
             />
           )}
@@ -1289,10 +1291,10 @@ if (e.intersections && e.intersections.length > 0) {
           <lineBasicMaterial 
             color={
               isSelected
-                ? "#4444ff"  // Blue border when selected (indicates it can be deleted with backspace)
+                ? ENGINE_PALETTE.selection
                 : isLocked 
-                  ? (isHovered ? "#999999" : "#666666")  // Gray for locked boards
-                  : (isHovered ? "#4444ff" : "#333333")  // Blue for owned boards
+                  ? (isHovered ? ENGINE_PALETTE.lockedHover : ENGINE_PALETTE.locked)
+                  : (isHovered ? ENGINE_PALETTE.selection : ENGINE_PALETTE.owned)
             } 
             linewidth={isSelected ? 5 : 2} 
           />
@@ -1302,7 +1304,7 @@ if (e.intersections && e.intersections.length > 0) {
         {isSelected && (
           <lineSegments position={[0, 0, 0]} raycast={() => null}>
             <edgesGeometry args={[selectedEdgeGeometry]} />
-            <lineBasicMaterial color="#4444ff" linewidth={3} />
+            <lineBasicMaterial color={ENGINE_PALETTE.selection} linewidth={3} />
           </lineSegments>
         )}
 
@@ -1404,12 +1406,12 @@ if (e.intersections && e.intersections.length > 0) {
               {/* Stalk (visual only — no raycast). */}
               <mesh position={[0, topY + stem / 2, BOARD_THICKNESS / 2 + 0.01]} raycast={() => null}>
                 <planeGeometry args={[Math.max(0.2, knobR * 0.5), stem]} />
-                <meshBasicMaterial color="#4444ff" transparent opacity={0.7} depthTest={false} depthWrite={false} />
+                <meshBasicMaterial color={ENGINE_PALETTE.selection} transparent opacity={0.7} depthTest={false} depthWrite={false} />
               </mesh>
               {/* Visible knob (small, no raycast — the hit disc below owns events). */}
               <mesh position={[0, knobY, BOARD_THICKNESS / 2 + 0.02]} renderOrder={3} raycast={() => null}>
                 <circleGeometry args={[knobR, 24]} />
-                <meshBasicMaterial color="#4444ff" transparent opacity={0.9} depthTest={false} depthWrite={false} />
+                <meshBasicMaterial color={ENGINE_PALETTE.selection} transparent opacity={0.9} depthTest={false} depthWrite={false} />
               </mesh>
               {/* Invisible generous hit target. Biased UPWARD so its bottom sits
                   at the top edge (center = topY + max(stem,hitR) ⇒ bottom ≈ topY),
@@ -1437,7 +1439,7 @@ if (e.intersections && e.intersections.length > 0) {
             {/* Lock icon background */}
             <mesh>
               <circleGeometry args={[deleteButtonSize / 2, 32]} />
-              <meshBasicMaterial color="#666666" transparent opacity={0.9} />
+              <meshBasicMaterial color={ENGINE_PALETTE.locked} transparent opacity={0.9} />
             </mesh>
 
             {/* Lock icon using HTML emoji */}
@@ -1534,14 +1536,14 @@ if (e.intersections && e.intersections.length > 0) {
               }}
             >
               <circleGeometry args={[Math.min(boardWidth, boardHeight) * 0.08, 32]} />
-              <meshBasicMaterial color="#4444ff" transparent opacity={0.95} />
+              <meshBasicMaterial color={ENGINE_PALETTE.selection} transparent opacity={0.95} />
             </mesh>
 
             {/* Comment count text */}
             <Text
               position={[0, 0, 0.002]}
               fontSize={Math.min(boardWidth, boardHeight) * 0.06}
-              color="#ffffff"
+              color={ENGINE_PALETTE.paper}
               anchorX="center"
               anchorY="middle"
               fontWeight={700}

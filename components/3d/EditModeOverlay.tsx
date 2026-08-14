@@ -65,7 +65,7 @@ export function EditModeOverlay({
                   onClick={handleClearClick}
                   aria-label={clearArmed ? `Confirm clearing ${wallBoardCount} board${wallBoardCount === 1 ? '' : 's'}` : 'Clear wall'}
                   className={clearArmed
-                    ? "min-h-11 rounded-kova border border-red-800 bg-red-700 px-4 py-2 font-semibold text-white hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+                    ? "min-h-11 rounded-kova border border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger))] px-4 py-2 font-semibold text-white hover:bg-[rgb(var(--color-danger)/0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
                     : "min-h-11 rounded-kova border border-border bg-background-light px-4 py-2 font-semibold text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
                   }
                   title={clearArmed ? "Click again to confirm clearing the wall" : "Remove all boards from this wall"}

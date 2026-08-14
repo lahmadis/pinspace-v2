@@ -66,8 +66,8 @@ const ENTRANCE_DISTANCE = 36 // 36 inches = 3 feet
 const DEFAULT_ROOM = { width: 20, depth: 15, height: 10 }
 
 // Three.js materials need concrete colour values rather than CSS variables.
-// These named values are the gallery's allowlisted Kova data-visualisation palette.
-const GALLERY_VISUAL_COLORS = {
+// These named 3D material values keep avatar and environment contrast stable.
+export const GALLERY_VISUAL_COLORS = {
   avatar: '#FFC800',
   forest: '#0A2F28',
   green: '#14705C',
