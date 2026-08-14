@@ -10,6 +10,7 @@ import { Board, FloorTable } from '@/types'
 import WallSystem from '@/components/3d/WallSystem'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
+import { SceneErrorBoundary } from '@/components/3d/SceneErrorBoundary'
 import LightboxModal from '@/components/LightboxModal'
 import DemoBanner from '@/components/DemoBanner'
 import { getCachedStudioData } from '@/lib/studioViewCache'
@@ -608,6 +609,7 @@ export default function StudioViewPage() {
       )}
 
       {/* 3D Canvas */}
+      <SceneErrorBoundary resetKey={studioId}>
       <Canvas
         shadows
         className="w-full h-full"
@@ -680,6 +682,7 @@ export default function StudioViewPage() {
         {/* Camera Controls - scaled by wall size; crisp stop on mouse release (no lingering) */}
         <StudioViewCameraControls wallConfig={wallConfig} />
       </Canvas>
+      </SceneErrorBoundary>
 
       {/* Lightbox Modal */}
       <LightboxModal
@@ -731,4 +734,3 @@ export default function StudioViewPage() {
     </div>
   )
 }
-

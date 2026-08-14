@@ -10,6 +10,7 @@ import { Board, FloorTable } from '@/types'
 import WallSystem from '@/components/3d/WallSystem'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
+import { SceneErrorBoundary } from '@/components/3d/SceneErrorBoundary'
 import LightboxModal from '@/components/LightboxModal'
 import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
@@ -424,6 +425,7 @@ export default function CritPage() {
       config: { broadcast: { self: false } },
     })
     liveChannelRef.current = channel
+    const traceStreams = traceStreamRef.current
     let laserSeq = 0
     let lbCursorSeq = 0
     // Phase B.5: crit-dirty debounce state (per-channel-lifetime closure).
@@ -486,7 +488,7 @@ export default function CritPage() {
       .on('broadcast', { event: 'trace-pt' }, (msg: { payload?: { boardId?: string; authorKey?: string; color?: string; pts?: [number, number][] } }) => {
         const p = msg.payload
         if (!p?.boardId || !p.authorKey || !Array.isArray(p.pts)) return
-        const map = traceStreamRef.current
+        const map = traceStreams
         const key = `${p.boardId}|${p.authorKey}`
         let e = map.get(key)
         if (!e) {
@@ -502,7 +504,7 @@ export default function CritPage() {
       .on('broadcast', { event: 'trace-end' }, (msg: { payload?: { boardId?: string; authorKey?: string } }) => {
         const p = msg.payload
         if (!p?.boardId || !p.authorKey) return
-        const e = traceStreamRef.current.get(`${p.boardId}|${p.authorKey}`)
+        const e = traceStreams.get(`${p.boardId}|${p.authorKey}`)
         if (e && e.live) { e.completed.push(e.live); e.live = null }
       })
       // Phase B.5.2: a member changed the room's boards (upload/move/resize/delete).
@@ -530,12 +532,12 @@ export default function CritPage() {
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
-      liveChannelRef.current = null
+      if (liveChannelRef.current === channel) liveChannelRef.current = null
       followPoseRef.current = null
       laserRef.current = null
       lbViewportRef.current = null
       lbCursorRef.current = null
-      traceStreamRef.current.clear()
+      traceStreams.clear()
       if (critDirtyTimer) clearTimeout(critDirtyTimer)
       if (boardsRefetchTimerRef.current) {
         clearTimeout(boardsRefetchTimerRef.current)
@@ -766,6 +768,7 @@ export default function CritPage() {
         </div>
       )}
 
+      <SceneErrorBoundary resetKey={token}>
       <Canvas
         shadows
         className="w-full h-full"
@@ -825,6 +828,7 @@ export default function CritPage() {
         {/* Phase B.4: presenter cursor dot (identical to the member view). */}
         <LaserPointer laserRef={laserRef} color={laserColor} />
       </Canvas>
+      </SceneErrorBoundary>
 
       <LightboxModal
         board={selectedBoard}

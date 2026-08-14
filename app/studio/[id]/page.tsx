@@ -736,6 +736,7 @@ export default function StudioPage() {
       config: { broadcast: { self: false } },
     })
     liveChannelRef.current = channel
+    const traceStreams = traceStreamRef.current
     // Phase B.3: monotonic seq so the laser renderer can tell a fresh packet from
     // a repeat and time out a stale pointer via frame deltas (no Date.now in the
     // frame loop). Lives in the effect closure; resets per room.
@@ -811,7 +812,7 @@ export default function StudioPage() {
       .on('broadcast', { event: 'trace-pt' }, (msg: { payload?: { boardId?: string; authorKey?: string; color?: string; pts?: [number, number][] } }) => {
         const p = msg.payload
         if (!p?.boardId || !p.authorKey || !Array.isArray(p.pts)) return
-        const map = traceStreamRef.current
+        const map = traceStreams
         const key = `${p.boardId}|${p.authorKey}`
         let e = map.get(key)
         if (!e) {
@@ -827,18 +828,18 @@ export default function StudioPage() {
       .on('broadcast', { event: 'trace-end' }, (msg: { payload?: { boardId?: string; authorKey?: string } }) => {
         const p = msg.payload
         if (!p?.boardId || !p.authorKey) return
-        const e = traceStreamRef.current.get(`${p.boardId}|${p.authorKey}`)
+        const e = traceStreams.get(`${p.boardId}|${p.authorKey}`)
         if (e && e.live) { e.completed.push(e.live); e.live = null }
       })
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
-      liveChannelRef.current = null
+      if (liveChannelRef.current === channel) liveChannelRef.current = null
       followPoseRef.current = null
       laserRef.current = null
       lbViewportRef.current = null
       lbCursorRef.current = null
-      traceStreamRef.current.clear()
+      traceStreams.clear()
       if (critDirtyTimer) clearTimeout(critDirtyTimer)
     }
   }, [roomId, isDemo])

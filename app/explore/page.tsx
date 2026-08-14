@@ -13,6 +13,14 @@ type StudioResponse = {
   hasOrg?: boolean
 }
 
+function prefetchNodeView(node: BubbleNode, isDemo: boolean): void {
+  // API bubbles represent workspaces, while their URL points at the one
+  // published room. Drilled bubbles represent rooms and retain workspaceId.
+  const roomId = node.publishedRooms?.[0]?.id ?? node.id
+  const workspaceId = node.workspaceId ?? node.id
+  void prefetchStudioView(roomId, isDemo, workspaceId)
+}
+
 
 function ExplorePageInner() {
   const router = useRouter()
@@ -120,7 +128,7 @@ function ExplorePageInner() {
           // Eager-prefetch first few studios so opening them is instant even without hover
           const toPrefetch = studios.filter((n) => n.url).slice(0, 5)
           for (const node of toPrefetch) {
-            prefetchStudioView(node.id, isDemo)
+            prefetchNodeView(node, isDemo)
             const path = node.url!.split('?')[0]
             router.prefetch(path)
           }
@@ -135,7 +143,7 @@ function ExplorePageInner() {
   const handleNodeHover = useCallback(
     (node: BubbleNode) => {
       if (!node.url) return
-      prefetchStudioView(node.id, isDemo)
+      prefetchNodeView(node, isDemo)
       const path = node.url.split('?')[0]
       router.prefetch(path)
     },
@@ -197,6 +205,7 @@ function ExplorePageInner() {
         label: room.name,
         count: room.boardCount,
         url: `/studio/${room.id}/view`,
+        workspaceId: roomDrillWorkspace.workspaceId ?? roomDrillWorkspace.id,
         color: '#6366f1',
       })) as BubbleNode[]
     }

@@ -23,6 +23,7 @@ export interface BubbleNode extends StudioData {
   label: string
   count?: number
   url?: string
+  workspaceId?: string
   radius?: number
   publishedRooms?: { id: string; name: string; boardCount?: number }[]
   // D3 simulation adds these

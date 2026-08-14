@@ -10,6 +10,7 @@ import { Board, FloorTable } from '@/types'
 import WallSystem from '@/components/3d/WallSystem'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
+import { SceneErrorBoundary } from '@/components/3d/SceneErrorBoundary'
 import LightboxModal from '@/components/LightboxModal'
 import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
@@ -381,6 +382,7 @@ export default function SharePage() {
         </div>
       )}
 
+      <SceneErrorBoundary resetKey={token}>
       <Canvas
         shadows
         className="w-full h-full"
@@ -434,6 +436,7 @@ export default function SharePage() {
 
         <ShareViewCameraControls wallConfig={wallConfig} />
       </Canvas>
+      </SceneErrorBoundary>
 
       <LightboxModal
         board={selectedBoard}

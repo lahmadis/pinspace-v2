@@ -12,10 +12,15 @@
 - [x] Replaced unverified privileged-route sessions with the verified `requireAdmin()` boundary
 - [x] Prepared and contract-tested the text-ID board reorder migration
 - [x] Persisted undo/redo snapshots through the serialized board write queue
+- [x] Corrected explore prefetching to use room IDs for boards and workspace IDs for wall configuration
+- [x] Prevented failed board prefetches and placeholder wall layouts from poisoning the viewer cache
+- [x] Added accessible crash containment and retry states around all critical 3D canvases
+- [x] Hardened member and guest realtime cleanup against stale channel/ref teardown
+- [x] Verified the current batch with 32 passing tests and a clean TypeScript check
 
 ## In Progress
 
-- [ ] Stabilization Phase 2: configure isolated Supabase verification and investigate P2 storage/3D/realtime risks
+- [ ] Stabilization Phase 2: investigate P2 storage lifecycle risks and harden core room/board flows
 
 ## Blocked
 
@@ -34,8 +39,9 @@
 - P2: Duplicated boards alias storage objects
 - P2: Room deletion leaks board storage objects
 - P2: Orphan cleanup can race direct uploads when run with `--apply`
-- P2: Wall-config prefetch uses the wrong identifier until post-resolution
-- P2: 3D/realtime behavior lacks production-like runtime evidence
+- P2 resolved in code: Room/workspace prefetch identifiers and cache failure behavior are corrected
+- P2 partially resolved in code: 3D failures are contained and realtime lifecycle contracts are covered
+- P2: 3D/realtime behavior still lacks production-like multi-client runtime evidence
 - P2: Dependency advisories require reachability triage
 - P3: Debug logs, legacy styling, inconsistent status UI, and existing lint warnings
 
@@ -48,4 +54,6 @@
 
 - Configure an isolated Supabase project and apply/verify migration 036.
 - Validate cross-institution RLS and storage behavior with representative roles.
-- Begin diagnostic runtime work on room loading, texture failures, realtime reconnection, and presenter cleanup.
+- Audit storage alias/reference handling and room-deletion object lifecycle.
+- Harden and test core room, board, upload, comments, sharing, and account flows.
+- Run production-like 3D, texture-failure, reconnect, and presenter tests once the isolated backend is available.

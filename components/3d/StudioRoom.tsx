@@ -16,6 +16,7 @@ import { supabase } from '@/lib/supabase/client'
 import { Board, FloorTable } from '@/types'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import WallSystem from './WallSystem'
+import { SceneErrorBoundary } from './SceneErrorBoundary'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry } from './CameraController'
@@ -2346,6 +2347,7 @@ export default function StudioRoom(props: StudioRoomProps) {
       )}
 
       <div className="w-full h-screen">
+        <SceneErrorBoundary resetKey={props.studioId}>
         <Canvas 
           shadows 
           gl={{ 
@@ -2424,6 +2426,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             onTableModelClick={handleTableModelClick}
           />
         </Canvas>
+        </SceneErrorBoundary>
       </div>
 
       {/* Right Comment Panel */}

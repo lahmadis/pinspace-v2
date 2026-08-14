@@ -7,6 +7,7 @@ import { OrbitControls, PerspectiveCamera, useGLTF, Html } from '@react-three/dr
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 import { useRhino3dm } from '@/components/3d/useRhino3dm'
+import { SceneErrorBoundary } from '@/components/3d/SceneErrorBoundary'
 import { useStlLoader } from '@/components/3d/useStlLoader'
 import { fitToScene } from '@/lib/3d/fitToScene'
 
@@ -230,6 +231,7 @@ export default function ModelViewer({ modelUrl }: ModelViewerProps) {
   }
   return (
     <div className="w-full h-full">
+      <SceneErrorBoundary resetKey={modelUrl}>
       <Canvas
         shadows
         gl={{ antialias: true }}
@@ -238,6 +240,7 @@ export default function ModelViewer({ modelUrl }: ModelViewerProps) {
       >
         <Scene url={modelUrl} />
       </Canvas>
+      </SceneErrorBoundary>
     </div>
   )
 }

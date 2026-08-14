@@ -20,6 +20,8 @@ export interface CachedStudioData {
 
 const CACHE_TTL_MS = 2 * 60 * 1000 // 2 minutes
 const cache = new Map<string, CachedStudioData>()
+const pendingPrefetches = new Map<string, Promise<void>>()
+let cacheGeneration = 0
 
 function cacheKey(studioId: string, isDemo: boolean): string {
   return `${studioId}:${isDemo ? 'demo' : 'live'}`
@@ -52,58 +54,62 @@ export function setCachedStudioData(
   })
 }
 
+export function clearStudioViewCache(): void {
+  cacheGeneration += 1
+  cache.clear()
+  pendingPrefetches.clear()
+}
+
 /**
  * Prefetch boards and wall config for a studio view. Call on bubble hover
  * so that when the user clicks, the view can open with cached data immediately.
  */
 export async function prefetchStudioView(
-  studioId: string,
-  isDemo: boolean
+  roomId: string,
+  isDemo: boolean,
+  workspaceId: string
 ): Promise<void> {
-  const key = cacheKey(studioId, isDemo)
+  const key = cacheKey(roomId, isDemo)
   if (cache.has(key)) return // already prefetched
+  const pending = pendingPrefetches.get(key)
+  if (pending) return pending
+  const generation = cacheGeneration
 
-  try {
+  const prefetch = (async () => {
     const [boardsRes, configRes] = await Promise.all([
-      // studioId is a room id after the Phase 6.2 URL flip. Use ?roomId= to
-      // match the view page's own fetchBoards call — passing it as
-      // workspaceId silently 404'd/returned-empty and poisoned the cache
-      // with boards: [], which then clobbered the real fetch in the page's
-      // Effect A re-run.
       fetch(
         isDemo
-          ? `/api/boards?roomId=${studioId}&demo=true`
-          : `/api/boards?roomId=${studioId}`
+          ? `/api/boards?roomId=${roomId}&demo=true`
+          : `/api/boards?roomId=${roomId}`
       ),
-      // TODO: wall config is keyed by workspace id, not room id — prefetch
-      // currently falls back to defaults; real config fetched post-resolve
-      // in view page Effect A.
       fetch(
         isDemo
-          ? `/api/studios/${studioId}/wall-config?demo=true`
-          : `/api/studios/${studioId}/wall-config`
+          ? `/api/studios/${workspaceId}/wall-config?demo=true`
+          : `/api/studios/${workspaceId}/wall-config`
       ),
     ])
 
-    const boards = boardsRes.ok ? (await boardsRes.json()).boards || [] : []
+    // A failed boards request must not be cached as an empty room. The view page
+    // can then perform its normal load instead of accepting a poisoned cache.
+    if (!boardsRes.ok) return
+
+    const boards = (await boardsRes.json()).boards || []
     let wallConfig: CachedWallConfig | null = null
     if (configRes.ok) {
       const data = await configRes.json()
       if (data?.config) wallConfig = data.config
     }
-    if (!wallConfig) {
-      wallConfig = {
-        walls: [
-          { height: 10, width: 8 },
-          { height: 10, width: 8 },
-          { height: 10, width: 8 },
-          { height: 10, width: 8 },
-        ],
-        layoutType: 'zigzag',
-      }
+    if (generation === cacheGeneration) {
+      setCachedStudioData(roomId, isDemo, { boards, wallConfig })
     }
-    setCachedStudioData(studioId, isDemo, { boards, wallConfig })
+  })()
+
+  pendingPrefetches.set(key, prefetch)
+  try {
+    await prefetch
   } catch {
-    // ignore prefetch errors
+    // Prefetch is an optimization; the destination page owns user-facing errors.
+  } finally {
+    if (pendingPrefetches.get(key) === prefetch) pendingPrefetches.delete(key)
   }
 }
