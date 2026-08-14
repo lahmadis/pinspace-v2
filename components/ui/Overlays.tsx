@@ -186,7 +186,7 @@ function Overlay({
             type="button"
             aria-label={`Close ${kind}`}
             onClick={() => onOpenChange(false)}
-            className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full text-xl text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="absolute right-3 top-3 inline-flex h-11 w-11 items-center justify-center rounded-full text-xl text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <span aria-hidden="true">×</span>
           </button>

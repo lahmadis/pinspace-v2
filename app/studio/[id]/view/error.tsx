@@ -3,6 +3,9 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
+import { Button } from '@/components/ui'
+import { PublicStatusScreen } from '@/components/public/PublicStudioShell'
+
 export default function StudioViewError({
   error,
   reset,
@@ -17,29 +20,16 @@ export default function StudioViewError({
   }, [error])
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#B3B3FF]">
-      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full mx-4 text-center">
-        <div className="text-4xl mb-4">⚠️</div>
-        <h2 className="text-xl font-bold text-gray-900 mb-2">Studio failed to load</h2>
-        <p className="text-gray-600 mb-6 text-sm">
-          Something went wrong loading the 3D studio. This can happen if your browser
-          doesn&apos;t support WebGL, or if the room data is unavailable.
-        </p>
-        <div className="flex flex-col gap-3">
-          <button
-            onClick={reset}
-            className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
-          >
-            Try again
-          </button>
-          <button
-            onClick={() => router.back()}
-            className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
-          >
-            Go back
-          </button>
+    <PublicStatusScreen
+      status="error"
+      title="Studio failed to load"
+      description="The 3D studio is unavailable. Your browser may not support WebGL, or the room data may be temporarily unavailable."
+      action={(
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Button type="button" onClick={reset}>Try again</Button>
+          <Button type="button" variant="ghost" onClick={() => router.back()}>Go back</Button>
         </div>
-      </div>
-    </div>
+      )}
+    />
   )
 }

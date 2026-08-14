@@ -246,9 +246,9 @@ export function StatusState({ status, title, description, action, className, ...
       aria-live={isAlert ? 'assertive' : 'polite'}
       className={cn(
         'rounded-kova border border-border bg-background-light p-4',
-        status === 'error' && 'border-red-300 bg-red-50 text-red-950',
-        status === 'warning' && 'border-amber-300 bg-amber-50 text-amber-950',
-        status === 'success' && 'border-emerald-300 bg-emerald-50 text-emerald-950',
+        status === 'error' && 'border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger)/0.08)] text-text-primary',
+        status === 'warning' && 'border-[rgb(var(--color-warning))] bg-[rgb(var(--color-warning)/0.08)] text-text-primary',
+        status === 'success' && 'border-[rgb(var(--color-success))] bg-[rgb(var(--color-success)/0.08)] text-text-primary',
         className
       )}
       {...props}
