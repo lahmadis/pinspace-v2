@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import { Comment, Board } from '@/types'
+import { Avatar, Button, EmptyState, Sheet, StatusState } from '@/components/ui'
 
 interface RightCommentPanelProps {
   board: Board | null
@@ -31,21 +32,12 @@ function formatTimestamp(timestamp: string): string {
   })
 }
 
-function getInitials(name: string): string {
-  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
-}
-
-function getAvatarColor(name: string): string {
-  const colors = ['bg-gray-600', 'bg-gray-500', 'bg-gray-700', 'bg-gray-800', 'bg-gray-900', 'bg-gray-600']
-  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-  return colors[hash % colors.length]
-}
-
 export default function RightCommentPanel({ board, onClose, isArchived = false, commentNonce = 0 }: RightCommentPanelProps) {
   const [user, setUser] = useState<User | null>(null)
   const [profileFullName, setProfileFullName] = useState<string | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [newComment, setNewComment] = useState('')
   const [posting, setPosting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -67,6 +59,8 @@ export default function RightCommentPanel({ board, onClose, isArchived = false, 
 
   useEffect(() => {
     if (!user?.id) {
+      // This reset deliberately follows the external auth session rather than deriving render state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setProfileFullName(null)
       return
     }
@@ -79,39 +73,29 @@ export default function RightCommentPanel({ board, onClose, isArchived = false, 
       .catch(() => setProfileFullName(null))
   }, [user?.id])
 
-  useEffect(() => {
-    if (!board) {
-      setComments([])
-      setNewComment('')
-      return
-    }
-    fetchComments()
-  }, [board?.id, commentNonce])
-
-  useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', handleEsc)
-    return () => window.removeEventListener('keydown', handleEsc)
-  }, [isOpen, onClose])
-
-  const fetchComments = async () => {
-    if (!board) return
+  const fetchComments = useCallback(async (boardId: string) => {
+    await Promise.resolve()
     try {
       setLoading(true)
-      const response = await fetch(`/api/boards/${board.id}/comments`)
+      setError('')
+      const response = await fetch(`/api/boards/${boardId}/comments`)
       if (!response.ok) throw new Error('Failed to fetch')
       const data = await response.json()
       setComments(data.comments || [])
     } catch (err) {
       console.error('Error:', err)
+      setError('Failed to load comments')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (!board) return
+    // Opening a board or receiving the established realtime nonce intentionally triggers a remote sync.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchComments(board.id)
+  }, [board, commentNonce, fetchComments])
 
   const handlePost = async () => {
     if (!board || !newComment.trim() || posting) return
@@ -137,82 +121,49 @@ export default function RightCommentPanel({ board, onClose, isArchived = false, 
   if (!isOpen) return null
 
   return (
-    <>
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black/30 z-40"
-        onClick={onClose}
-      />
-
-      {/* Side Panel */}
-      <div 
-        className={`fixed top-0 right-0 h-full w-[420px] bg-white shadow-2xl z-50 flex flex-col transform transition-transform duration-300 ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between p-5 border-b border-gray-200 flex-shrink-0">
-          <div className="flex-1 pr-3">
-            <h3 className="font-bold text-gray-900 text-base leading-tight mb-1">
-              {board?.title}
-            </h3>
-            <p className="text-xs text-gray-500">
-              {board?.studentName}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-          >
-            <svg className="w-5 h-5 text-gray-500" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-              <path d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
-          </button>
-        </div>
-
-        {/* Comments */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+    <Sheet
+      open
+      onOpenChange={(open) => {
+        if (!open) {
+          setNewComment('')
+          onClose()
+        }
+      }}
+      title={board?.title || 'Board comments'}
+      description={board?.studentName || 'Read and add comments for this board.'}
+      className="flex max-w-lg flex-col pb-[max(1.5rem,env(safe-area-inset-bottom))] motion-reduce:transition-none [&>button.absolute]:h-11 [&>button.absolute]:w-11"
+    >
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto" aria-live="polite">
           {loading && (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#4444ff]/20 border-t-[#4444ff]"></div>
-            </div>
+            <StatusState status="loading" title="Loading comments" />
           )}
 
-          {!loading && comments.length === 0 && (
-            <div className="text-center py-12">
-              <div className="text-5xl mb-2">💭</div>
-              <p className="text-gray-500 text-sm">No comments yet</p>
-            </div>
-          )}
+          {error && <StatusState status="error" title={error} action={<Button type="button" size="sm" onClick={() => { void fetchComments(board.id) }}>Try again</Button>} />}
 
-          {!loading && comments.map((comment) => (
-            <div key={comment.id} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
-              <div className={`w-8 h-8 rounded-full ${getAvatarColor(comment.authorName)} flex items-center justify-center text-white font-bold text-xs flex-shrink-0`}>
-                {getInitials(comment.authorName)}
-              </div>
+          {!loading && !error && comments.length === 0 && <EmptyState title="No comments yet" description="Start the conversation below." />}
+
+          {!loading && !error && comments.map((comment) => (
+            <article key={comment.id} className="flex gap-3 rounded-kova border border-border bg-background-lighter p-3">
+              <Avatar name={comment.authorName} size="sm" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline justify-between mb-1">
-                  <span className="font-semibold text-gray-900 text-sm">{comment.authorName}</span>
-                  <span className="text-xs text-gray-500">{formatTimestamp(comment.createdAt)}</span>
+                  <span className="text-sm font-semibold text-text-primary">{comment.authorName}</span>
+                  <span className="text-xs text-text-secondary">{formatTimestamp(comment.createdAt)}</span>
                 </div>
-                <p className="text-sm text-gray-700 leading-relaxed">{comment.content}</p>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-text-primary">{comment.content}</p>
               </div>
-            </div>
+            </article>
           ))}
         </div>
 
-        {/* Form */}
-        <div className="border-t border-gray-200 p-5 bg-gray-50 flex-shrink-0">
+        <div className="mt-4 flex-shrink-0 border-t border-border pt-4">
           {isArchived ? (
-            <textarea
-              disabled
-              placeholder="This workspace is archived"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none bg-gray-100 text-gray-400 cursor-not-allowed"
-              rows={3}
-            />
+            <StatusState status="info" title="This workspace is archived" description="Existing comments remain available, but new comments are disabled." />
           ) : user ? (
             <>
+              <label htmlFor="board-comment" className="mb-1.5 block text-sm font-semibold text-text-primary">Add a comment</label>
               <textarea
+                id="board-comment"
                 ref={textareaRef}
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
@@ -222,32 +173,34 @@ export default function RightCommentPanel({ board, onClose, isArchived = false, 
                     handlePost()
                   }
                 }}
-                placeholder="Add a comment..."
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4444ff] resize-none mb-3"
+                placeholder="Share feedback…"
+                className="mb-3 min-h-24 w-full resize-y rounded-kova border border-border bg-background-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:bg-background-lighter"
                 rows={3}
+                maxLength={2000}
+                disabled={posting}
               />
-              <button
-                onClick={handlePost}
+              <Button
+                type="button"
+                onClick={() => { void handlePost() }}
                 disabled={!newComment.trim() || posting}
-                className="w-full px-4 py-2 bg-[#4444ff] text-white rounded-lg hover:bg-[#3333ee] disabled:opacity-50 transition-all text-sm font-semibold"
+                loading={posting}
+                className="w-full"
               >
-                {posting ? 'Posting...' : 'Post Comment'}
-              </button>
+                {posting ? 'Posting comment…' : 'Post comment'}
+              </Button>
             </>
           ) : (
             <div className="text-center py-4">
-              <p className="text-sm text-gray-600 mb-3">Sign in to leave a comment</p>
+              <p className="mb-3 text-sm text-text-secondary">Sign in to leave a comment.</p>
               <a
                 href="/sign-in"
-                className="inline-block px-6 py-2 bg-[#4444ff] text-white rounded-lg hover:bg-[#3333ee] transition-all text-sm font-semibold"
+                className="inline-flex min-h-11 items-center justify-center rounded-kova border border-kova-ink bg-primary px-6 py-2 text-sm font-semibold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
-                Sign In
+                Sign in
               </a>
             </div>
           )}
         </div>
-      </div>
-    </>
+    </Sheet>
   )
 }
-

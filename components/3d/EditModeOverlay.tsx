@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Board } from '@/types'
 
@@ -30,10 +30,6 @@ export function EditModeOverlay({
 }: EditModeOverlayProps) {
   const [clearArmed, setClearArmed] = useState(false)
 
-  useEffect(() => {
-    if (!isVisible) setClearArmed(false)
-  }, [isVisible])
-
   const handleClearClick = () => {
     if (!onClearWall) return
     if (!clearArmed) {
@@ -45,28 +41,32 @@ export function EditModeOverlay({
   }
 
   return (
-    <AnimatePresence>
+    <AnimatePresence onExitComplete={() => setClearArmed(false)}>
       {isVisible && (
         <>
           {/* Header */}
-          <motion.div
+          <motion.section
             initial={{ y: -100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -100, opacity: 0 }}
             transition={{ duration: 0.3, delay: 0.5 }}
-            className="fixed top-0 left-0 right-0 z-50 px-6 py-4 flex items-center justify-between"
+            role="region"
+            aria-label="Wall editing controls"
+            className="fixed inset-x-0 top-0 z-50 flex max-h-[45dvh] flex-col gap-3 overflow-y-auto px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] motion-reduce:transition-none sm:flex-row sm:items-start sm:justify-between sm:px-4"
           >
-            <div className="px-4 py-2 bg-indigo-600 rounded-lg shadow-lg">
-              <h2 className="text-xl font-semibold text-white">Edit Wall {wallIndex + 1}</h2>
-              <p className="text-sm text-white/90">Drag files onto the canvas to upload, or arrange boards on the wall</p>
+            <div className="rounded-kova border border-border bg-background-light px-4 py-2 text-text-primary shadow-[var(--shadow-raised)]">
+              <h2 className="font-mono text-base font-bold">Edit wall {wallIndex + 1}</h2>
+              <p className="mt-0.5 text-sm text-text-secondary">Use pointer, touch, or keyboard controls to add and arrange boards.</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               {onClearWall && (
                 <button
+                  type="button"
                   onClick={handleClearClick}
+                  aria-label={clearArmed ? `Confirm clearing ${wallBoardCount} board${wallBoardCount === 1 ? '' : 's'}` : 'Clear wall'}
                   className={clearArmed
-                    ? "px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-lg"
-                    : "px-4 py-2 bg-slate-500 text-white rounded-lg hover:bg-slate-600 transition-colors shadow-lg"
+                    ? "min-h-11 rounded-kova border border-red-800 bg-red-700 px-4 py-2 font-semibold text-white hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+                    : "min-h-11 rounded-kova border border-border bg-background-light px-4 py-2 font-semibold text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
                   }
                   title={clearArmed ? "Click again to confirm clearing the wall" : "Remove all boards from this wall"}
                 >
@@ -77,13 +77,14 @@ export function EditModeOverlay({
                 </button>
               )}
               <button
+                type="button"
                 onClick={onClose}
-                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-lg"
+                className="min-h-11 rounded-kova border border-kova-ink bg-primary px-5 py-2 font-semibold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
               >
-                Save & Exit
+                Save and exit
               </button>
             </div>
-          </motion.div>
+          </motion.section>
 
           {/* Simple Upload Button - No sidebar panel */}
           <motion.div
@@ -91,16 +92,17 @@ export function EditModeOverlay({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, delay: 0.5 }}
-            className="fixed left-6 top-32 z-50 flex flex-col gap-2"
+            className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-50 flex max-w-[calc(100vw-2rem)] flex-col gap-2 motion-reduce:transition-none sm:bottom-auto sm:top-32"
           >
             <button
+              type="button"
               onClick={onUpload}
-              className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-lg"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-kova border border-kova-ink bg-primary px-5 py-2.5 font-semibold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
-              Add Your Board
+              Add board
             </button>
           </motion.div>
         </>

@@ -20,7 +20,8 @@ export interface PresentUser {
 
 /** Deterministic avatar color from a user id, so a given user is always the same hue. */
 export function colorFor(userId: string): string {
-  const palette = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444', '#3b82f6']
+  // Intentional data-visualization colors: avatar hue distinguishes concurrent users.
+  const palette = ['#14705C', '#A34A28', '#7B5B12', '#246B8E', '#8C4165', '#39735A', '#6E5A9B', '#9B3E35']
   let hash = 0
   for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) >>> 0
   return palette[hash % palette.length]
@@ -72,18 +73,18 @@ export default function PresenceBar({
 
   return (
     <div
-      className="fixed top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/15 backdrop-blur-md rounded-xl shadow-lg border border-white/20"
+      className="fixed left-1/2 top-[max(0.75rem,env(safe-area-inset-top))] z-40 flex max-w-[calc(100vw-7rem)] -translate-x-1/2 items-center gap-2 overflow-hidden rounded-kova border border-border/40 bg-primary-dark/80 px-3 py-2 shadow-[var(--shadow-raised)] backdrop-blur-md motion-reduce:transition-none"
       role="status"
       aria-label={`${others.length} other ${others.length === 1 ? 'person' : 'people'} editing this room`}
     >
-      <div className="flex -space-x-2">
+      <div className="flex shrink-0 -space-x-2">
         {shown.map((u) => {
           const display = friendlyName(u.fullName)
           return (
             <div
               key={u.userId}
               title={display}
-              className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white ring-2 ring-white/40"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-semibold text-white ring-2 ring-background-light/60"
               style={{ backgroundColor: colorFor(u.userId) }}
             >
               {initialsFor(display)}
@@ -91,12 +92,12 @@ export default function PresenceBar({
           )
         })}
         {overflow > 0 && (
-          <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white bg-gray-500 ring-2 ring-white/40">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-text-secondary text-[11px] font-semibold text-white ring-2 ring-background-light/60">
             +{overflow}
           </div>
         )}
       </div>
-      <span className="text-white/90 text-xs font-medium hidden sm:inline">
+      <span className="hidden truncate text-xs font-medium text-background-light sm:inline">
         {others.length === 1 ? 'is also here' : 'are also here'}
       </span>
     </div>

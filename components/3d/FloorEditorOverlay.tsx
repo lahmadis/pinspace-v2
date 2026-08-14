@@ -9,6 +9,7 @@ import { WallConfigPreview } from './WallConfigPreview'
 import { toast } from '@/lib/toast'
 import { maxModelBytesForName } from '@/lib/uploadLimits'
 import { useDirectUpload } from '@/lib/useDirectUpload'
+import { Button, Dialog } from '@/components/ui'
 
 const TABLE_HEIGHT_INCHES = 18 // 1.5 feet
 const DEFAULT_TABLE_WIDTH = 24
@@ -271,8 +272,11 @@ export default function FloorEditorOverlay({
   const lastAppliedWallConfigRef = useRef<WallConfig | null>(null)
   const undoHistoryRef = useRef<WallConfig[]>([])
   const undoIndexRef = useRef(0)
-  undoHistoryRef.current = undoHistory
-  undoIndexRef.current = undoIndex
+
+  useEffect(() => {
+    undoHistoryRef.current = undoHistory
+    undoIndexRef.current = undoIndex
+  }, [undoHistory, undoIndex])
 
   const bounds = calculateFloorBounds(wallConfig)
   const { minX, maxX, minZ, maxZ } = bounds
@@ -302,19 +306,25 @@ export default function FloorEditorOverlay({
     })
     const next = { ...wallConfig, customTransforms }
     onWallConfigChange(next, { persist: false })
-  }, [mode])
+  }, [mode, onWallConfigChange, wallConfig])
 
   // Initialize undo history when entering walls mode
   useEffect(() => {
     if (mode !== 'walls') return
+    // The history snapshot is intentionally initialized when the editor mode opens.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUndoHistory((prev) => (prev.length === 0 ? [wallConfig] : prev))
     setUndoIndex(0)
     lastAppliedWallConfigRef.current = null
+    // wallConfig is the snapshot captured on entry; subsequent config updates are history entries.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode])
   useEffect(() => {
     if (mode !== 'walls' || undoHistory.length !== 1 || undoIndex !== 0) return
+    // Replace the single initial snapshot until the first user-authored history entry exists.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUndoHistory([wallConfig])
-  }, [mode, wallConfig])
+  }, [mode, wallConfig, undoHistory.length, undoIndex])
 
   // Undo/redo keyboard shortcuts
   useEffect(() => {
@@ -348,6 +358,8 @@ export default function FloorEditorOverlay({
   useEffect(() => {
     if (selectedWallIndex == null || selectedWallIndex >= wallConfig.walls.length) return
     const w = wallConfig.walls[selectedWallIndex]
+    // These controlled fields mirror the externally selected wall.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWallWidthInput(String(Math.round(w.width * 100) / 100))
     setWallHeightInput(String(Math.round(w.height * 100) / 100))
   }, [selectedWallIndex, wallConfig])
@@ -396,7 +408,7 @@ export default function FloorEditorOverlay({
   }, [minX, maxX, minZ, maxZ, setTables])
 
   const handleRotateTable = useCallback(
-    (tableId: string, e: React.PointerEvent) => {
+    (tableId: string, e: React.SyntheticEvent) => {
       e.preventDefault()
       e.stopPropagation()
       setTables((prev) =>
@@ -768,6 +780,39 @@ export default function FloorEditorOverlay({
     [wallConfig, onWallConfigChange]
   )
 
+  const handleWallKeyDown = useCallback(
+    (index: number, event: React.KeyboardEvent<SVGPolygonElement>) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        setSelectedWallIndex(index)
+        return
+      }
+      if (!onWallConfigChange) return
+      const step = event.shiftKey ? GRID_INCHES : 1
+      const delta = event.key === 'ArrowLeft' ? [-step, 0]
+        : event.key === 'ArrowRight' ? [step, 0]
+          : event.key === 'ArrowUp' ? [0, step]
+            : event.key === 'ArrowDown' ? [0, -step]
+              : null
+      const isRotate = event.key.toLowerCase() === 'r'
+      if (!delta && !isRotate) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      setSelectedWallIndex(index)
+      const custom = ensureCustomTransforms(wallConfig, index)
+      const current = custom[index]
+      custom[index] = delta
+        ? { ...current, x: current.x + delta[0], z: current.z + delta[1] }
+        : { ...current, rotationY: normalizeAngle(current.rotationY + ROTATION_SNAP_RAD) }
+      const next = { ...wallConfig, customTransforms: custom }
+      onWallConfigChange(next)
+      setUndoHistory((history) => [...history.slice(0, undoIndex + 1), next])
+      setUndoIndex((currentIndex) => currentIndex + 1)
+    },
+    [ensureCustomTransforms, onWallConfigChange, undoIndex, wallConfig]
+  )
+
   const handleAddWall = useCallback(() => {
     if (!onWallConfigChange) return
     const newWall = { height: 10, width: 8 }
@@ -785,6 +830,7 @@ export default function FloorEditorOverlay({
   // Guard so a slow re-index PATCH can't be triggered twice by an impatient
   // double-click on Remove wall.
   const removingWallRef = useRef(false)
+  const [removingWall, setRemovingWall] = useState(false)
 
   // Open when the user clicks Remove wall on a wall that has boards. Holds
   // the index + board count so the modal can render and the confirm handler
@@ -830,6 +876,7 @@ export default function FloorEditorOverlay({
       : { ...wallConfig, walls: newWalls }
 
     removingWallRef.current = true
+    setRemovingWall(true)
     try {
       if (onWallRemoved) {
         const reindexResult = await onWallRemoved(targetIndex, expectedBoardCount)
@@ -872,6 +919,7 @@ export default function FloorEditorOverlay({
       setPendingDelete(null)
     } finally {
       removingWallRef.current = false
+      setRemovingWall(false)
     }
   }, [wallConfig, onWallConfigChange, onWallRemoved, onPersistWallConfig, canDeleteWalls])
 
@@ -986,47 +1034,45 @@ export default function FloorEditorOverlay({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    <Dialog
+      open
+      onOpenChange={(open) => { if (!open) onSaveAndExit() }}
+      title={mode === 'walls' ? 'Floor plan — reconfigure walls' : 'Floor plan — place tables'}
+      description={mode === 'walls'
+        ? 'Use the plan to select and position walls. Numeric size fields and undo shortcuts provide a keyboard-accessible editing path.'
+        : 'Use the plan to select tables. The selected-table controls provide keyboard-accessible model, rotation, and removal actions.'}
+      hideCloseButton
+      className="max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1rem)] w-[min(48rem,calc(100vw-1rem))] max-w-none overflow-hidden p-4 motion-reduce:transition-none"
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col"
-        style={{ width: VIEW_WIDTH + 48, maxHeight: '90vh' }}
+        className="flex max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-8rem)] flex-col overflow-hidden rounded-kova border border-border bg-background-light"
       >
         {/* Header */}
-        <div className="shrink-0 border-b border-gray-200">
+        <div className="shrink-0 border-b border-border">
           <div className="flex items-center justify-between px-6 py-4">
-            <h2 className="text-lg font-semibold text-gray-900">
-              {mode === 'walls' ? 'Floor plan – reconfigure walls' : 'Floor plan – place tables'}
-            </h2>
+            <p className="font-mono text-sm font-semibold text-text-secondary">{mode === 'walls' ? 'Wall tools' : 'Table tools'}</p>
             <div className="flex items-center gap-2">
               {mode === 'tables' && (
                 <button
                   type="button"
                   onClick={handleAddTable}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+                  className="flex min-h-11 items-center gap-2 rounded-kova border border-kova-ink bg-primary px-4 py-2 text-sm font-semibold text-kova-ink hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   <Plus className="w-4 h-4" />
                   Add table
                 </button>
               )}
+              <Button type="button" onClick={() => onSaveAndExit()}>Save and exit</Button>
               <button
                 type="button"
                 onClick={() => onSaveAndExit()}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+                className="flex h-11 w-11 items-center justify-center rounded-kova text-text-secondary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                aria-label="Save and close floor editor"
               >
-                Save & exit
-              </button>
-              <button
-                type="button"
-                onClick={() => onSaveAndExit()}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5 text-gray-600" />
+                <X className="h-5 w-5" />
               </button>
             </div>
           </div>
@@ -1036,7 +1082,7 @@ export default function FloorEditorOverlay({
               <button
                 type="button"
                 onClick={handleAddWall}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+                className="flex min-h-11 items-center gap-2 rounded-kova border border-kova-ink bg-primary px-4 py-2 text-sm font-semibold text-kova-ink hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <Plus className="w-4 h-4" />
                 Add wall
@@ -1050,7 +1096,7 @@ export default function FloorEditorOverlay({
                   type="button"
                   onClick={handleRemoveWall}
                   disabled={selectedWallIndex == null || wallConfig.walls.length <= 1}
-                  className="flex items-center gap-2 px-4 py-2 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 rounded-xl text-sm font-medium transition-colors shadow-sm"
+                  className="flex min-h-11 items-center gap-2 rounded-kova border border-border bg-background-lighter px-4 py-2 text-sm font-semibold text-text-primary hover:bg-background disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   title={selectedWallIndex == null ? 'Click a wall to select it first' : `Remove wall ${selectedWallIndex + 1}`}
                 >
                   <Trash2 className="w-4 h-4" />
@@ -1062,14 +1108,14 @@ export default function FloorEditorOverlay({
                   Type an exact value (decimal feet, e.g. 9.5); commits on blur /
                   Enter, clamped to 4–40 ft. Drag-to-stretch-width still works. */}
               {selectedWallIndex != null && selectedWallIndex < wallConfig.walls.length && (
-                <div className="flex items-center gap-2 ml-1 pl-3 border-l border-gray-200">
-                  <span className="text-xs font-medium text-gray-500">Wall {selectedWallIndex + 1}</span>
+                <div className="ml-1 flex flex-wrap items-center gap-2 border-l border-border pl-3">
+                  <span className="text-xs font-medium text-text-secondary">Wall {selectedWallIndex + 1}</span>
                   {([
                     { key: 'width' as const, label: 'W', value: wallWidthInput, set: setWallWidthInput },
                     { key: 'height' as const, label: 'H', value: wallHeightInput, set: setWallHeightInput },
                   ]).map(({ key, label, value, set }) => (
-                    <label key={key} className="flex items-center gap-1 text-xs text-gray-600">
-                      <span className="font-semibold text-gray-500">{label}</span>
+                    <label key={key} className="flex items-center gap-1 text-xs text-text-secondary">
+                      <span className="font-semibold text-text-secondary">{label}</span>
                       <input
                         type="number"
                         min={WALL_FT_MIN}
@@ -1085,10 +1131,10 @@ export default function FloorEditorOverlay({
                             ;(e.target as HTMLInputElement).blur()
                           }
                         }}
-                        className="w-16 px-1.5 py-1 border border-gray-300 rounded text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                        className="min-h-11 w-20 rounded-kova border border-border bg-background-light px-2 py-1 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         aria-label={`Wall ${selectedWallIndex + 1} ${key} in feet`}
                       />
-                      <span className="text-gray-400">ft</span>
+                      <span className="text-text-muted">ft</span>
                     </label>
                   ))}
                 </div>
@@ -1098,7 +1144,7 @@ export default function FloorEditorOverlay({
         </div>
 
         <div className="p-6 overflow-auto">
-          <p className="text-sm text-gray-500 mb-4">
+          <p role="status" className="mb-4 text-sm text-text-secondary">
             {mode === 'walls'
               ? 'Top-down view. Click a wall to select it. Drag walls to move, endpoint handles to resize, the circle handle on the front edge to rotate. Hold Shift while dragging to snap — 90° on rotate, to a neighbouring wall corner on move and resize. Ctrl+Z undo, Ctrl+Y redo.'
               : 'Top-down view. Drag tables to move. Click a table then "Add model" to place a 3D model on it.'}
@@ -1121,8 +1167,8 @@ export default function FloorEditorOverlay({
                 x={floorOffsetX} y={floorOffsetY}
                 width={floorUsedWidth}
                 height={floorUsedHeight}
-                fill="#faf9f6"
-                stroke="#cbd5e1"
+                fill="rgb(var(--color-paper))"
+                stroke="rgb(var(--color-border))"
                 strokeWidth={1}
               />
 
@@ -1131,7 +1177,7 @@ export default function FloorEditorOverlay({
                 <line
                   key={i}
                   x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-                  stroke="#e2e8f0"
+                  stroke="rgb(var(--color-border-light))"
                   strokeWidth={0.5}
                 />
               ))}
@@ -1141,21 +1187,35 @@ export default function FloorEditorOverlay({
                 const isSelected = mode === 'walls' && selectedWallIndex === index
                 return (
                 <g key={index}>
+                  {mode === 'walls' && (
+                    <polygon
+                      points={points.join(',')}
+                      fill="transparent"
+                      stroke="transparent"
+                      strokeWidth={44}
+                      style={{ pointerEvents: 'all', cursor: 'move' }}
+                      onPointerDown={(event) => handleWallPointerDown(index, event)}
+                      aria-hidden="true"
+                    />
+                  )}
                   <polygon
                     points={points.join(',')}
-                    fill={isSelected ? '#6366f1' : '#4f46e5'}
-                    stroke={isSelected ? '#facc15' : '#3730a3'}
+                    fill={isSelected ? 'rgb(var(--color-primary))' : 'rgb(var(--color-secondary))'}
+                    stroke={isSelected ? 'rgb(var(--color-ink))' : 'rgb(var(--color-forest))'}
                     strokeWidth={isSelected ? 2.5 : 0.5}
-                    className={mode === 'walls' ? 'cursor-move' : ''}
-                    style={{ pointerEvents: mode === 'walls' ? 'all' : 'none' }}
-                    onPointerDown={mode === 'walls' ? (e) => handleWallPointerDown(index, e) : undefined}
+                    className={mode === 'walls' ? 'cursor-move focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent' : ''}
+                    style={{ pointerEvents: 'none' }}
+                    role={mode === 'walls' ? 'button' : undefined}
+                    tabIndex={mode === 'walls' ? 0 : undefined}
+                    aria-label={mode === 'walls' ? `Wall ${index + 1}${isSelected ? ', selected' : ''}. Use arrow keys to move, Shift plus arrows for twelve-inch steps, and R to rotate.` : undefined}
+                    onKeyDown={mode === 'walls' ? (event) => handleWallKeyDown(index, event) : undefined}
                   />
                   {/* Front-edge indicator: slate-400, 2px */}
                   {mode === 'walls' && (
                     <line
                       x1={frontEdge[0]} y1={frontEdge[1]}
                       x2={frontEdge[2]} y2={frontEdge[3]}
-                      stroke="#94a3b8"
+                      stroke="rgb(var(--color-text-muted))"
                       strokeWidth={2}
                       strokeLinecap="round"
                       style={{ pointerEvents: 'none' }}
@@ -1174,8 +1234,8 @@ export default function FloorEditorOverlay({
                 const [cx, cy] = worldToScreen(activeSnapTarget.x, activeSnapTarget.z, bounds)
                 return (
                   <g style={{ pointerEvents: 'none' }}>
-                    <circle cx={cx} cy={cy} r={9} fill="none" stroke="#facc15" strokeWidth={2} />
-                    <circle cx={cx} cy={cy} r={3.5} fill="#facc15" />
+                    <circle cx={cx} cy={cy} r={9} fill="none" stroke="rgb(var(--color-primary))" strokeWidth={2} />
+                    <circle cx={cx} cy={cy} r={3.5} fill="rgb(var(--color-primary))" />
                   </g>
                 )
               })()}
@@ -1186,28 +1246,25 @@ export default function FloorEditorOverlay({
                   key={`rline-${index}`}
                   x1={centerPx} y1={centerPy}
                   x2={handlePx} y2={handlePy}
-                  stroke="#4f46e5"
+                  stroke="rgb(var(--color-secondary))"
                   strokeWidth={1}
                   style={{ pointerEvents: 'none' }}
                 />
               ))}
 
-              {/* Rotate handle circles */}
+              {/* Rotate handles: transparent 44px target around the visible control. */}
               {mode === 'walls' && wallGeometry.map(({ index, handlePx, handlePy }) => (
-                <circle
-                  key={`rhandle-${index}`}
-                  cx={handlePx} cy={handlePy} r={5}
-                  fill="#4f46e5"
-                  style={{ pointerEvents: 'all', cursor: 'crosshair' }}
-                  onPointerDown={(e) => handleWallRotatePointerDown(index, e)}
-                />
+                <g key={`rhandle-${index}`}>
+                  <circle cx={handlePx} cy={handlePy} r={22} fill="transparent" style={{ pointerEvents: 'all', cursor: 'crosshair' }} onPointerDown={(event) => handleWallRotatePointerDown(index, event)} />
+                  <circle cx={handlePx} cy={handlePy} r={5} fill="rgb(var(--color-secondary))" style={{ pointerEvents: 'none' }} />
+                </g>
               ))}
 
               {/* Stretch endpoint circles (visible) */}
               {mode === 'walls' && wallGeometry.map(({ index, startPx, startPy, endPx, endPy }) => (
                 <g key={`stretch-vis-${index}`} style={{ pointerEvents: 'none' }}>
-                  <circle cx={startPx} cy={startPy} r={4} fill="#ffffff" stroke="#4f46e5" strokeWidth={1.5} />
-                  <circle cx={endPx} cy={endPy} r={4} fill="#ffffff" stroke="#4f46e5" strokeWidth={1.5} />
+                  <circle cx={startPx} cy={startPy} r={4} fill="rgb(var(--color-paper))" stroke="rgb(var(--color-secondary))" strokeWidth={1.5} />
+                  <circle cx={endPx} cy={endPy} r={4} fill="rgb(var(--color-paper))" stroke="rgb(var(--color-secondary))" strokeWidth={1.5} />
                 </g>
               ))}
             </svg>
@@ -1215,7 +1272,7 @@ export default function FloorEditorOverlay({
             {/* 3D minimap preview — walls mode only */}
             {mode === 'walls' && <WallConfigPreview wallConfig={wallConfig} />}
 
-            {/* Stretch invisible hitbox divs (20×20, easier grab) */}
+            {/* Stretch invisible hitbox divs (44×44 touch target). */}
             {mode === 'walls' && wallGeometry.flatMap(({ index, startPx, startPy, endPx, endPy, centerPx, centerPy }) => {
               const dx = endPx - startPx
               const dy = endPy - startPy
@@ -1225,13 +1282,13 @@ export default function FloorEditorOverlay({
                 <div
                   key={`sh-start-${index}`}
                   className="absolute"
-                  style={{ left: startPx - 10, top: startPy - 10, width: 20, height: 20, cursor: stretchCursor }}
+                  style={{ left: startPx - 22, top: startPy - 22, width: 44, height: 44, cursor: stretchCursor }}
                   onPointerDown={(e) => handleWallStretchPointerDown(index, 'start', e)}
                 />,
                 <div
                   key={`sh-end-${index}`}
                   className="absolute"
-                  style={{ left: endPx - 10, top: endPy - 10, width: 20, height: 20, cursor: stretchCursor }}
+                  style={{ left: endPx - 22, top: endPy - 22, width: 44, height: 44, cursor: stretchCursor }}
                   onPointerDown={(e) => handleWallStretchPointerDown(index, 'end', e)}
                 />,
               ]
@@ -1249,18 +1306,39 @@ export default function FloorEditorOverlay({
                   key={table.id}
                   role="button"
                   tabIndex={0}
+                  aria-label={`${table.modelUrl ? 'Model table' : 'Empty table'} ${isSelected ? 'selected' : ''}. Use arrow keys to move and R to rotate.`}
                   onPointerDown={(e) => handlePointerDownOnTable(table.id, e)}
+                  onKeyDown={(e) => {
+                    const step = e.shiftKey ? GRID_INCHES : 1
+                    const delta = e.key === 'ArrowLeft' ? [-step, 0]
+                      : e.key === 'ArrowRight' ? [step, 0]
+                        : e.key === 'ArrowUp' ? [0, step]
+                          : e.key === 'ArrowDown' ? [0, -step]
+                            : null
+                    if (delta) {
+                      e.preventDefault()
+                      setSelectedTableId(table.id)
+                      setTables((current) => current.map((item) => item.id === table.id ? { ...item, x: item.x + delta[0], z: item.z + delta[1] } : item))
+                    } else if (e.key.toLowerCase() === 'r') {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setTables((current) => current.map((item) => item.id === table.id ? { ...item, rotation: (item.rotation ?? 0) + Math.PI / 2 } : item))
+                    } else if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setSelectedTableId(table.id)
+                    }
+                  }}
                   className="absolute cursor-move rounded-lg border-2 flex flex-col items-center justify-center overflow-visible"
                   style={{
                     left: px - w / 2, top: py - h / 2,
                     width: w, height: h, minWidth: 24, minHeight: 18,
                     transform: `rotate(${rotationDeg}deg)`,
                     transformOrigin: '50% 50%',
-                    borderColor: isSelected ? '#6366f1' : '#94a3b8',
-                    backgroundColor: isSelected ? 'rgba(99,102,241,0.15)' : 'rgba(148,163,184,0.2)',
+                    borderColor: isSelected ? 'rgb(var(--color-secondary))' : 'rgb(var(--color-text-muted))',
+                    backgroundColor: isSelected ? 'rgb(var(--color-secondary) / 0.15)' : 'rgb(var(--color-surface-muted) / 0.7)',
                   }}
                 >
-                  <span className="text-[10px] font-medium truncate px-1" style={{ color: isSelected ? '#4f46e5' : '#64748b' }}>
+                  <span className="truncate px-1 text-[10px] font-medium text-text-primary">
                     {table.modelUrl ? 'Model' : 'Table'}
                   </span>
                   {[['0%', '0%'], ['100%', '0%'], ['100%', '100%'], ['0%', '100%']].map(([left, top], i) => (
@@ -1280,15 +1358,15 @@ export default function FloorEditorOverlay({
 
           {/* Legend */}
           {mode === 'walls' && (
-            <p className="mt-2 text-xs text-slate-400">
-              — thin slate edge = front (side boards attach to)
+            <p className="mt-2 text-xs text-text-secondary">
+              The thin muted edge marks the front where side boards attach.
             </p>
           )}
 
           {/* Table inspector */}
           {mode === 'tables' && selectedTableId && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-3 flex-wrap">
-              <span className="text-sm font-medium text-gray-700">Selected table</span>
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-kova border border-border bg-background-lighter p-4">
+              <span className="text-sm font-medium text-text-primary">Selected table</span>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1300,7 +1378,7 @@ export default function FloorEditorOverlay({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingTableId === selectedTableId}
-                className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg text-sm font-medium text-gray-700 transition-colors"
+                className="flex min-h-11 items-center gap-2 rounded-kova border border-border bg-background-light px-3 py-2 text-sm font-medium text-text-primary hover:bg-background disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <Upload className="w-4 h-4" />
                 {uploadingTableId === selectedTableId
@@ -1309,8 +1387,15 @@ export default function FloorEditorOverlay({
               </button>
               <button
                 type="button"
+                onClick={(event) => handleRotateTable(selectedTableId, event)}
+                className="min-h-11 rounded-kova border border-border bg-background-light px-3 py-2 text-sm font-medium text-text-primary hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                Rotate 90°
+              </button>
+              <button
+                type="button"
                 onClick={() => { setTables((prev) => prev.filter((t) => t.id !== selectedTableId)); setSelectedTableId(null) }}
-                className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                className="min-h-11 rounded-kova px-3 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 Remove table
               </button>
@@ -1320,49 +1405,37 @@ export default function FloorEditorOverlay({
       </div>
 
       {pendingDelete && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          onClick={() => { if (!removingWallRef.current) setPendingDelete(null) }}
+        <Dialog
+          open
+          onOpenChange={(open) => { if (!open && !removingWall) setPendingDelete(null) }}
+          title="Delete this wall?"
+          description="This permanently deletes the boards currently attached to the wall."
+          closeOnOutsideClick={!removingWall}
+          hideCloseButton={removingWall}
+          className="max-w-md motion-reduce:transition-none [&>button.absolute]:h-11 [&>button.absolute]:w-11"
         >
-          <div
-            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="wall-delete-title"
-          >
-            <h3 id="wall-delete-title" className="text-lg font-semibold text-gray-900 mb-2">
-              Delete this wall?
-            </h3>
-            <p className="text-sm text-gray-600 mb-6">
+            <p className="mb-6 text-sm text-text-secondary">
               This wall has {pendingDelete.boardCount} board{pendingDelete.boardCount === 1 ? '' : 's'} on it.
               Deleting the wall will permanently delete those board{pendingDelete.boardCount === 1 ? '' : 's'}.
               This can&apos;t be undone.
             </p>
             <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setPendingDelete(null)}
-                disabled={removingWallRef.current}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
-              >
-                Cancel
-              </button>
+              <Button type="button" variant="ghost" onClick={() => setPendingDelete(null)} disabled={removingWall}>Cancel</Button>
               {/* Pass the count the user just read in this modal — that is
                   exactly what they consented to, and the server holds us to it. */}
-              <button
+              <Button
                 type="button"
+                variant="danger"
                 onClick={() => { void commitWallDelete(pendingDelete.index, pendingDelete.boardCount) }}
-                disabled={removingWallRef.current}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+                disabled={removingWall}
+                loading={removingWall}
               >
-                Delete wall
-              </button>
+                {removingWall ? 'Deleting wall…' : 'Delete wall'}
+              </Button>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
-    </div>
+    </Dialog>
   )
 }
 
