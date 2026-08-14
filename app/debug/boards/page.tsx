@@ -4,6 +4,8 @@ export const dynamic = 'force-dynamic'
 
 import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { Badge, Button, Card, Dialog, StatusState } from '@/components/ui'
 
 interface BoardInfo {
   id: string
@@ -23,16 +25,21 @@ function DebugBoardsPageInner() {
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [fixConfirmOpen, setFixConfirmOpen] = useState(false)
+  const [fixingTypes, setFixingTypes] = useState(false)
 
   useEffect(() => {
     if (studioId) {
       fetchBoards()
     } else {
+      // Search parameters are the external source of truth for this utility.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setError('No studio ID provided. Add ?id=YOUR_STUDIO_ID to the URL')
+      setLoading(false)
     }
-  }, [studioId])
+  }, [studioId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fetchBoards = async () => {
+  async function fetchBoards() {
     if (!studioId) {
       setError('No studio ID provided')
       return
@@ -125,8 +132,8 @@ function DebugBoardsPageInner() {
       alert('No studio ID provided')
       return
     }
-    if (!confirm('This will convert all string wallIndex values to numbers. Continue?')) return
-    
+    if (fixingTypes) return
+    setFixingTypes(true)
     try {
       const response = await fetch('/api/debug/check-types', {
         method: 'POST',
@@ -138,67 +145,62 @@ function DebugBoardsPageInner() {
         alert(`✅ ${data.message}`)
         await fetchBoards()
         await checkTypes()
+        setFixConfirmOpen(false)
       } else {
         alert('Error: ' + data.error)
       }
     } catch (err) {
       alert('Error fixing types: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setFixingTypes(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Board Position Debug Tool</h1>
-            <p className="text-gray-600">
-              Workspace ID: {studioId || <span className="text-red-600 font-semibold">NOT PROVIDED - Add ?id=YOUR_STUDIO_ID to URL</span>}
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <button
+    <main className="min-h-dvh bg-background">
+      <PageHeader
+        eyebrow="Restricted debug utility"
+        title="Board position diagnostics"
+        description={<>Workspace ID: <code className="break-all font-mono text-xs">{studioId || 'not provided — add ?id=YOUR_STUDIO_ID'}</code></>}
+        actions={<>
+            <Button
               onClick={checkTypes}
               disabled={checkingTypes}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+              variant="secondary"
             >
-              {checkingTypes ? 'Checking...' : '🔍 Check Types'}
-            </button>
-            <button
+              {checkingTypes ? 'Checking…' : 'Check types'}
+            </Button>
+            <Button
               onClick={fetchBoards}
               disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              variant="ghost"
             >
-              {loading ? 'Loading...' : '🔄 Refresh'}
-            </button>
-            <button
+              {loading ? 'Loading…' : 'Refresh'}
+            </Button>
+            <Button
               onClick={() => router.push(`/studio/${studioId}`)}
-              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              disabled={!studioId}
             >
               ← Back to Studio
-            </button>
-          </div>
-        </div>
+            </Button>
+          </>}
+      />
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
 
         {typeInfo && (
-          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <Card className="mb-6 border-2 border-primary">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-yellow-900">📊 Type Analysis</h3>
+              <h2 className="font-bold text-text-primary">Type analysis</h2>
               {typeInfo.typeIssues && typeInfo.typeIssues.length > 0 && (
-                <button
-                  onClick={fixTypes}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                >
-                  🔧 Fix Type Issues ({typeInfo.typeIssues.length})
-                </button>
+                <Button variant="danger" onClick={() => setFixConfirmOpen(true)}>Fix type issues ({typeInfo.typeIssues.length})</Button>
               )}
             </div>
-            <div className="text-sm text-yellow-800 space-y-2">
+            <div className="space-y-2 text-sm text-text-secondary">
               <p><strong>Total boards:</strong> {typeInfo.summary?.total}</p>
               <p><strong>Type distribution:</strong> {JSON.stringify(typeInfo.summary?.typeCounts)}</p>
               {typeInfo.typeIssues && typeInfo.typeIssues.length > 0 ? (
                 <div>
-                  <p className="font-semibold text-red-700">⚠️ Found {typeInfo.typeIssues.length} board(s) with string wallIndex values:</p>
+                  <p className="font-semibold text-text-primary">Found {typeInfo.typeIssues.length} board(s) with string wallIndex values:</p>
                   <ul className="list-disc list-inside ml-4 mt-2">
                     {typeInfo.typeIssues.map((issue, i: number) => (
                       <li key={i}>
@@ -208,23 +210,18 @@ function DebugBoardsPageInner() {
                   </ul>
                 </div>
               ) : (
-                <p className="text-green-700">✅ All wallIndex values are numbers (no type issues found)</p>
+                <StatusState status="success" title="All wallIndex values are numbers." description="No type issues found." />
               )}
             </div>
-          </div>
+          </Card>
         )}
 
         {error && (
-          <div className="mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
-            <strong>Error:</strong> {error}
-          </div>
+          <StatusState className="mb-6" status="error" title="Debug request failed" description={error} />
         )}
 
         {loading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading boards...</p>
-          </div>
+          <StatusState status="loading" title="Loading boards…" />
         ) : (
           <div className="space-y-6">
             {wallIndices.map(wallIndex => {
@@ -233,30 +230,28 @@ function DebugBoardsPageInner() {
               const wallLabel = wallIndex === null ? 'No Wall (null)' : `Wall ${wallIndex}`
 
               return (
-                <div key={wallKey} className="bg-white rounded-lg shadow-md p-6">
+                <Card key={wallKey}>
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-semibold text-gray-900">
-                      {wallLabel} <span className="text-gray-500">({boards.length} board{boards.length !== 1 ? 's' : ''})</span>
+                    <h2 className="text-xl font-semibold text-text-primary">
+                      {wallLabel} <span className="text-text-secondary">({boards.length} board{boards.length !== 1 ? 's' : ''})</span>
                     </h2>
                     {wallIndex === null && (
-                      <span className="text-sm text-orange-600 bg-orange-100 px-3 py-1 rounded-full">
-                        Boards not assigned to any wall
-                      </span>
+                      <Badge variant="warning">Boards not assigned to any wall</Badge>
                     )}
                   </div>
 
                   {boards.length === 0 ? (
-                    <p className="text-gray-500 italic">No boards on this wall</p>
+                    <p className="text-text-secondary italic">No boards on this wall</p>
                   ) : (
                     <div className="space-y-3">
                       {boards.map(board => (
                         <div
                           key={board.id}
-                          className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200"
+                          className="flex flex-col gap-4 rounded-kova border border-border bg-background p-4 lg:flex-row lg:items-center lg:justify-between"
                         >
                           <div className="flex-1">
-                            <div className="font-medium text-gray-900">{board.title}</div>
-                            <div className="text-sm text-gray-600 mt-1">
+                            <div className="font-medium text-text-primary">{board.title}</div>
+                            <div className="text-sm text-text-secondary mt-1">
                               ID: {board.id}
                               {board.position_x !== null && board.position_y !== null && (
                                 <> • Position: ({board.position_x}, {board.position_y})</>
@@ -266,17 +261,17 @@ function DebugBoardsPageInner() {
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm text-gray-500">Move to wall:</span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm text-text-secondary">Move to wall:</span>
                             {[0, 1, 2, 3].map(targetWall => (
                               <button
                                 key={targetWall}
                                 onClick={() => updateBoardWall(board.id, wallIndex, targetWall)}
                                 disabled={updating === board.id || wallIndex === targetWall}
-                                className={`px-3 py-1 text-sm rounded ${
+                                className={`min-h-11 min-w-11 rounded-kova px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                                   wallIndex === targetWall
-                                    ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                    ? 'bg-border text-text-secondary cursor-not-allowed'
+                                    : 'border border-kova-ink bg-primary text-kova-ink hover:bg-primary-light'
                                 } disabled:opacity-50`}
                               >
                                 {targetWall}
@@ -287,23 +282,36 @@ function DebugBoardsPageInner() {
                       ))}
                     </div>
                   )}
-                </div>
+                </Card>
               )
             })}
           </div>
         )}
 
-        <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h3 className="font-semibold text-blue-900 mb-2">💡 How to use:</h3>
-          <ul className="text-blue-800 space-y-1 text-sm">
+        <Card className="mt-8">
+          <h2 className="mb-2 font-bold text-text-primary">How to use</h2>
+          <ul className="space-y-1 text-sm text-text-secondary">
             <li>• This page shows all boards grouped by their current wallIndex</li>
             <li>• If Wall 1 appears empty, look for boards in other walls that should be on Wall 1</li>
             <li>• Click the numbered buttons (0, 1, 2, 3) to move a board to that wall</li>
             <li>• After moving boards, refresh the studio page to see the changes</li>
           </ul>
-        </div>
+        </Card>
+        <Dialog
+          open={fixConfirmOpen}
+          onOpenChange={(next) => { if (!fixingTypes) setFixConfirmOpen(next) }}
+          closeOnOutsideClick={!fixingTypes}
+          hideCloseButton={fixingTypes}
+          title="Normalize wall index types?"
+          description="This writes numeric wallIndex values for every string value in this workspace."
+        >
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={() => setFixConfirmOpen(false)} disabled={fixingTypes}>Cancel</Button>
+            <Button variant="danger" onClick={fixTypes} loading={fixingTypes}>{fixingTypes ? 'Normalizing…' : 'Normalize values'}</Button>
+          </div>
+        </Dialog>
       </div>
-    </div>
+    </main>
   )
 }
 
@@ -314,4 +322,3 @@ export default function DebugBoardsPage() {
     </Suspense>
   )
 }
-

@@ -1,36 +1,46 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { isDemoMode } from '@/lib/demoMode'
 
 interface DemoBannerProps {
   message?: string
+  inline?: boolean
 }
 
-export default function DemoBanner({ message = '🎭 Demo Mode - Sample Data for Demonstration' }: DemoBannerProps) {
+export default function DemoBanner({ message = 'Demo Mode — Sample data for demonstration', inline = false }: DemoBannerProps) {
   const [show, setShow] = useState(false)
+  const router = useRouter()
 
   useEffect(() => {
-    setShow(isDemoMode())
+    // Demo mode depends on client-only location state; defer to avoid hydration drift.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setShow(isDemoMode() || window.location.pathname.startsWith('/demo'))
   }, [])
 
   if (!show) return null
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 bg-yellow-400 border-b-2 border-yellow-500 shadow-lg">
-      <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">🎭</span>
-          <p className="text-sm font-semibold text-yellow-900">{message}</p>
+    <div role="status" aria-live="polite" className={`${inline ? 'relative shrink-0' : 'fixed inset-x-0 top-0'} z-50 border-b-2 border-kova-ink bg-primary pt-[env(safe-area-inset-top)] text-kova-ink shadow-[var(--shadow-raised)]`}>
+      <div className="mx-auto flex min-h-14 max-w-7xl items-center justify-between gap-3 px-4 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span aria-hidden="true" className="text-lg">🎭</span>
+          <p className="break-words text-sm font-bold">{message}</p>
         </div>
         <button
           onClick={() => {
-            // Remove demo param and reload
+            setShow(false)
+            if (window.location.pathname.startsWith('/demo')) {
+              router.push('/')
+              return
+            }
             const url = new URL(window.location.href)
             url.searchParams.delete('demo')
-            window.location.href = url.toString()
+            router.replace(`${url.pathname}${url.search}${url.hash}`)
           }}
-          className="text-xs px-3 py-1 bg-yellow-500 hover:bg-yellow-600 text-yellow-900 rounded-md font-medium transition-colors"
+          className="inline-flex min-h-11 shrink-0 items-center rounded-kova border border-kova-ink bg-background-light px-3 py-2 text-xs font-bold transition-colors hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
+          aria-label="Exit demo mode"
         >
           Exit Demo
         </button>

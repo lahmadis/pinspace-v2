@@ -8,10 +8,12 @@ import { useAccountMode, resetAccountModeCache } from '@/lib/useAccountMode'
 import { useProfile } from '@/lib/ProfileContext'
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
 import type { Scope } from '@/components/dashboard/DashboardSidebar'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { Button, Dialog, Input, StatusState } from '@/components/ui'
 import { toast } from '@/lib/toast'
 import {
   Camera, Bell, Building2, Monitor, Lock, HardDrive,
-  Trash2, LogOut, KeyRound, Save, X,
+  Trash2, LogOut, KeyRound, Save,
 } from 'lucide-react'
 
 const SCOPE_KEY = 'pinspace-dashboard-scope'
@@ -20,9 +22,9 @@ const SCOPE_KEY = 'pinspace-dashboard-scope'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
+    <section className="rounded-kova-lg border border-border bg-background-card p-5 shadow-[var(--shadow-soft)] sm:p-6">
       {children}
-    </div>
+    </section>
   )
 }
 
@@ -31,10 +33,10 @@ function SectionHeader({
 }: { icon: React.ReactNode; title: string; badge?: boolean }) {
   return (
     <div className="flex items-center gap-2.5 mb-5">
-      <span className="text-gray-400">{icon}</span>
-      <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+      <span className="text-text-dim">{icon}</span>
+      <h2 className="text-base font-semibold text-text-primary">{title}</h2>
       {badge && (
-        <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-xs font-medium">
+        <span className="px-2 py-0.5 rounded-full bg-background-lighter text-text-secondary text-xs font-medium">
           Coming soon
         </span>
       )}
@@ -52,29 +54,29 @@ function Toggle({
   disabled?: boolean
 }) {
   return (
-    <label className="flex items-start gap-3 cursor-pointer select-none">
+    <label className="flex min-h-11 cursor-pointer select-none items-start gap-3 rounded-kova p-1 focus-within:ring-2 focus-within:ring-accent">
       <div className="relative mt-0.5 shrink-0">
         <input
           type="checkbox"
-          className="sr-only"
+          className="peer sr-only"
           checked={checked}
           disabled={disabled}
           onChange={(e) => onChange(e.target.checked)}
         />
         <div
-          className={`w-9 h-5 rounded-full transition-colors ${
-            checked ? 'bg-indigo-600' : 'bg-gray-200'
+          className={`h-6 w-11 rounded-full transition-colors ${
+            checked ? 'bg-accent' : 'bg-background-lighter'
           } ${disabled ? 'opacity-50' : ''}`}
         />
         <div
-          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-            checked ? 'translate-x-4' : 'translate-x-0'
+          className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-background-light shadow transition-transform ${
+            checked ? 'translate-x-5' : 'translate-x-0'
           }`}
         />
       </div>
       <div>
-        <p className="text-sm font-medium text-gray-800">{label}</p>
-        {description && <p className="text-xs text-gray-500 mt-0.5">{description}</p>}
+        <p className="text-sm font-medium text-text-primary">{label}</p>
+        {description && <p className="text-xs text-text-secondary mt-0.5">{description}</p>}
       </div>
     </label>
   )
@@ -115,9 +117,16 @@ export default function SettingsPage() {
 
   // Dialogs
   const [leaveOrgConfirm, setLeaveOrgConfirm] = useState(false)
+  const [leavingOrganization, setLeavingOrganization] = useState(false)
   const [deleteStep, setDeleteStep] = useState<'idle' | 'warn' | 'confirm'>('idle')
   const [deleteText, setDeleteText] = useState('')
   const [deleting, setDeleting] = useState(false)
+  const deleteInputRef = useRef<HTMLInputElement>(null)
+
+  const advanceDeleteConfirmation = () => {
+    setDeleteStep('confirm')
+    window.setTimeout(() => deleteInputRef.current?.focus(), 0)
+  }
 
   // ── Auth guard ──────────────────────────────────────────────────────────────
 
@@ -152,7 +161,7 @@ export default function SettingsPage() {
         ? { id: org.id, name: org.name, slug: org.slug }
         : null)
     }).catch(() => {})
-  }, [user?.id])
+  }, [setProfile, user?.id])
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -244,6 +253,8 @@ export default function SettingsPage() {
   }
 
   const handleLeaveOrg = async () => {
+    if (leavingOrganization) return
+    setLeavingOrganization(true)
     try {
       const res = await fetch('/api/settings/leave-organization', { method: 'POST' })
       if (res.ok) {
@@ -256,6 +267,8 @@ export default function SettingsPage() {
       }
     } catch {
       toast.error('Failed to leave organization')
+    } finally {
+      setLeavingOrganization(false)
     }
   }
 
@@ -279,7 +292,7 @@ export default function SettingsPage() {
   }
 
   const handleDeleteAccount = async () => {
-    if (deleteText.toLowerCase() !== 'delete') return
+    if (deleteText.toLowerCase() !== 'delete' || deleting) return
     setDeleting(true)
     try {
       const res = await fetch('/api/settings/delete-account', { method: 'POST' })
@@ -299,8 +312,8 @@ export default function SettingsPage() {
 
   if (!isLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500" />
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent/20 border-t-accent" />
       </div>
     )
   }
@@ -314,7 +327,7 @@ export default function SettingsPage() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white">
+    <div className="flex h-screen overflow-hidden bg-background-light">
       <DashboardSidebar
         currentScope="personal"
         onScopeChange={handleScopeChange}
@@ -329,13 +342,15 @@ export default function SettingsPage() {
 
       {/* Main */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        {/* Top bar */}
-        <div className="shrink-0 h-16 flex items-center px-6 border-b border-gray-200 bg-white">
-          <span className="text-base font-semibold text-gray-900 pl-10 md:pl-0">Settings</span>
-        </div>
+        <PageHeader
+          eyebrow="Account"
+          title="Settings"
+          description="Manage your profile, notifications, organization, and account security."
+          className="shrink-0 pl-14 md:pl-6"
+        />
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+        <div className="flex-1 overflow-y-auto p-6 bg-background">
           <div className="max-w-2xl mx-auto space-y-5">
 
             {/* ── Profile ──────────────────────────────────────────────────── */}
@@ -346,19 +361,21 @@ export default function SettingsPage() {
               <div className="flex items-center gap-4 mb-5">
                 <div className="relative w-16 h-16 shrink-0">
                   {avatarUrl ? (
+                    // Supabase-hosted avatars are not covered by a stable image host allowlist.
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={avatarUrl}
                       alt="Avatar"
-                      className="w-16 h-16 rounded-full object-cover border border-gray-200"
+                      className="w-16 h-16 rounded-full object-cover border border-border"
                     />
                   ) : (
-                    <div className="w-16 h-16 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xl font-bold select-none">
+                    <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center text-background-light text-xl font-bold select-none">
                       {displayName.slice(0, 2).toUpperCase()}
                     </div>
                   )}
                   {avatarUploading && (
-                    <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
-                      <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    <div className="absolute inset-0 rounded-full bg-kova-ink/40 flex items-center justify-center">
+                      <div className="w-5 h-5 border-2 border-background-light/40 border-t-background-light rounded-full animate-spin" />
                     </div>
                   )}
                 </div>
@@ -367,11 +384,11 @@ export default function SettingsPage() {
                     type="button"
                     disabled={avatarUploading}
                     onClick={() => fileInputRef.current?.click()}
-                    className="px-3 py-1.5 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                    className="min-h-11 px-3 py-2 text-sm font-medium border border-border rounded-kova focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent hover:bg-background transition-colors disabled:opacity-50"
                   >
                     {avatarUploading ? 'Uploading…' : 'Change photo'}
                   </button>
-                  <p className="text-xs text-gray-400 mt-1">JPG, PNG, or GIF · max 5 MB</p>
+                  <p className="text-xs text-text-dim mt-1">JPG, PNG, or GIF · max 5 MB</p>
                 </div>
                 <input
                   ref={fileInputRef}
@@ -384,25 +401,27 @@ export default function SettingsPage() {
 
               {/* Display name */}
               <div className="space-y-1 mb-4">
-                <label className="block text-sm font-medium text-gray-700">Display name</label>
+                <label htmlFor="settings-display-name" className="block text-sm font-medium text-text-primary">Display name</label>
                 <input
+                  id="settings-display-name"
                   type="text"
                   value={fullName}
                   maxLength={80}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Your name"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent"
                 />
               </div>
 
               {/* Email */}
               <div className="space-y-1 mb-5">
-                <label className="block text-sm font-medium text-gray-700">Email</label>
+                <label htmlFor="settings-email" className="block text-sm font-medium text-text-primary">Email</label>
                 <input
+                  id="settings-email"
                   type="email"
                   value={user?.email ?? ''}
                   readOnly
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-default"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background text-text-secondary cursor-default"
                 />
               </div>
 
@@ -410,7 +429,7 @@ export default function SettingsPage() {
                 type="button"
                 disabled={!nameChanged || savingProfile}
                 onClick={handleSaveProfile}
-                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                className="flex min-h-11 items-center gap-1.5 rounded-kova bg-accent px-4 py-2 text-sm font-medium text-background-light transition-colors hover:bg-accent-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
               >
                 <Save className="w-3.5 h-3.5" />
                 {savingProfile ? 'Saving…' : 'Save'}
@@ -440,62 +459,49 @@ export default function SettingsPage() {
                 <SectionHeader icon={<Building2 className="w-4 h-4" />} title="Institution" />
                 <dl className="space-y-3 mb-5">
                   <div>
-                    <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">Organization</dt>
-                    <dd className="text-sm text-gray-900">{organization.name}</dd>
+                    <dt className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-0.5">Organization</dt>
+                    <dd className="text-sm text-text-primary">{organization.name}</dd>
                   </div>
                   {userRole && (
                     <div>
-                      <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">Role</dt>
-                      <dd className="text-sm text-gray-900 capitalize">{userRole}</dd>
+                      <dt className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-0.5">Role</dt>
+                      <dd className="text-sm text-text-primary capitalize">{userRole}</dd>
                     </div>
                   )}
                   {joinedAt && (
                     <div>
-                      <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">Joined</dt>
-                      <dd className="text-sm text-gray-900">
+                      <dt className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-0.5">Joined</dt>
+                      <dd className="text-sm text-text-primary">
                         {new Date(joinedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
                       </dd>
                     </div>
                   )}
                 </dl>
-                {!leaveOrgConfirm ? (
-                  <button
-                    type="button"
-                    onClick={() => setLeaveOrgConfirm(true)}
-                    className="px-4 py-2 text-sm font-medium border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors"
-                  >
-                    Leave organization
-                  </button>
-                ) : (
-                  <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-                    <p className="text-sm text-red-700 mb-3">
-                      You&apos;ll lose access to all rooms under <strong>{organization.name}</strong>. This cannot be undone from here.
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setLeaveOrgConfirm(false)}
-                        className="px-3 py-1.5 text-sm font-medium border border-gray-300 rounded-lg hover:bg-white transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleLeaveOrg}
-                        className="px-3 py-1.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                      >
-                        Leave
-                      </button>
-                    </div>
+                <Button type="button" variant="danger" onClick={() => setLeaveOrgConfirm(true)}>
+                  Leave organization
+                </Button>
+                <Dialog
+                  open={leaveOrgConfirm}
+                  onOpenChange={(next) => { if (!leavingOrganization) setLeaveOrgConfirm(next) }}
+                  closeOnOutsideClick={!leavingOrganization}
+                  hideCloseButton={leavingOrganization}
+                  title="Leave organization?"
+                  description={<>You will lose access to rooms under <strong>{organization.name}</strong>. This action cannot be undone here.</>}
+                >
+                  <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                    <Button type="button" variant="ghost" onClick={() => setLeaveOrgConfirm(false)} disabled={leavingOrganization}>Keep access</Button>
+                    <Button type="button" variant="danger" loading={leavingOrganization} onClick={handleLeaveOrg} aria-label={leavingOrganization ? 'Leaving organization' : 'Leave organization'}>
+                      {leavingOrganization ? 'Leaving…' : 'Leave organization'}
+                    </Button>
                   </div>
-                )}
+                </Dialog>
               </SectionCard>
             )}
 
             {/* ── Display (placeholder) ─────────────────────────────────────── */}
             <SectionCard>
               <SectionHeader icon={<Monitor className="w-4 h-4" />} title="Display" badge />
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-text-secondary">
                 Theme, units, and default room template settings coming soon.
               </p>
             </SectionCard>
@@ -503,7 +509,7 @@ export default function SettingsPage() {
             {/* ── Privacy (placeholder) ─────────────────────────────────────── */}
             <SectionCard>
               <SectionHeader icon={<Lock className="w-4 h-4" />} title="Privacy" badge />
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-text-secondary">
                 Control who can see your personal rooms and set default sharing behavior. Coming soon.
               </p>
             </SectionCard>
@@ -511,7 +517,7 @@ export default function SettingsPage() {
             {/* ── Storage (placeholder) ─────────────────────────────────────── */}
             <SectionCard>
               <SectionHeader icon={<HardDrive className="w-4 h-4" />} title="Storage" badge />
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-text-secondary">
                 View storage usage and quotas. Coming soon.
               </p>
             </SectionCard>
@@ -524,114 +530,76 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     onClick={handleChangePassword}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="flex min-h-11 items-center gap-2 px-4 py-2 text-sm font-medium border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-lg hover:bg-background transition-colors"
                   >
-                    <KeyRound className="w-3.5 h-3.5 text-gray-500" />
+                    <KeyRound className="w-3.5 h-3.5 text-text-secondary" />
                     Change password
                   </button>
-                  <p className="text-xs text-gray-400 mt-1 ml-0.5">We&apos;ll send a reset link to your email.</p>
+                  <p className="text-xs text-text-dim mt-1 ml-0.5">We&apos;ll send a reset link to your email.</p>
                 </div>
 
-                <div className="h-px bg-gray-100" />
+                <div className="h-px bg-background-lighter" />
 
                 <button
                   type="button"
                   onClick={handleSignOut}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="flex min-h-11 items-center gap-2 px-4 py-2 text-sm font-medium border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent text-text-primary rounded-lg hover:bg-background transition-colors"
                 >
-                  <LogOut className="w-3.5 h-3.5 text-gray-500" />
+                  <LogOut className="w-3.5 h-3.5 text-text-secondary" />
                   Sign out
                 </button>
 
-                <div className="h-px bg-gray-100" />
+                <div className="h-px bg-background-lighter" />
 
                 {/* Delete account */}
-                {deleteStep === 'idle' && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteStep('warn')}
-                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Delete account
-                    </button>
-                  </div>
-                )}
-
-                {deleteStep === 'warn' && (
-                  <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <p className="text-sm font-semibold text-red-800">Are you sure?</p>
-                      <button type="button" onClick={() => setDeleteStep('idle')} className="p-0.5 hover:bg-red-100 rounded">
-                        <X className="w-4 h-4 text-red-500" />
-                      </button>
+                <Button type="button" variant="danger" onClick={() => setDeleteStep('warn')}>
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  Delete account
+                </Button>
+                <Dialog
+                  open={deleteStep !== 'idle'}
+                  onOpenChange={(next) => {
+                    if (deleting) return
+                    if (!next) { setDeleteStep('idle'); setDeleteText('') }
+                  }}
+                  closeOnOutsideClick={!deleting}
+                  hideCloseButton={deleting}
+                  title={deleteStep === 'confirm' ? 'Final account deletion confirmation' : 'Delete account?'}
+                  description="Your account will be deactivated immediately. Your rooms and boards will become inaccessible."
+                >
+                  {deleteStep === 'warn' ? (
+                    <div className="space-y-4">
+                      <StatusState status="warning" title="This cannot be reversed in the app." />
+                      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                        <Button type="button" variant="ghost" onClick={() => setDeleteStep('idle')}>Keep account</Button>
+                        <Button type="button" variant="danger" onClick={advanceDeleteConfirmation}>Continue</Button>
+                      </div>
                     </div>
-                    <p className="text-sm text-red-700 mb-3">
-                      Your account will be deactivated immediately. All your rooms and boards will
-                      become inaccessible. This action cannot be reversed from the app.
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setDeleteStep('idle')}
-                        className="px-3 py-1.5 text-sm font-medium border border-gray-300 bg-white rounded-lg hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteStep('confirm')}
-                        className="px-3 py-1.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700"
-                      >
-                        Continue
-                      </button>
+                  ) : (
+                    <div className="space-y-4">
+                      <div>
+                        <label htmlFor="delete-account-confirmation" className="mb-1 block text-sm font-semibold text-text-primary">
+                          Type <strong>delete</strong> to confirm
+                        </label>
+                        <Input
+                          ref={deleteInputRef}
+                          id="delete-account-confirmation"
+                          value={deleteText}
+                          maxLength={20}
+                          disabled={deleting}
+                          onChange={(event) => setDeleteText(event.target.value)}
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                        <Button type="button" variant="ghost" onClick={() => { setDeleteStep('idle'); setDeleteText('') }} disabled={deleting}>Keep account</Button>
+                        <Button type="button" variant="danger" loading={deleting} disabled={deleteText.toLowerCase() !== 'delete'} onClick={handleDeleteAccount} aria-label={deleting ? 'Deleting account' : 'Delete my account'}>
+                          {deleting ? 'Deleting…' : 'Delete my account'}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                )}
-
-                {deleteStep === 'confirm' && (
-                  <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <p className="text-sm font-semibold text-red-800">Final confirmation</p>
-                      <button
-                        type="button"
-                        onClick={() => { setDeleteStep('idle'); setDeleteText('') }}
-                        className="p-0.5 hover:bg-red-100 rounded"
-                      >
-                        <X className="w-4 h-4 text-red-500" />
-                      </button>
-                    </div>
-                    <p className="text-sm text-red-700 mb-3">
-                      Type <strong>delete</strong> to confirm.
-                    </p>
-                    <input
-                      type="text"
-                      value={deleteText}
-                      onChange={(e) => setDeleteText(e.target.value)}
-                      placeholder="delete"
-                      autoFocus
-                      className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 mb-3 bg-white"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => { setDeleteStep('idle'); setDeleteText('') }}
-                        className="px-3 py-1.5 text-sm font-medium border border-gray-300 bg-white rounded-lg hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        disabled={deleteText.toLowerCase() !== 'delete' || deleting}
-                        onClick={handleDeleteAccount}
-                        className="px-3 py-1.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
-                      >
-                        {deleting ? 'Deleting…' : 'Delete my account'}
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  )}
+                </Dialog>
               </div>
             </SectionCard>
 

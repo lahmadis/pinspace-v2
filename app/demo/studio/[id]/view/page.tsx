@@ -25,7 +25,6 @@ export default function DemoStudioRoomPage() {
   const [editingWall] = useState<number | null>(null)
   const orbitControlsRef = useRef<unknown>(null)
 
-  // Default wall config for demo (4 walls, 8ft × 10ft each)
   const wallConfig = {
     walls: [
       { width: 10, height: 8 },
@@ -46,6 +45,8 @@ export default function DemoStudioRoomPage() {
     
     const demoBoards = getBoardsByStudio(studioId).map(transformDemoBoard) as Board[]
     
+    // Demo data is synchronously derived from the selected route identity.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStudio({
       id: demoStudio.id,
       name: demoStudio.name,
@@ -73,9 +74,9 @@ export default function DemoStudioRoomPage() {
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-gradient-to-br from-background to-background-lighter">
       {/* Demo Banner */}
-      <DemoBanner 
+      <DemoBanner inline
         message={`Demo: ${studio.name} • ${studio.instructor}`}
       />
 
@@ -84,39 +85,41 @@ export default function DemoStudioRoomPage() {
         initial={{ y: -100, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.5 }}
-        className="fixed top-16 left-0 right-0 z-40 px-6 py-4 flex items-center justify-between bg-white/80 backdrop-blur-sm shadow-sm"
+        className="relative z-40 flex shrink-0 flex-col items-stretch gap-2 bg-background-light/90 px-3 py-2 shadow-sm backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4"
       >
-        <div className="flex items-center gap-4">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-4">
           <button
+            type="button"
             onClick={() => router.push('/demo')}
-            className="p-2 hover:bg-background-lighter rounded-lg transition-colors"
+            aria-label="Back to demo network"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-kova transition-colors hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
           </button>
-          <div>
-            <h1 className="text-xl font-semibold text-text-primary">{studio.name}</h1>
-            <p className="text-sm text-text-muted">{studio.instructor} • {boards.length} boards</p>
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-semibold text-text-primary sm:text-xl">{studio.name}</h1>
+            <p className="truncate text-xs text-text-muted sm:text-sm">{studio.instructor} • {boards.length} boards</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:gap-3">
           <Link 
             href={addDemoParam('/', true)}
-            className="bg-white/90 hover:bg-white text-gray-900 px-4 py-2 rounded-lg font-semibold shadow-lg border border-gray-200 transition-colors backdrop-blur-sm"
+            className="inline-flex min-h-11 flex-1 items-center justify-center rounded-kova border border-border bg-background-light/90 px-3 py-2 text-sm font-semibold text-text-primary shadow-lg backdrop-blur-sm transition-colors hover:bg-background-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none"
           >
             ← Back home
           </Link>
           <a
-            href={`/demo/studio/${studioId}/view`}
-            className="px-4 py-2 bg-background-lighter hover:bg-background-light text-text-secondary hover:text-text-primary rounded-lg text-sm transition-colors border border-border"
+            href={`/demo/studio/${studioId}`}
+            className="inline-flex min-h-11 flex-1 items-center justify-center rounded-kova border border-border bg-background-lighter px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-background-light hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none sm:px-4"
           >
-            View Mode
+            Edit Mode
           </a>
           <button
             onClick={handleUpload}
-            className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg text-sm transition-colors"
+            className="min-h-11 flex-1 rounded-kova bg-primary px-3 py-2 text-sm font-semibold text-kova-ink transition-colors hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none sm:px-4"
           >
             Add Board (Demo)
           </button>
@@ -124,14 +127,13 @@ export default function DemoStudioRoomPage() {
       </motion.header>
 
       {/* 3D Canvas */}
-      <div className="w-full h-full pt-32">
+      <div className="min-h-0 w-full flex-1">
         <Canvas
           shadows
           gl={{ antialias: true, alpha: false }}
-          style={{ background: '#D8DEFF' }}
+          style={{ background: 'rgb(var(--color-primary-muted))' }}
         >
           <PerspectiveCamera makeDefault position={[0, 60, 120]} fov={35} />
-          
           <ambientLight intensity={0.6} />
           <directionalLight
             position={[10, 20, 10]}
@@ -145,23 +147,16 @@ export default function DemoStudioRoomPage() {
             shadow-camera-top={100}
             shadow-camera-bottom={-100}
           />
-          <hemisphereLight args={['#ffffff', '#8888aa', 0.4]} />
-
+          <hemisphereLight args={['white', 'darkslategray', 0.4]} />
           <Suspense fallback={null}>
             <WallSystem
               boards={boards}
               wallConfig={wallConfig}
               editingWall={editingWall}
-              onBoardClick={(board) => {
-                console.log('Board clicked:', board.title)
-              }}
-              onWallDoubleClick={(wallIndex) => {
-                // View mode - no edit functionality
-                console.log('Wall double-clicked:', wallIndex)
-              }}
+              onBoardClick={(board) => console.log('Board clicked:', board.title)}
+              onWallDoubleClick={(wallIndex) => console.log('Wall double-clicked:', wallIndex)}
             />
           </Suspense>
-
           <CameraController
             orbitControlsRef={orbitControlsRef}
             editingWall={editingWall}
@@ -169,8 +164,9 @@ export default function DemoStudioRoomPage() {
             wallRotation={0}
             wallDimensions={null}
           />
-
-          {editingWall === null && <OrbitControls ref={orbitControlsRef as React.RefObject<import('three-stdlib').OrbitControls>} enableDamping={false} dampingFactor={0} />}
+          {editingWall === null && (
+            <OrbitControls ref={orbitControlsRef as React.RefObject<import('three-stdlib').OrbitControls>} enableDamping={false} dampingFactor={0} />
+          )}
         </Canvas>
       </div>
 
@@ -182,10 +178,10 @@ export default function DemoStudioRoomPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 1 }}
-          className="fixed bottom-6 right-6 bg-white/95 backdrop-blur-sm rounded-xl shadow-xl p-4 max-w-xs border border-border"
+          className="fixed bottom-6 right-6 bg-background-light/95 backdrop-blur-sm rounded-xl shadow-xl p-4 max-w-xs border border-border"
         >
           <h3 className="font-semibold text-sm mb-2">💡 Demo Tips</h3>
-          <ul className="text-xs text-gray-600 space-y-1.5">
+          <ul className="text-xs text-text-secondary space-y-1.5">
             <li>• Click a wall to enter edit mode</li>
             <li>• Drag boards to rearrange (changes not saved)</li>
             <li>• Click boards to view comments</li>
