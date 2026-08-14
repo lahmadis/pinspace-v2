@@ -1615,7 +1615,7 @@ function Particles() {
   return (
     <points>
       <bufferGeometry>
-        <bufferAttribute attach="attributes-position" count={positions.length / 3} array={positions} itemSize={3} />
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
       </bufferGeometry>
       <pointsMaterial size={0.12} color={GALLERY_VISUAL_COLORS.particle} transparent opacity={0.45} />
     </points>

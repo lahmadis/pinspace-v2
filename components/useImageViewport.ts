@@ -40,7 +40,7 @@ export interface ImageViewport {
   /** Callback ref for the zoom/pan container (the element events attach to). */
   containerRef: (node: HTMLDivElement | null) => void
   /** Ref for the <img>. */
-  imgRef: React.RefObject<HTMLImageElement>
+  imgRef: React.RefObject<HTMLImageElement | null>
   scale: number
   offsetX: number
   offsetY: number

@@ -17,7 +17,9 @@ export function useDisposableGeometry<T extends BufferGeometry>(
   factory: () => T,
   deps: DependencyList,
 ): T {
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // The dependency list is supplied by the geometry caller so changing a
+  // dimension disposes/rebuilds its GPU buffers; it cannot be a local literal.
+  // eslint-disable-next-line react-hooks/use-memo, react-hooks/exhaustive-deps
   const geometry = useMemo(factory, deps)
   useEffect(() => {
     return () => {

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ElementType, ReactNode } from 'react'
+import { createElement, type ElementType, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { back, toast } = vi.hoisted(() => ({
@@ -16,7 +16,7 @@ vi.mock('framer-motion', () => ({
   motion: new Proxy({}, { get: (_target, element) => ({ children, ...props }: { children?: ReactNode }) => {
     const Component = element as ElementType
     const { initial: _initial, animate: _animate, transition: _transition, ...domProps } = props as Record<string, unknown>
-    return <Component {...domProps}>{children}</Component>
+    return createElement(Component, domProps, children)
   } }),
 }))
 vi.mock('@/lib/toast', () => ({ toast }))

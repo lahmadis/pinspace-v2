@@ -117,18 +117,26 @@ export function useAccountMode(userId: string | null | undefined, userEmail?: st
   const [loading, setLoading] = useState<boolean>(!cached?.ready && !!userId)
 
   useEffect(() => {
-    if (!userId) {
-      setLoading(false)
-      return
-    }
-    if (cached?.ready) {
-      setMode(cached.mode)
-      setResolved(true)
-      setLoading(false)
-      return
-    }
+    if (!userId) return
     let cancelled = false
-    setLoading(true)
+    // State is seeded from this module cache during render, so a ready cache
+    // normally needs no mirror update. Re-apply it asynchronously for the race
+    // where another caller filled the shared cache after this render began.
+    if (cached?.ready) {
+      const ready = cached
+      queueMicrotask(() => {
+        if (cancelled) return
+        setMode(ready.mode)
+        setResolved(true)
+        setLoading(false)
+      })
+      return () => {
+        cancelled = true
+      }
+    }
+    queueMicrotask(() => {
+      if (!cancelled) setLoading(true)
+    })
     loadMode(userEmail)
       .then((m) => {
         if (cancelled) return
@@ -156,7 +164,7 @@ export function useAccountMode(userId: string | null | undefined, userEmail?: st
     }
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { mode, loading, resolved }
+  return { mode, loading: Boolean(userId) && loading, resolved }
 }
 
 export function resetAccountModeCache(): void {

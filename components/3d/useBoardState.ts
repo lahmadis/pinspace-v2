@@ -11,7 +11,6 @@ const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
 // write / rebuild so we can see, in production, why a fresh-upload move reverts.
 // Remove once the revert is root-caused.
 const postrace = (...args: unknown[]) => {
-  // eslint-disable-next-line no-console
   console.log('[POSTRACE]', new Date().toISOString(), ...args)
 }
 
@@ -299,6 +298,9 @@ export function useBoardState(
     }
 
     setBoards(Array.from(boardMap.values()))
+  // `boards` is deliberately a one-time snapshot: parent updates are the only
+  // trigger, otherwise this reconciliation effect would loop on its own write.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialBoards])
   
   // Cleanup blob URLs on unmount
@@ -542,7 +544,6 @@ export function useBoardState(
       // `comments` — an unbounded array the PUT route never reads — so the
       // keepalive body stays well under the 64KB keepalive budget when Save &
       // Exit fires one PUT per board in parallel.
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { position: _position, comments: _comments, ...boardWithoutPosition } = board
       
       // Serialize per board so rapid successive writes for the SAME board commit
@@ -609,7 +610,7 @@ export function useBoardState(
       toast.error('Failed to save board position. Please try again.')
       return
     }
-  }, [normalizedToApi, decimalToApi, resolveBoardId])
+  }, [normalizedToApi, decimalToApi, resolveBoardId, pushUndo])
   
   /**
    * Move MANY boards as one operation — one undo step, one local commit, one
@@ -742,7 +743,6 @@ export function useBoardState(
       const apiHeight = u.height != null ? decimalToApi(u.height) : (board.position?.height ?? 30)
 
       try {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { position: _position, comments: _comments, ...boardWithoutPosition } = board
         const response = await enqueueBoardWrite(u.boardId, () => fetch('/api/boards', {
           method: 'PUT',
