@@ -1,8 +1,21 @@
 import type { Metadata } from 'next'
+import { Figtree, JetBrains_Mono } from 'next/font/google'
 import * as Sentry from '@sentry/nextjs'
 import './globals.css'
 import Toaster from '@/components/Toaster'
 import { ProfileProviderWrapper } from '@/components/ProfileProviderWrapper'
+
+const figtree = Figtree({
+  subsets: ['latin'],
+  variable: '--font-figtree',
+  display: 'swap',
+})
+
+const jetBrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-jetbrains-mono',
+  display: 'swap',
+})
 
 export function generateMetadata(): Metadata {
   return {
@@ -32,7 +45,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body suppressHydrationWarning>
+      <body className={`${figtree.variable} ${jetBrainsMono.variable}`} suppressHydrationWarning>
         <ProfileProviderWrapper>
           {children}
         </ProfileProviderWrapper>
