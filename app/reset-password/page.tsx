@@ -2,9 +2,12 @@
 
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import PasswordInput from '@/components/ui/PasswordInput'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
+import { Button, StatusState } from '@/components/ui'
+import { AuthLoading, AuthShell, fieldLabelClass, textLinkClass } from '@/components/auth/AuthShell'
 
 function ResetPasswordInner() {
   const router = useRouter()
@@ -58,7 +61,7 @@ function ResetPasswordInner() {
         return
       }
 
-      // 2. Legacy hash/implicit flow: #access_token...&type=recovery — keep working.
+      // 2. Legacy hash/implicit recovery flow — keep working.
       if (typeof window !== 'undefined' && window.location.hash) {
         const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
         const accessToken = hash.get('access_token')
@@ -120,63 +123,60 @@ function ResetPasswordInner() {
       return
     }
     setSubmitting(true)
-    const { error: updateError } = await supabase.auth.updateUser({ password })
-    setSubmitting(false)
-    if (updateError) {
-      setError(updateError.message || 'Failed to update password')
-      return
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password })
+      if (updateError) {
+        setError(updateError.message || 'Failed to update password')
+        return
+      }
+      setDone(true)
+      setTimeout(() => router.replace('/dashboard'), 2000)
+    } catch {
+      setError('We could not update your password. Please try again.')
+    } finally {
+      setSubmitting(false)
     }
-    setDone(true)
-    setTimeout(() => router.replace('/dashboard'), 2000)
   }
 
   if (done) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200 text-center">
-          <div className="text-4xl mb-4">✓</div>
-          <h1 className="text-xl font-bold text-gray-900 mb-2">Password updated</h1>
-          <p className="text-gray-500 text-sm">Redirecting you to your dashboard…</p>
-        </div>
-      </div>
+      <AuthShell eyebrow="Recovery complete" title="Password updated">
+        <StatusState
+          status="success"
+          title="Your new password is ready"
+          description="Redirecting you to your dashboard…"
+        />
+      </AuthShell>
     )
   }
 
   if (invalid && !ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200 text-center">
-          <h1 className="text-xl font-bold text-gray-900 mb-2">Link expired or invalid</h1>
-          <p className="text-gray-600 mb-6 text-sm">
-            This password reset link has expired or already been used. Request a new one.
-          </p>
-          <a
-            href="/forgot-password"
-            className="inline-block px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
-          >
-            Request new reset link
-          </a>
-        </div>
-      </div>
+      <AuthShell
+        eyebrow="Recovery link"
+        title="Link expired or invalid"
+        description="This password reset link has expired or already been used. Request a new one to continue safely."
+      >
+        <Link href="/forgot-password" className={`${textLinkClass} w-full justify-center border border-border bg-primary-muted px-4`}>
+          Request a new reset link
+        </Link>
+      </AuthShell>
     )
   }
 
   if (!ready) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
-      </div>
-    )
+    return <AuthLoading label="Validating your reset link" />
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Set new password</h1>
-        <p className="text-sm text-gray-500 mb-6">Must be at least 8 characters.</p>
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <AuthShell
+      eyebrow="Secure recovery"
+      title="Set new password"
+      description="Use at least 8 characters. Both fields must match."
+    >
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="password" className={fieldLabelClass}>
               New password
             </label>
             <PasswordInput
@@ -189,10 +189,13 @@ function ResetPasswordInner() {
               autoFocus
               shown={showPassword}
               onShownChange={setShowPassword}
+              aria-invalid={!!error || undefined}
+              aria-describedby={error ? 'reset-password-error' : 'reset-password-help'}
             />
+            <p id="reset-password-help" className="mt-2 text-xs text-text-muted">At least 8 characters.</p>
           </div>
           <div>
-            <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="confirmPassword" className={fieldLabelClass}>
               Confirm new password
             </label>
             <PasswordInput
@@ -204,29 +207,22 @@ function ResetPasswordInner() {
               minLength={8}
               shown={showPassword}
               onShownChange={setShowPassword}
+              aria-invalid={!!error || undefined}
+              aria-describedby={error ? 'reset-password-error' : undefined}
             />
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={submitting || password.length < 8 || confirmPassword.length < 8}
-            className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
-          >
+          {error && <StatusState id="reset-password-error" status="error" title={error} />}
+          <Button type="submit" loading={submitting} className="w-full">
             {submitting ? 'Updating…' : 'Update password'}
-          </button>
+          </Button>
         </form>
-      </div>
-    </div>
+    </AuthShell>
   )
 }
 
 export default function ResetPasswordPage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
-      </div>
-    }>
+    <Suspense fallback={<AuthLoading label="Validating your reset link" />}>
       <ResetPasswordInner />
     </Suspense>
   )

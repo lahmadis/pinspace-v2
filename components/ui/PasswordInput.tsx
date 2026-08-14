@@ -1,18 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type InputHTMLAttributes } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 
 import { Input } from './Primitives'
 
-type PasswordInputProps = {
+type PasswordInputProps = Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  'id' | 'type' | 'value' | 'onChange'
+> & {
   id: string
   value: string
   onChange: (value: string) => void
-  placeholder?: string
-  autoComplete?: string
-  minLength?: number
-  autoFocus?: boolean
 } & (
   /** Reveal state lifted to the parent, so one toggle can drive several fields
    *  — that is what the sign-up and reset-password pairs do, since revealing
@@ -34,6 +33,7 @@ export default function PasswordInput({
   autoFocus,
   shown,
   onShownChange,
+  ...inputProps
 }: PasswordInputProps) {
   const [localShown, setLocalShown] = useState(false)
   const revealed = shown !== undefined ? shown : localShown
@@ -55,6 +55,7 @@ export default function PasswordInput({
         autoComplete={autoComplete}
         minLength={minLength}
         autoFocus={autoFocus}
+        {...inputProps}
       />
       <button
         type="button"

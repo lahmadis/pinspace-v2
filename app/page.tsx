@@ -1,33 +1,54 @@
 'use client'
 
-import { Suspense, useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
+import { ArrowRight, Boxes, MessageSquareText, Network } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
-import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
-import GalleryAvatarModal, { AvatarFormValues } from '@/components/GalleryAvatarModal'
-import DemoBanner from '@/components/DemoBanner'
-import { isDemoMode } from '@/lib/demoMode'
+import { Suspense, useEffect, useState } from 'react'
+
 import AvatarMenu from '@/components/AvatarMenu'
+import DemoBanner from '@/components/DemoBanner'
+import GalleryAvatarModal, { type AvatarFormValues } from '@/components/GalleryAvatarModal'
+import { Button, Card, StatusState } from '@/components/ui'
+import { isDemoMode } from '@/lib/demoMode'
+import { supabase } from '@/lib/supabase/client'
+
+const features = [
+  {
+    title: 'Studio rooms',
+    description: 'Keep boards, references, and reviews together in spatial rooms built for visual work.',
+    icon: Boxes,
+  },
+  {
+    title: 'Connected community',
+    description: 'Move through a living network of people, projects, departments, and shared spaces.',
+    icon: Network,
+  },
+  {
+    title: 'Feedback in context',
+    description: 'Collect comments and critique beside the work, where the next decision is easiest to see.',
+    icon: MessageSquareText,
+  },
+]
 
 function HomeInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const institutionFromUrl = searchParams?.get('institution') ?? null
   const [showGalleryModal, setShowGalleryModal] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [institutionSlug, setInstitutionSlug] = useState<string | null>(null)
 
   const isDemo = isDemoMode(searchParams)
-  const institutionFromUrl = searchParams?.get('institution') ?? null
 
-  // Persist institution from URL when landing via /i/[slug] (e.g. /?institution=wit)
   useEffect(() => {
-    if (typeof window !== 'undefined' && institutionFromUrl) {
+    if (institutionFromUrl) {
       window.sessionStorage.setItem('pinspace_institution', institutionFromUrl)
+      // sessionStorage is unavailable during server rendering; update after hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setInstitutionSlug(institutionFromUrl)
-    } else if (typeof window !== 'undefined') {
+    } else {
       setInstitutionSlug(window.sessionStorage.getItem('pinspace_institution'))
     }
   }, [institutionFromUrl])
@@ -37,11 +58,11 @@ function HomeInner() {
       setUser(session?.user || null)
       setLoading(false)
     })
-    
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      setUser(session?.user || null)
-    })
-    
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event: AuthChangeEvent, session: Session | null) => setUser(session?.user || null),
+    )
+
     return () => subscription.unsubscribe()
   }, [])
 
@@ -52,119 +73,131 @@ function HomeInner() {
       department: values.department,
       year: values.year,
     })
-    // Preserve demo mode if active
-    if (isDemo) {
-      params.set('demo', 'true')
-    }
+    if (isDemo) params.set('demo', 'true')
     setShowGalleryModal(false)
     router.push(`/gallery?${params.toString()}`)
   }
 
-  const content = (
-    <div className="min-h-screen bg-background relative overflow-x-hidden">
+  const signInHref = institutionSlug ? `/sign-in?institution=${institutionSlug}` : '/sign-in'
+  const signUpHref = institutionSlug ? `/sign-up?institution=${institutionSlug}` : '/sign-up'
+
+  return (
+    <div className="min-h-screen overflow-x-hidden bg-background">
       <DemoBanner />
-      {/* Auth buttons in top-right */}
-      <div className="absolute top-6 right-6 z-20 flex items-center gap-3">
-        {loading ? (
-          <div className="w-8 h-8 border-2 border-text-muted border-t-primary rounded-full animate-spin"></div>
-        ) : user ? (
-          <>
-            <Link href="/dashboard">
-              <button className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-900 rounded-lg transition-colors font-medium text-sm shadow-md border border-gray-200">
-                Dashboard
-              </button>
-            </Link>
-            <AvatarMenu
-              email={user.email || user.user_metadata?.email}
-              onSignOut={() => supabase.auth.signOut().then(() => { window.location.href = '/' })}
-            />
-          </>
-        ) : (
-          <>
-            <button
-              onClick={(e) => {
-                e.preventDefault()
-                router.push(institutionSlug ? `/sign-in?institution=${institutionSlug}` : '/sign-in')
-              }}
-              className="px-4 py-2 text-text-primary hover:text-primary transition-colors font-medium text-sm"
-            >
-              Sign In
-            </button>
-            <button
-              onClick={() => router.push(institutionSlug ? `/sign-up?institution=${institutionSlug}` : '/sign-up')}
-              className="px-6 py-2 bg-primary hover:bg-primary-light text-white rounded-lg transition-colors font-medium text-sm shadow-md"
-            >
-              Get Started
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* Animated gradient background - vibrant but not dark */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -inset-[10px] opacity-30">
-          <div className="absolute top-0 -left-4 w-96 h-96 bg-primary/60 rounded-full mix-blend-multiply filter blur-3xl animate-float"></div>
-          <div className="absolute top-0 -right-4 w-96 h-96 bg-accent/60 rounded-full mix-blend-multiply filter blur-3xl animate-float animation-delay-2000"></div>
-          <div className="absolute -bottom-8 left-20 w-96 h-96 bg-purple-400/60 rounded-full mix-blend-multiply filter blur-3xl animate-float animation-delay-4000"></div>
+      <header className="border-b border-border bg-background-light/90">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+          <Link
+            href="/"
+            className="inline-flex min-h-11 items-center rounded-kova px-2 font-mono text-sm font-bold uppercase tracking-[0.2em] text-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            Kova
+          </Link>
+          <nav aria-label="Account" className="flex min-w-0 items-center gap-2 sm:gap-3">
+            {loading ? (
+              <StatusState
+                status="loading"
+                title="Checking your session"
+                className="border-0 bg-transparent p-2 text-xs shadow-none"
+              />
+            ) : user ? (
+              <>
+                <Link
+                  href="/dashboard"
+                  className="inline-flex min-h-11 items-center rounded-kova border border-primary-dark bg-primary px-3 text-sm font-semibold text-kova-ink shadow-[var(--shadow-soft)] transition-transform active:translate-y-0.5 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-4"
+                >
+                  Open dashboard
+                </Link>
+                <AvatarMenu
+                  email={user.email || user.user_metadata?.email}
+                  onSignOut={() => supabase.auth.signOut().then(() => {
+                    router.replace('/')
+                    router.refresh()
+                  })}
+                />
+              </>
+            ) : (
+              <>
+                <Link
+                  href={signInHref}
+                  className="inline-flex min-h-11 items-center rounded-kova px-2 text-sm font-semibold text-text-primary transition-colors hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-3"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href={signUpHref}
+                  className="inline-flex min-h-11 items-center rounded-kova border border-primary-dark bg-primary px-3 text-sm font-semibold text-kova-ink shadow-[var(--shadow-soft)] transition-transform active:translate-y-0.5 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-4"
+                >
+                  Get started
+                </Link>
+              </>
+            )}
+          </nav>
         </div>
-      </div>
+      </header>
 
-      {/* Content */}
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="text-center"
-        >
-          {/* Logo/Title */}
-          <motion.h1 
-            className="text-7xl md:text-9xl font-bold mb-6 bg-gradient-to-r from-primary-dark via-accent to-primary bg-clip-text text-transparent"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1, delay: 0.2 }}
-          >
-            PinSpace
-          </motion.h1>
-          
-          <motion.p 
-            className="text-xl md:text-2xl text-text-secondary mb-4 font-light"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 0.4 }}
-          >
-            Explore studios in immersive 3D
-          </motion.p>
-
-          <motion.p 
-            className="text-sm md:text-base text-text-muted mb-12 max-w-2xl mx-auto"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 0.6 }}
-          >
-            Navigate through a living network of studio work. From institutions to individual boards,
-            experience design education like never before.
-          </motion.p>
-
-          {/* Feature Pills */}
-          <motion.div 
-            className="flex flex-wrap gap-3 justify-center mt-16 max-w-2xl mx-auto"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 1 }}
-          >
-            {['3D Studio Rooms', 'Interactive Network', 'Spatial Feedback'].map((feature) => (
-              <div 
-                key={feature}
-                className="px-4 py-2 bg-white/60 backdrop-blur-sm border border-border rounded-full text-sm text-text-secondary hover:text-text-primary hover:border-primary/50 transition-all duration-300 cursor-default shadow-sm"
-              >
-                {feature}
+      <main>
+        <section className="relative isolate border-b border-border px-4 py-16 sm:px-6 sm:py-24 lg:px-8 lg:py-28">
+          <div aria-hidden="true" className="absolute inset-0 -z-10 overflow-hidden">
+            <div className="absolute -right-24 top-12 h-72 w-72 rounded-full border-[3rem] border-primary-muted opacity-70" />
+            <div className="absolute -bottom-32 -left-20 h-80 w-80 rounded-full bg-accent opacity-10" />
+          </div>
+          <div className="mx-auto grid w-full max-w-7xl gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.62fr)] lg:items-end">
+            <div className="max-w-4xl">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.22em] text-accent">Work in public. Learn together.</p>
+              <h1 className="mt-5 text-5xl font-bold leading-[0.94] tracking-tight text-text-primary sm:text-6xl lg:text-8xl">
+                Studio work gets stronger when ideas stay connected.
+              </h1>
+            </div>
+            <div className="max-w-xl lg:pb-2">
+              <p className="text-lg leading-8 text-text-secondary sm:text-xl">
+                Kova brings rooms, boards, people, and critique into one shared spatial network for creative communities.
+              </p>
+              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                {loading ? (
+                  <Button type="button" size="lg" disabled>
+                    Checking access…
+                  </Button>
+                ) : (
+                  <Link
+                    href={user ? '/dashboard' : signUpHref}
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-kova border border-primary-dark bg-primary px-5 py-2.5 font-semibold text-kova-ink shadow-[var(--shadow-soft)] transition-transform active:translate-y-0.5 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    {user ? 'Continue to dashboard' : 'Start your space'} <ArrowRight aria-hidden="true" className="h-4 w-4" />
+                  </Link>
+                )}
+                <Button type="button" variant="secondary" size="lg" onClick={() => setShowGalleryModal(true)}>
+                  Explore the network
+                </Button>
               </div>
-            ))}
-          </motion.div>
-        </motion.div>
+            </div>
+          </div>
+        </section>
 
-      </div>
+        <section aria-labelledby="how-kova-works" className="px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
+          <div className="mx-auto w-full max-w-7xl">
+            <div className="max-w-2xl">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-accent">One connected practice</p>
+              <h2 id="how-kova-works" className="mt-3 text-3xl font-bold text-text-primary sm:text-4xl">
+                From first pin to final review.
+              </h2>
+            </div>
+            <div className="mt-9 grid gap-4 md:grid-cols-3">
+              {features.map(({ title, description, icon: Icon }, index) => (
+                <Card key={title} className="flex min-w-0 flex-col">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-kova bg-primary-muted text-primary-dark">
+                      <Icon aria-hidden="true" className="h-5 w-5" />
+                    </span>
+                    <span className="font-mono text-xs font-bold text-text-muted">0{index + 1}</span>
+                  </div>
+                  <h3 className="mt-7 text-xl font-bold text-text-primary">{title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-text-secondary">{description}</p>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </section>
+      </main>
 
       <GalleryAvatarModal
         isOpen={showGalleryModal}
@@ -172,14 +205,14 @@ function HomeInner() {
         onEnter={handleEnterGallery}
       />
 
-      <footer className="relative z-10 border-t border-border bg-white/80 backdrop-blur-sm">
-        <div className="max-w-5xl mx-auto px-4 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-text-muted">
-          <p>© {new Date().getFullYear()} PinSpace</p>
-          <nav className="flex gap-6">
-            <Link href="/terms" className="hover:text-primary transition-colors">
+      <footer className="border-t border-border bg-primary-dark text-background-light">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-7 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <p>© {new Date().getFullYear()} Kova. Built for creative communities.</p>
+          <nav aria-label="Legal" className="flex flex-wrap gap-x-6 gap-y-2">
+            <Link href="/terms" className="min-h-11 py-3 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
               Terms of Service
             </Link>
-            <Link href="/privacy" className="hover:text-primary transition-colors">
+            <Link href="/privacy" className="min-h-11 py-3 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
               Privacy Policy
             </Link>
           </nav>
@@ -187,13 +220,11 @@ function HomeInner() {
       </footer>
     </div>
   )
-
-  return content
 }
 
 export default function Home() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<main className="min-h-screen bg-background" />}>
       <HomeInner />
     </Suspense>
   )
