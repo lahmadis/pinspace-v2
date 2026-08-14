@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
-import { isAdmin } from '@/lib/auth/isAdmin'
+import { supabaseServiceRole } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/requireAdmin'
 
 export const revalidate = 60
 export const dynamic = 'force-dynamic'
@@ -65,23 +65,8 @@ export async function GET() {
 /** POST /api/institutions – create org (admin only). Calls create_organization_with_domains RPC for atomicity. */
 export async function POST(req: Request) {
   try {
-    const supabase = supabaseServer()
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
-
-    if (sessionError || !session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const email = session.user.email
-    if (!isAdmin(email)) {
-      return NextResponse.json(
-        { error: 'Forbidden. Only admins can create organizations. Set PINSPACE_ADMIN_EMAILS in env.' },
-        { status: 403 }
-      )
-    }
+    const auth = await requireAdmin()
+    if (!auth.ok) return auth.response
 
     const body = await req.json().catch(() => null)
     const name = body?.name?.trim() ?? ''

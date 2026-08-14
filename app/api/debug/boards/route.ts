@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
-
-const ADMIN_EMAILS = (process.env.PINSPACE_ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)
-
-function isAdmin(email: string | undefined): boolean {
-  if (!email) return false
-  return ADMIN_EMAILS.includes(email.toLowerCase())
-}
+import { requireAdmin } from '@/lib/auth/requireAdmin'
 
 // Debug endpoint to inspect and fix board positions (admin-only)
 export async function GET(request: NextRequest) {
@@ -17,19 +11,9 @@ export async function GET(request: NextRequest) {
     if (process.env.NODE_ENV !== 'development') {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
+    const auth = await requireAdmin()
+    if (!auth.ok) return auth.response
     const supabase = supabaseServer()
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
-
-    if (sessionError || !session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    if (!isAdmin(session.user.email)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
 
     const searchParams = request.nextUrl.searchParams
     const workspaceId = searchParams.get('workspaceId') || searchParams.get('studioId')
@@ -98,19 +82,9 @@ export async function POST(request: NextRequest) {
     if (process.env.NODE_ENV !== 'development') {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
+    const auth = await requireAdmin()
+    if (!auth.ok) return auth.response
     const supabase = supabaseServer()
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
-
-    if (sessionError || !session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    if (!isAdmin(session.user.email)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
 
     const body = await request.json()
     const { boardId, newWallIndex } = body
