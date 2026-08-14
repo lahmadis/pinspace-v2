@@ -31,6 +31,33 @@ interface BoardPosition {
   height: number // decimal 0.0 to 1.0
 }
 
+type PositionUpdate = {
+  boardId: string
+  wallIndex: number
+  x: number
+  y: number
+  width?: number
+  height?: number
+  side?: 'front' | 'back'
+}
+
+export function snapshotToPositionUpdates(
+  snapshot: ReadonlyArray<readonly [string, BoardPosition]>,
+  boards: ReadonlyArray<Pick<Board, 'id' | 'position'>>,
+): PositionUpdate[] {
+  const boardsById = new Map(boards.map((board) => [board.id, board]))
+  return snapshot.flatMap(([boardId, position]) => {
+    const board = boardsById.get(boardId)
+    if (!board?.position) return []
+    return [{
+      boardId,
+      wallIndex: Number(board.position.wallIndex),
+      side: board.position.side ?? 'front',
+      ...position,
+    }]
+  })
+}
+
 interface TempBoard {
   board: Board
   blobUrl: string
@@ -390,49 +417,6 @@ export function useBoardState(
   }, [])
 
   /**
-   * Restore boardPositions and sync boards array from a snapshot
-   */
-  const applySnapshot = useCallback((snapshot: [string, BoardPosition][]) => {
-    const map = new Map(snapshot)
-    postrace('applySnapshot (undo/redo)', `entries=${map.size}`, Array.from(map.entries()).map(([id, p]) => `${id}:(${p.x.toFixed(2)},${p.y.toFixed(2)})`).join(' '))
-    setBoardPositions(map)
-    setBoards(prev => prev.map(b => {
-      const pos = map.get(b.id)
-      if (!pos || !b.position) return b
-      return {
-        ...b,
-        position: {
-          ...b.position,
-          x: normalizedToApi(pos.x),
-          y: normalizedToApi(pos.y),
-          width: decimalToApi(pos.width),
-          height: decimalToApi(pos.height)
-        }
-      }
-    }))
-  }, [normalizedToApi, decimalToApi])
-
-  const undo = useCallback(() => {
-    const stack = undoStackRef.current
-    if (stack.length === 0) return
-    const current = Array.from(boardPositionsRef.current.entries())
-    redoStackRef.current = [...redoStackRef.current, current]
-    const snapshot = stack[stack.length - 1]
-    undoStackRef.current = stack.slice(0, -1)
-    applySnapshot(snapshot)
-  }, [applySnapshot])
-
-  const redo = useCallback(() => {
-    const stack = redoStackRef.current
-    if (stack.length === 0) return
-    const current = Array.from(boardPositionsRef.current.entries())
-    undoStackRef.current = [...undoStackRef.current, current]
-    const snapshot = stack[stack.length - 1]
-    redoStackRef.current = stack.slice(0, -1)
-    applySnapshot(snapshot)
-  }, [applySnapshot])
-
-  /**
    * Update board position (handles both local state and API save)
    */
   const updateBoardPosition = useCallback(async (
@@ -673,15 +657,8 @@ export function useBoardState(
    * pre-move positions from it.
    */
   const updateBoardPositionsBulk = useCallback(async (
-    updates: ReadonlyArray<{
-      boardId: string
-      wallIndex: number
-      x: number
-      y: number
-      width?: number
-      height?: number
-      side?: 'front' | 'back'
-    }>
+    updates: ReadonlyArray<PositionUpdate>,
+    options: { recordUndo?: boolean } = {},
   ): Promise<{ requested: number; saved: number; failed: number }> => {
     // Resolve temp->real ids up front, same as the single-board path, and drop
     // anything that no longer corresponds to a board we know about.
@@ -698,7 +675,7 @@ export function useBoardState(
 
     // ONE undo entry for the entire operation. Must happen before any local
     // mutation — pushUndo snapshots current state as the restore point.
-    pushUndo()
+    if (options.recordUndo !== false) pushUndo()
 
     // Prior state per board, for the per-board rollback described above.
     const prior = new Map(resolved.map(u => [u.boardId, {
@@ -827,6 +804,57 @@ export function useBoardState(
     postrace('updateBoardPositionsBulk DONE', `saved=${saved} failed=${failedIds.length}`)
     return { requested: updates.length, saved, failed: failedIds.length }
   }, [normalizedToApi, decimalToApi, resolveBoardId, pushUndo])
+
+  const historyWriteInFlightRef = useRef(false)
+
+  /**
+   * Restore and persist an undo/redo snapshot through the same per-board write
+   * queue as drag and bulk-move saves. History changes only after every board
+   * saves, so a failed request remains retryable and never claims success.
+   */
+  const applySnapshot = useCallback(async (snapshot: [string, BoardPosition][]) => {
+    const updates = snapshotToPositionUpdates(snapshot, boardsRef.current)
+    postrace('applySnapshot (undo/redo)', `entries=${updates.length}`,
+      updates.map((u) => `${u.boardId}:(${u.x.toFixed(2)},${u.y.toFixed(2)})`).join(' '))
+    const result = await updateBoardPositionsBulk(updates, { recordUndo: false })
+    if (result.failed > 0 || result.saved !== updates.length) {
+      toast.error('Could not save every restored board position. Try undo or redo again.')
+      return false
+    }
+    return true
+  }, [updateBoardPositionsBulk])
+
+  const undo = useCallback(async () => {
+    if (historyWriteInFlightRef.current) return
+    const stack = undoStackRef.current
+    if (stack.length === 0) return
+    historyWriteInFlightRef.current = true
+    try {
+      const current = Array.from(boardPositionsRef.current.entries())
+      const snapshot = stack[stack.length - 1]
+      if (!await applySnapshot(snapshot)) return
+      redoStackRef.current = [...redoStackRef.current, current]
+      undoStackRef.current = stack.slice(0, -1)
+    } finally {
+      historyWriteInFlightRef.current = false
+    }
+  }, [applySnapshot])
+
+  const redo = useCallback(async () => {
+    if (historyWriteInFlightRef.current) return
+    const stack = redoStackRef.current
+    if (stack.length === 0) return
+    historyWriteInFlightRef.current = true
+    try {
+      const current = Array.from(boardPositionsRef.current.entries())
+      const snapshot = stack[stack.length - 1]
+      if (!await applySnapshot(snapshot)) return
+      undoStackRef.current = [...undoStackRef.current, current]
+      redoStackRef.current = stack.slice(0, -1)
+    } finally {
+      historyWriteInFlightRef.current = false
+    }
+  }, [applySnapshot])
 
   /**
    * Delete a board
