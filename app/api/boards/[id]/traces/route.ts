@@ -116,9 +116,9 @@ export async function GET(
 
     const supabase = supabaseServer()
     const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    const userId = session?.user?.id
+      data: { user },
+    } = await supabase.auth.getUser()
+    const userId = user?.id
     if (!userId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -251,17 +251,13 @@ export async function PUT(
     } else {
       const supabase = supabaseServer()
       const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-      if (sessionError) {
-        console.error('Session error:', sessionError)
-        return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-      }
-      const userId = session?.user?.id
-      if (!userId) {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+      if (userError || !user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+      const userId = user.id
 
       let resolvedWorkspaceId = board.workspace_id as string | null
       if (board.room_id) {
@@ -306,7 +302,7 @@ export async function PUT(
         .eq('user_id', userId)
         .maybeSingle()
       const profileName = userProfile?.full_name?.trim() || null
-      authorName = profileName || session.user.email?.split('@')[0] || 'Anonymous'
+      authorName = profileName || user.email?.split('@')[0] || 'Anonymous'
     }
 
     // Manual upsert keyed by (board_id, author) — the unique index is a
@@ -394,17 +390,13 @@ export async function DELETE(
 
     const supabase = supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-    const userId = session?.user?.id
-    if (!userId) {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
     // Author-scoped: the WHERE clause restricts deletion to the caller's own row.
     const { error } = await admin

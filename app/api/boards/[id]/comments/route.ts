@@ -85,9 +85,9 @@ export async function GET(
     // into a login flow just because the comment layer is hidden.
     const supabase = supabaseServer()
     const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    const userId = session?.user?.id
+      data: { user },
+    } = await supabase.auth.getUser()
+    const userId = user?.id
     if (!userId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -183,19 +183,14 @@ export async function POST(
 
     const supabase = supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
     // Resolve board → room → workspace with service role; enforce access explicitly.
     const admin = supabaseServiceRole()
@@ -306,19 +301,14 @@ export async function PATCH(
 
     const supabase = supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
     const { data: updatedComment, error: updateError } = await supabase
       .from('comments')
@@ -370,19 +360,14 @@ export async function DELETE(
 
     const supabase = supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
     const { data: deletedComments, error: deleteError } = await supabase
       .from('comments')

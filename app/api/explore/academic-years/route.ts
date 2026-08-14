@@ -6,20 +6,20 @@ export const dynamic = 'force-dynamic'
 
 // GET /api/explore/academic-years
 // Returns academic-year buckets (with counts) scoped to the signed-in user's
-// own institution. Institution is derived from session, never from query
+// own institution. Institution is derived from the verified user, never from query
 // params — EXCEPT a platform superadmin may pass `org` to scope to any org
 // (read-only), verified server-side. Mirrors /api/explore/studios.
 export async function GET(request: NextRequest) {
   try {
-    // Pilot pass 7: scope to user's own org from session.
+    // Pilot pass 7: scope to the verified user's own org.
     const userClient = supabaseServer()
-    const { data: { session } } = await userClient.auth.getSession()
+    const { data: { user } } = await userClient.auth.getUser()
     let institutionFilterId: string | null = null
-    if (session?.user?.id) {
+    if (user?.id) {
       const { data: profile } = await userClient
         .from('user_profiles')
         .select('organization_id')
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
         .maybeSingle()
       if (profile?.organization_id) institutionFilterId = profile.organization_id
     }
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     // Superadmin org override (read-only). Honored only after server-side
     // verification; ignored for everyone else.
     const requestedOrg = request.nextUrl.searchParams.get('org')
-    if (requestedOrg && session?.user?.id && (await isSuperadmin(session.user.id))) {
+    if (requestedOrg && user?.id && (await isSuperadmin(user.id))) {
       institutionFilterId = requestedOrg
     }
 

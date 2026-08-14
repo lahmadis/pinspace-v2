@@ -8,7 +8,7 @@ import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
  *
  * Flow (durable-first): insert the row via the service-role client BEFORE sending
  * email, so feedback is never lost even if Resend bounces. Auth is OPTIONAL — we
- * capture the user id/email if a session exists, but unauthenticated feedback is
+ * capture the user id/email if a verified user exists, but unauthenticated feedback is
  * still accepted. If the email send fails we still return success (the row is the
  * backup) and only log the error server-side.
  */
@@ -26,13 +26,13 @@ export async function POST(request: Request) {
     let userId: string | null = null
     let userEmail: string | null = null
     try {
-      const { data: { session } } = await supabaseServer().auth.getSession()
-      if (session?.user) {
-        userId = session.user.id
-        userEmail = session.user.email ?? null
+      const { data: { user } } = await supabaseServer().auth.getUser()
+      if (user) {
+        userId = user.id
+        userEmail = user.email ?? null
       }
     } catch {
-      // Ignore — feedback works even if we can't read a session.
+      // Ignore — feedback works even if optional identity verification fails.
     }
 
     // 1. Durable backup first (bypasses RLS via service role).

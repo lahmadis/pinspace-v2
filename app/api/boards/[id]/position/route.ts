@@ -8,15 +8,15 @@ export async function PATCH(
   try {
     const supabase = supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError || !session?.user?.id) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = session.user.id
+    const userId = user.id
     const boardId = params.id
     const { wallIndex, x, y, width, height, side, rotation, boardWidthIn, boardHeightIn } = await request.json()
 

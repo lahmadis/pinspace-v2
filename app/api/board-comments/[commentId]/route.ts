@@ -125,17 +125,13 @@ export async function PATCH(
     } else {
       const supabase = supabaseServer()
       const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-      if (sessionError) {
-        console.error('Session error:', sessionError)
-        return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-      }
-      const userId = session?.user?.id
-      if (!userId) {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+      if (userError || !user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+      const userId = user.id
       isAuthor = comment.author_id != null && comment.author_id === userId
       const workspaceOwnerId = await resolveWorkspaceOwnerId(admin, comment.board_id as string)
       isWorkspaceOwner = workspaceOwnerId != null && workspaceOwnerId === userId
@@ -207,17 +203,13 @@ export async function DELETE(
     } else {
       const supabase = supabaseServer()
       const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-      if (sessionError) {
-        console.error('Session error:', sessionError)
-        return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-      }
-      const userId = session?.user?.id
-      if (!userId) {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+      if (userError || !user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+      const userId = user.id
       const isAuthor = comment.author_id != null && comment.author_id === userId
       const workspaceOwnerId = await resolveWorkspaceOwnerId(admin, comment.board_id as string)
       const isWorkspaceOwner = workspaceOwnerId != null && workspaceOwnerId === userId

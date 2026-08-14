@@ -21,11 +21,13 @@
 - [x] Enforced verified-user storage paths and rejected already-attached direct-upload objects
 - [x] Added fail-safe, paginated storage cleanup to room deletion
 - [x] Added a 24-hour age floor, pagination, and per-batch reference rechecks to orphan cleanup
-- [x] Verified the current code with 44 passing tests and a clean TypeScript check
+- [x] Replaced unverified session payloads across every service-role API route with GoTrue-verified users
+- [x] Added a repository-wide contract that rejects future service-role plus `getSession()` combinations
+- [x] Verified the current code with 45 passing tests and a clean TypeScript check
 
 ## In Progress
 
-- [ ] Stabilization Phase 3: complete verified-identity inventory and harden core room/board flows
+- [ ] Stabilization Phase 3: harden workspace deletion and core room/board flows
 
 ## Blocked
 
@@ -38,6 +40,7 @@
 
 - P0: None confirmed; runtime coverage is incomplete
 - P1 resolved in code: Privileged service-role routes now use verified identities
+- P1 resolved in code: All remaining service-role API routes now use verified identities
 - P1 migration pending: Board reorder text-ID correction is committed but unapplied
 - P1 resolved in code: Undo/redo now persists restored positions and reports failures
 - P1: Production isolation and schema parity cannot be launch-verified without an isolated Supabase project
@@ -59,6 +62,5 @@
 
 - Configure an isolated Supabase project and apply/verify migration 036.
 - Validate cross-institution RLS and storage behavior with representative roles.
-- Complete the verified-identity inventory for remaining service-role API routes.
 - Harden and test workspace deletion plus core room, board, upload, comments, sharing, and account flows.
 - Run production-like 3D, texture-failure, reconnect, and presenter tests once the isolated backend is available.

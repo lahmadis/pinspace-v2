@@ -9,19 +9,14 @@ export async function GET() {
   try {
     const supabase = supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
     // Service role for read; access is scoped in app code via owner_id/membership
     // filters. RLS would otherwise drop joined-but-not-owned workspaces (there is
@@ -105,19 +100,14 @@ export async function POST(req: Request) {
   try {
     const supabase = supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
     const body = await req.json().catch(() => null)
     const nameResult = validateName(body?.name, { maxLength: 100, fieldLabel: 'Workspace name' })
@@ -176,8 +166,8 @@ export async function POST(req: Request) {
     }
 
     const ownerName =
-      session.user.user_metadata?.full_name ||
-      session.user.email?.split('@')[0] ||
+      user.user_metadata?.full_name ||
+      user.email?.split('@')[0] ||
       'Owner'
 
     // Shared with the admin provisioning path. `db` stays the RLS-bound client

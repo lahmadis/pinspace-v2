@@ -187,9 +187,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const { id } = params
   const roomId = request.nextUrl.searchParams.get('roomId')
 
-  const { data: { session } } = await supabaseServer().auth.getSession()
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const userId = session.user.id
+  const { data: { user }, error: userError } = await supabaseServer().auth.getUser()
+  if (userError || !user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = user.id
   const admin = supabaseServiceRole()
   const { data: ws } = await admin.from('workspaces').select('owner_id').eq('id', id).maybeSingle()
   if (!ws) return NextResponse.json({ error: 'Not found' }, { status: 404 })

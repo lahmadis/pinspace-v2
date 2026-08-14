@@ -31,13 +31,11 @@ async function requireRoomOwner(
   return { ok: true }
 }
 
-async function requireSession(): Promise<{ userId: string } | { error: NextResponse }> {
+async function requireVerifiedUser(): Promise<{ userId: string } | { error: NextResponse }> {
   const supabase = supabaseServer()
-  const { data: { session }, error } = await supabase.auth.getSession()
-  if (error) return { error: NextResponse.json({ error: 'Failed to get session' }, { status: 500 }) }
-  const userId = session?.user?.id
-  if (!userId) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
-  return { userId }
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error || !user?.id) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
+  return { userId: user.id }
 }
 
 // POST — create a guest token for the room.
@@ -46,7 +44,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   const roomId = params.id
-  const auth = await requireSession()
+  const auth = await requireVerifiedUser()
   if ('error' in auth) return auth.error
   const admin = supabaseServiceRole()
   const gate = await requireRoomOwner(admin, roomId, auth.userId)
@@ -103,7 +101,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   const roomId = params.id
-  const auth = await requireSession()
+  const auth = await requireVerifiedUser()
   if ('error' in auth) return auth.error
   const admin = supabaseServiceRole()
   const gate = await requireRoomOwner(admin, roomId, auth.userId)
@@ -138,7 +136,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   const roomId = params.id
-  const auth = await requireSession()
+  const auth = await requireVerifiedUser()
   if ('error' in auth) return auth.error
   const admin = supabaseServiceRole()
   const gate = await requireRoomOwner(admin, roomId, auth.userId)
@@ -175,7 +173,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   const roomId = params.id
-  const auth = await requireSession()
+  const auth = await requireVerifiedUser()
   if ('error' in auth) return auth.error
   const admin = supabaseServiceRole()
   const gate = await requireRoomOwner(admin, roomId, auth.userId)

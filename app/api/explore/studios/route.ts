@@ -70,30 +70,30 @@ export async function GET(request: NextRequest) {
     // Resolved server-side from user_profiles.organization_id — clients no
     // longer choose an institution.
     const userClient = supabaseServer()
-    const { data: { session } } = await userClient.auth.getSession()
+    const { data: { user } } = await userClient.auth.getUser()
     let institutionFilterId: string | null = null
-    if (session?.user?.id) {
+    if (user?.id) {
       const { data: profile } = await userClient
         .from('user_profiles')
         .select('organization_id')
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
         .maybeSingle()
       if (profile?.organization_id) institutionFilterId = profile.organization_id
     }
 
     // Platform superadmin: may view ANY org's network (read-only). The `org`
     // query param selects which org; it is honored ONLY after verifying the
-    // caller is a superadmin server-side (service role, from the session user
+    // caller is a superadmin server-side (service role, from the verified user
     // id). A non-superadmin passing `org` is ignored and stays scoped to their
     // own org. This is the sole cross-org override — content endpoints still
     // gate independently on published status.
     const requestedOrg = searchParams.get('org')
-    if (requestedOrg && session?.user?.id && (await isSuperadmin(session.user.id))) {
+    if (requestedOrg && user?.id && (await isSuperadmin(user.id))) {
       institutionFilterId = requestedOrg
     }
 
     if (!institutionFilterId) {
-      // No session, or signed-in user is not attached to an org (legacy
+      // No verified user, or signed-in user is not attached to an org (legacy
       // orphaned account). Return empty so the UI can show its empty state.
       return NextResponse.json(
         { studios: [], totals: { studios: 0, students: 0 }, hasOrg: false },
@@ -328,4 +328,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to fetch studios' }, { status: 500 })
   }
 }
-

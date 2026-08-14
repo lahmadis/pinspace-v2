@@ -10,14 +10,11 @@ export async function POST(
   const roomId = params.id
 
   const supabase = supabaseServer()
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-  if (sessionError) {
-    return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-  }
-  const userId = session?.user?.id
-  if (!userId) {
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const userId = user.id
 
   const admin = supabaseServiceRole()
 
