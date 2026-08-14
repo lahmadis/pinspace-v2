@@ -9,23 +9,27 @@
 - [x] Produced initial P0/P1/P2/P3 launch-readiness report
 - [x] Produced initial security best-practices report
 - [x] Established Kova design tokens and basic test scaffolding before the stabilization master prompt superseded the rollout order
+- [x] Replaced unverified privileged-route sessions with the verified `requireAdmin()` boundary
+- [x] Prepared and contract-tested the text-ID board reorder migration
+- [x] Persisted undo/redo snapshots through the serialized board write queue
 
 ## In Progress
 
-- [ ] Stabilization Phase 1: validate and remediate P1 authorization and data-consistency findings
+- [ ] Stabilization Phase 2: configure isolated Supabase verification and investigate P2 storage/3D/realtime risks
 
 ## Blocked
 
 - [ ] Authenticated, RLS, storage, realtime, and multi-user testing — isolated Supabase URL and keys not configured
 - [ ] Migration verification — no isolated Supabase project is connected; migrations must be applied manually in SQL Editor
+- [ ] Board reorder release verification — apply `migrations/036_fix_board_reorder_text_ids.sql`, then verify the RPC signature and a real reorder
 - [ ] Production-data alias audit — no source database URL and production access is intentionally out of scope
 
 ## Bugs Found
 
 - P0: None confirmed; runtime coverage is incomplete
-- P1: Privileged service-role routes trust `getSession()` claims
-- P1: Board reorder RPC expects UUID IDs while boards use text IDs
-- P1: Undo/redo does not persist restored positions
+- P1 resolved in code: Privileged service-role routes now use verified identities
+- P1 migration pending: Board reorder text-ID correction is committed but unapplied
+- P1 resolved in code: Undo/redo now persists restored positions and reports failures
 - P1: Production isolation and schema parity cannot be launch-verified without an isolated Supabase project
 - P2: Duplicated boards alias storage objects
 - P2: Room deletion leaks board storage objects
@@ -42,6 +46,6 @@
 
 ## Next
 
-- Add failing authorization tests for privileged routes and migrate them to `requireAdmin()`.
-- Add a failing board-reorder contract test and prepare the text-ID migration.
-- Perform a diagnostic-only pass on undo persistence before implementing a fix.
+- Configure an isolated Supabase project and apply/verify migration 036.
+- Validate cross-institution RLS and storage behavior with representative roles.
+- Begin diagnostic runtime work on room loading, texture failures, realtime reconnection, and presenter cleanup.

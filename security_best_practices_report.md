@@ -6,7 +6,7 @@ The initial static review found one high-severity authorization pattern: privile
 
 ## High severity
 
-### SEC-01 — Unverified session claims gate service-role administration
+### SEC-01 — Unverified session claims gate service-role administration — remediated in code
 
 **Locations:**
 
@@ -26,7 +26,7 @@ The initial static review found one high-severity authorization pattern: privile
 
 **Counterevidence:** The admin email must match `PINSPACE_ADMIN_EMAILS`; middleware hides admin pages from ordinary signed-out navigation. Neither control replaces server-side identity verification for the API. Newer admin routes correctly use `requireAdmin()`.
 
-**Recommendation:** Replace the duplicated session/email gates with `requireAdmin()`. Add tests for missing, expired, forged, non-admin, and verified-admin sessions. Keep service-role creation after successful authorization.
+**Resolution:** The affected routes now use `requireAdmin()`, which resolves identity through `auth.getUser()` before checking the admin allowlist. A repository contract test covers all nine affected route modules. Authenticated runtime verification remains pending until the isolated Supabase environment is configured.
 
 ## Important verification gaps
 
