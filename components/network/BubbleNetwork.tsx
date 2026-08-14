@@ -94,22 +94,22 @@ function wrapLabel(text: string, radius: number): string[] {
 
 const RELATIONSHIP_STYLES = {
   instructor: {
-    color: '#3B82F6', // Blue - solid line
+    color: 'rgb(var(--color-primary))',
     width: 3,
     dasharray: '', // Solid line
-    glowColor: 'rgba(59, 130, 246, 0.6)',
+    glowColor: 'rgb(var(--color-primary) / 0.55)',
   },
   year: {
-    color: '#8B5CF6', // Purple - dashed line
+    color: 'rgb(var(--color-paper))',
     width: 2.5,
     dasharray: '8,4',
-    glowColor: 'rgba(139, 92, 246, 0.5)',
+    glowColor: 'rgb(var(--color-paper) / 0.45)',
   },
   department: {
-    color: '#10B981', // Green - dotted line
+    color: 'rgb(var(--color-secondary))',
     width: 2,
     dasharray: '3,3',
-    glowColor: 'rgba(16, 185, 129, 0.4)',
+    glowColor: 'rgb(var(--color-secondary) / 0.45)',
   },
 }
 
@@ -118,6 +118,15 @@ const HOVER_DEBOUNCE_MS = 100
 const BUBBLE_SIZE_MIN = 55
 const BUBBLE_SIZE_MAX = 75
 const ANIMATION_DURATION = 300
+const NETWORK_VISUAL_COLORS = [
+  'rgb(var(--color-primary))',
+  'rgb(var(--color-secondary))',
+  'rgb(var(--color-warning))',
+  'rgb(var(--color-paper))',
+  'rgb(var(--color-primary-hover))',
+  'rgb(var(--color-success))',
+] as const
+const NETWORK_VISUAL_COLOR_SET = new Set<string>(NETWORK_VISUAL_COLORS)
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -188,60 +197,59 @@ function Tooltip({ data, containerRect }: { data: TooltipData | null; containerR
         width: tooltipWidth,
       }}
     >
-      <div className="bg-slate-900/95 backdrop-blur-md rounded-xl border border-slate-700/50 shadow-2xl overflow-hidden">
+      <div className="overflow-hidden rounded-kova-lg border border-white/20 bg-kova-forest/95 shadow-[var(--shadow-raised)] backdrop-blur-md">
         {/* Header */}
         <div 
-          className="px-4 py-3 border-b border-slate-700/50"
-          style={{ backgroundColor: `${node.color}20` }}
+          className="border-b border-white/15 bg-white/5 px-4 py-3"
         >
-          <h3 className="font-bold text-white text-sm truncate">{stripYearFromLabel(node.name || node.label)}</h3>
+          <h3 className="truncate text-sm font-bold text-white">{stripYearFromLabel(node.name || node.label)}</h3>
           {node.instructor && (
-            <p className="text-slate-300 text-xs mt-0.5 flex items-center gap-1">
-              <span className="text-slate-400">👤</span> {node.instructor}
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-white/80">
+              <span aria-hidden="true">◦</span> {node.instructor}
             </p>
           )}
         </div>
         
         {/* Details */}
         <div className="px-4 py-3 space-y-2 text-xs">
-          <div className="flex justify-between text-slate-300">
-            <span className="text-slate-400">Department</span>
+          <div className="flex justify-between gap-3 text-white">
+            <span className="text-white/65">Department</span>
             <span className="font-medium">{node.department || '—'}</span>
           </div>
-          <div className="flex justify-between text-slate-300">
-            <span className="text-slate-400">Year</span>
+          <div className="flex justify-between gap-3 text-white">
+            <span className="text-white/65">Year</span>
             <span className="font-medium">
               {node.year ? (node.year === 'Masters' ? 'Masters' : `Year ${node.year}`) : '—'}
             </span>
           </div>
-          <div className="flex justify-between text-slate-300">
-            <span className="text-slate-400">Members</span>
+          <div className="flex justify-between gap-3 text-white">
+            <span className="text-white/65">Members</span>
             <span className="font-medium">{node.memberCount ?? node.count ?? 0}</span>
           </div>
         </div>
 
         {/* Connections */}
         {totalConnections > 0 && (
-          <div className="px-4 py-3 bg-slate-800/50 border-t border-slate-700/30">
-            <p className="text-xs text-slate-400 mb-2 flex items-center gap-1">
-              <span>🔗</span> Connected to:
+          <div className="border-t border-white/15 bg-white/5 px-4 py-3">
+            <p className="mb-2 flex items-center gap-1 text-xs text-white/65">
+              Connected to:
             </p>
             <div className="space-y-1 text-xs">
               {connections.sameInstructor.length > 0 && node.instructor && (
-                <div className="flex items-center gap-2 text-blue-400">
-                  <span className="w-3 h-0.5 bg-blue-400 rounded"></span>
+                <div className="flex items-center gap-2 text-primary">
+                  <span className="h-0.5 w-3 rounded bg-primary"></span>
                   <span>{connections.sameInstructor.length} studios ({node.instructor})</span>
                 </div>
               )}
               {connections.sameYear.length > 0 && node.year && (
-                <div className="flex items-center gap-2 text-purple-400">
-                  <span className="w-3 h-0.5 bg-purple-400 rounded" style={{ background: 'repeating-linear-gradient(90deg, #8B5CF6, #8B5CF6 2px, transparent 2px, transparent 4px)' }}></span>
+                <div className="flex items-center gap-2 text-white">
+                  <span className="w-3 border-t-2 border-dashed border-white"></span>
                   <span>{connections.sameYear.length} studios ({node.year === 'Masters' ? 'Masters' : `Year ${node.year}`})</span>
                 </div>
               )}
               {connections.sameDepartment.length > 0 && node.department && (
-                <div className="flex items-center gap-2 text-emerald-400">
-                  <span className="w-3 h-0.5 bg-emerald-400 rounded" style={{ background: 'repeating-linear-gradient(90deg, #10B981, #10B981 2px, transparent 2px, transparent 4px)' }}></span>
+                <div className="flex items-center gap-2 text-white/80">
+                  <span className="w-3 border-t-2 border-dotted border-accent"></span>
                   <span>{connections.sameDepartment.length} studios ({node.department})</span>
                 </div>
               )}
@@ -269,6 +277,7 @@ export default function BubbleNetwork({
   const gRef = useRef<SVGGElement>(null)
   
   const [dimensions, setDimensions] = useState({ width: 900, height: 600 })
+  const [containerRect, setContainerRect] = useState<DOMRect | null>(null)
   const [positions, setPositions] = useState<BubbleNode[]>([])
   const [hoveredNode, setHoveredNode] = useState<BubbleNode | null>(null)
   const [tooltipData, setTooltipData] = useState<TooltipData | null>(null)
@@ -282,7 +291,7 @@ export default function BubbleNetwork({
   // Memoize color scale
   const colorScale = useMemo(() => 
     d3.scaleOrdinal<string>()
-      .range(['#6366f1', '#10b981', '#f59e0b', '#8b5cf6', '#14b8a6', '#ef4444', '#3b82f6', '#ec4899']),
+      .range([...NETWORK_VISUAL_COLORS]),
     []
   )
 
@@ -297,8 +306,10 @@ export default function BubbleNetwork({
           width: window.innerWidth,
           height: window.innerHeight - headerHeight,
         })
+        if (containerRef.current) setContainerRect(containerRef.current.getBoundingClientRect())
       } else if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect()
+        setContainerRect(rect)
         setDimensions({
           width: rect.width || 900,
           height: rect.height || 600,
@@ -323,7 +334,7 @@ export default function BubbleNetwork({
 
   useEffect(() => {
     if (!nodes || nodes.length === 0) {
-      setPositions([])
+      queueMicrotask(() => setPositions([]))
       return
     }
 
@@ -342,7 +353,7 @@ export default function BubbleNetwork({
       return {
       ...n,
         radius: n.radius ?? Math.max(BUBBLE_SIZE_MIN, Math.min(BUBBLE_SIZE_MAX, (n.count || 10) * 1.5 + 45)),
-      color: n.color || colorScale(n.id),
+      color: n.color && NETWORK_VISUAL_COLOR_SET.has(n.color) ? n.color : colorScale(n.id),
         x: width / 2 + Math.cos(angle) * radius,
         y: height / 2 + Math.sin(angle) * radius,
       }
@@ -541,6 +552,7 @@ export default function BubbleNetwork({
   // PERF: Throttle drag handler to 50ms for smooth but efficient UI updates
   // This limits position updates to ~20fps during drag, reducing React re-renders
   // while maintaining smooth visual feedback. UI responsiveness improvement.
+  /* eslint-disable react-hooks/refs -- the throttled callback reads the SVG ref only after pointer events. */
   const handleDragThrottled = useMemo(
     () => throttle((node: BubbleNode, event: React.MouseEvent) => {
     const rect = svgRef.current?.getBoundingClientRect()
@@ -563,6 +575,7 @@ export default function BubbleNetwork({
     }, 50),
     [transform]
   )
+  /* eslint-enable react-hooks/refs */
   
   const handleDrag = useCallback((node: BubbleNode, event: React.MouseEvent) => {
     if (!isDragging) return
@@ -594,7 +607,7 @@ export default function BubbleNetwork({
       return {
         opacity: 1,
         filter: '',
-        strokeColor: 'rgba(255,255,255,0.3)',
+        strokeColor: 'rgb(var(--color-paper) / 0.45)',
         strokeWidth: 2,
       }
     }
@@ -603,7 +616,7 @@ export default function BubbleNetwork({
       return {
         opacity: 1,
         filter: `drop-shadow(0 0 20px ${node.color}) drop-shadow(0 0 40px ${node.color}80)`,
-        strokeColor: '#fff',
+        strokeColor: 'rgb(var(--color-paper))',
         strokeWidth: 4,
       }
     }
@@ -642,7 +655,7 @@ export default function BubbleNetwork({
     return {
       opacity: 0.3,
       filter: 'grayscale(0.5)',
-      strokeColor: 'rgba(255,255,255,0.1)',
+      strokeColor: 'rgb(var(--color-paper) / 0.18)',
       strokeWidth: 1,
     }
   }, [hoveredNode, getRelatedNodes])
@@ -651,33 +664,23 @@ export default function BubbleNetwork({
   // RENDER
   // ============================================================================
 
-  const containerRect = containerRef.current?.getBoundingClientRect() || null
-
   return (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden ${fullScreen ? 'fixed inset-0' : 'w-full h-full'}`}
+      className={`relative overflow-hidden bg-kova-forest ${fullScreen ? 'fixed inset-0' : 'h-full w-full'}`}
       style={{
         ...(fullScreen ? { top: headerHeight } : {}),
         height: fullScreen ? `calc(100vh - ${headerHeight}px)` : '100%',
         minHeight: fullScreen ? undefined : 600,
-        background: 'linear-gradient(145deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)',
       }}
     >
-      {/* Ambient background effects */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl" />
-      </div>
-
       {/* Grid background */}
       <div 
         className="absolute inset-0 pointer-events-none opacity-[0.03]"
         style={{
           backgroundImage: `
-            linear-gradient(to right, #64748b 1px, transparent 1px),
-            linear-gradient(to bottom, #64748b 1px, transparent 1px)
+            linear-gradient(to right, rgb(var(--color-paper) / 0.45) 1px, transparent 1px),
+            linear-gradient(to bottom, rgb(var(--color-paper) / 0.45) 1px, transparent 1px)
           `,
           backgroundSize: '60px 60px',
         }}
@@ -690,29 +693,31 @@ export default function BubbleNetwork({
         height={dimensions.height}
         className="absolute inset-0"
         style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+        role="img"
+        aria-label={`Network map with ${nodes.length} ${nodes.length === 1 ? 'studio' : 'studios'}. Use the network directory to select an item with the keyboard.`}
       >
         <defs>
           {/* Animated dash pattern for instructor connections */}
           <linearGradient id="lineGradientBlue" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.3" />
-            <stop offset="50%" stopColor="#3B82F6" stopOpacity="1" />
-            <stop offset="100%" stopColor="#3B82F6" stopOpacity="0.3" />
+            <stop offset="0%" stopColor="rgb(var(--color-primary))" stopOpacity="0.3" />
+            <stop offset="50%" stopColor="rgb(var(--color-primary))" stopOpacity="1" />
+            <stop offset="100%" stopColor="rgb(var(--color-primary))" stopOpacity="0.3" />
           </linearGradient>
           <linearGradient id="lineGradientPurple" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.3" />
-            <stop offset="50%" stopColor="#8B5CF6" stopOpacity="1" />
-            <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.3" />
+            <stop offset="0%" stopColor="rgb(var(--color-paper))" stopOpacity="0.3" />
+            <stop offset="50%" stopColor="rgb(var(--color-paper))" stopOpacity="1" />
+            <stop offset="100%" stopColor="rgb(var(--color-paper))" stopOpacity="0.3" />
           </linearGradient>
           <linearGradient id="lineGradientGreen" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#10B981" stopOpacity="0.3" />
-            <stop offset="50%" stopColor="#10B981" stopOpacity="1" />
-            <stop offset="100%" stopColor="#10B981" stopOpacity="0.3" />
+            <stop offset="0%" stopColor="rgb(var(--color-secondary))" stopOpacity="0.3" />
+            <stop offset="50%" stopColor="rgb(var(--color-secondary))" stopOpacity="1" />
+            <stop offset="100%" stopColor="rgb(var(--color-secondary))" stopOpacity="0.3" />
           </linearGradient>
           
           {/* Glow filters */}
           <filter id="glowBlue" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="4" result="blur" />
-            <feFlood floodColor="#3B82F6" floodOpacity="0.5" />
+            <feFlood floodColor="rgb(var(--color-primary))" floodOpacity="0.5" />
             <feComposite in2="blur" operator="in" />
             <feMerge>
               <feMergeNode />
@@ -840,11 +845,11 @@ export default function BubbleNetwork({
                         y={0}
                         textAnchor="middle"
                         dominantBaseline="middle"
-                        fill="#fff"
+                        fill="rgb(var(--color-ink))"
                         fontSize={r > 65 ? 13 : 11}
                         fontWeight={600}
                         className="pointer-events-none select-none"
-                        style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}
+                        style={{ paintOrder: 'stroke', stroke: 'rgb(var(--color-paper) / 0.85)', strokeWidth: 3 }}
                       >
                         {lines.map((line, i) => (
                           <tspan key={i} x={0} dy={i === 0 ? `${-0.6 * (lines.length - 1)}em` : '1.2em'}>
@@ -864,8 +869,8 @@ export default function BubbleNetwork({
         {/* Highlight gradient definition */}
         <defs>
           <radialGradient id="highlightGradient" cx="30%" cy="30%">
-            <stop offset="0%" stopColor="#fff" stopOpacity="0.8" />
-            <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+            <stop offset="0%" stopColor="rgb(var(--color-paper))" stopOpacity="0.8" />
+            <stop offset="100%" stopColor="rgb(var(--color-paper))" stopOpacity="0" />
           </radialGradient>
         </defs>
       </svg>
@@ -873,10 +878,44 @@ export default function BubbleNetwork({
       {/* Tooltip */}
       <Tooltip data={tooltipData} containerRect={containerRect} />
 
+      <section
+        aria-label="Network directory"
+        className="absolute left-3 top-3 z-20 max-h-52 w-[min(28rem,calc(100%-1.5rem))] overflow-y-auto rounded-kova-lg border border-white/20 bg-kova-forest/95 p-3 text-white shadow-[var(--shadow-soft)] backdrop-blur-md sm:left-4 sm:top-4"
+      >
+        <div className="mb-2 flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-bold">Network directory</h2>
+          <p className="font-mono text-[11px] uppercase tracking-wide text-white/65">{nodes.length} items</p>
+        </div>
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {nodes.map((node) => {
+            const count = node.memberCount ?? node.count ?? 0
+            const yearLabel = node.year === 'Masters' ? 'Masters' : node.year ? `Year ${node.year}` : null
+            return (
+              <li key={node.id} className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => onNodeClick?.(node)}
+                  onFocus={() => onNodeHover?.(node)}
+                  onPointerEnter={() => onNodeHover?.(node)}
+                  aria-label={`Open ${node.name || node.label}`}
+                  className="min-h-11 w-full rounded-kova border border-white/20 bg-white/10 px-3 py-2 text-left hover:border-primary hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <span className="block break-words text-sm font-semibold">{node.name || node.label}</span>
+                  <span className="mt-0.5 block break-words text-xs text-white/70">
+                    {[node.department, yearLabel, node.instructor, `${count} ${count === 1 ? 'member' : 'members'}`].filter(Boolean).join(' · ')}
+                  </span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </section>
+
       {/* Zoom controls */}
-      <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-20">
+      <div className="absolute bottom-4 right-4 z-20 flex flex-col gap-2">
         <button
-          className="w-10 h-10 bg-slate-800/80 hover:bg-slate-700 rounded-lg flex items-center justify-center text-white border border-slate-600/50 backdrop-blur-sm transition-colors"
+          className="flex h-11 w-11 items-center justify-center rounded-kova border border-white/25 bg-kova-forest/90 text-white backdrop-blur-sm transition-colors hover:border-primary hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          aria-label="Zoom in"
           onClick={() => {
             if (svgRef.current && zoomRef.current) {
               d3.select(svgRef.current)
@@ -891,7 +930,8 @@ export default function BubbleNetwork({
           </svg>
         </button>
         <button
-          className="w-10 h-10 bg-slate-800/80 hover:bg-slate-700 rounded-lg flex items-center justify-center text-white border border-slate-600/50 backdrop-blur-sm transition-colors"
+          className="flex h-11 w-11 items-center justify-center rounded-kova border border-white/25 bg-kova-forest/90 text-white backdrop-blur-sm transition-colors hover:border-primary hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          aria-label="Zoom out"
           onClick={() => {
             if (svgRef.current && zoomRef.current) {
               d3.select(svgRef.current)
@@ -906,7 +946,8 @@ export default function BubbleNetwork({
           </svg>
         </button>
         <button
-          className="w-10 h-10 bg-slate-800/80 hover:bg-slate-700 rounded-lg flex items-center justify-center text-white border border-slate-600/50 backdrop-blur-sm transition-colors"
+          className="flex h-11 w-11 items-center justify-center rounded-kova border border-white/25 bg-kova-forest/90 text-white backdrop-blur-sm transition-colors hover:border-primary hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          aria-label="Reset network view"
           onClick={() => {
             if (svgRef.current && zoomRef.current) {
               d3.select(svgRef.current)
@@ -924,26 +965,26 @@ export default function BubbleNetwork({
       </div>
 
       {/* Legend */}
-      <div className="absolute bottom-4 left-4 bg-slate-900/80 backdrop-blur-md rounded-xl border border-slate-700/50 p-4 z-20">
-        <p className="text-xs text-slate-400 mb-3 font-medium">Connections</p>
+      <div className="absolute bottom-4 left-4 z-20 hidden rounded-kova-lg border border-white/20 bg-kova-forest/90 p-4 backdrop-blur-md sm:block">
+        <p className="mb-3 text-xs font-medium text-white/65">Connections</p>
         <div className="space-y-2 text-xs">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-0.5 bg-blue-500 rounded" style={{ background: 'linear-gradient(90deg, transparent, #3B82F6, transparent)' }} />
-            <span className="text-slate-300">Same Instructor</span>
+            <div className="h-0.5 w-8 rounded bg-primary" />
+            <span className="text-white/80">Same Instructor</span>
           </div>
           <div className="flex items-center gap-3">
-            <div className="w-8 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(90deg, #8B5CF6, #8B5CF6 3px, transparent 3px, transparent 6px)' }} />
-            <span className="text-slate-300">Same Year</span>
+            <div className="w-8 border-t-2 border-dashed border-white" />
+            <span className="text-white/80">Same Year</span>
           </div>
           <div className="flex items-center gap-3">
-            <div className="w-8 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(90deg, #10B981, #10B981 4px, transparent 4px, transparent 8px)' }} />
-            <span className="text-slate-300">Same Semester</span>
+            <div className="w-8 border-t-2 border-dotted border-accent" />
+            <span className="text-white/80">Same Department</span>
           </div>
         </div>
       </div>
 
       {/* CSS Animations */}
-      <style jsx global>{`
+      <style>{`
         @keyframes line-draw {
           from {
             stroke-dashoffset: 1000;

@@ -1,9 +1,17 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { X } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { Button, Dialog, Select } from '@/components/ui'
 
-const COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#14b8a6', '#8b5cf6']
+// Named, intentional data-visualisation choices used by the Three.js avatar material.
+const AVATAR_COLORS = [
+  { name: 'Kova yellow', value: '#FFC800' },
+  { name: 'Deep green', value: '#14705C' },
+  { name: 'Forest', value: '#0A2F28' },
+  { name: 'Ocean blue', value: '#176B87' },
+  { name: 'Terracotta', value: '#A84432' },
+  { name: 'Umber', value: '#73563C' },
+] as const
 const APPEARANCES = ['Explorer', 'Builder', 'Critic']
 const DEPARTMENTS = ['Architecture', 'Interior Design', 'Industrial Design']
 const YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Masters']
@@ -19,139 +27,81 @@ interface GalleryAvatarModalProps {
   isOpen: boolean
   onClose: () => void
   onEnter: (values: AvatarFormValues) => void
+  pending?: boolean
 }
 
-export default function GalleryAvatarModal({ isOpen, onClose, onEnter }: GalleryAvatarModalProps) {
-  const [color, setColor] = useState(COLORS[0])
+export default function GalleryAvatarModal({ isOpen, onClose, onEnter, pending = false }: GalleryAvatarModalProps) {
+  const [color, setColor] = useState<string>(AVATAR_COLORS[0].value)
   const appearance = APPEARANCES[0]
   const [department, setDepartment] = useState('')
   const [year, setYear] = useState('')
+  const departmentRef = useRef<HTMLSelectElement>(null)
 
-  const avatarPreviewStyle = useMemo(
-    () => ({
-      background: `radial-gradient(circle at 30% 30%, #ffffff80 0%, transparent 35%), ${color}`,
-      boxShadow: `0 10px 25px ${color}33`
-    }),
-    [color]
-  )
-
-  if (!isOpen) return null
+  const avatarPreviewStyle = useMemo(() => ({
+    backgroundColor: color,
+    boxShadow: '0 10px 25px rgb(var(--color-forest) / 0.18)',
+  }), [color])
 
   const handleEnter = () => {
-    if (!department || !year) return
+    if (pending || !department || !year) return
     onEnter({ color, appearance, department, year })
   }
 
   return (
-    <div 
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-      onClick={onClose}
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => { if (!open && !pending) onClose() }}
+      title="Create your gallery avatar"
+      description="Choose how you will appear, then enter the shared 3D gallery."
+      initialFocusRef={departmentRef}
+      closeOnOutsideClick={!pending}
+      hideCloseButton={pending}
+      className="max-w-2xl overflow-x-hidden"
     >
-      <div
-        className="bg-white w-full max-w-2xl rounded-2xl border border-border shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex flex-col md:flex-row">
-          {/* Left: Avatar preview and quick picks */}
-          <div className="md:w-2/5 bg-gradient-to-br from-primary/5 to-primary/10 p-8 border-b md:border-b-0 md:border-r border-border">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-primary font-semibold">Gallery Mode</p>
-                <h3 className="text-xl font-semibold text-text-primary mt-1">Create your avatar</h3>
-              </div>
-              <button
-                onClick={onClose}
-                className="w-9 h-9 rounded-lg border border-border flex items-center justify-center hover:bg-background-lighter transition-colors"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4 text-text-secondary" />
-              </button>
-            </div>
-
-            <div className="aspect-square rounded-xl bg-background-light shadow-inner border border-border flex items-center justify-center mb-6">
-              <div 
-                className="w-32 h-32 rounded-full flex items-center justify-center text-white font-bold text-xl transition-all"
-                style={avatarPreviewStyle}
-              >
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-text-muted font-semibold mb-3">Quick Colors</p>
-              <div className="grid grid-cols-6 gap-2.5">
-                {COLORS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setColor(c)}
-                    className={`h-11 rounded-lg border-2 transition-all ${
-                      color === c 
-                        ? 'border-primary shadow-md scale-105 ring-2 ring-primary/20' 
-                        : 'border-transparent hover:border-border hover:scale-105'
-                    }`}
-                    style={{ backgroundColor: c }}
-                    aria-label={`Select color ${c}`}
-                  />
-                ))}
-              </div>
-            </div>
+      <div className="grid gap-6 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <section aria-labelledby="avatar-colors-heading" className="rounded-kova-lg border border-border bg-background p-5">
+          <div className="mx-auto mb-5 flex aspect-square w-full max-w-48 items-center justify-center rounded-kova-lg border border-border bg-background-light">
+            <div className="h-28 w-28 rounded-full motion-safe:transition-colors" style={avatarPreviewStyle} aria-hidden="true" />
           </div>
-
-          {/* Right: Form */}
-          <div className="md:w-3/5 p-8 space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-text-primary mb-2">Department</label>
-                <select
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-background-light transition-all hover:border-primary/50"
-                >
-                  <option value="">Select department...</option>
-                  {DEPARTMENTS.map((dept) => (
-                    <option key={dept} value={dept}>{dept}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-text-primary mb-2">Year</label>
-                <select
-                  value={year}
-                  onChange={(e) => setYear(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-background-light transition-all hover:border-primary/50"
-                >
-                  <option value="">Select year...</option>
-                  {YEARS.map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-              </div>
+          <fieldset disabled={pending}>
+            <legend id="avatar-colors-heading" className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-text-secondary">Avatar colour</legend>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {AVATAR_COLORS.map((choice) => (
+                <label key={choice.value} className="cursor-pointer rounded-kova focus-within:outline-none focus-within:ring-2 focus-within:ring-accent">
+                  <input type="radio" name="avatar-color" value={choice.value} checked={color === choice.value} onChange={() => setColor(choice.value)} className="sr-only" />
+                  <span className="flex min-h-11 items-center justify-center rounded-kova border-2 px-2 text-center text-[11px] font-semibold" style={{ backgroundColor: choice.value, borderColor: color === choice.value ? 'rgb(var(--color-ink))' : 'transparent', color: choice.value === '#FFC800' ? 'rgb(var(--color-ink))' : 'white' }}>
+                    {choice.name}
+                  </span>
+                </label>
+              ))}
             </div>
+          </fieldset>
+        </section>
 
-            <div className="flex flex-col sm:flex-row gap-3 pt-2">
-              <button
-                onClick={onClose}
-                className="sm:flex-1 px-5 py-2.5 bg-background-light hover:bg-background-lighter text-text-primary rounded-lg border border-border transition-all font-medium text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleEnter}
-                disabled={!department || !year}
-                className="sm:flex-1 px-5 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-all font-semibold text-sm shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary"
-              >
-                Enter Gallery
-              </button>
-            </div>
+        <div className="space-y-5">
+          <div>
+            <label htmlFor="gallery-department" className="mb-2 block text-sm font-semibold text-text-primary">Department</label>
+            <Select ref={departmentRef} id="gallery-department" value={department} onChange={(event) => setDepartment(event.target.value)} disabled={pending}>
+              <option value="">Select department…</option>
+              {DEPARTMENTS.map((item) => <option key={item} value={item}>{item}</option>)}
+            </Select>
+          </div>
+          <div>
+            <label htmlFor="gallery-year" className="mb-2 block text-sm font-semibold text-text-primary">Year</label>
+            <Select id="gallery-year" value={year} onChange={(event) => setYear(event.target.value)} disabled={pending}>
+              <option value="">Select year…</option>
+              {YEARS.map((item) => <option key={item} value={item}>{item}</option>)}
+            </Select>
+          </div>
+          <p className="text-sm text-text-secondary">Keyboard: arrow keys move through choices. In the gallery, use the on-screen controls as a touch alternative.</p>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Cancel</Button>
+            <Button type="button" onClick={handleEnter} loading={pending} disabled={!department || !year || pending}>
+              {pending ? 'Entering gallery…' : 'Enter gallery'}
+            </Button>
           </div>
         </div>
       </div>
-    </div>
+    </Dialog>
   )
 }
-
-
-
-
-
-
