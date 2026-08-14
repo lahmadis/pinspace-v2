@@ -116,7 +116,7 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
                 autoFocus
               />
               <p className="mt-2 text-sm text-gray-500">
-                Enter the 8-character code or paste the full invite link
+                Enter the invite code or paste the full invite link
               </p>
             </div>
 
@@ -156,4 +156,3 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
     </>
   )
 }
-

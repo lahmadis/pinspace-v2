@@ -1,13 +1,10 @@
 // Workspace utility functions
 
-// Generate a random invite code (8 characters, URL-safe)
+// Generate a cryptographically secure, URL-safe invite capability (~100 bits).
 export function generateInviteCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // Removed confusing chars
-  let code = ''
-  for (let i = 0; i < 8; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return code
+  const randomBytes = globalThis.crypto.getRandomValues(new Uint8Array(20))
+  return Array.from(randomBytes, (byte) => chars[byte & 31]).join('')
 }
 
 // Convert workspace name to slug
@@ -23,11 +20,12 @@ export function generateSlug(name: string): string {
 
 // Generate unique workspace ID
 export function generateWorkspaceId(): string {
-  return `workspace-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+  const randomBytes = globalThis.crypto.getRandomValues(new Uint8Array(8))
+  const suffix = Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `workspace-${Date.now()}-${suffix}`
 }
 
 // Generate studio ID for workspace
 export function generateStudioId(workspaceId: string): string {
   return `studio-${workspaceId.replace('workspace-', '')}`
 }
-

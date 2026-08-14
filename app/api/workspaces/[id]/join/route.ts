@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { validateName } from '@/lib/validation/safeName'
+import { workspaceInviteMatches } from '@/lib/workspaces/inviteCodes'
 
 
-// JOIN workspace - Add user to workspace_members table. Enforces the institution
-// email domain only for org workspaces (type 'class'); shared/personal workspaces
-// accept any signed-in account.
+// JOIN workspace - Add user to workspace_members table after validating the
+// persisted invite capability. Personal workspaces are never joinable.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -35,7 +35,7 @@ export async function POST(
     const admin = supabaseServiceRole()
     const { data: workspace, error: workspaceError } = await admin
       .from('workspaces')
-      .select('id, name, organization_id, type')
+      .select('id, name, organization_id, type, invite_code')
       .eq('id', workspaceId)
       .single()
 
@@ -44,11 +44,15 @@ export async function POST(
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
-    // Domain gate applies ONLY to org workspaces (type 'class'). Shared and
-    // personal workspaces accept any signed-in account, even when an
+    if (workspace.type === 'personal' || !workspaceInviteMatches(workspace.type, workspace.invite_code, body?.inviteCode)) {
+      return NextResponse.json({ error: 'Invalid workspace invite' }, { status: 403 })
+    }
+
+    // Domain gate applies ONLY to org workspaces (type 'class'). Shared
+    // workspaces accept any signed-in account, even when an
     // organization_id was stamped on them at creation (the creator's org is
     // copied onto every type). We skip the gate for the two explicitly
-    // peer/personal types and leave every other type — incl. legacy rows
+    // peer type and leave every other type — incl. legacy rows
     // where `type` predates the column and reads back null — gated exactly as
     // before, so org/class behavior is unchanged.
     const isOrgGated = workspace.type !== 'shared' && workspace.type !== 'personal'

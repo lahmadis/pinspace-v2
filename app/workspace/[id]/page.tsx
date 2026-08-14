@@ -107,8 +107,7 @@ export default function WorkspaceRoomsPage() {
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
-      // Preserve the target so post-login we land back here, which then routes
-      // shared-room visitors into the join prompt.
+      // Preserve the target so existing members return to the workspace.
       router.push(`/sign-in?redirect=${encodeURIComponent(`/workspace/${workspaceId}`)}`)
     }
   }, [authStatus, router, workspaceId])
@@ -125,12 +124,6 @@ export default function WorkspaceRoomsPage() {
         throw new Error(err?.error || 'Failed to load workspace')
       }
       const data = await response.json()
-      // Non-member arriving at a shared workspace by link: bounce to the join
-      // prompt (/join/{code}) which handles sign-in + membership insertion.
-      if (data.canJoin && data.inviteCode) {
-        router.replace(`/join/${encodeURIComponent(data.inviteCode)}`)
-        return
-      }
       if (!data.workspace) throw new Error('Workspace data missing in response')
       setWorkspace(data.workspace)
       setErrorMsg(null)

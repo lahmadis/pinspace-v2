@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import {
+  feedbackSubmitterIdentifier,
+  parseFeedbackPayload,
+  submitterHash,
+} from '@/lib/feedback/security'
 
 /**
  * POST /api/feedback
@@ -14,13 +19,12 @@ import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
  */
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({}))
-    const message = typeof body?.message === 'string' ? body.message.trim() : ''
-    const pageUrl = typeof body?.page_url === 'string' ? body.page_url : null
-
-    if (!message) {
-      return NextResponse.json({ error: 'Message is required' }, { status: 400 })
+    const body = await request.json().catch(() => null)
+    const payload = parseFeedbackPayload(body)
+    if (!payload.ok) {
+      return NextResponse.json({ error: payload.error }, { status: 400 })
     }
+    const { message, pageUrl } = payload
 
     // Optional: capture who sent it, but never require auth.
     let userId: string | null = null
@@ -35,17 +39,32 @@ export async function POST(request: Request) {
       // Ignore — feedback works even if optional identity verification fails.
     }
 
-    // 1. Durable backup first (bypasses RLS via service role).
+    const rateLimitSecret = process.env.FEEDBACK_RATE_LIMIT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!rateLimitSecret) {
+      console.error('[feedback] No server-side secret is available for submitter hashing')
+      return NextResponse.json({ error: 'Feedback is temporarily unavailable' }, { status: 503 })
+    }
+
+    const identifier = feedbackSubmitterIdentifier(request, userId)
+    const hashedSubmitter = submitterHash(identifier, rateLimitSecret)
+
+    // 1. Durable backup and rate-limit check happen atomically in Postgres.
     const { error: insertError } = await supabaseServiceRole()
-      .from('feedback')
-      .insert({
-        message,
-        user_id: userId,
-        user_email: userEmail,
-        page_url: pageUrl,
+      .rpc('submit_feedback', {
+        p_message: message,
+        p_user_id: userId,
+        p_user_email: userEmail,
+        p_page_url: pageUrl,
+        p_submitter_hash: hashedSubmitter,
       })
 
     if (insertError) {
+      if (insertError.message?.includes('feedback_rate_limited')) {
+        return NextResponse.json(
+          { error: 'Too many feedback submissions. Please try again in a few minutes.' },
+          { status: 429 }
+        )
+      }
       console.error('Failed to save feedback row:', insertError)
       return NextResponse.json({ error: 'Failed to save feedback' }, { status: 500 })
     }

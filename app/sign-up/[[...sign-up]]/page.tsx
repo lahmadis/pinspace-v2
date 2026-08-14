@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase/client'
 import PasswordInput from '@/components/ui/PasswordInput'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import type { Institution } from '@/types'
+import { safeRedirectPath } from '@/lib/security/safeRedirect'
 
 function SignUpInner() {
   const router = useRouter()
@@ -35,7 +36,7 @@ function SignUpInner() {
   const pendingSetPasswordRef = useRef(false)
 
   const institutionSlug = searchParams?.get('institution') ?? null
-  const redirectTo = searchParams?.get('redirect') ?? undefined
+  const redirectTo = safeRedirectPath(searchParams?.get('redirect'), '') || undefined
 
   useEffect(() => {
     setMounted(true)

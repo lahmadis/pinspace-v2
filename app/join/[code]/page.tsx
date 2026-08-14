@@ -96,6 +96,7 @@ export default function JoinWorkspacePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          inviteCode,
           userName: profileFullName || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Student'
         })
       })
@@ -242,4 +243,3 @@ export default function JoinWorkspacePage() {
     </div>
   )
 }
-

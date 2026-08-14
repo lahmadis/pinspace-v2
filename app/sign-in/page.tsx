@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import PasswordInput from '@/components/ui/PasswordInput'
+import { safeRedirectPath } from '@/lib/security/safeRedirect'
 
 interface OrgMatch {
   id: string
@@ -44,7 +45,7 @@ function SignInInner() {
   const hasRedirected = useRef(false)
 
   const institutionSlug = searchParams?.get('institution') ?? null
-  const redirectTo = searchParams?.get('redirect') ?? undefined
+  const redirectTo = safeRedirectPath(searchParams?.get('redirect'))
   const [orgName, setOrgName] = useState<string | null>(null)
   const [orgFetchDone, setOrgFetchDone] = useState(false)
 
@@ -73,7 +74,7 @@ function SignInInner() {
       sessionStorage.setItem('pinspace_institution', orgSlug)
     }
 
-    const target = redirectTo || '/dashboard'
+    const target = redirectTo
     try {
       const res = await fetch('/api/user-profile', { cache: 'no-store' })
       const data = res.ok ? await res.json().catch(() => null) : null

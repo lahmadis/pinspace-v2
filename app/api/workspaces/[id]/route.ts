@@ -135,22 +135,6 @@ export async function GET(
     }
 
     if (!isOwner && !isMember && !isPublicPublished && !orgMatchClass && !isSuperadminViewer) {
-      // Shared rooms are joinable by link: tell the client to route the visitor
-      // into the join/prompt flow (the /join/{code} page) instead of erroring.
-      if (workspace.type === 'shared') {
-        if (workspace.invite_code) {
-          return NextResponse.json({
-            canJoin: true,
-            id: workspace.id,
-            name: workspace.name,
-            inviteCode: workspace.invite_code,
-          })
-        }
-        return NextResponse.json(
-          { error: 'This workspace doesn’t have an invite link yet. Ask the owner to share one.' },
-          { status: 403 }
-        )
-      }
       return NextResponse.json({ error: 'Not a member of this workspace' }, { status: 403 })
     }
 
@@ -210,7 +194,7 @@ export async function GET(
         role: m.role || 'student',
         joinedAt: m.created_at || new Date(),
       })),
-      inviteCode: workspace.invite_code || workspace.id.substring(0, 8).toUpperCase(), // Generate from ID if no code
+      inviteCode: isOwner ? workspace.invite_code || undefined : undefined,
       createdAt: workspace.created_at || new Date(),
       isPublic: workspace.is_public || false,
       publishedAt: workspace.published_at || undefined,

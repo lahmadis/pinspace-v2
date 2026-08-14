@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthSession } from '@/hooks/useAuthSession'
+import { safeRedirectPath } from '@/lib/security/safeRedirect'
 
 const ROLES = ['Student', 'Faculty', 'Professional (working at a firm)', 'Independent Creator'] as const
 const ROLE_TO_VALUE: Record<string, 'student' | 'faculty' | 'professional' | null> = {
@@ -36,7 +37,7 @@ function OnboardingContent() {
     how_heard: '',
   })
 
-  const redirectTo = searchParams?.get('redirect') || '/dashboard'
+  const redirectTo = safeRedirectPath(searchParams?.get('redirect'))
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
