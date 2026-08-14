@@ -1,11 +1,11 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Board, Comment } from '@/types'
-import Loading from '@/components/Loading'
+
+import { Button, Card, EmptyState, Input, StatusState } from '@/components/ui'
 import { toast } from '@/lib/toast'
+import type { Board, Comment } from '@/types'
 
 export default function BoardDetailPage() {
   const params = useParams()
@@ -14,332 +14,245 @@ export default function BoardDetailPage() {
   const [board, setBoard] = useState<Board | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(true)
+  const [commentsLoading, setCommentsLoading] = useState(true)
+  const [boardError, setBoardError] = useState(false)
+  const [commentsError, setCommentsError] = useState('')
   const [showCommentForm, setShowCommentForm] = useState(false)
-  const [commentForm, setCommentForm] = useState({
-    authorName: '',
-    authorEmail: '',
-    content: ''
-  })
+  const [commentForm, setCommentForm] = useState({ authorName: '', authorEmail: '', content: '' })
   const [submitting, setSubmitting] = useState(false)
+  const [commentStatus, setCommentStatus] = useState('')
+  const submittingRef = useRef(false)
 
   useEffect(() => {
+    let cancelled = false
     const fetchBoard = async () => {
       try {
         const response = await fetch(`/api/boards/${boardId}`)
-        if (response.ok) {
-          const data = await response.json()
-          setBoard(data.board)
+        if (cancelled) return
+        if (!response.ok) {
+          setBoardError(true)
+          return
         }
+        const data = await response.json()
+        setBoard(data.board)
       } catch (error) {
         console.error('Error fetching board:', error)
+        if (!cancelled) setBoardError(true)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
     const fetchComments = async () => {
       try {
         const response = await fetch(`/api/comments?boardId=${boardId}`)
-        if (response.ok) {
-          const data = await response.json()
-          setComments(data.comments)
+        if (cancelled) return
+        if (!response.ok) {
+          setCommentsError('Comments could not be loaded.')
+          return
         }
+        const data = await response.json()
+        setComments(data.comments)
       } catch (error) {
         console.error('Error fetching comments:', error)
+        if (!cancelled) setCommentsError('Comments could not be loaded.')
+      } finally {
+        if (!cancelled) setCommentsLoading(false)
       }
     }
 
-    fetchBoard()
-    fetchComments()
+    void fetchBoard()
+    void fetchComments()
+    return () => { cancelled = true }
   }, [boardId])
 
-  const handleSubmitComment = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmitComment = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (submittingRef.current) return
+    submittingRef.current = true
     setSubmitting(true)
+    setCommentStatus('')
 
     try {
       const response = await fetch('/api/comments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          boardId,
-          ...commentForm
-        })
+        body: JSON.stringify({ boardId, ...commentForm }),
       })
-
-      if (response.ok) {
-        const data = await response.json()
-        setComments([...comments, data.comment])
-        setCommentForm({ authorName: '', authorEmail: '', content: '' })
-        setShowCommentForm(false)
-        toast.success('Comment added!')
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setCommentStatus('Comment could not be posted.')
+        return
       }
+      setComments((current) => [...current, data.comment])
+      setCommentForm({ authorName: '', authorEmail: '', content: '' })
+      setShowCommentForm(false)
+      toast.success('Comment added!')
     } catch {
+      setCommentStatus('Comment could not be posted.')
       toast.error('Failed to add comment')
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }
 
   if (loading) {
-    return <Loading message="Loading board..." />
-  }
-
-  if (!board) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-text-muted">Board not found</p>
-      </div>
+      <main className="flex min-h-screen items-center justify-center bg-background px-4">
+        <StatusState status="loading" title="Loading board" description="Preparing the board and its feedback." className="w-full max-w-md" />
+      </main>
     )
   }
 
+  if (boardError || !board) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background px-4">
+        <StatusState
+          status="error"
+          title="Board unavailable"
+          description="This board may no longer be available, or you may not have permission to view it."
+          action={<Button type="button" variant="ghost" onClick={() => router.back()}>Go back</Button>}
+          className="w-full max-w-md"
+        />
+      </main>
+    )
+  }
+
+  const downloadBoard = () => {
+    if (!board.fullImageUrl) return
+    const link = document.createElement('a')
+    link.href = board.fullImageUrl
+    link.download = `${board.studentName}-${board.title}.jpg`
+    link.click()
+  }
+
+  const copyBoardLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      toast.success('Link copied to clipboard!')
+    } catch {
+      toast.error('Failed to copy link')
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <motion.header 
-        className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-b border-border shadow-sm"
-        initial={{ y: -100 }}
-        animate={{ y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.back()}
-              className="p-2 hover:bg-background-lighter rounded-lg transition-colors"
-            >
-              <svg className="w-5 h-5 text-text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-            </button>
-            <div>
-              <h1 className="text-xl font-semibold text-text-primary">{board.title}</h1>
-              <p className="text-sm text-text-muted">{board.studentName}</p>
+    <main className="min-h-screen bg-background pb-[max(3rem,env(safe-area-inset-bottom))]">
+      <header className="border-b border-border bg-background-light/95 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <Button type="button" variant="ghost" onClick={() => router.back()} className="min-h-11 shrink-0 px-3" aria-label="Back">
+              <span aria-hidden="true">←</span>
+            </Button>
+            <div className="min-w-0">
+              <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-accent">Board review</p>
+              <h1 className="truncate text-2xl font-black text-text-primary">{board.title}</h1>
+              <p className="truncate text-sm text-text-secondary">{board.studentName}</p>
             </div>
           </div>
-
-          {/* Controls */}
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => {
-                if (board.fullImageUrl) {
-                  const link = document.createElement('a')
-                  link.href = board.fullImageUrl
-                  link.download = `${board.studentName}-${board.title}.jpg`
-                  link.click()
-                }
-              }}
-              className="px-4 py-2 bg-background-lighter hover:bg-background-light text-text-secondary hover:text-text-primary rounded-lg text-sm transition-colors border border-border"
-            >
-              Download
-            </button>
-            <button 
-              onClick={() => {
-                const url = window.location.href
-                navigator.clipboard.writeText(url).then(() => {
-                  toast.success('Link copied to clipboard!')
-                })
-              }}
-              className="px-4 py-2 bg-background-lighter hover:bg-background-light text-text-secondary hover:text-text-primary rounded-lg text-sm transition-colors border border-border"
-            >
-              Share
-            </button>
-            <button 
-              onClick={() => setShowCommentForm(!showCommentForm)}
-              className="px-4 py-2 bg-primary-muted hover:bg-primary text-white rounded-lg text-sm transition-colors"
-            >
-              Add Comment
-            </button>
+          <div className="grid grid-cols-3 gap-2 sm:flex">
+            <Button type="button" variant="ghost" onClick={downloadBoard} className="min-h-11 px-3" aria-label="Download board">Download</Button>
+            <Button type="button" variant="ghost" onClick={() => { void copyBoardLink() }} className="min-h-11 px-3" aria-label="Copy board link">Share</Button>
+            <Button type="button" onClick={() => { setShowCommentForm((visible) => !visible); setCommentStatus('') }} className="min-h-11 px-3" aria-label="Add comment">Comment</Button>
           </div>
         </div>
-      </motion.header>
+      </header>
 
-      {/* Main content */}
-      <div className="pt-24 px-6 pb-12">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Board image - 2 columns */}
-            <motion.div 
-              className="lg:col-span-2 space-y-6"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <div className="bg-white rounded-xl shadow-lg border border-border overflow-hidden">
-                <div className="relative aspect-[16/10] bg-background-lighter">
-                  {board.fullImageUrl && board.fullImageUrl.startsWith('/uploads/') ? (
-                    <img 
-                      src={board.fullImageUrl} 
-                      alt={board.title}
-                      className="w-full h-full object-contain"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <svg className="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
-                        <defs>
-                          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" strokeWidth="0.5"/>
-                          </pattern>
-                        </defs>
-                        <rect width="100%" height="100%" fill="url(#grid)" />
-                      </svg>
-                      <div className="relative text-center p-8">
-                        <p className="text-text-muted text-lg">{board.title}</p>
-                        <p className="text-text-secondary text-sm mt-2">Board Preview</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Comments Section */}
-              <div className="bg-white rounded-xl shadow-lg border border-border p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-text-primary">
-                    Comments ({comments.length})
-                  </h2>
-                </div>
-
-                {/* Comment Form */}
-                {showCommentForm && (
-                  <motion.form
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    onSubmit={handleSubmitComment}
-                    className="mb-6 p-4 bg-background-lighter rounded-lg space-y-3"
-                  >
-                    <input
-                      type="text"
-                      placeholder="Your name *"
-                      value={commentForm.authorName}
-                      onChange={(e) => setCommentForm({...commentForm, authorName: e.target.value})}
-                      className="w-full px-3 py-2 border border-border rounded-lg text-sm"
-                      required
-                    />
-                    <input
-                      type="email"
-                      placeholder="Your email (optional)"
-                      value={commentForm.authorEmail}
-                      onChange={(e) => setCommentForm({...commentForm, authorEmail: e.target.value})}
-                      className="w-full px-3 py-2 border border-border rounded-lg text-sm"
-                    />
-                    <textarea
-                      placeholder="Write your comment... *"
-                      value={commentForm.content}
-                      onChange={(e) => setCommentForm({...commentForm, content: e.target.value})}
-                      className="w-full px-3 py-2 border border-border rounded-lg text-sm"
-                      rows={3}
-                      required
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        type="submit"
-                        disabled={submitting}
-                        className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg text-sm transition-colors disabled:opacity-50"
-                      >
-                        {submitting ? 'Posting...' : 'Post Comment'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowCommentForm(false)}
-                        className="px-4 py-2 bg-background-lighter hover:bg-background-light text-text-secondary rounded-lg text-sm transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </motion.form>
-                )}
-
-                {/* Comments List */}
-                <div className="space-y-4">
-                  {comments.length === 0 ? (
-                    <p className="text-text-muted text-sm text-center py-8">
-                      No comments yet. Be the first to comment!
-                    </p>
-                  ) : (
-                    comments.map((comment) => (
-                      <motion.div
-                        key={comment.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="p-4 bg-background-lighter rounded-lg"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <p className="font-medium text-text-primary text-sm">
-                              {comment.authorName}
-                            </p>
-                            <p className="text-xs text-text-muted">
-                              {new Date(comment.createdAt).toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-                        <p className="text-text-primary text-sm whitespace-pre-wrap">
-                          {comment.content}
-                        </p>
-                      </motion.div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Board info sidebar - 1 column */}
-            <motion.div 
-              className="lg:col-span-1 space-y-6"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-            >
-              {/* Student info */}
-              <div className="bg-white rounded-xl shadow-lg border border-border p-6">
-                <h2 className="text-lg font-semibold text-text-primary mb-4">Student</h2>
-                <div className="space-y-2">
-                  <p className="text-text-primary font-medium">{board.studentName}</p>
-                  {board.studentEmail && (
-                    <p className="text-text-muted text-sm">{board.studentEmail}</p>
-                  )}
-                  <div className="pt-2 text-sm text-text-muted">
-                    <p>Uploaded {new Date(board.uploadedAt).toLocaleDateString()}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Project info */}
-              <div className="bg-white rounded-xl shadow-lg border border-border p-6">
-                <h2 className="text-lg font-semibold text-text-primary mb-4">Project Details</h2>
-                <div className="space-y-4">
+      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)] lg:gap-8 lg:py-10">
+        <div className="min-w-0 space-y-6">
+          <Card className="overflow-hidden p-0">
+            <div className="relative aspect-[16/10] bg-background-lighter">
+              {board.fullImageUrl && board.fullImageUrl.startsWith('/uploads/') ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={board.fullImageUrl} alt={board.title} className="h-full w-full object-contain" />
+              ) : (
+                <div className="flex h-full items-center justify-center p-8 text-center">
                   <div>
-                    <h3 className="text-sm font-medium text-text-secondary mb-1">Title</h3>
-                    <p className="text-text-primary">{board.title}</p>
+                    <p className="text-lg font-semibold text-text-primary">{board.title}</p>
+                    <p className="mt-2 text-sm text-text-secondary">Board preview</p>
                   </div>
-                  {board.description && (
-                    <div>
-                      <h3 className="text-sm font-medium text-text-secondary mb-1">Description</h3>
-                      <p className="text-text-primary text-sm">{board.description}</p>
-                    </div>
-                  )}
-                  {board.tags && board.tags.length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-medium text-text-secondary mb-2">Tags</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {board.tags.map((tag, index) => (
-                          <span 
-                            key={index}
-                            className="px-3 py-1 bg-primary-muted/10 text-primary rounded-full text-xs"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
-              </div>
-            </motion.div>
-          </div>
+              )}
+            </div>
+          </Card>
+
+          <Card>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-xl font-bold text-text-primary">Comments <span className="font-mono text-sm text-text-muted">{comments.length}</span></h2>
+            </div>
+
+            {showCommentForm && (
+              <form aria-label="Add a comment" onSubmit={handleSubmitComment} className="mb-6 space-y-4 rounded-kova border border-border bg-background-lighter p-4" noValidate>
+                <div>
+                  <label htmlFor="board-comment-name" className="mb-1.5 block text-sm font-semibold text-text-primary">Your name</label>
+                  <Input id="board-comment-name" type="text" maxLength={80} autoComplete="name" value={commentForm.authorName} onChange={(event) => setCommentForm({ ...commentForm, authorName: event.target.value })} required />
+                </div>
+                <div>
+                  <label htmlFor="board-comment-email" className="mb-1.5 block text-sm font-semibold text-text-primary">Your email</label>
+                  <Input id="board-comment-email" type="email" maxLength={254} autoComplete="email" value={commentForm.authorEmail} onChange={(event) => setCommentForm({ ...commentForm, authorEmail: event.target.value })} />
+                  <p className="mt-1 text-xs text-text-muted">Optional</p>
+                </div>
+                <div>
+                  <label htmlFor="board-comment-content" className="mb-1.5 block text-sm font-semibold text-text-primary">Comment</label>
+                  <textarea
+                    id="board-comment-content"
+                    maxLength={2000}
+                    rows={4}
+                    value={commentForm.content}
+                    onChange={(event) => setCommentForm({ ...commentForm, content: event.target.value })}
+                    required
+                    className="w-full resize-y rounded-kova border border-border bg-background-light px-3.5 py-2 text-text-primary shadow-sm placeholder:text-text-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+                  />
+                  <p className="mt-1 text-right font-mono text-xs text-text-muted">{commentForm.content.length}/2000</p>
+                </div>
+                {commentStatus && <StatusState status="error" title={commentStatus} className="p-3 text-sm" />}
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <Button type="button" variant="ghost" onClick={() => { setShowCommentForm(false); setCommentStatus('') }}>Cancel</Button>
+                  <Button type="submit" loading={submitting} disabled={!commentForm.authorName.trim() || !commentForm.content.trim()}>{submitting ? 'Posting comment' : 'Post comment'}</Button>
+                </div>
+              </form>
+            )}
+
+            {commentsLoading ? (
+              <StatusState status="loading" title="Loading comments" description="Preparing the feedback on this board." />
+            ) : commentsError ? (
+              <StatusState status="error" title={commentsError} />
+            ) : comments.length === 0 ? (
+              <EmptyState title="No comments yet" description="Start the conversation with constructive feedback." className="min-h-40" />
+            ) : (
+              <ol className="space-y-3">
+                {comments.map((comment) => (
+                  <li key={comment.id} className="rounded-kova border border-border bg-background-lighter p-4">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="font-semibold text-text-primary">{comment.authorName}</p>
+                      <time className="font-mono text-xs text-text-muted" dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleString()}</time>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap break-words text-sm text-text-primary">{comment.content}</p>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </Card>
         </div>
+
+        <aside className="space-y-6" aria-label="Board details">
+          <Card>
+            <h2 className="text-lg font-bold text-text-primary">Student</h2>
+            <p className="mt-3 font-semibold text-text-primary">{board.studentName}</p>
+            {board.studentEmail && <p className="mt-1 break-all text-sm text-text-secondary">{board.studentEmail}</p>}
+            <p className="mt-3 text-sm text-text-muted">Uploaded {new Date(board.uploadedAt).toLocaleDateString()}</p>
+          </Card>
+          <Card>
+            <h2 className="text-lg font-bold text-text-primary">Project details</h2>
+            {board.description && <p className="mt-3 whitespace-pre-wrap break-words text-sm text-text-secondary">{board.description}</p>}
+            {board.tags && board.tags.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-2" aria-label="Tags">
+                {board.tags.map((tag) => <span key={tag} className="rounded-full bg-primary-muted px-3 py-1 text-xs font-semibold text-kova-ink">{tag}</span>)}
+              </div>
+            )}
+          </Card>
+        </aside>
       </div>
-    </div>
+    </main>
   )
 }

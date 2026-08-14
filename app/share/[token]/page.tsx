@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
-import Link from 'next/link'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import * as THREE from 'three'
@@ -15,6 +14,20 @@ import { SceneErrorBoundary } from '@/components/3d/SceneErrorBoundary'
 import LightboxModal from '@/components/LightboxModal'
 import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
+import { Button } from '@/components/ui'
+import {
+  PublicModelDialog,
+  PublicStatusScreen,
+  PublicStudioEmpty,
+  PublicStudioHeader,
+  PublicStudioInstructions,
+  PublicStudioNavigator,
+} from '@/components/public/PublicStudioShell'
+
+// Intentional WebGL scene color: CSS variables cannot be passed to Three.js.
+const KOVA_FOREST_SCENE_COLOR = '#123C33'
+const MEDIA_KEY_LIGHT_COLOR = '#ffffff'
+const MEDIA_GROUND_LIGHT_COLOR = '#e5e7eb'
 
 interface WallDimensions {
   height: number
@@ -283,108 +296,51 @@ export default function SharePage() {
 
   if (loadState === 'loading') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-white/20 border-t-white mx-auto mb-4" />
-          <p className="text-white/90 font-medium">Loading studio…</p>
-        </div>
-      </div>
+      <PublicStatusScreen status="loading" title="Loading shared studio" description="Preparing the room and its boards." />
     )
   }
 
   if (loadState === 'not-found') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
-        <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
-          <div className="text-6xl mb-4">🔗</div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Link not found</h2>
-          <p className="text-gray-600">This share link is invalid or has been revoked.</p>
-        </div>
-      </div>
+      <PublicStatusScreen status="error" title="Link unavailable" description="This link is invalid, expired, or no longer available." />
     )
   }
 
   if (loadState === 'error') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
-        <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
-          <div className="text-6xl mb-4">😕</div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Something went wrong</h2>
-          <p className="text-gray-600 mb-6">We had trouble loading this studio.</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
+      <PublicStatusScreen
+        status="error"
+        title="Studio could not be loaded"
+        description="The shared studio is temporarily unavailable."
+        action={<Button type="button" onClick={() => window.location.reload()}>Try again</Button>}
+      />
     )
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#B3B3FF' }}>
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)' }} />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)', animationDelay: '1s' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(102, 102, 255, 0.1)' }} />
-      </div>
+    <main className="relative h-[100dvh] w-full overflow-hidden bg-kova-forest">
+      <PublicStudioHeader roomName={roomName} modeLabel="View only" boardCount={boards.length} />
+      <PublicStudioNavigator
+        boards={boards.map(({ id, title }) => ({ id, title }))}
+        models={tables.flatMap((table) => table.modelUrl ? [{ id: table.id, url: table.modelUrl }] : [])}
+        onOpenBoard={(id) => {
+          const board = boards.find((candidate) => candidate.id === id)
+          if (board) handleBoardClick(board)
+        }}
+        onOpenModel={setModelViewerUrl}
+      />
+      <PublicStudioInstructions>
+        Select a board to view it. Select a table or model to open its 3D view. Use Browse studio content for keyboard access.
+      </PublicStudioInstructions>
+      {boards.length === 0 && <PublicStudioEmpty title="No boards in this studio yet" description="There is nothing to view here right now." />}
 
-      <div className="fixed top-4 left-4 z-40 flex items-center gap-2.5">
-        <Link
-          href="/"
-          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
-        >
-          PinSpace
-        </Link>
-        {roomName && (
-          <div
-            className="px-3 py-2 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 text-sm font-medium max-w-[40vw] sm:max-w-xs truncate"
-            title={roomName}
-          >
-            {roomName}
-          </div>
-        )}
-      </div>
-
-      <div className="fixed top-4 right-4 z-40">
-        <div className="px-4 py-2.5 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 font-medium text-sm flex items-center gap-2">
-          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-          <span>View Mode</span>
-          <span className="opacity-80">• {boards.length} boards</span>
-        </div>
-      </div>
-
-      <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10 bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full shadow-lg border border-gray-200">
-        <p className="text-sm text-gray-700">
-          <span className="font-semibold">💬 Click boards</span> to view
-          <span className="mx-3 text-gray-400">•</span>
-          <span className="font-semibold">🖱️ Click table/model</span> for 3D view
-          <span className="mx-3 text-gray-400">•</span>
-          <span className="font-semibold">Drag</span> to rotate camera
-        </p>
-      </div>
-
-      {modelViewerUrl && (
-        <div className="fixed inset-0 z-50 bg-slate-900/90 flex flex-col">
-          <div className="flex items-center justify-between p-3 bg-white/10 border-b border-white/20">
-            <span className="text-white font-medium">3D Model</span>
-            <button
-              type="button"
-              onClick={() => setModelViewerUrl(null)}
-              className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium transition-colors"
-            >
-              Close
-            </button>
-          </div>
-          <div className="flex-1 min-h-0">
-            <ModelViewer modelUrl={modelViewerUrl} />
-          </div>
-        </div>
-      )}
+      <PublicModelDialog modelUrl={modelViewerUrl} onClose={() => setModelViewerUrl(null)}>
+        {modelViewerUrl && <ModelViewer modelUrl={modelViewerUrl} />}
+      </PublicModelDialog>
 
       <SceneErrorBoundary resetKey={token}>
       <Canvas
+        aria-label="Shared 3D studio"
         shadows
         className="w-full h-full"
         gl={{
@@ -393,9 +349,9 @@ export default function SharePage() {
           premultipliedAlpha: false,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
-        style={{ background: '#D8DEFF' }}
+        style={{ background: KOVA_FOREST_SCENE_COLOR }}
       >
-        <color attach="background" args={['#D8DEFF']} />
+        <color attach="background" args={[KOVA_FOREST_SCENE_COLOR]} />
         <ambientLight intensity={0.5} />
         <directionalLight
           position={[15, 20, 10]}
@@ -412,9 +368,9 @@ export default function SharePage() {
         />
         <directionalLight position={[-10, 12, -8]} intensity={0.5} />
         <directionalLight position={[0, 25, 0]} intensity={0.4} />
-        <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
-        <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
-        <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
+        <directionalLight position={[-8, 10, -12]} intensity={0.3} color={MEDIA_KEY_LIGHT_COLOR} />
+        <directionalLight position={[8, 10, 12]} intensity={0.3} color={MEDIA_KEY_LIGHT_COLOR} />
+        <hemisphereLight args={[MEDIA_KEY_LIGHT_COLOR, MEDIA_GROUND_LIGHT_COLOR, 0.3]} />
 
         {wallConfig && (
           <WallSystem
@@ -455,6 +411,6 @@ export default function SharePage() {
         isEditMode={false}
         currentUserRole={null}
       />
-    </div>
+    </main>
   )
 }

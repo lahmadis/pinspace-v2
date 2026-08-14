@@ -1,6 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+
+import { Button, Dialog, Select, StatusState } from '@/components/ui'
 
 type Option = { label: string; value: string }
 
@@ -37,130 +39,89 @@ export default function PublishCategoryModal({
 }: PublishCategoryModalProps) {
   const [department, setDepartment] = useState(defaultValues?.department || '')
   const [year, setYear] = useState(defaultValues?.year || '')
-
   const [error, setError] = useState<string | null>(null)
+  const confirmingRef = useRef(false)
+  const errorId = 'publish-category-error'
 
-  const handleSubmit = () => {
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (confirmingRef.current) return
     if (!department || !year) {
-      setError('Please select department and year')
+      setError('Select a department and year to publish this studio.')
       return
     }
 
-    onConfirm({
-      department,
-      year,
-    })
+    confirmingRef.current = true
+    onConfirm({ department, year })
   }
 
   return (
-    <>
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-        onClick={onCancel}
-      >
-        {/* Modal */}
-        <div 
-          className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-8"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <p className="text-sm text-gray-500 font-semibold uppercase">Publish to WIT Network</p>
-              <h2 className="text-2xl font-bold text-gray-900 mt-1">{workspaceName}</h2>
-            </div>
-            <button
-              onClick={onCancel}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-            >
-              <svg className="w-5 h-5 text-gray-500" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-                <path d="M6 18L18 6M6 6l12 12"></path>
-              </svg>
-            </button>
-          </div>
-
-          <div className="space-y-5">
-            {/* Department */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
-              <div className="space-y-2">
-                <select
-                  value={department}
-                  onChange={(e) => {
-                    setDepartment(e.target.value)
-                    setError(null)
-                  }}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4444ff] focus:border-transparent"
-                >
-                  <option value="">Select a department</option>
-                  {DEPT_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Year */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Year *</label>
-              <div className="space-y-2">
-                <select
-                  value={year}
-                  onChange={(e) => {
-                    setYear(e.target.value)
-                    setError(null)
-                  }}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4444ff] focus:border-transparent"
-                >
-                  <option value="">Select a year</option>
-                  {YEAR_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Preview */}
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-              <p className="text-sm font-semibold text-gray-800 mb-1">Preview:</p>
-              <p className="text-sm text-gray-700">
-                {(department || 'Department')} → {(year || 'Year')} → {workspaceName}
-              </p>
-            </div>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">
-                {error}
-              </div>
-            )}
-
-            {/* Info */} 
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-900 flex gap-2">
-              <span className="text-lg">ℹ️</span>
-              <div>
-                This studio will appear in the WIT public network (read-only for visitors). Only members can edit.
-              </div>
-            </div>
-
-            {/* Buttons */}
-            <div className="flex gap-3">
-              <button
-                onClick={onCancel}
-                className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                className="flex-1 px-4 py-3 bg-[#4444ff] text-white rounded-lg hover:bg-[#3333ee] transition-colors font-semibold"
-              >
-                Publish to Network
-              </button>
-            </div>
-          </div>
+    <Dialog
+      open
+      onOpenChange={(open) => { if (!open) onCancel() }}
+      title="Publish to network"
+      description={<>Choose where <strong>{workspaceName}</strong> appears in the public network.</>}
+      className="max-w-lg pb-[max(1.5rem,env(safe-area-inset-bottom))] [&>button.absolute]:h-11 [&>button.absolute]:w-11"
+    >
+      <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+        <div>
+          <label htmlFor="publish-category-department" className="mb-1.5 block text-sm font-semibold text-text-primary">
+            Department
+          </label>
+          <Select
+            id="publish-category-department"
+            value={department}
+            onChange={(event) => {
+              setDepartment(event.target.value)
+              setError(null)
+            }}
+            aria-invalid={Boolean(error && !department)}
+            aria-describedby={error && !department ? errorId : undefined}
+          >
+            <option value="">Select a department</option>
+            {DEPT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </Select>
         </div>
-      </div>
-    </>
+
+        <div>
+          <label htmlFor="publish-category-year" className="mb-1.5 block text-sm font-semibold text-text-primary">
+            Year
+          </label>
+          <Select
+            id="publish-category-year"
+            value={year}
+            onChange={(event) => {
+              setYear(event.target.value)
+              setError(null)
+            }}
+            aria-invalid={Boolean(error && !year)}
+            aria-describedby={error && !year ? errorId : undefined}
+          >
+            <option value="">Select a year</option>
+            {YEAR_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </Select>
+        </div>
+
+        <div className="rounded-kova border border-border bg-background-lighter p-4 text-sm text-text-secondary">
+          <p className="font-semibold text-text-primary">Network path</p>
+          <p className="mt-1 break-words">{department || 'Department'} → {year || 'Year'} → {workspaceName}</p>
+        </div>
+
+        {error && <StatusState id={errorId} status="error" title={error} className="p-3 text-sm" />}
+
+        <p className="rounded-kova border border-border bg-primary-muted p-3 text-sm text-text-primary">
+          Visitors can view the studio after publication. Editing remains limited to members.
+        </p>
+
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
+          <Button type="submit">Publish to network</Button>
+        </div>
+      </form>
+    </Dialog>
   )
 }
-
