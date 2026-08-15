@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
-import { isInstructorAccount } from '@/lib/auth/getAccountRole'
 import { isSuperadmin } from '@/lib/auth/superadmin'
 import { validateName } from '@/lib/validation/safeName'
+import {
+  collectBoardStoragePaths,
+  type BoardObjectRow,
+  unreferencedBoardStoragePaths,
+} from '@/lib/storage/boardObjects'
 
 // Room wall color — the two supported values, mirrored by the DB CHECK
 // constraint (migration 031). Shared by the validation below.
@@ -29,24 +33,20 @@ async function authorizeRoomMutation(
   roomId: string,
   options: { allowMembers?: boolean; allowSuperadmin?: boolean } = {}
 ): Promise<
-  | { ok: true; room: Record<string, unknown>; workspaceId: string; userId: string }
+  | { ok: true; room: Record<string, unknown>; workspace: Record<string, unknown>; workspaceId: string; userId: string }
   | { ok: false; response: NextResponse }
 > {
   void request
-  const supabase = supabaseServer()
+  const supabase = await supabaseServer()
   const {
-    data: { session },
-    error: sessionError,
-  } = await supabase.auth.getSession()
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
 
-  if (sessionError) {
-    console.error('Session error:', sessionError)
-    return { ok: false, response: NextResponse.json({ error: 'Failed to get session' }, { status: 500 }) }
-  }
-  const userId = session?.user?.id
-  if (!userId) {
+  if (userError || !user?.id) {
     return { ok: false, response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   }
+  const userId = user.id
 
   const admin = supabaseServiceRole()
   const { data: room, error: roomError } = await admin
@@ -61,7 +61,7 @@ async function authorizeRoomMutation(
   const workspaceId = room.workspace_id as string
   const { data: workspace } = await admin
     .from('workspaces')
-    .select('owner_id')
+    .select('owner_id, type, organization_id')
     .eq('id', workspaceId)
     .maybeSingle()
   if (!workspace) {
@@ -98,7 +98,7 @@ async function authorizeRoomMutation(
     }
   }
 
-  return { ok: true, room, workspaceId, userId }
+  return { ok: true, room, workspace, workspaceId, userId }
 }
 
 /**
@@ -112,8 +112,9 @@ async function authorizeRoomMutation(
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const body = await request.json().catch(() => ({}))
 
@@ -137,12 +138,13 @@ export async function PATCH(
     // Wall color is owner-OR-superadmin (never plain members). isNameOnlyRename
     // is false whenever wall color is present, so the member relaxation can't
     // leak to it.
-    const auth = await authorizeRoomMutation(request, params.id, {
+    const auth = await authorizeRoomMutation(request, id, {
       allowMembers: isNameOnlyRename,
       allowSuperadmin: wantsWallColor,
     })
     if (!auth.ok) return auth.response
-    const { room } = auth
+    const { room, workspace } = auth
+    const admin = supabaseServiceRole()
 
     const updates: Record<string, unknown> = {}
 
@@ -163,11 +165,23 @@ export async function PATCH(
     if (typeof body?.isPublished === 'boolean') {
       // Publishing to the network is an instructor-only action. Unpublishing is
       // always allowed (retracting content is never a privilege escalation).
-      if (body.isPublished === true && !(await isInstructorAccount(auth.userId))) {
-        return NextResponse.json(
-          { error: 'Only instructors can publish rooms to the network.' },
-          { status: 403 }
-        )
+      if (body.isPublished === true) {
+        const { data: profile } = await admin
+          .from('user_profiles')
+          .select('account_role, organization_id')
+          .eq('user_id', auth.userId)
+          .maybeSingle()
+        if (
+          workspace.type !== 'class'
+          || !workspace.organization_id
+          || profile?.account_role !== 'instructor'
+          || profile.organization_id !== workspace.organization_id
+        ) {
+          return NextResponse.json(
+            { error: 'Only verified instructors can publish classes in their organization.' },
+            { status: 403 }
+          )
+        }
       }
       updates.is_published = body.isPublished
       // Mirror published_at so timestamp metadata stays coherent with the flag.
@@ -184,13 +198,11 @@ export async function PATCH(
       updates.wall_color = wc
     }
 
-    const admin = supabaseServiceRole()
-
     if (Object.keys(updates).length > 0) {
       const { error: updateError } = await admin
         .from('rooms')
         .update(updates)
-        .eq('id', params.id)
+        .eq('id', id)
       if (updateError) {
         console.error('Error updating room:', updateError)
         return NextResponse.json({ error: 'Failed to update room' }, { status: 500 })
@@ -200,7 +212,7 @@ export async function PATCH(
     const { data: updated } = await admin
       .from('rooms')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', id)
       .single()
 
     return NextResponse.json({ room: updated ?? room })
@@ -214,18 +226,17 @@ export async function PATCH(
  * DELETE /api/rooms/[id] — workspace owner only.
  *
  * Boards in this room cascade-delete via the boards.room_id FK from migration
- * 014. We do NOT clean up the orphaned storage objects here this phase — the
- * existing board-delete code path (with storage cleanup) is the source of
- * truth for that, and a follow-up can wire room deletion through it. For now,
- * instructors deleting a room understand boards disappear; storage cost of
- * orphans is a known follow-up.
+ * 014. Their storage objects are inventoried before the cascade and removed
+ * only after a post-delete service-role scan proves no surviving board refers
+ * to them. Query/removal failure leaks an object rather than risking data loss.
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
-    const auth = await authorizeRoomMutation(request, params.id)
+    const auth = await authorizeRoomMutation(request, id)
     if (!auth.ok) return auth.response
     const { workspaceId } = auth
 
@@ -244,13 +255,65 @@ export async function DELETE(
       )
     }
 
+    const roomBoards: BoardObjectRow[] = []
+    const inventoryPageSize = 1000
+    for (let from = 0; ; from += inventoryPageSize) {
+      const { data, error } = await admin
+        .from('boards')
+        .select('thumbnail_url, full_image_url')
+        .eq('room_id', id)
+        .range(from, from + inventoryPageSize - 1)
+      if (error) {
+        console.error('Failed to inventory room board objects:', error)
+        return NextResponse.json({ error: 'Failed to prepare room deletion' }, { status: 500 })
+      }
+      const page = (data ?? []) as BoardObjectRow[]
+      roomBoards.push(...page)
+      if (page.length < inventoryPageSize) break
+    }
+    const candidatePaths = collectBoardStoragePaths(roomBoards)
+
     const { error: deleteError } = await admin
       .from('rooms')
       .delete()
-      .eq('id', params.id)
+      .eq('id', id)
     if (deleteError) {
       console.error('Error deleting room:', deleteError)
       return NextResponse.json({ error: 'Failed to delete room' }, { status: 500 })
+    }
+
+    if (candidatePaths.size > 0) {
+      const remainingBoards: BoardObjectRow[] = []
+      const pageSize = 1000
+      let referenceScanFailed = false
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await admin
+          .from('boards')
+          .select('thumbnail_url, full_image_url')
+          .range(from, from + pageSize - 1)
+        if (error) {
+          console.error('Failed to verify room object references; skipping cleanup:', error)
+          referenceScanFailed = true
+          break
+        }
+        const page = (data ?? []) as BoardObjectRow[]
+        remainingBoards.push(...page)
+        if (page.length < pageSize) break
+      }
+
+      if (!referenceScanFailed) {
+        const unreferencedPaths = unreferencedBoardStoragePaths(candidatePaths, remainingBoards)
+        if (unreferencedPaths.length > 0) {
+          try {
+            const { error: storageError } = await admin.storage.from('board-images').remove(unreferencedPaths)
+            if (storageError) {
+              console.error('Failed to remove unreferenced room board objects:', storageError)
+            }
+          } catch (storageError) {
+            console.error('Room board object cleanup threw after successful deletion:', storageError)
+          }
+        }
+      }
     }
 
     return NextResponse.json({ success: true })

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { ENGINE_PALETTE } from './enginePalette'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PdfJsWindow = Window & { pdfjsLib?: any }
@@ -92,7 +93,7 @@ export function PDFTextureMaterial({ pdfUrl, hovered = false }: PDFTextureMateri
         canvas.width = viewport.width
         canvas.height = viewport.height
 
-        context.fillStyle = '#ffffff'
+        context.fillStyle = ENGINE_PALETTE.paper
         context.fillRect(0, 0, canvas.width, canvas.height)
 
         await page.render({ canvasContext: context, viewport }).promise
@@ -148,11 +149,11 @@ export function PDFTextureMaterial({ pdfUrl, hovered = false }: PDFTextureMateri
   if (loading) {
     return (
       <meshStandardMaterial
-        color="#e0e7ff"
+        color={ENGINE_PALETTE.pdfSurface}
         side={THREE.DoubleSide}
         roughness={0.7}
         metalness={0.0}
-        emissive="#6366f1"
+        emissive={ENGINE_PALETTE.selection}
         emissiveIntensity={0.2}
       />
     )
@@ -161,7 +162,7 @@ export function PDFTextureMaterial({ pdfUrl, hovered = false }: PDFTextureMateri
   if (error || !texture) {
     return (
       <meshStandardMaterial
-        color="#fee2e2"
+        color={ENGINE_PALETTE.errorSurface}
         side={THREE.DoubleSide}
         roughness={0.7}
         metalness={0.0}
@@ -175,7 +176,7 @@ export function PDFTextureMaterial({ pdfUrl, hovered = false }: PDFTextureMateri
       side={THREE.DoubleSide}
       roughness={0.7}
       metalness={0.0}
-      emissive={hovered ? "#6366f1" : "#000000"}
+      emissive={hovered ? ENGINE_PALETTE.selection : ENGINE_PALETTE.black}
       emissiveIntensity={hovered ? 0.1 : 0}
     />
   )

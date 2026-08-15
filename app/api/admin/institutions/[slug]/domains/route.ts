@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
-import { isAdmin } from '@/lib/auth/isAdmin'
+import { supabaseServiceRole } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/requireAdmin'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,24 +16,15 @@ async function resolveOrg(slug: string) {
   return error || !data ? null : data
 }
 
-async function authAdmin(_req: NextRequest) {
-  const supabase = supabaseServer()
-  const { data: { session }, error } = await supabase.auth.getSession()
-  if (error || !session?.user) return null
-  if (!isAdmin(session.user.email)) return null
-  return session
-}
-
 /** GET /api/admin/institutions/[slug]/domains – list domains for an org. */
 export async function GET(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
     const { slug } = await params
-    if (!await authAdmin(req)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireAdmin()
+    if (!auth.ok) return auth.response
 
     const org = await resolveOrg(slug)
     if (!org) return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
@@ -64,8 +55,8 @@ export async function POST(
 ) {
   try {
     const { slug } = await params
-    const session = await authAdmin(req)
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const auth = await requireAdmin()
+    if (!auth.ok) return auth.response
 
     const body = await req.json().catch(() => null)
     const domain = typeof body?.domain === 'string'

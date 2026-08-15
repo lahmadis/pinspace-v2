@@ -6,11 +6,11 @@ export const dynamic = 'force-dynamic'
 // GET /api/users/[id]/boards — public boards uploaded by a user (across public studios only)
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const admin = supabaseServiceRole()
-    const userId = params.id
+    const userId = (await params).id
 
     // Get all boards by this user
     const { data: boards, error } = await admin

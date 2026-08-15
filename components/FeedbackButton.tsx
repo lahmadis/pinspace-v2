@@ -1,35 +1,47 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MessageSquarePlus } from 'lucide-react'
 
-/**
- * Floating "Report a bug / idea" button + modal. Self-contained: manages its own
- * open/submit state and POSTs a single message to /api/feedback. Mounted once on
- * the dashboard, fixed to the bottom-right corner so it's always reachable but
- * out of the way. Uses the app's standard modal pattern (fixed inset-0 backdrop).
- */
+import { Button, Dialog, StatusState } from '@/components/ui'
+
+const FEEDBACK_MESSAGE_MAX_LENGTH = 4000
+
 export default function FeedbackButton() {
   const [open, setOpen] = useState(false)
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const closeTimerRef = useRef<number | null>(null)
 
-  const close = () => {
-    setOpen(false)
-    setError('')
-    setDone(false)
+  useEffect(() => () => {
+    if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
+  }, [])
+
+  const setDialogOpen = (next: boolean) => {
+    if (!next && submitting) return
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+    setOpen(next)
+    if (!next) {
+      setError('')
+      setDone(false)
+    }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (submitting) return
     const trimmed = message.trim()
     if (!trimmed) return
     setSubmitting(true)
     setError('')
     try {
-      const res = await fetch('/api/feedback', {
+      const response = await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -37,16 +49,20 @@ export default function FeedbackButton() {
           page_url: typeof window !== 'undefined' ? window.location.href : null,
         }),
       })
-      if (!res.ok) {
+      if (!response.ok) {
         setError('Something went wrong. Please try again.')
         return
       }
       setMessage('')
       setDone(true)
-      // Briefly show the success state, then close.
-      setTimeout(() => close(), 1500)
+      closeTimerRef.current = window.setTimeout(() => {
+        closeTimerRef.current = null
+        setOpen(false)
+        setError('')
+        setDone(false)
+      }, 1500)
     } catch {
-      setError('Network error. Please try again.')
+      setError('Something went wrong. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -57,77 +73,64 @@ export default function FeedbackButton() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-3.5 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-full shadow-md hover:shadow-lg hover:text-indigo-600 hover:border-indigo-300 transition-all text-sm font-medium"
+        className="fixed bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] right-5 z-40 inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary shadow-[var(--shadow-raised)] transition-colors hover:border-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
         aria-label="Report a bug or idea"
       >
-        <MessageSquarePlus className="w-4 h-4" />
+        <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
         <span className="hidden sm:inline">Report a bug / idea</span>
       </button>
 
-      {open && (
-        <div
-          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-          onClick={close}
-        >
-          <div
-            className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {done ? (
-              <div className="text-center py-6">
-                <div className="text-3xl mb-2">✓</div>
-                <p className="text-gray-900 font-semibold">Thanks — got it!</p>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-lg font-semibold text-gray-900">Report a bug / idea</h3>
-                  <button
-                    type="button"
-                    onClick={close}
-                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-                    aria-label="Close"
-                  >
-                    <svg className="w-5 h-5 text-gray-500" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-                      <path d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-                <p className="text-sm text-gray-500 mb-4">
-                  Found a bug or have an idea? Tell us anything — we read every message.
-                </p>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <textarea
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder="What's on your mind?"
-                    rows={5}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-                    autoFocus
-                  />
-                  {error && <p className="text-sm text-red-600">{error}</p>}
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={close}
-                      className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={submitting || !message.trim()}
-                      className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
-                    >
-                      {submitting ? 'Sending…' : 'Submit'}
-                    </button>
-                  </div>
-                </form>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={open}
+        onOpenChange={setDialogOpen}
+        closeOnOutsideClick={!submitting}
+        hideCloseButton={submitting}
+        initialFocusRef={textareaRef}
+        title="Report a bug or idea"
+        description="Found a bug or have an idea? Tell us what happened. We read every message."
+      >
+        {done ? (
+          <StatusState status="success" title="Thanks — we received it." />
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            <div>
+              <label htmlFor="feedback-message" className="mb-1 block text-sm font-semibold text-text-primary">
+                Feedback message
+              </label>
+              <textarea
+                ref={textareaRef}
+                id="feedback-message"
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                placeholder="What happened, or what would make Kova better?"
+                rows={5}
+                maxLength={FEEDBACK_MESSAGE_MAX_LENGTH}
+                disabled={submitting}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? 'feedback-error feedback-count' : 'feedback-count'}
+                className="min-h-36 w-full resize-y rounded-kova border border-border bg-background-light px-4 py-3 text-text-primary placeholder:text-text-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <p id="feedback-count" className="mt-1 text-right text-xs text-text-secondary">
+                {message.length.toLocaleString()} / {FEEDBACK_MESSAGE_MAX_LENGTH.toLocaleString()}
+              </p>
+            </div>
+            {error && <StatusState id="feedback-error" status="error" title={error} />}
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)} disabled={submitting}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                loading={submitting}
+                disabled={!message.trim()}
+                aria-label={submitting ? 'Sending feedback' : 'Submit feedback'}
+              >
+                {submitting ? 'Sending…' : 'Submit'}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Dialog>
     </>
   )
 }

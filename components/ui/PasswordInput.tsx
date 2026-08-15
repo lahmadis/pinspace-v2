@@ -1,16 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type InputHTMLAttributes } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 
-type PasswordInputProps = {
+import { Input } from './Primitives'
+
+type PasswordInputProps = Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  'id' | 'type' | 'value' | 'onChange'
+> & {
   id: string
   value: string
   onChange: (value: string) => void
-  placeholder?: string
-  autoComplete?: string
-  minLength?: number
-  autoFocus?: boolean
 } & (
   /** Reveal state lifted to the parent, so one toggle can drive several fields
    *  — that is what the sign-up and reset-password pairs do, since revealing
@@ -32,6 +33,7 @@ export default function PasswordInput({
   autoFocus,
   shown,
   onShownChange,
+  ...inputProps
 }: PasswordInputProps) {
   const [localShown, setLocalShown] = useState(false)
   const revealed = shown !== undefined ? shown : localShown
@@ -43,23 +45,23 @@ export default function PasswordInput({
 
   return (
     <div className="relative">
-      <input
+      <Input
         id={id}
         type={revealed ? 'text' : 'password'}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full px-4 pr-11 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+        className="pr-11"
         autoComplete={autoComplete}
         minLength={minLength}
-        // eslint-disable-next-line jsx-a11y/no-autofocus
         autoFocus={autoFocus}
+        {...inputProps}
       />
       <button
         type="button"
         onClick={toggle}
         aria-label={revealed ? 'Hide password' : 'Show password'}
-        className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        className="absolute inset-y-0 right-0 flex min-w-11 items-center justify-center rounded-r-kova text-text-muted transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         {revealed ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
       </button>

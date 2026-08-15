@@ -59,7 +59,7 @@ interface OwnerPatchBody {
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const caller = await getVerifiedUser()
@@ -67,7 +67,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const boardId = params.id
+    const boardId = (await params).id
     if (!boardId) {
       return NextResponse.json({ error: 'Board id is required' }, { status: 400 })
     }

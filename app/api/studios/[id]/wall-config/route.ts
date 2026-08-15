@@ -111,8 +111,8 @@ async function writeConfigToStorage(filePath: string, config: unknown, version: 
   if (error) throw error
 }
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const { id } = params
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const roomId = request.nextUrl.searchParams.get('roomId')
 
   // Every GET response carries Cache-Control: no-store so a browser/CDN never
@@ -183,13 +183,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   return jsonNoStore({ exists: false, config: null, version: 0 }, { status: 200 })
 }
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
-  const { id } = params
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const roomId = request.nextUrl.searchParams.get('roomId')
 
-  const { data: { session } } = await supabaseServer().auth.getSession()
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const userId = session.user.id
+  const { data: { user }, error: userError } = await (await supabaseServer()).auth.getUser()
+  if (userError || !user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = user.id
   const admin = supabaseServiceRole()
   const { data: ws } = await admin.from('workspaces').select('owner_id').eq('id', id).maybeSingle()
   if (!ws) return NextResponse.json({ error: 'Not found' }, { status: 404 })

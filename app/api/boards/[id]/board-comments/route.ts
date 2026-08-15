@@ -54,10 +54,10 @@ function transformRow(c: BoardCommentRow) {
 // GET /api/boards/[id]/board-comments — all anchored comments for the board, created_at asc.
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const boardId = params.id
+    const boardId = (await params).id
 
     // Guest path: a valid X-Guest-Token whose room matches this board grants
     // read access to the critique layer (no session needed).
@@ -96,11 +96,11 @@ export async function GET(
     // (not 401) for the no-session case on purpose: a logged-out visitor of a
     // public board whose IMAGE they can legitimately see should not be bounced
     // into a login flow just because the private critique layer is hidden.
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    const userId = session?.user?.id
+      data: { user },
+    } = await supabase.auth.getUser()
+    const userId = user?.id
     if (!userId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -182,10 +182,10 @@ export async function GET(
 // Reply: parentId required (must belong to this board), anchors forced null.
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const boardId = params.id
+    const boardId = (await params).id
     const guestToken = getGuestTokenFromRequest(request)
     const { anchorX, anchorY, body, parentId, guestName } = await request.json()
 
@@ -242,19 +242,15 @@ export async function POST(
       const nm = typeof guestName === 'string' ? guestName.trim() : ''
       authorName = (nm || guest.label || 'Guest').slice(0, 80)
     } else {
-      const supabase = supabaseServer()
+      const supabase = await supabaseServer()
       const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-      if (sessionError) {
-        console.error('Session error:', sessionError)
-        return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-      }
-      const userId = session?.user?.id
-      if (!userId) {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+      if (userError || !user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+      const userId = user.id
 
       let resolvedWorkspaceId = board.workspace_id as string | null
       if (board.room_id) {
@@ -299,7 +295,7 @@ export async function POST(
         .eq('user_id', userId)
         .maybeSingle()
       const profileName = userProfile?.full_name?.trim() || null
-      authorName = profileName || session.user.email?.split('@')[0] || 'Anonymous'
+      authorName = profileName || user.email?.split('@')[0] || 'Anonymous'
     }
 
     // Reply: the parent must exist and belong to THIS board.

@@ -10,6 +10,7 @@ import { Board, FloorTable } from '@/types'
 import WallSystem from '@/components/3d/WallSystem'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
+import { SceneErrorBoundary } from '@/components/3d/SceneErrorBoundary'
 import LightboxModal from '@/components/LightboxModal'
 import DemoBanner from '@/components/DemoBanner'
 import { getCachedStudioData } from '@/lib/studioViewCache'
@@ -17,6 +18,11 @@ import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import { useAuthSession } from '@/hooks/useAuthSession'
 import { useAccountMode } from '@/lib/useAccountMode'
 import { ArrowLeft } from 'lucide-react'
+import { StudioShell } from '@/components/layout/StudioShell'
+import { Button, Dialog, StatusState } from '@/components/ui'
+import { ENGINE_PALETTE } from '@/components/3d/enginePalette'
+
+const STUDIO_SCENE_BACKGROUND = ENGINE_PALETTE.sceneNeutral
 
 interface WallDimensions {
   height: number
@@ -320,11 +326,17 @@ export default function StudioViewPage() {
   useEffect(() => {
     const cached = getCachedStudioData(studioId, isDemo)
     if (cached?.boards?.length !== undefined) {
+      // Cache hydration intentionally synchronizes route state before the authoritative refetch.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBoards(cached.boards)
       setLoading(false)
       setError(null)
     }
+    // The existing fetch routine is declared below to keep related request logic together.
+    // eslint-disable-next-line react-hooks/immutability
     fetchBoards()
+    // Fetch identity is intentionally keyed to the room/demo inputs, not router object churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studioId, isDemo])
   
   // Open board from URL query param after boards are loaded
@@ -335,6 +347,8 @@ export default function StudioViewPage() {
       if (boardToOpen) {
         // Only update if it's a different board
         if (!selectedBoard || selectedBoard.id !== boardToOpen.id) {
+          // URL selection intentionally synchronizes the controlled lightbox state.
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setSelectedBoard(boardToOpen)
         }
       } else {
@@ -348,7 +362,7 @@ export default function StudioViewPage() {
       // Clear selection if no boardId in URL
       setSelectedBoard(null)
     }
-  }, [boards, searchParams])
+  }, [boards, searchParams, selectedBoard])
 
   useEffect(() => {
     document.title = 'Studio View – PinSpace'
@@ -399,6 +413,8 @@ export default function StudioViewPage() {
   // leaves the role null → no affordance. Never runs in demo mode.
   useEffect(() => {
     if (isDemo || !resolvedWorkspaceId || !user?.id) {
+      // Membership-derived permissions fail closed whenever identity or workspace scope disappears.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCurrentUserRole(null)
       return
     }
@@ -480,49 +496,40 @@ export default function StudioViewPage() {
 
   if (loading) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
-          <p className="text-white/90 font-medium">Loading studio...</p>
+      <StudioShell label="Studio viewer loading">
+        <div className="flex h-full w-full items-center justify-center p-4">
+          <StatusState status="loading" title="Loading studio" description="Preparing the public room and its boards." />
         </div>
-      </div>
+      </StudioShell>
     )
   }
 
   if (error) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
-        <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
-          <div className="text-6xl mb-4">😕</div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Oops!</h2>
-          <p className="text-gray-600 mb-6">{error}</p>
-          <button 
-            onClick={() => window.location.reload()}
-            className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
-          >
-            Try Again
-          </button>
+      <StudioShell label="Studio viewer unavailable">
+        <div className="flex h-full w-full items-center justify-center p-4">
+          <StatusState status="error" title="Studio unavailable" description={error} action={<Button type="button" onClick={() => window.location.reload()}>Try again</Button>} />
         </div>
-      </div>
+      </StudioShell>
     )
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#B3B3FF' }}>
+    <StudioShell label={roomName ? `${roomName} studio viewer` : 'Studio viewer'}>
+    <div className="relative h-full w-full overflow-hidden bg-primary-dark">
       <DemoBanner />
 
       {/* Animated gradient background effects (match studio room page) */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)' }}></div>
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)', animationDelay: '1s' }}></div>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(102, 102, 255, 0.1)' }}></div>
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div className="absolute -right-40 -top-40 h-96 w-96 rounded-full bg-primary/10 blur-3xl motion-safe:animate-pulse"></div>
+        <div className="absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-accent/10 blur-3xl motion-safe:animate-pulse"></div>
       </div>
 
       {/* Top Left - Logo and Back (match studio room chrome, but back to network/gallery) */}
-      <div className="fixed top-4 left-4 z-40 flex items-center gap-2.5">
+      <div className="fixed left-[max(0.75rem,env(safe-area-inset-left))] top-[max(0.75rem,env(safe-area-inset-top))] z-40 flex max-w-[calc(100vw-5rem)] flex-wrap items-center gap-2 sm:max-w-[calc(100vw-14rem)]">
         <button
           onClick={() => router.push('/')}
-          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
+          className="min-h-11 rounded-kova border border-kova-ink bg-primary px-4 py-2 font-bold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           PinSpace
         </button>
@@ -548,7 +555,7 @@ export default function StudioViewPage() {
             }
             router.push(base)
           }}
-          className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
+          className="flex min-h-11 items-center gap-2 rounded-kova border border-border/40 bg-primary-dark/80 px-4 py-2 text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <ArrowLeft className="w-4 h-4" />
           {searchParams.get('returnTo') === 'gallery' ? 'Gallery' : 'Network'}
@@ -560,7 +567,7 @@ export default function StudioViewPage() {
             viewports so the Network button stays reachable. */}
         {roomName && (
           <div
-            className="px-3 py-2 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 text-sm font-medium max-w-[40vw] sm:max-w-xs truncate"
+            className="max-w-[45vw] truncate rounded-kova border border-border/40 bg-primary-dark/80 px-3 py-2 font-mono text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md sm:max-w-xs"
             title={roomName}
           >
             {roomName}
@@ -569,45 +576,34 @@ export default function StudioViewPage() {
       </div>
 
       {/* Top-right status pill (view mode + board count) */}
-      <div className="fixed top-4 right-4 z-40 flex items-center gap-2.5">
-        <div className="px-4 py-2.5 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2">
-          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-          <span>View Mode</span>
-          <span className="opacity-80">• {boards.length} boards</span>
+      <div className="fixed right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] z-40 flex items-center gap-2">
+        <div role="status" className="flex min-h-11 items-center gap-2 rounded-kova border border-border/40 bg-primary-dark/80 px-3 py-2 font-mono text-xs font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md sm:px-4 sm:text-sm">
+          <div className="h-2 w-2 rounded-full bg-accent motion-safe:animate-pulse" aria-hidden="true" />
+          <span className="hidden sm:inline">View mode</span>
+          <span className="opacity-80">{boards.length} {boards.length === 1 ? 'board' : 'boards'}</span>
         </div>
       </div>
 
       {/* Instructions Overlay */}
-      <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10 bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full shadow-lg border border-gray-200">
-        <p className="text-sm text-gray-700">
-          <span className="font-semibold">💬 Click boards</span> to view comments
-          <span className="mx-3 text-gray-400">•</span>
-          <span className="font-semibold">🖱️ Click table/model</span> for full 3D view
-          <span className="mx-3 text-gray-400">•</span>
-          <span className="font-semibold">Drag</span> to rotate camera
-        </p>
+      <div className="absolute inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 flex justify-center sm:inset-x-6">
+        <details className="max-h-[40dvh] w-full max-w-2xl overflow-y-auto rounded-kova border border-border bg-background-light/95 px-4 py-3 text-sm text-text-secondary shadow-[var(--shadow-raised)] backdrop-blur-md">
+          <summary className="min-h-11 cursor-pointer rounded-kova font-semibold text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Room controls and board list</summary>
+          <p className="mt-2">Use pointer or touch to rotate the room. Keyboard users can open any board from the list below.</p>
+          {boards.length > 0 && <ul className="mt-3 grid gap-2 sm:grid-cols-2">{boards.map((board) => <li key={board.id}><button type="button" onClick={() => handleBoardClick(board)} className="min-h-11 w-full rounded-kova border border-border bg-background-light px-3 py-2 text-left font-medium text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">{board.title || 'Untitled board'}</button></li>)}</ul>}
+        </details>
       </div>
 
       {/* Full-screen 3D model viewer overlay */}
       {modelViewerUrl && (
-        <div className="fixed inset-0 z-50 bg-slate-900/90 flex flex-col">
-          <div className="flex items-center justify-between p-3 bg-white/10 border-b border-white/20">
-            <span className="text-white font-medium">3D Model</span>
-            <button
-              type="button"
-              onClick={() => setModelViewerUrl(null)}
-              className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium transition-colors"
-            >
-              Close
-            </button>
-          </div>
-          <div className="flex-1 min-h-0">
+        <Dialog open onOpenChange={(open) => { if (!open) setModelViewerUrl(null) }} title="3D model" description="Interactive model viewer. Use pointer, touch, or keyboard controls provided by the viewer." className="flex h-[min(90dvh,56rem)] max-w-6xl flex-col motion-reduce:transition-none [&>button.absolute]:h-11 [&>button.absolute]:w-11 [&>div.mt-5]:min-h-0 [&>div.mt-5]:flex-1">
+          <div className="h-full min-h-0 overflow-hidden rounded-kova bg-primary-dark">
             <ModelViewer modelUrl={modelViewerUrl} />
           </div>
-        </div>
+        </Dialog>
       )}
 
       {/* 3D Canvas */}
+      <SceneErrorBoundary resetKey={studioId}>
       <Canvas
         shadows
         className="w-full h-full"
@@ -617,10 +613,10 @@ export default function StudioViewPage() {
           premultipliedAlpha: false,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
-        style={{ background: '#D8DEFF' }}
+        style={{ background: STUDIO_SCENE_BACKGROUND }}
       >
         {/* Background matches wall color */}
-        <color attach="background" args={['#D8DEFF']} />
+        <color attach="background" args={[STUDIO_SCENE_BACKGROUND]} />
         
         {/* Lighting – match StudioRoom for consistent brightness and color */}
         {/* Ambient light - reduced for better shadow definition */}
@@ -648,11 +644,11 @@ export default function StudioViewPage() {
         <directionalLight position={[0, 25, 0]} intensity={0.4} />
         
         {/* Rim lighting for wall edges - enhances depth */}
-        <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
-        <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
+        <directionalLight position={[-8, 10, -12]} intensity={0.3} color={ENGINE_PALETTE.paper} />
+        <directionalLight position={[8, 10, 12]} intensity={0.3} color={ENGINE_PALETTE.paper} />
         
         {/* Hemisphere light for natural ambient */}
-        <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
+        <hemisphereLight args={[ENGINE_PALETTE.paper, ENGINE_PALETTE.groundLight, 0.3]} />
         
         {/* Wall System with Boards */}
         {wallConfig && (
@@ -680,6 +676,7 @@ export default function StudioViewPage() {
         {/* Camera Controls - scaled by wall size; crisp stop on mouse release (no lingering) */}
         <StudioViewCameraControls wallConfig={wallConfig} />
       </Canvas>
+      </SceneErrorBoundary>
 
       {/* Lightbox Modal */}
       <LightboxModal
@@ -728,7 +725,15 @@ export default function StudioViewPage() {
           setSelectedBoard((prev) => (prev && prev.id === boardId ? { ...prev, title } : prev))
         }}
       />
+      {boards.length === 0 && (
+        <div className="pointer-events-none absolute inset-x-4 bottom-24 z-10 flex justify-center sm:bottom-28">
+          <div role="status" className="max-w-md rounded-kova border border-border/40 bg-primary-dark/85 px-4 py-3 text-center text-sm text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md">
+            <p className="font-semibold">This room has no boards yet</p>
+            <p className="mt-1 text-background-light/75">The 3D space is ready, but there is no work to open yet.</p>
+          </div>
+        </div>
+      )}
     </div>
+    </StudioShell>
   )
 }
-

@@ -1,16 +1,39 @@
 'use client'
 
 import Link from 'next/link'
-import { useRef, useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
-  GraduationCap, Users, Building2, MoreVertical, Plus,
-  Settings, Trash2, ExternalLink, Pencil, Archive, UserPlus, Network, LogOut,
+  Archive,
+  Building2,
+  ExternalLink,
+  GraduationCap,
+  LogOut,
+  MoreVertical,
+  Network,
+  Pencil,
+  Plus,
+  Settings,
+  Trash2,
+  UserPlus,
+  Users,
 } from 'lucide-react'
-import type { Workspace } from '@/types'
-import type { Scope } from './DashboardSidebar'
-import { useProfile } from '@/lib/ProfileContext'
 
-// ── Shared type ───────────────────────────────────────────────────────────────
+import { PageHeader } from '@/components/layout/PageHeader'
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
+  Skeleton,
+} from '@/components/ui'
+import { useProfile } from '@/lib/ProfileContext'
+import type { Workspace } from '@/types'
+
+import type { Scope } from './DashboardSidebar'
 
 export type DashboardWorkspace = Workspace & {
   owner_id?: string
@@ -20,231 +43,190 @@ export type DashboardWorkspace = Workspace & {
   is_archived?: boolean
 }
 
-// ── Utils ─────────────────────────────────────────────────────────────────────
-
 function withInstitution(path: string, slug: string | null): string {
   if (!slug) return path
   return `${path}${path.includes('?') ? '&' : '?'}institution=${encodeURIComponent(slug)}`
 }
 
-// ── RoomCard ──────────────────────────────────────────────────────────────────
+const interactiveLink =
+  'inline-flex min-h-11 items-center justify-center gap-2 rounded-kova border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary shadow-[var(--shadow-soft)] transition-colors hover:border-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
-interface RoomCardProps {
+interface ProjectCardProps {
   workspace: DashboardWorkspace
   isOwner: boolean
   scope: Scope
-  openMenuId: string | null
-  setOpenMenuId: (id: string | null) => void
   institutionSlug: string | null
   onDelete: (id: string, name: string) => void
   onRename: (id: string, name: string) => void
   onLeave: (id: string, name: string) => void
 }
 
-function RoomCard({
-  workspace, isOwner, scope, openMenuId, setOpenMenuId, institutionSlug, onDelete, onRename, onLeave,
-}: RoomCardProps) {
-  const menuRef = useRef<HTMLDivElement>(null)
-  const isMenuOpen = openMenuId === workspace.id
+function ProjectCard({
+  workspace,
+  isOwner,
+  scope,
+  institutionSlug,
+  onDelete,
+  onRename,
+  onLeave,
+}: ProjectCardProps) {
   const isArchived = Boolean(workspace.is_archived)
-
-  useEffect(() => {
-    if (!isMenuOpen) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [isMenuOpen, setOpenMenuId])
-
-  const IconEl = scope === 'wentworth' ? GraduationCap : scope === 'shared' ? Users : Building2
-  const iconColor = scope === 'wentworth' ? 'text-indigo-400' : scope === 'shared' ? 'text-emerald-400' : 'text-slate-400'
+  const Icon = scope === 'wentworth' ? GraduationCap : scope === 'shared' ? Users : Building2
+  const projectName = workspace.name || 'Unnamed project'
 
   return (
-    <div className={`group bg-white rounded-xl border overflow-hidden transition-all duration-200 ${
-      isArchived ? 'opacity-60 border-gray-200' : 'border-gray-200 hover:shadow-md hover:-translate-y-0.5'
-    }`}>
-      {/* Thumbnail */}
-      <div className={`relative h-36 flex items-center justify-center ${
-        isArchived ? 'bg-gray-50' : 'bg-gradient-to-br from-indigo-50 to-slate-100'
-      }`}>
-        <IconEl className={`w-10 h-10 ${isArchived ? 'text-gray-300' : iconColor}`} />
-
-        {isArchived && (
-          <span className="absolute top-2 left-2 px-2 py-0.5 bg-gray-200 text-gray-600 rounded text-xs font-medium flex items-center gap-1">
-            <Archive className="w-3 h-3" /> Archived
-          </span>
-        )}
-        {isOwner && !isArchived && (
-          <span className="absolute top-2 left-2 px-2 py-0.5 bg-white/80 text-indigo-700 rounded text-xs font-medium">
-            Owner
-          </span>
-        )}
-
-        {/* Every dashboard card is a workspace the user owns or is a member of
-            (the list is owned ∪ member), so Rename is available on all cards
-            (Phase 10). Settings + Delete remain owner-only. */}
-        <div className="absolute top-2 right-2" ref={menuRef}>
-          <button
-            type="button"
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : workspace.id) }}
-            className="p-1.5 rounded-lg bg-white/70 hover:bg-white text-gray-500 hover:text-gray-700 transition-colors shadow-sm opacity-0 group-hover:opacity-100"
-          >
-            <MoreVertical className="w-3.5 h-3.5" />
-          </button>
-          {isMenuOpen && (
-            <div className="absolute right-0 top-9 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
-              {isOwner && (
-                <Link
-                  href={withInstitution(`/workspace/${workspace.id}/settings`, institutionSlug)}
-                  onClick={() => setOpenMenuId(null)}
-                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  <Settings className="w-4 h-4" /> Settings
-                </Link>
-              )}
-              <button
-                type="button"
-                onClick={() => { onRename(workspace.id, workspace.name || ''); setOpenMenuId(null) }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left"
-              >
-                <Pencil className="w-4 h-4" /> Rename
-              </button>
-              {isOwner && (
-                <button
-                  type="button"
-                  onClick={() => onDelete(workspace.id, workspace.name || '')}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
-                >
-                  <Trash2 className="w-4 h-4" /> Delete
-                </button>
-              )}
-              {/* Non-owner members can leave. Every non-owned dashboard card is a
-                  membership, so !isOwner ⟹ member. Owners get Delete instead. */}
-              {!isOwner && (
-                <button
-                  type="button"
-                  onClick={() => { onLeave(workspace.id, workspace.name || ''); setOpenMenuId(null) }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
-                >
-                  <LogOut className="w-4 h-4" /> Leave project
-                </button>
-              )}
-            </div>
+    <Card
+      className={`group relative overflow-visible p-0 transition-[transform,box-shadow] ${
+        isArchived ? 'opacity-70' : 'hover:-translate-y-0.5 hover:shadow-[var(--shadow-raised)]'
+      }`}
+    >
+      <div className="relative flex h-32 items-center justify-center rounded-t-kova-lg bg-background-lighter">
+        <Icon className="h-10 w-10 text-accent" aria-hidden="true" />
+        <div className="absolute left-3 top-3 flex flex-wrap gap-2">
+          {isArchived && (
+            <Badge>
+              <Archive className="mr-1 h-3 w-3" aria-hidden="true" />
+              Archived
+            </Badge>
           )}
+          {isOwner && !isArchived && <Badge variant="accent">Owner</Badge>}
         </div>
+
+        <Menu className="absolute right-2 top-2">
+          <MenuTrigger
+            aria-label={`Actions for ${projectName}`}
+            className="min-h-11 min-w-11 border-border bg-background-light/95 p-0 text-text-secondary shadow-[var(--shadow-soft)] hover:text-text-primary"
+          >
+            <MoreVertical className="h-5 w-5" aria-hidden="true" />
+          </MenuTrigger>
+          <MenuContent aria-label={`Actions for ${projectName}`}>
+            {isOwner && (
+              <Link
+                role="menuitem"
+                tabIndex={-1}
+                href={withInstitution(`/workspace/${workspace.id}/settings`, institutionSlug)}
+                className="flex min-h-10 items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-sm text-text-primary hover:bg-background-lighter focus:bg-primary-muted focus:outline-none"
+              >
+                <Settings className="h-4 w-4" aria-hidden="true" />
+                Settings
+              </Link>
+            )}
+            <MenuItem onSelect={() => onRename(workspace.id, workspace.name || '')}>
+              <Pencil className="mr-2 h-4 w-4" aria-hidden="true" />
+              Rename
+            </MenuItem>
+            {isOwner ? (
+              <MenuItem
+                onSelect={() => onDelete(workspace.id, workspace.name || '')}
+                className="text-[rgb(var(--color-danger))] focus:bg-[rgb(var(--color-danger)/0.1)]"
+              >
+                <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
+                Delete
+              </MenuItem>
+            ) : (
+              <MenuItem
+                onSelect={() => onLeave(workspace.id, workspace.name || '')}
+                className="text-[rgb(var(--color-danger))] focus:bg-[rgb(var(--color-danger)/0.1)]"
+              >
+                <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
+                Leave project
+              </MenuItem>
+            )}
+          </MenuContent>
+        </Menu>
       </div>
 
-      {/* Card body — link */}
-      <Link href={withInstitution(`/workspace/${workspace.id}`, institutionSlug)} className="block p-4">
-        <h3 className="text-sm font-semibold text-gray-900 mb-1 truncate group-hover:text-indigo-600 transition-colors">
-          {workspace.name || 'Unnamed'}
-        </h3>
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-gray-400">
-            {workspace.board_count !== undefined
-              ? `${workspace.board_count} board${workspace.board_count !== 1 ? 's' : ''}`
-              : workspace.created_at
-              ? new Date(workspace.created_at).toLocaleDateString()
-              : ''}
-          </p>
-          <ExternalLink className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-60 transition-opacity shrink-0" />
+      <Link
+        href={withInstitution(`/workspace/${workspace.id}`, institutionSlug)}
+        className="block rounded-b-kova-lg p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+      >
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-bold text-text-primary">{projectName}</h2>
+            <p className="mt-1 text-xs text-text-muted">
+              {workspace.board_count !== undefined
+                ? `${workspace.board_count} board${workspace.board_count === 1 ? '' : 's'}`
+                : workspace.created_at
+                  ? new Date(workspace.created_at).toLocaleDateString()
+                  : 'Open project'}
+            </p>
+          </div>
+          <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
         </div>
       </Link>
-    </div>
+    </Card>
   )
 }
 
-// ── New Room card ─────────────────────────────────────────────────────────────
-
-function NewRoomCard({ href, label }: { href: string; label: string }) {
+function ActionCard({ href, label, kind }: { href: string; label: string; kind: 'create' | 'network' }) {
+  const Icon = kind === 'network' ? Network : Plus
   return (
-    <Link href={href} className="block h-full">
-      <div className="group h-full min-h-[168px] bg-white rounded-xl border-2 border-dashed border-gray-200 hover:border-indigo-400 hover:bg-indigo-50/30 transition-all duration-200 flex flex-col items-center justify-center gap-2.5 p-4">
-        <div className="w-10 h-10 rounded-full bg-gray-100 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
-          <Plus className="w-5 h-5 text-gray-400 group-hover:text-indigo-600 transition-colors" />
-        </div>
-        <span className="text-sm font-medium text-gray-500 group-hover:text-indigo-600 transition-colors text-center">{label}</span>
-      </div>
+    <Link
+      href={href}
+      className={`group flex min-h-48 flex-col items-center justify-center gap-3 rounded-kova-lg border p-5 text-center font-semibold shadow-[var(--shadow-soft)] transition-[transform,background-color,box-shadow] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+        kind === 'network'
+          ? 'border-accent bg-accent text-background-light hover:bg-accent-light'
+          : 'border-dashed border-border bg-background-light text-text-primary hover:border-accent hover:bg-background-lighter'
+      }`}
+    >
+      <span className={`flex h-12 w-12 items-center justify-center rounded-full ${
+        kind === 'network' ? 'bg-background-light/15' : 'bg-primary-muted'
+      }`}>
+        <Icon className="h-5 w-5" aria-hidden="true" />
+      </span>
+      {label}
     </Link>
   )
 }
 
-// ── Enter Network card ────────────────────────────────────────────────────────
-
-function EnterNetworkCard({ href }: { href: string }) {
-  return (
-    <Link href={href} className="block h-full">
-      <div className="group h-full min-h-[168px] bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all duration-200 flex flex-col items-center justify-center gap-2.5 p-4 cursor-pointer shadow-sm hover:shadow-md hover:-translate-y-0.5">
-        <div className="w-10 h-10 rounded-full bg-white/20 group-hover:bg-white/30 flex items-center justify-center transition-colors">
-          <Network className="w-5 h-5 text-white" />
-        </div>
-        <span className="text-sm font-medium text-white text-center">Enter Network</span>
-      </div>
-    </Link>
-  )
-}
-
-// ── Scope config ──────────────────────────────────────────────────────────────
-
-interface ScopeCfg {
+interface ScopeConfig {
   title: string
+  description: string
   newLabel: string
   newHref: string
   emptyTitle: string
-  emptySubtext: string
+  emptyDescription: string
   showJoin: boolean
 }
 
-// One vocabulary for every org type. This used to swap "Project"/"Class" on
-// accountMode === 'firm', which doubled the copy surface for no benefit and
-// left the firm half effectively untested. Deliberately avoids "room" and
-// "studio": both already name the layer BELOW a workspace (a workspace holds
-// rooms; /studio/[id] is the 3D room view), so reusing either here would
-// collide.
 function scopeConfig(
   scope: Scope,
   organization: { name: string; slug: string } | null,
   institutionHome: string | null,
-  canCreate: boolean,
-): ScopeCfg {
-  switch (scope) {
-    case 'wentworth':
-      return {
-        title: organization?.name || 'Network',
-        newLabel: 'New Project',
-        newHref: withInstitution('/workspace/new', institutionHome),
-        emptyTitle: 'Nothing here yet',
-        // Students are the people who see this copy most, and the same
-        // canCreate flag hides the create affordance from them — telling them
-        // to create something is a dead end. Offer only what they can do.
-        emptySubtext: canCreate
-          ? 'Create one or join with an invite code.'
-          : 'Join with an invite code.',
-        showJoin: true,
-      }
-    case 'shared':
-      return {
-        title: 'Shared Projects',
-        newLabel: 'New Shared Project',
-        newHref: '/workspace/new?type=shared',
-        emptyTitle: 'Nothing here yet',
-        emptySubtext: 'Anything you collaborate on with others will appear here.',
-        showJoin: true,
-      }
-    case 'personal':
-      return {
-        title: 'Personal Projects',
-        newLabel: 'New Personal Project',
-        newHref: withInstitution('/studio/new', institutionHome),
-        emptyTitle: 'Nothing here yet',
-        emptySubtext: 'Create one to get started.',
-        showJoin: false,
-      }
+  canCreate: boolean
+): ScopeConfig {
+  if (scope === 'wentworth') {
+    return {
+      title: organization?.name || 'Organization projects',
+      description: 'Projects connected to your organization and its network.',
+      newLabel: 'New Project',
+      newHref: withInstitution('/workspace/new', institutionHome),
+      emptyTitle: 'No organization projects yet',
+      emptyDescription: canCreate ? 'Create a project or join with an invite code.' : 'Join with an invite code.',
+      showJoin: true,
+    }
+  }
+  if (scope === 'shared') {
+    return {
+      title: 'Shared Projects',
+      description: 'Workspaces where you collaborate with other people.',
+      newLabel: 'New Shared Project',
+      newHref: '/workspace/new?type=shared',
+      emptyTitle: 'No shared projects yet',
+      emptyDescription: 'Create a shared project or join one with an invite code.',
+      showJoin: true,
+    }
+  }
+  return {
+    title: 'Personal Projects',
+    description: 'Private spaces for developing and organizing your work.',
+    newLabel: 'New Personal Project',
+    newHref: withInstitution('/studio/new', institutionHome),
+    emptyTitle: 'No personal projects yet',
+    emptyDescription: 'Create your first personal project to get started.',
+    showJoin: false,
   }
 }
-
-// ── Main component ────────────────────────────────────────────────────────────
 
 interface DashboardMainProps {
   scope: Scope
@@ -260,133 +242,89 @@ interface DashboardMainProps {
 }
 
 export function DashboardMain({
-  scope, rooms, userId, institutionHome, loading,
-  organization, onDelete, onRename, onLeave, onShowJoinModal,
+  scope,
+  rooms,
+  userId,
+  institutionHome,
+  loading,
+  organization,
+  onDelete,
+  onRename,
+  onLeave,
+  onShowJoinModal,
 }: DashboardMainProps) {
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
-  const [showArchived, setShowArchived] = useState(false)
+  const [archivedScope, setArchivedScope] = useState<Scope | null>(null)
   const { profile } = useProfile()
-
-  // Only instructors may create org-facing classes (the Wentworth tab). Shared
-  // rooms are peer-to-peer collab and Personal rooms are the user's own space —
-  // both stay open to everyone. Mirrors the server gate in POST /api/workspaces
-  // (type === 'class'); hiding here is UX only, the API is the real boundary.
-  const requiresInstructor = scope === 'wentworth'
-  const canCreate = !requiresInstructor || profile.accountRole === 'instructor'
-
-  // Enter Network is an org-wide entry point, not a class action. It is gated on
-  // nothing at all now — never account_role, never "owns/joined at least one
-  // room" — because the grid it lives in renders unconditionally (see below).
-  // Deliberately NOT gated on `organization` either: the Wentworth tab is
-  // already unreachable without an org (DashboardSidebar renders it behind
-  // hasOrganization), and `organization` is null while the profile fetch is in
-  // flight or if it fails — re-adding that check would make the card vanish
-  // again for the exact users it serves.
-  const networkHref =
-    scope === 'wentworth'
-      ? organization?.slug ? `/explore?institution=${encodeURIComponent(organization.slug)}` : '/explore'
-      : scope === 'shared' ? '/network/shared' : '/network'
-
+  const canCreate = scope !== 'wentworth' || profile.accountRole === 'instructor'
   const cfg = scopeConfig(scope, organization, institutionHome, canCreate)
-  const hasArchived = rooms.some((r) => r.is_archived)
-  const visibleRooms = showArchived ? rooms : rooms.filter((r) => !r.is_archived)
-
-  // Reset showArchived when scope changes
-  useEffect(() => { setShowArchived(false); setOpenMenuId(null) }, [scope])
+  const hasArchived = rooms.some((room) => room.is_archived)
+  const showArchived = archivedScope === scope
+  const visibleRooms = showArchived ? rooms : rooms.filter((room) => !room.is_archived)
+  const networkHref = scope === 'wentworth'
+    ? organization?.slug ? `/explore?institution=${encodeURIComponent(organization.slug)}` : '/explore'
+    : scope === 'shared' ? '/network/shared' : '/network'
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-      {/* Top bar */}
-      {/* Wrap below sm so the org title + action buttons each get their own
-          row on narrow viewports (≤ ~440px) instead of pushing New Project past
-          the right edge. min-w-0 on the title lets it shrink rather than
-          shove the actions row off, and the actions inner row also wraps so
-          three buttons (Show archived / Join with code / New Project) don't
-          clip individually on the narrowest phones. sm:flex-nowrap + sm:h-16
-          restore the desktop row exactly. */}
-      <div className="shrink-0 sm:h-16 flex flex-wrap items-center justify-between gap-2 px-6 py-3 sm:py-0 sm:flex-nowrap border-b border-gray-200 bg-white">
-        <span className="text-base font-semibold text-gray-900 pl-10 md:pl-0 min-w-0 truncate">{cfg.title}</span>
+    <main className="flex min-h-dvh min-w-0 flex-1 flex-col overflow-x-clip" aria-labelledby="dashboard-title">
+      <PageHeader
+        title={<span id="dashboard-title">{cfg.title}</span>}
+        description={cfg.description}
+        className="pl-16 md:pl-8"
+        actions={
+          <>
+            {hasArchived && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setArchivedScope((value) => value === scope ? null : scope)}
+              >
+                <Archive className="h-4 w-4" aria-hidden="true" />
+                {showArchived ? 'Hide archived' : 'Show archived'}
+              </Button>
+            )}
+            {cfg.showJoin && (
+              <Button type="button" variant="ghost" onClick={onShowJoinModal}>
+                <UserPlus className="h-4 w-4" aria-hidden="true" />
+                Join with code
+              </Button>
+            )}
+            {canCreate && (
+              <Link href={cfg.newHref} className={`${interactiveLink} border-kova-ink bg-primary hover:bg-primary-light`}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                {cfg.newLabel}
+              </Link>
+            )}
+          </>
+        }
+      />
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Revealing your own archived rooms is a VIEW action, so it is not
-              gated on account_role. It used to be, which made archiving a
-              one-way door: a student-account owner can archive a personal or
-              shared project (that check is the workspace MEMBER role, and every
-              creator is inserted as an instructor member) but could never
-              unhide it again, because this check was the ACCOUNT role. The
-              rooms are already in `rooms` — this only toggles the filter. */}
-          {hasArchived && (
-            <button
-              type="button"
-              onClick={() => setShowArchived((v) => !v)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${
-                showArchived
-                  ? 'bg-gray-200 text-gray-700'
-                  : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              <Archive className="w-3.5 h-3.5" />
-              {showArchived ? 'Hide archived' : 'Show archived'}
-            </button>
-          )}
-          {cfg.showJoin && (
-            <button
-              type="button"
-              onClick={onShowJoinModal}
-              className="px-3 py-1.5 border border-indigo-400 text-indigo-600 rounded-lg text-xs font-medium hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              Join with code
-            </button>
-          )}
-          {canCreate && (
-            <Link
-              href={cfg.newHref}
-              className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700 transition-colors flex items-center gap-1.5 shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              {cfg.newLabel}
-            </Link>
-          )}
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+      <div className="flex-1 bg-background px-4 py-6 sm:px-6 lg:px-8">
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="bg-white rounded-xl border border-gray-200 animate-pulse">
-                <div className="h-36 bg-gray-100 rounded-t-xl" />
-                <div className="p-4 space-y-2">
-                  <div className="h-4 bg-gray-100 rounded w-3/4" />
-                  <div className="h-3 bg-gray-100 rounded w-1/2" />
-                </div>
-              </div>
-            ))}
+          <div role="status" aria-label="Loading projects" className="space-y-4">
+            <span className="sr-only">Loading projects</span>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+              {[0, 1, 2, 3].map((item) => (
+                <Card key={item} className="overflow-hidden p-0">
+                  <Skeleton className="h-32 rounded-none" />
+                  <div className="space-y-3 p-4">
+                    <Skeleton className="h-5 w-3/4" />
+                    <Skeleton className="h-4 w-1/2" />
+                  </div>
+                </Card>
+              ))}
+            </div>
           </div>
         ) : (
-          <>
-            {/* Persistent chrome. Enter Network and New Project are entry points,
-                not content, so they render unconditionally rather than inside
-                the populated branch of an empty-state ternary — that structure
-                is what silently deleted Enter Network for every user with zero
-                rooms. Same shape as app/network/page.tsx and app/explore/page.tsx,
-                where the header and back link sit outside the ternary, and as
-                app/workspace/[id]/page.tsx, where "No rooms yet" renders BELOW
-                the grid instead of replacing it. Anything added to this grid
-                later inherits the fix. */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              <EnterNetworkCard href={networkHref} />
-              {canCreate && <NewRoomCard href={cfg.newHref} label={cfg.newLabel} />}
+          <div className="mx-auto max-w-[96rem] space-y-8">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+              <ActionCard href={networkHref} label="Enter Network" kind="network" />
+              {canCreate && <ActionCard href={cfg.newHref} label={cfg.newLabel} kind="create" />}
               {visibleRooms.map((room) => (
-                <RoomCard
+                <ProjectCard
                   key={room.id}
                   workspace={room}
                   isOwner={room.owner_id === userId}
                   scope={scope}
-                  openMenuId={openMenuId}
-                  setOpenMenuId={setOpenMenuId}
                   institutionSlug={institutionHome}
                   onDelete={onDelete}
                   onRename={onRename}
@@ -396,36 +334,23 @@ export function DashboardMain({
             </div>
 
             {visibleRooms.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-                  <Plus className="w-7 h-7 text-gray-400" />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">{cfg.emptyTitle}</h3>
-                <p className="text-sm text-gray-500 mb-6 max-w-xs">{cfg.emptySubtext}</p>
-                <div className="flex gap-2.5 flex-wrap justify-center">
-                  {cfg.showJoin && (
-                    <button
-                      type="button"
-                      onClick={onShowJoinModal}
-                      className="px-4 py-2 border border-indigo-400 text-indigo-600 rounded-lg text-sm font-medium hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
-                    >
-                      <UserPlus className="w-4 h-4" /> Join with code
-                    </button>
-                  )}
-                  {canCreate && (
-                    <Link
-                      href={cfg.newHref}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center gap-1.5 shadow-sm"
-                    >
-                      <Plus className="w-4 h-4" /> {cfg.newLabel}
-                    </Link>
-                  )}
-                </div>
-              </div>
+              <EmptyState
+                title={cfg.emptyTitle}
+                description={cfg.emptyDescription}
+                icon={<Plus className="h-7 w-7" aria-hidden="true" />}
+                action={
+                  cfg.showJoin ? (
+                    <Button type="button" variant="secondary" onClick={onShowJoinModal}>
+                      <UserPlus className="h-4 w-4" aria-hidden="true" />
+                      Join with code
+                    </Button>
+                  ) : undefined
+                }
+              />
             )}
-          </>
+          </div>
         )}
       </div>
-    </div>
+    </main>
   )
 }

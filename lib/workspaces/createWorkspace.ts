@@ -109,7 +109,7 @@ export async function createWorkspace(input: CreateWorkspaceInput): Promise<Crea
     academic_year: currentAcademicYear(),
   }
   if (organizationId) insertData.organization_id = organizationId
-  if (type === 'shared') insertData.invite_code = generateInviteCode()
+  if (type !== 'personal') insertData.invite_code = generateInviteCode()
   if (createdByAdmin) insertData.created_by_admin = createdByAdmin
 
   // Try with type first, if it fails (column doesn't exist), try without type

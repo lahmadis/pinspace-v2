@@ -14,6 +14,9 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import { DEFAULT_WALL_CONFIG, type WallConfig } from '@/lib/wallLayout'
 import { useWallConfigWriter } from '@/lib/wallConfigWriter'
+import { StudioShell } from '@/components/layout/StudioShell'
+import { Button, StatusState } from '@/components/ui'
+import { ENGINE_PALETTE } from '@/components/3d/enginePalette'
 
 type RealtimeBoardPayload = {
   eventType: 'INSERT' | 'UPDATE' | 'DELETE'
@@ -24,7 +27,6 @@ type RealtimeBoardPayload = {
 // TEMP diagnostic — always-on tracing of the realtime boards channel, the
 // upstream writer that feeds props.boards -> useBoardState parent-sync.
 const postrace = (...args: unknown[]) => {
-  // eslint-disable-next-line no-console
   console.log('[POSTRACE]', new Date().toISOString(), ...args)
 }
 
@@ -33,12 +35,9 @@ const StudioRoom = dynamic(
   {
     ssr: false,
     loading: () => (
-    <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
-          <p className="text-white/90 font-medium">Loading 3D Studio...</p>
-        </div>
-    </div>
+      <div className="flex h-full w-full items-center justify-center bg-primary-dark p-4">
+        <StatusState status="loading" title="Loading 3D studio" description="Preparing the room canvas and controls." />
+      </div>
   ),
 })
 
@@ -139,7 +138,9 @@ export default function StudioPage() {
   // callbacks read the latest value without re-subscribing.
   const [currentWallIndex, setCurrentWallIndex] = useState<number | null>(null)
   const currentWallIndexRef = useRef<number | null>(null)
-  currentWallIndexRef.current = currentWallIndex
+  useEffect(() => {
+    currentWallIndexRef.current = currentWallIndex
+  }, [currentWallIndex])
   // Presence channel + identity, hoisted so the re-track effect can update the
   // user's wall meta without tearing down and re-subscribing the channel.
   // Debounce timer for realtime-driven board refetch. A realtime boards
@@ -266,6 +267,8 @@ export default function StudioPage() {
   // can't leak into room B, and the trailing flush of room A's pending autosave
   // (fired from the effect cleanup below, during this switch) still needs it.
   useEffect(() => {
+    // Room switches intentionally clear presentation state before the next room fetch resolves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWallConfig(null)
     wallConfigWriter.setCurrentRoom(studioId)
     // On unmount there is no studio on screen, so a late conflict from a write
@@ -615,6 +618,8 @@ export default function StudioPage() {
               if (boardsRefetchTimerRef.current) clearTimeout(boardsRefetchTimerRef.current)
               boardsRefetchTimerRef.current = setTimeout(() => {
                 boardsRefetchTimerRef.current = null
+                // Realtime subscription setup intentionally calls the later-declared stable refetch handler.
+                // eslint-disable-next-line react-hooks/immutability
                 void handleBoardUpdate()
                 // Phase B.5.2: same-timer ping so guest spectators refetch the
                 // committed boards via their token path (covers upload/move/resize).
@@ -646,6 +651,8 @@ export default function StudioPage() {
       if (channel) supabase.removeChannel(channel)
       if (commentsChannel) supabase.removeChannel(commentsChannel)
     }
+    // The subscription is deliberately keyed only to room identity/retry state; handler identities must not reconnect it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studioId, isDemo, retryCount, roomId])
 
   // Tier 1 presence: track this user on a per-room channel and read who else is
@@ -736,6 +743,7 @@ export default function StudioPage() {
       config: { broadcast: { self: false } },
     })
     liveChannelRef.current = channel
+    const traceStreams = traceStreamRef.current
     // Phase B.3: monotonic seq so the laser renderer can tell a fresh packet from
     // a repeat and time out a stale pointer via frame deltas (no Date.now in the
     // frame loop). Lives in the effect closure; resets per room.
@@ -811,11 +819,11 @@ export default function StudioPage() {
       .on('broadcast', { event: 'trace-pt' }, (msg: { payload?: { boardId?: string; authorKey?: string; color?: string; pts?: [number, number][] } }) => {
         const p = msg.payload
         if (!p?.boardId || !p.authorKey || !Array.isArray(p.pts)) return
-        const map = traceStreamRef.current
+        const map = traceStreams
         const key = `${p.boardId}|${p.authorKey}`
         let e = map.get(key)
         if (!e) {
-          e = { boardId: p.boardId, authorKey: p.authorKey, color: typeof p.color === 'string' ? p.color : '#94a3b8', completed: [], live: null }
+          e = { boardId: p.boardId, authorKey: p.authorKey, color: typeof p.color === 'string' ? p.color : ENGINE_PALETTE.guide, completed: [], live: null }
           map.set(key, e)
         }
         if (typeof p.color === 'string') e.color = p.color
@@ -827,18 +835,18 @@ export default function StudioPage() {
       .on('broadcast', { event: 'trace-end' }, (msg: { payload?: { boardId?: string; authorKey?: string } }) => {
         const p = msg.payload
         if (!p?.boardId || !p.authorKey) return
-        const e = traceStreamRef.current.get(`${p.boardId}|${p.authorKey}`)
+        const e = traceStreams.get(`${p.boardId}|${p.authorKey}`)
         if (e && e.live) { e.completed.push(e.live); e.live = null }
       })
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
-      liveChannelRef.current = null
+      if (liveChannelRef.current === channel) liveChannelRef.current = null
       followPoseRef.current = null
       laserRef.current = null
       lbViewportRef.current = null
       lbCursorRef.current = null
-      traceStreamRef.current.clear()
+      traceStreams.clear()
       if (critDirtyTimer) clearTimeout(critDirtyTimer)
     }
   }, [roomId, isDemo])
@@ -909,6 +917,8 @@ export default function StudioPage() {
   // (which only flips isFollowing, not the id) stays detached for that presenter.
   const followTargetId = someoneElsePresenting ? presenter!.userId : null
   useEffect(() => {
+    // Presenter identity changes intentionally re-arm follow mode; user Escape changes do not.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsFollowing(followTargetId !== null)
   }, [followTargetId])
 
@@ -932,7 +942,7 @@ export default function StudioPage() {
 
   // Phase B.3.1: deterministic cursor-dot color for the active presenter (same
   // palette as PresenceBar avatars). Irrelevant when nobody is presenting.
-  const laserColor = presenter ? colorFor(presenter.userId) : '#22d3ee'
+  const laserColor = presenter ? colorFor(presenter.userId) : ENGINE_PALETTE.cursor
 
   // Every action inside the options menu is permission-gated; Share, which is
   // not, stays out as a standalone button. So when a viewer can edit nothing
@@ -982,6 +992,8 @@ export default function StudioPage() {
   // trigger and no panel, so the Escape effect above stays armed against a menu
   // nobody can see.
   useEffect(() => {
+    // Permission/edit-mode changes must synchronously retire an otherwise unreachable open menu.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (isEditMode || !hasStudioMenuItems) setShowStudioMenu(false)
   }, [isEditMode, hasStudioMenuItems])
 
@@ -1013,42 +1025,31 @@ export default function StudioPage() {
 
   if (isLoading) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
-          <p className="text-white/90 font-medium">Loading Studio...</p>
+      <StudioShell label="Studio loading">
+        <div className="flex h-full w-full items-center justify-center p-4">
+          <StatusState status="loading" title="Loading studio" description="Connecting to the room and preparing its boards." />
         </div>
-      </div>
+      </StudioShell>
     )
   }
 
   if (boardsError) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
-        <div className="text-center">
-          <p className="text-white font-semibold text-lg mb-2">Failed to load boards</p>
-          <p className="text-white/70 text-sm mb-6">Check your connection and try again.</p>
-          <div className="flex gap-3 justify-center">
-            <button
-              onClick={() => { setBoardsError(false); setIsLoading(true); setRetryCount(c => c + 1) }}
-              className="px-5 py-2 bg-white text-indigo-600 rounded-lg font-medium hover:bg-white/90 transition-colors"
-            >
-              Retry
-            </button>
-            <button
-              onClick={() => router.push('/dashboard')}
-              className="px-5 py-2 bg-white/20 text-white rounded-lg font-medium hover:bg-white/30 transition-colors"
-            >
-              Dashboard
-            </button>
-          </div>
+      <StudioShell label="Studio unavailable">
+        <div className="flex h-full w-full items-center justify-center p-4">
+          <StatusState
+            status="error"
+            title="Failed to load boards"
+            description="Check your connection and try again."
+            action={<div className="flex flex-wrap justify-center gap-3"><Button type="button" onClick={() => { setBoardsError(false); setIsLoading(true); setRetryCount(c => c + 1) }}>Retry</Button><Button type="button" variant="ghost" onClick={() => router.push('/dashboard')}>Dashboard</Button></div>}
+          />
         </div>
-      </div>
+      </StudioShell>
     )
   }
 
   return (
-    <>
+    <StudioShell label={currentRoomName ? `${currentRoomName} studio` : 'Studio'}>
       <DemoBanner />
       {!isDemo && <PresenceBar users={presentUsers} currentUserId={currentUserId} />}
       {/* Phase B.1: presenter indicator. Shown to everyone except the presenter
@@ -1056,7 +1057,7 @@ export default function StudioPage() {
           style kept consistent with it. */}
       {!isDemo && someoneElsePresenting && (
         <div
-          className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3 py-2 bg-white/10 backdrop-blur-md rounded-xl shadow-lg border border-white/20"
+          className="fixed left-1/2 top-[calc(max(0.75rem,env(safe-area-inset-top))+3.25rem)] z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-kova border border-border/40 bg-primary-dark/80 px-3 py-2 text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md motion-reduce:transition-none"
           role="status"
         >
           <Presentation className="w-4 h-4 text-white" />
@@ -1065,7 +1066,7 @@ export default function StudioPage() {
               freely (also via Escape), or rejoin. */}
           <button
             onClick={() => setIsFollowing((v) => !v)}
-            className="ml-1 px-2 py-0.5 rounded-md bg-white/15 hover:bg-white/25 text-white text-xs font-medium transition-colors"
+            className="ml-1 min-h-11 rounded-kova border border-background-light/30 bg-background-light/10 px-3 py-2 text-xs font-semibold text-background-light hover:bg-background-light/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             {isFollowing ? 'Stop following' : `Follow ${friendlyName(presenter!.fullName)}`}
           </button>
@@ -1073,7 +1074,7 @@ export default function StudioPage() {
       )}
       {/* Archive banner */}
       {isArchived && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-indigo-600 text-white text-sm font-medium text-center py-2 px-4">
+        <div role="status" className="fixed inset-x-0 bottom-0 z-50 bg-primary px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 text-center text-sm font-semibold text-kova-ink">
           This workspace is archived. View only.
         </div>
       )}
@@ -1085,12 +1086,11 @@ export default function StudioPage() {
       )}
 
       {wallConfig && (
-        <div className="relative w-full h-screen overflow-hidden" style={{ background: '#B3B3FF' }}>
+        <div className="relative h-full w-full overflow-hidden bg-primary-dark">
           {/* Animated gradient background effects */}
-          <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)' }}></div>
-            <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)', animationDelay: '1s' }}></div>
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(102, 102, 255, 0.1)' }}></div>
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+            <div className="absolute -right-40 -top-40 h-96 w-96 rounded-full bg-primary/10 blur-3xl motion-safe:animate-pulse"></div>
+            <div className="absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-accent/10 blur-3xl motion-safe:animate-pulse"></div>
           </div>
 
           {/* Top Left - Logo and breadcrumb. Hidden in wall edit mode. */}
@@ -1098,11 +1098,11 @@ export default function StudioPage() {
             // Same flex-wrap/max-w pattern as the right toolbar so a long
             // workspace + room breadcrumb pill drops to a second line on
             // narrow viewports instead of running off the right edge.
-            <div className="fixed top-4 left-4 z-40 flex flex-wrap items-center gap-2.5 max-w-[calc(100vw-2rem)] sm:flex-nowrap sm:max-w-none">
+            <div className="fixed left-[max(0.75rem,env(safe-area-inset-left))] top-[max(0.75rem,env(safe-area-inset-top))] z-40 flex max-w-[calc(100vw-5rem)] flex-wrap items-center gap-2 sm:max-w-[calc(100vw-12rem)]">
               {/* PinSpace Logo - links to home */}
               <button
                 onClick={() => router.push('/')}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
+                className="min-h-11 rounded-kova border border-kova-ink bg-primary px-4 py-2 font-bold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 PinSpace
               </button>
@@ -1113,7 +1113,7 @@ export default function StudioPage() {
                   to a plain "← Dashboard" button while metadata is loading
                   or in demo mode (no workspace context). */}
               {workspaceName && workspaceId ? (
-                <div className="px-3 py-2 bg-white/10 hover:bg-white/15 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-colors flex items-center gap-2 text-sm font-medium relative">
+                <div className="relative flex min-h-11 min-w-0 max-w-full items-center gap-2 rounded-kova border border-border/40 bg-primary-dark/80 px-3 py-2 text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md">
                   <button
                     onClick={() => router.push(`/workspace/${workspaceId}`)}
                     className="hover:underline"
@@ -1125,7 +1125,7 @@ export default function StudioPage() {
                   <button
                     onClick={() => setShowRoomSwitcher((v) => !v)}
                     disabled={allRooms.length <= 1}
-                    className="flex items-center gap-1 disabled:cursor-default"
+                    className="flex min-h-11 min-w-0 items-center gap-1 rounded-kova px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default"
                     aria-label="Switch room"
                     aria-expanded={showRoomSwitcher}
                   >
@@ -1137,10 +1137,12 @@ export default function StudioPage() {
 
                   {showRoomSwitcher && allRooms.length > 1 && (
                     <div
-                      className="absolute left-0 top-full mt-2 w-56 bg-white text-gray-900 rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50"
+                      className="absolute left-0 top-full z-50 mt-2 max-h-[min(60dvh,24rem)] w-[min(18rem,calc(100vw-1.5rem))] overflow-y-auto rounded-kova border border-border bg-background-light text-text-primary shadow-[var(--shadow-raised)]"
+                      role="menu"
+                      aria-label="Switch room"
                       onMouseLeave={() => setShowRoomSwitcher(false)}
                     >
-                      <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 border-b border-gray-100">
+                      <div className="border-b border-border bg-background-lighter px-3 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">
                         Rooms in {workspaceName}
                       </div>
                       <ul className="py-1">
@@ -1149,7 +1151,7 @@ export default function StudioPage() {
                           return (
                             <li key={r.id}>
                               {isCurrent ? (
-                                <div className="px-3 py-2 text-sm bg-indigo-50 text-indigo-700 font-medium flex items-center justify-between">
+                                <div aria-current="page" className="flex min-h-11 items-center justify-between bg-primary-muted px-3 py-2 text-sm font-medium text-text-primary">
                                   <span>{r.name}</span>
                                   <span className="text-xs">current</span>
                                 </div>
@@ -1159,7 +1161,8 @@ export default function StudioPage() {
                                     setShowRoomSwitcher(false)
                                     router.push(`/studio/${r.id}`)
                                   }}
-                                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                                  role="menuitem"
+                                  className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                                 >
                                   {r.name}
                                 </button>
@@ -1168,11 +1171,11 @@ export default function StudioPage() {
                           )
                         })}
                       </ul>
-                      <div className="border-t border-gray-100">
+                      <div className="border-t border-border">
                         <Link
                           href={`/workspace/${workspaceId}`}
                           onClick={() => setShowRoomSwitcher(false)}
-                          className="block px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 font-medium"
+                          className="block min-h-11 px-3 py-3 text-sm font-medium text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                         >
                           See all rooms →
                         </Link>
@@ -1183,7 +1186,7 @@ export default function StudioPage() {
               ) : (
                 <button
                   onClick={() => router.push('/dashboard')}
-                  className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
+                  className="flex min-h-11 items-center gap-2 rounded-kova border border-border/40 bg-primary-dark/80 px-4 py-2 text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   Dashboard
@@ -1196,7 +1199,7 @@ export default function StudioPage() {
               Phones get the hamburger panel right below; the `hidden sm:flex`
               switch swaps the two without changing handlers. */}
           {!isEditMode && (
-            <div className="hidden sm:flex fixed top-4 right-4 z-40 flex-nowrap justify-end items-center gap-2.5">
+            <div className="fixed right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] z-40 hidden flex-nowrap items-center justify-end gap-2 sm:flex">
               {/* Share button. Also closes the options menu: Share sits OUTSIDE
                   the menu here, and the click-outside backdrop paints below it,
                   so without this both can be open at once and Escape would then
@@ -1204,7 +1207,7 @@ export default function StudioPage() {
                   always did. */}
               <button
                 onClick={() => { setShowStudioMenu(false); setShowShareModal(true) }}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300 font-medium text-sm flex items-center gap-2 backdrop-blur-sm border border-white/10"
+                className="flex min-h-11 items-center gap-2 rounded-kova border border-kova-ink bg-primary px-4 py-2 text-sm font-semibold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <Share2 className="w-4 h-4" />
                 Share
@@ -1226,7 +1229,7 @@ export default function StudioPage() {
                     aria-label="Studio options"
                     aria-haspopup="menu"
                     aria-expanded={showStudioMenu}
-                    className="p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                    className="flex h-11 w-11 items-center justify-center rounded-kova border border-border/40 bg-primary-dark/80 text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     {showStudioMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                   </button>
@@ -1236,12 +1239,15 @@ export default function StudioPage() {
                       {/* Click-outside backdrop — sits under the panel, above
                           the canvas, so a click anywhere else closes rather than
                           orbiting the 3D view behind it. */}
-                      <div
-                        className="fixed inset-0 z-[-1]"
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        className="fixed inset-0 z-[-1] cursor-default"
+                        aria-label="Close studio options"
                         onClick={() => setShowStudioMenu(false)}
                       />
                       <div
-                        className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
+                        className="absolute right-0 top-full mt-2 max-h-[min(70dvh,26rem)] w-60 overflow-y-auto rounded-kova border border-border bg-background-light p-1.5 shadow-[var(--shadow-raised)]"
                         role="menu"
                         aria-label="Studio options"
                       >
@@ -1253,9 +1259,9 @@ export default function StudioPage() {
                           <button
                             role="menuitem"
                             onClick={() => { setShowStudioMenu(false); setFloorEditorMode('tables'); setFloorEditorOpen(true) }}
-                            className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+                            className="flex min-h-11 w-full items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm font-medium text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                           >
-                            <Box className="w-4 h-4 text-indigo-600" />
+                            <Box className="h-4 w-4 text-accent" />
                             Place 3D model
                           </button>
                         )}
@@ -1268,9 +1274,9 @@ export default function StudioPage() {
                           <button
                             role="menuitem"
                             onClick={() => { setShowStudioMenu(false); handleReconfigureWalls() }}
-                            className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+                            className="flex min-h-11 w-full items-center gap-2 rounded-[var(--radius-sm)] border-t border-border px-3 py-2 text-left text-sm font-medium text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                           >
-                            <Settings className="w-4 h-4 text-indigo-600" />
+                            <Settings className="h-4 w-4 text-accent" />
                             Reconfigure Walls
                           </button>
                         )}
@@ -1285,15 +1291,15 @@ export default function StudioPage() {
                             role="menuitem"
                             onClick={() => { if (!someoneElsePresenting) { setShowStudioMenu(false); setPresenting(!isPresenter) } }}
                             disabled={someoneElsePresenting}
-                            className={`w-full text-left px-4 py-3 text-sm font-medium flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${
-                              canEditRoomConfig ? 'border-t border-gray-100' : ''
+                            className={`flex min-h-11 w-full items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${
+                              canEditRoomConfig ? 'border-t border-border' : ''
                             } ${
                               someoneElsePresenting
-                                ? 'text-gray-400 cursor-not-allowed'
-                                : 'text-gray-900 hover:bg-gray-50'
+                                ? 'cursor-not-allowed text-text-muted'
+                                : 'text-text-primary hover:bg-background-lighter'
                             }`}
                           >
-                            <Presentation className="w-4 h-4 text-blue-600" />
+                            <Presentation className="h-4 w-4 text-accent" />
                             {someoneElsePresenting
                               ? `${friendlyName(presenter!.fullName)} is presenting`
                               : isPresenter
@@ -1316,13 +1322,13 @@ export default function StudioPage() {
               workspace/room breadcrumb stay visible because they carry the
               "where am I" context. */}
           {!isEditMode && (
-            <div className="sm:hidden fixed top-4 right-4 z-40">
+            <div className="fixed right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] z-40 sm:hidden">
               <button
                 onClick={() => setShowStudioMenu((v) => !v)}
                 aria-label={showStudioMenu ? 'Close studio menu' : 'Open studio menu'}
                 aria-haspopup="menu"
                 aria-expanded={showStudioMenu}
-                className="p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                className="flex h-11 w-11 items-center justify-center rounded-kova border border-border/40 bg-primary-dark/80 text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 {showStudioMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
@@ -1330,29 +1336,33 @@ export default function StudioPage() {
                 <>
                   {/* Tap-outside backdrop — sits under the panel, above the
                       canvas; pointer-events catches the tap and closes. */}
-                  <div
-                    className="fixed inset-0 z-[-1]"
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    className="fixed inset-0 z-[-1] cursor-default"
+                    aria-label="Close studio menu"
                     onClick={() => setShowStudioMenu(false)}
                   />
                   <div
-                    className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
+                    className="absolute right-0 top-full mt-2 max-h-[min(70dvh,26rem)] w-[min(16rem,calc(100vw-1.5rem))] overflow-y-auto rounded-kova border border-border bg-background-light p-1.5 shadow-[var(--shadow-raised)]"
                     role="menu"
+                    aria-label="Studio options"
                   >
                     <button
                       role="menuitem"
                       onClick={() => { setShowStudioMenu(false); setShowShareModal(true) }}
-                      className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2"
+                      className="flex min-h-11 w-full items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm font-medium text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                     >
-                      <Share2 className="w-4 h-4 text-blue-600" />
+                      <Share2 className="h-4 w-4 text-accent" />
                       Share
                     </button>
                     {!isArchived && canEditWalls && (
                       <button
                         role="menuitem"
                         onClick={() => { setShowStudioMenu(false); setFloorEditorMode('tables'); setFloorEditorOpen(true) }}
-                        className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
+                        className="flex min-h-11 w-full items-center gap-2 rounded-[var(--radius-sm)] border-t border-border px-3 py-2 text-left text-sm font-medium text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                       >
-                        <Box className="w-4 h-4 text-indigo-600" />
+                        <Box className="h-4 w-4 text-accent" />
                         Place 3D model
                       </button>
                     )}
@@ -1360,9 +1370,9 @@ export default function StudioPage() {
                       <button
                         role="menuitem"
                         onClick={() => { setShowStudioMenu(false); handleReconfigureWalls() }}
-                        className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
+                        className="flex min-h-11 w-full items-center gap-2 rounded-[var(--radius-sm)] border-t border-border px-3 py-2 text-left text-sm font-medium text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                       >
-                        <Settings className="w-4 h-4 text-indigo-600" />
+                        <Settings className="h-4 w-4 text-accent" />
                         Reconfigure Walls
                       </button>
                     )}
@@ -1373,13 +1383,13 @@ export default function StudioPage() {
                         role="menuitem"
                         onClick={() => { if (!someoneElsePresenting) { setShowStudioMenu(false); setPresenting(!isPresenter) } }}
                         disabled={someoneElsePresenting}
-                        className={`w-full text-left px-4 py-3 text-sm font-medium flex items-center gap-2 border-t border-gray-100 ${
+                        className={`flex min-h-11 w-full items-center gap-2 rounded-[var(--radius-sm)] border-t border-border px-3 py-2 text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${
                           someoneElsePresenting
-                            ? 'text-gray-400 cursor-not-allowed'
-                            : 'text-gray-900 hover:bg-gray-50'
+                            ? 'cursor-not-allowed text-text-muted'
+                            : 'text-text-primary hover:bg-background-lighter'
                         }`}
                       >
-                        <Presentation className="w-4 h-4 text-blue-600" />
+                        <Presentation className="h-4 w-4 text-accent" />
                         {someoneElsePresenting
                           ? `${friendlyName(presenter!.fullName)} is presenting`
                           : isPresenter
@@ -1438,8 +1448,16 @@ export default function StudioPage() {
               }
             }}
           />
+          {boards.length === 0 && !isEditMode && (
+            <div className="pointer-events-none absolute inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-20 flex justify-center">
+              <div role="status" className="max-w-md rounded-kova border border-border/40 bg-primary-dark/85 px-4 py-3 text-center text-sm text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md">
+                <p className="font-semibold">No boards in this room yet</p>
+                <p className="mt-1 text-background-light/75">Open a wall to add the first board. The 3D room remains available for orientation.</p>
+              </div>
+            </div>
+          )}
         </div>
       )}
-    </>
+    </StudioShell>
   )
 }

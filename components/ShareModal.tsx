@@ -1,7 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
+
+import { Button, Dialog, Input, StatusState } from '@/components/ui'
 import { toast } from '@/lib/toast'
 
 interface ShareModalProps {
@@ -24,8 +26,6 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
   const [shareUrl, setShareUrl] = useState('')
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [copied, setCopied] = useState(false)
-  const [isVisible, setIsVisible] = useState(false)
-  const handleCloseRef = useRef<() => void>(() => {})
 
   // Guest critics (owner only). Hidden unless the guest-tokens API returns 200.
   const [guestVisible, setGuestVisible] = useState(false)
@@ -36,16 +36,7 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
   const [guestError, setGuestError] = useState<string | null>(null)
   const [copiedGuest, setCopiedGuest] = useState(false)
 
-  const handleClose = () => {
-    setIsVisible(false)
-    setTimeout(onClose, 200)
-  }
-
-  handleCloseRef.current = handleClose
-
   useEffect(() => {
-    setTimeout(() => setIsVisible(true), 10)
-
     const load = async () => {
       try {
         const res = await fetch(`/api/rooms/${studioId}/share`, { method: 'POST' })
@@ -62,14 +53,6 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
     }
     load()
   }, [studioId])
-
-  useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleCloseRef.current()
-    }
-    window.addEventListener('keydown', handleEsc)
-    return () => window.removeEventListener('keydown', handleEsc)
-  }, [])
 
   const handleCopyLink = async () => {
     try {
@@ -172,94 +155,50 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
     }
   }
 
-  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) handleClose()
-  }
-
   return (
-    <div
-      className={`fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity duration-300 ${
-        isVisible ? 'opacity-100' : 'opacity-0'
-      }`}
-      onClick={handleBackdropClick}
+    <Dialog
+      open
+      onOpenChange={(open) => { if (!open) onClose() }}
+      title="Share studio"
+      description="Invite viewers or create named guest-critic links."
+      className="max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-2rem)] max-w-xl motion-reduce:transition-none [&>button.absolute]:h-11 [&>button.absolute]:w-11"
     >
-      <div
-        className={`bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 transform transition-all duration-300 ${
-          isVisible ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-1">🔗 Share Studio</h2>
-            <p className="text-sm text-gray-600">Share for critique and comments</p>
-          </div>
-          <button
-            onClick={handleClose}
-            className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-            aria-label="Close"
-          >
-            <svg
-              className="w-5 h-5 text-gray-500"
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
-          </button>
-        </div>
-
         {/* Loading */}
         {loadState === 'loading' && (
-          <div className="flex flex-col items-center justify-center py-12 gap-3">
-            <div className="w-10 h-10 rounded-full border-4 border-indigo-200 border-t-indigo-600 animate-spin" />
-            <p className="text-sm text-gray-500">Generating link…</p>
-          </div>
+          <StatusState status="loading" title="Generating share link" description="This usually takes only a moment." />
         )}
 
         {/* Error */}
         {loadState === 'error' && (
-          <div className="py-8 text-center">
-            <p className="text-sm text-red-600 font-medium">Could not create share link.</p>
-            <p className="text-xs text-gray-500 mt-1">
-              You may not have permission to share this studio.
-            </p>
-          </div>
+          <StatusState status="error" title="Could not create share link" description="You may not have permission to share this studio." />
         )}
 
         {/* Success */}
         {loadState === 'ok' && (
           <>
-            <div className="flex justify-center mb-6 p-6 bg-gray-50 rounded-xl">
+            <div className="mb-6 flex justify-center rounded-kova bg-background-lighter p-4 sm:p-6">
               <QRCodeCanvas
                 value={shareUrl}
                 size={200}
                 level="H"
                 includeMargin={true}
-                className="rounded-lg"
+                className="max-w-full rounded-kova"
               />
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Shareable Link
+              <label htmlFor="studio-share-url" className="mb-2 block text-sm font-semibold text-text-primary">
+                Shareable link
               </label>
-              <div className="flex gap-2">
-                <div className="flex-1 px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg font-mono text-sm text-gray-800 overflow-x-auto whitespace-nowrap">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <output id="studio-share-url" className="min-h-11 min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-kova border border-border bg-background-lighter px-3 py-2 font-mono text-sm text-text-primary">
                   {shareUrl}
-                </div>
-                <button
+                </output>
+                <Button
+                  type="button"
                   onClick={handleCopyLink}
-                  className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-                    copied
-                      ? 'bg-green-500 text-white'
-                      : 'bg-[#4444ff] text-white hover:bg-[#3333ee]'
-                  }`}
+                  variant={copied ? 'secondary' : 'primary'}
+                  aria-live="polite"
                 >
                   {copied ? (
                     <span className="flex items-center gap-2">
@@ -279,79 +218,88 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
                   ) : (
                     'Copy'
                   )}
-                </button>
+                </Button>
               </div>
             </div>
 
-            <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg">
-              <p className="text-sm text-blue-900">
-                <strong>📱 Anyone with this link</strong> can view your studio in 3D.
+            <div className="rounded-kova border border-border bg-primary-muted p-4">
+              <p className="text-sm text-text-primary">
+                <strong>Anyone with this link</strong> can view your studio in 3D.
               </p>
             </div>
 
             {/* Guest critics — owner-only named, expiring links that can comment + trace */}
             {guestVisible && (
-              <div className="mt-5 pt-5 border-t border-gray-200">
-                <h3 className="text-sm font-bold text-gray-900 mb-1">🎓 Guest critics</h3>
-                <p className="text-xs text-gray-500 mb-3">
+              <section className="mt-5 border-t border-border pt-5" aria-labelledby="guest-critics-heading">
+                <h3 id="guest-critics-heading" className="mb-1 text-sm font-bold text-text-primary">Guest critics</h3>
+                <p className="mb-3 text-xs text-text-secondary">
                   Named, no-account links that can comment and trace on this room. Revoke anytime.
                 </p>
 
                 <div className="flex flex-col gap-2 mb-3">
-                  <div className="flex gap-2">
-                    <input
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <label htmlFor="guest-critic-label" className="sr-only">Guest critic name or label</label>
+                    <Input
+                      id="guest-critic-label"
                       value={newLabel}
                       onChange={(e) => setNewLabel(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') createGuestLink() }}
-                      placeholder="Critic name / label"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      placeholder="Critic name or label"
+                      className="flex-1"
+                      maxLength={100}
+                      disabled={creating}
                     />
-                    <button
-                      onClick={createGuestLink}
+                    <Button
+                      type="button"
+                      onClick={() => { void createGuestLink() }}
                       disabled={!newLabel.trim() || creating}
-                      className="px-4 py-2 bg-[#4444ff] text-white rounded-lg text-sm font-medium hover:bg-[#3333ee] disabled:opacity-40 whitespace-nowrap"
+                      loading={creating}
+                      className="whitespace-nowrap"
                     >
-                      {creating ? 'Creating…' : 'Create link'}
-                    </button>
+                      {creating ? 'Creating link…' : 'Create link'}
+                    </Button>
                   </div>
-                  {guestError && <p className="text-xs text-red-600">{guestError}</p>}
+                  {guestError && <StatusState status="error" title={guestError} className="p-3 text-sm" />}
                 </div>
 
                 {createdUrl && (
-                  <div className="mb-3 p-2.5 bg-green-50 border border-green-100 rounded-lg">
-                    <p className="text-[11px] text-green-800 mb-1.5 font-medium">Link created — copy it now (it won’t be shown again):</p>
-                    <div className="flex gap-2">
-                      <div className="flex-1 px-2 py-1.5 bg-white border border-green-200 rounded font-mono text-[11px] text-gray-800 truncate">{createdUrl}</div>
-                      <button
+                  <div className="mb-3 rounded-kova border border-border bg-background-lighter p-3">
+                    <p className="mb-1.5 text-xs font-medium text-text-primary">Link created — copy it now. It will not be shown again.</p>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <output className="min-w-0 flex-1 truncate rounded-kova border border-border bg-background-light px-2 py-2 font-mono text-xs text-text-primary">{createdUrl}</output>
+                      <Button
+                        type="button"
+                        size="sm"
                         onClick={copyGuestUrl}
-                        className={`px-3 py-1.5 rounded text-xs font-medium whitespace-nowrap ${copiedGuest ? 'bg-green-500 text-white' : 'bg-[#4444ff] text-white hover:bg-[#3333ee]'}`}
+                        variant={copiedGuest ? 'secondary' : 'primary'}
                       >
                         {copiedGuest ? 'Copied!' : 'Copy'}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}
 
-                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                <div className="max-h-40 space-y-1.5 overflow-y-auto" aria-live="polite">
                   {guestTokens.length === 0 && (
-                    <p className="text-xs text-gray-400">No guest links yet.</p>
+                    <p className="text-xs text-text-muted">No guest links yet.</p>
                   )}
                   {guestTokens.map((t) => (
-                    <div key={t.id} className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-gray-50 rounded-lg border border-gray-100">
+                    <div key={t.id} className="flex min-h-11 items-center justify-between gap-2 rounded-kova border border-border bg-background-lighter px-2.5 py-1.5">
                       <div className="min-w-0">
-                        <p className={`text-xs font-medium truncate ${t.revoked ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{t.label}</p>
+                        <p className={`truncate text-xs font-medium ${t.revoked ? 'text-text-muted line-through' : 'text-text-primary'}`}>{t.label}</p>
                       </div>
                       {t.revoked ? (
                         <button
+                          type="button"
                           onClick={() => deleteGuestLink(t.id)}
-                          className="text-[11px] text-red-600 hover:text-red-800 flex-shrink-0 font-medium"
+                          className="min-h-11 flex-shrink-0 rounded-kova px-3 text-xs font-semibold text-[rgb(var(--color-danger))] hover:bg-[rgb(var(--color-danger)/0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                           Delete
                         </button>
                       ) : (
                         <button
+                          type="button"
                           onClick={() => revokeGuestLink(t.id)}
-                          className="text-[11px] text-red-600 hover:text-red-800 flex-shrink-0 font-medium"
+                          className="min-h-11 flex-shrink-0 rounded-kova px-3 text-xs font-semibold text-[rgb(var(--color-danger))] hover:bg-[rgb(var(--color-danger)/0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                           Revoke
                         </button>
@@ -359,17 +307,16 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
                     </div>
                   ))}
                 </div>
-              </div>
+              </section>
             )}
 
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <p className="text-xs text-gray-500 text-center">
+            <div className="mt-4 border-t border-border pt-4">
+              <p className="text-center text-xs text-text-secondary">
                 Scan QR code with phone camera • Or copy link to share
               </p>
             </div>
           </>
         )}
-      </div>
-    </div>
+    </Dialog>
   )
 }

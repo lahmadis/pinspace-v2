@@ -5,7 +5,7 @@ import { validateName } from '@/lib/validation/safeName'
 /** PATCH /api/settings/profile — update display name and/or avatar_url */
 export async function PATCH(req: NextRequest) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
     if (sessionError || !session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -12,6 +12,17 @@ import { boardSizeInchesFromSource } from '@/lib/boardDimensions'
 // The rasterizer itself (lib/pdfToImage.ts, which pulls PDF.js) stays a dynamic
 // import below so it never lands in the main bundle.
 import { isAiFile, isPdfLike, stripRasterSourceExtension } from '@/lib/pdfUtils'
+import type { User } from '@supabase/supabase-js'
+
+const displayNameForUser = (user: User | null): string => {
+  const fullName = user?.user_metadata?.full_name
+  if (typeof fullName === 'string' && fullName.trim()) return fullName.trim()
+
+  const firstName = user?.user_metadata?.first_name
+  if (typeof firstName === 'string' && firstName.trim()) return firstName.trim()
+
+  return user?.email?.split('@')[0]?.trim() || ''
+}
 
 /**
  * iPhones deliver camera-roll photos as HEIC/HEIF by default. Browsers
@@ -55,7 +66,7 @@ interface UploadOptions {
    * resolved separately by the caller (the studio page tracks both in state).
    */
   workspaceId?: string | null
-  user: any
+  user: User | null
   editingWall: number | null
   editingWallDimensions: { width: number; height: number } | null
   editingWallSide?: 'front' | 'back'
@@ -132,7 +143,7 @@ const createTempBoard = (
   options: {
     studioId: string
     title: string
-    user: any
+    user: User | null
     blobUrl: string
     width: number
     height: number
@@ -145,6 +156,8 @@ const createTempBoard = (
     position?: { wallIndex: number; x: number; y: number; width: number; height: number; side?: 'front' | 'back' }
   }
 ): Board => {
+  const displayName = displayNameForUser(options.user)
+
   return {
     id: tempId,
     // Stable client-side key for React. Carries onto the real board in
@@ -154,9 +167,9 @@ const createTempBoard = (
     localId: tempId,
     studioId: options.studioId,
     title: options.title,
-    studentName: options.user?.fullName || options.user?.firstName || '',
+    studentName: displayName,
     ownerId: options.user?.id,
-    ownerName: options.user?.fullName || options.user?.firstName || 'Anonymous',
+    ownerName: displayName || 'Anonymous',
     thumbnailUrl: options.blobUrl,
     fullImageUrl: options.blobUrl,
     uploadedAt: new Date(),
@@ -375,7 +388,7 @@ const uploadFile = async (
   try {
     const { storagePath, thumbnailPath } = await directUpload(file)
 
-    const clerkName = ((options.user?.fullName || options.user?.firstName || '') as string).trim()
+    const clerkName = displayNameForUser(options.user)
     const boardPayload = {
       workspaceId: options.workspaceId,
       roomId: options.roomId,
@@ -537,10 +550,6 @@ const uploadPDF = async (
     throw err
   }
 
-  // Calculate grid layout
-  const cols = Math.ceil(Math.sqrt(pages.length))
-  const rows = Math.ceil(pages.length / cols)
-
   if (pages.length === 1) {
     // Single-page PDFs upload fast and the temp-board → swap UX already
     // gives instant feedback. Drop the progress toast now that we know N=1.
@@ -632,7 +641,7 @@ const uploadPDF = async (
     try {
       const { storagePath, thumbnailPath } = await directUpload(page.imageFile, { skipMainCompression: true })
 
-      const clerkName = ((options.user?.fullName || options.user?.firstName || '') as string).trim()
+      const clerkName = displayNameForUser(options.user)
       const boardPayload = {
         workspaceId: options.workspaceId,
         roomId: options.roomId,
@@ -922,4 +931,3 @@ export const useBoardUpload = (options: UploadOptions) => {
 
   return { handleUpload, uploadFileDirect, uploadFilesDirect }
 }
-

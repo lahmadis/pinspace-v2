@@ -82,10 +82,10 @@ async function resolveWorkspaceOwnerId(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { commentId: string } }
+  { params }: { params: Promise<{ commentId: string }> }
 ) {
   try {
-    const commentId = params.commentId
+    const commentId = (await params).commentId
     const { body, resolved } = await request.json()
 
     const wantsBodyEdit = body !== undefined
@@ -123,19 +123,15 @@ export async function PATCH(
       }
       isAuthor = comment.guest_token_id != null && comment.guest_token_id === guest.tokenId
     } else {
-      const supabase = supabaseServer()
+      const supabase = await supabaseServer()
       const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-      if (sessionError) {
-        console.error('Session error:', sessionError)
-        return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-      }
-      const userId = session?.user?.id
-      if (!userId) {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+      if (userError || !user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+      const userId = user.id
       isAuthor = comment.author_id != null && comment.author_id === userId
       const workspaceOwnerId = await resolveWorkspaceOwnerId(admin, comment.board_id as string)
       isWorkspaceOwner = workspaceOwnerId != null && workspaceOwnerId === userId
@@ -180,10 +176,10 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { commentId: string } }
+  { params }: { params: Promise<{ commentId: string }> }
 ) {
   try {
-    const commentId = params.commentId
+    const commentId = (await params).commentId
 
     const guestToken = getGuestTokenFromRequest(request)
     const admin = supabaseServiceRole()
@@ -205,19 +201,15 @@ export async function DELETE(
       }
       allowed = comment.guest_token_id != null && comment.guest_token_id === guest.tokenId
     } else {
-      const supabase = supabaseServer()
+      const supabase = await supabaseServer()
       const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-      if (sessionError) {
-        console.error('Session error:', sessionError)
-        return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-      }
-      const userId = session?.user?.id
-      if (!userId) {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+      if (userError || !user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+      const userId = user.id
       const isAuthor = comment.author_id != null && comment.author_id === userId
       const workspaceOwnerId = await resolveWorkspaceOwnerId(admin, comment.board_id as string)
       const isWorkspaceOwner = workspaceOwnerId != null && workspaceOwnerId === userId

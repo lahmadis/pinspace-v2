@@ -5,6 +5,7 @@ import { getSampleBoards } from '@/lib/sampleData'
 import { resolveMainRoomId } from '@/lib/rooms'
 import { validateLinkUrl } from '@/lib/linkUrl'
 import { isSuperadmin, isNetworkPublished } from '@/lib/auth/superadmin'
+import { extractBoardStoragePath, isOwnedBoardStoragePath } from '@/lib/storage/boardObjects'
 
 // No static caching — boards change frequently (uploads, position updates)
 export const dynamic = 'force-dynamic'
@@ -104,7 +105,7 @@ export async function GET(request: NextRequest) {
 
     // Normal mode: use Supabase
     // For public workspaces, we should allow unauthenticated access
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
 
     // Check if this workspace is public (allow unauthenticated access for public workspaces)
     const { data: workspace, error: workspaceError } = await supabase
@@ -117,21 +118,18 @@ export async function GET(request: NextRequest) {
     const isPublicWorkspace = workspace && !workspaceError && workspace.is_public === true
 
     // Only require authentication for private workspaces or if workspace doesn't exist
+    let verifiedUserId: string | null = null
     if (!isPublicWorkspace) {
       const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
 
-      if (sessionError) {
-        console.error('Session error:', sessionError)
-        return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-      }
-
-      const userId = session?.user?.id
-      if (!userId) {
+      if (userError || !user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+      const userId = user.id
+      verifiedUserId = userId
 
       // Platform superadmin: READ-ONLY access to network-published content, in
       // addition to owner/member access. Verified server-side via service role
@@ -205,8 +203,11 @@ export async function GET(request: NextRequest) {
     // this, but the public-workspace branch serves non-members too, so we resolve
     // it uniformly here.
     let canSeeCallouts = false
-    const { data: { session: calloutSession } } = await supabase.auth.getSession()
-    const calloutUserId = calloutSession?.user?.id
+    if (!verifiedUserId) {
+      const { data: { user: calloutUser } } = await supabase.auth.getUser()
+      verifiedUserId = calloutUser?.id ?? null
+    }
+    const calloutUserId = verifiedUserId
     if (calloutUserId) {
       const { data: calloutWs } = await adminDb
         .from('workspaces').select('owner_id').eq('id', scopedWorkspaceId).maybeSingle()
@@ -322,21 +323,16 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
     const board = await request.json()
 
@@ -496,21 +492,16 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
     const searchParams = request.nextUrl.searchParams
     const boardId = searchParams.get('boardId')
@@ -572,32 +563,10 @@ export async function DELETE(request: NextRequest) {
       console.error('Failed to cascade delete comments for board', boardId, commentsError)
     }
 
-    // Storage path is everything after the `/board-images/` segment of the public URL.
-    const extractStoragePath = (url: string | null | undefined): string | null => {
-      if (!url) return null
-      const marker = '/board-images/'
-      const idx = url.indexOf(marker)
-      if (idx === -1) return null
-      const raw = url.slice(idx + marker.length).split('?')[0]
-      // A malformed percent-escape makes decodeURIComponent throw. Since the
-      // reference check below runs this over OTHER boards' URLs, one poisoned
-      // row would otherwise 500 every delete that scans past it — including
-      // deletes of unrelated boards. Fall back to the undecoded slice.
-      try {
-        return decodeURIComponent(raw)
-      } catch {
-        return raw
-      }
-    }
-
-    // ALIASING INVARIANT — DO NOT REMOVE THIS GUARD WITHOUT ALSO FIXING
-    // /api/boards/duplicate. Multiple board rows can reference the SAME storage
-    // object: duplicate (copy/paste) copies the source's thumbnail_url and
-    // full_image_url VERBATIM instead of creating its own file, so a copy, its
-    // source, and sibling copies all point at one object. Removing that object
-    // while another row still references it permanently blanks those boards
-    // (three boards were already destroyed this way). So: only remove an object
-    // when NO other board still references its storage path.
+    // LEGACY ALIASING INVARIANT — DO NOT REMOVE UNTIL EXISTING DATA IS AUDITED.
+    // Older duplicate (copy/paste) rows can still reference the
+    // same storage object. New duplicates receive independent copies, but this
+    // guard remains until old aliases have been audited and repaired.
     //
     // Ordering: this CHECK runs before the row delete, so the row being deleted
     // still exists and would match its own URLs — we exclude it explicitly with
@@ -659,7 +628,7 @@ export async function DELETE(request: NextRequest) {
           console.warn('Reference check (thumbnail_url) hit the candidate cap; skipping removal to be safe', { boardId, path })
           return true
         }
-        if (thumbCandidates.some((r) => extractStoragePath(r.thumbnail_url) === path)) return true
+        if (thumbCandidates.some((r) => extractBoardStoragePath(r.thumbnail_url) === path)) return true
 
         const { data: fullRows, error: fullErr } = await admin
           .from('boards')
@@ -676,7 +645,7 @@ export async function DELETE(request: NextRequest) {
           console.warn('Reference check (full_image_url) hit the candidate cap; skipping removal to be safe', { boardId, path })
           return true
         }
-        if (fullCandidates.some((r) => extractStoragePath(r.full_image_url) === path)) return true
+        if (fullCandidates.some((r) => extractBoardStoragePath(r.full_image_url) === path)) return true
       }
       return false
     }
@@ -685,7 +654,7 @@ export async function DELETE(request: NextRequest) {
     const storagePathsToDelete = new Set<string>()
     for (const url of [boardData.thumbnail_url, boardData.full_image_url]) {
       if (!url) continue
-      const path = extractStoragePath(url)
+      const path = extractBoardStoragePath(url)
       if (!path) {
         // Legacy /uploads/... URLs and anything not in this bucket. Nothing to
         // remove, but say so rather than dropping it silently.
@@ -766,9 +735,7 @@ export async function DELETE(request: NextRequest) {
 //
 // Source fidelity notes (patterns ported 1:1 from app/api/upload/route.ts):
 //
-// Auth pattern (upload/route.ts:8-22):
-//   const { data: { session } } = await supabase.auth.getSession()
-//   if (!session?.user?.id) return 401
+// Auth pattern: verify the caller with auth.getUser() before service-role work.
 //
 // Membership check (upload/route.ts:214-242 — RLS fallback gate):
 //   check workspaces.owner_id first via service role;
@@ -825,12 +792,12 @@ interface BoardsPostBody {
 export async function POST(request: NextRequest) {
   try {
     // 1. Auth — mirrors upload/route.ts:8-22
-    const supabase = supabaseServer()
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.user?.id) {
+    const supabase = await supabaseServer()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    const userId = session.user.id
+    const userId = user.id
 
     // 2. Parse + validate required fields
     const raw = await request.json() as BoardsPostBody
@@ -846,6 +813,12 @@ export async function POST(request: NextRequest) {
     if (!storagePath) return NextResponse.json({ error: 'Missing required field: storagePath' }, { status: 400 })
 
     const thumbnailPath    = typeof raw.thumbnailPath    === 'string'  ? raw.thumbnailPath.trim()    : null
+    if (!isOwnedBoardStoragePath(storagePath, userId)) {
+      return NextResponse.json({ error: 'Invalid storage path' }, { status: 400 })
+    }
+    if (thumbnailPath && !isOwnedBoardStoragePath(thumbnailPath, userId)) {
+      return NextResponse.json({ error: 'Invalid thumbnail storage path' }, { status: 400 })
+    }
     const width            = typeof raw.width            === 'number'  ? raw.width                   : null
     const height           = typeof raw.height           === 'number'  ? raw.height                  : null
     // Fix 4: ownerColor is required — generateOwnerColor runs client-side; server should not guess.
@@ -920,9 +893,9 @@ export async function POST(request: NextRequest) {
       .single()
     const profileName = userProfile?.full_name?.trim() || null
 
-    const ownerName   = profileName || session.user.user_metadata?.email?.split('@')[0] || 'User'
-    const studentName = studentNameRaw || profileName || session.user.email?.split('@')[0] || 'Anonymous'
-    const studentEmail = session.user.email || null
+    const ownerName   = profileName || user.email?.split('@')[0] || 'User'
+    const studentName = studentNameRaw || profileName || user.email?.split('@')[0] || 'Anonymous'
+    const studentEmail = user.email || null
 
     // 6. Public URLs — storage already settled, just resolve paths.
     // Fix 2: mirror /api/upload behavior (upload/route.ts:291-303):
@@ -935,6 +908,30 @@ export async function POST(request: NextRequest) {
     if (thumbnailPath) {
       const { data: thumbUrlData } = admin.storage.from('board-images').getPublicUrl(thumbnailPath)
       thumbnailUrl = thumbUrlData.publicUrl
+    }
+
+    // Direct upload finishes before this metadata request. Refuse to attach a
+    // storage URL that is already owned by any board: otherwise a retry or a
+    // crafted request recreates the same aliasing that duplicate-board copies
+    // now avoid. Query errors fail closed because an orphan upload is safer
+    // than two rows whose deletion can blank each other.
+    for (const objectUrl of new Set([fullUrl, thumbnailUrl])) {
+      for (const column of ['full_image_url', 'thumbnail_url'] as const) {
+        const { count, error: referenceError } = await admin
+          .from('boards')
+          .select('id', { count: 'exact', head: true })
+          .eq(column, objectUrl)
+        if (referenceError) {
+          console.error('Failed to verify uploaded storage ownership:', referenceError)
+          return NextResponse.json({ error: 'Failed to verify uploaded object' }, { status: 500 })
+        }
+        if ((count ?? 0) > 0) {
+          return NextResponse.json(
+            { error: 'Storage object is already attached to a board' },
+            { status: 409 }
+          )
+        }
+      }
     }
 
     // 7. Single INSERT — no placeholder→update dance; upload_status is 'complete' immediately.

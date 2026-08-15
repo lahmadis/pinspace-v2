@@ -1,9 +1,12 @@
 'use client'
 
+/* eslint-disable react-hooks/exhaustive-deps -- The throttled R3F pointer handler intentionally captures one stable hover updater for the gesture lifetime. */
+
 import { useRef, useState, useEffect, useMemo } from 'react'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { throttle } from '@/lib/throttleDebounce'
+import { ENGINE_PALETTE } from './enginePalette'
 
 interface WallDropZoneProps {
   wallPosition: THREE.Vector3
@@ -189,14 +192,14 @@ export function WallDropZone({
         <mesh position={getPreviewPosition()} rotation={[0, wallRotation, 0]}>
           <planeGeometry args={[scaledWidth * 0.2, scaledHeight * 0.2]} />
           <meshBasicMaterial 
-            color="#4444ff" 
+            color={ENGINE_PALETTE.selection}
             transparent 
             opacity={0.4} 
             side={THREE.DoubleSide}
           />
           <lineSegments>
             <edgesGeometry args={[new THREE.PlaneGeometry(scaledWidth * 0.2, scaledHeight * 0.2)]} />
-            <lineBasicMaterial color="#0000ff" linewidth={2} />
+            <lineBasicMaterial color={ENGINE_PALETTE.selection} linewidth={2} />
           </lineSegments>
         </mesh>
       )}

@@ -12,12 +12,12 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET() {
   try {
-    const supabase = supabaseServer()
-    const { data: { session } } = await supabase.auth.getSession()
-    const userId = session?.user?.id
-    if (!userId) {
+    const supabase = await supabaseServer()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
     const admin = supabaseServiceRole()
     if (!(await isSuperadmin(userId, admin))) {

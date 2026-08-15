@@ -6,7 +6,7 @@
 
 **Architecture:** Introduce semantic design tokens and a compact shared component layer, then migrate complete route groups onto those foundations behind an unreleased branch or release flag. Keep backend, Supabase, and 3D domain logic stable; separate oversized page presentation from behavior only where required to make the redesign safe and testable.
 
-**Tech Stack:** Next.js 14 App Router, React 18, TypeScript, Tailwind CSS, Framer Motion, Lucide React, React Three Fiber, Supabase, Vitest, Testing Library, Playwright, axe-core.
+**Tech Stack:** Next.js 16 App Router, React 18, TypeScript, Tailwind CSS, Framer Motion, Lucide React, React Three Fiber, Supabase, Vitest, Testing Library, Playwright, axe-core.
 
 ---
 

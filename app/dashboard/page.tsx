@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState, useRef, useEffect } from 'react'
+import { Suspense, useCallback, useState, useRef, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from '@/lib/toast'
 import JoinClassModal from '@/components/JoinClassModal'
@@ -12,6 +12,8 @@ import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
 import { DashboardMain } from '@/components/dashboard/DashboardMain'
 import type { DashboardWorkspace } from '@/components/dashboard/DashboardMain'
 import type { Scope } from '@/components/dashboard/DashboardSidebar'
+import { DashboardActionDialogs } from '@/components/dashboard/DashboardActionDialogs'
+import { Button, StatusState } from '@/components/ui'
 
 const INSTITUTION_STORAGE_KEY = 'pinspace_institution'
 const SCOPE_STORAGE_KEY = 'pinspace-dashboard-scope'
@@ -56,6 +58,9 @@ function DashboardContent() {
   const [confirmDeleteName, setConfirmDeleteName] = useState('')
   const [confirmLeaveId, setConfirmLeaveId] = useState<string | null>(null)
   const [confirmLeaveName, setConfirmLeaveName] = useState('')
+  const [renamePending, setRenamePending] = useState(false)
+  const [deletePending, setDeletePending] = useState(false)
+  const [leavePending, setLeavePending] = useState(false)
 
   // Scope state — persisted to localStorage
   const [currentScope, setCurrentScope] = useState<Scope>('personal')
@@ -87,18 +92,18 @@ function DashboardContent() {
       ? (localStorage.getItem(SCOPE_STORAGE_KEY) as Scope | null)
       : null
     const valid: Scope[] = ['wentworth', 'shared', 'personal']
-    if (saved && valid.includes(saved)) {
-      setCurrentScope(saved === 'wentworth' && !hasOrganization ? 'personal' : saved)
-    } else {
-      setCurrentScope(hasOrganization ? 'wentworth' : 'personal')
-    }
+    const initialScope = saved && valid.includes(saved)
+      ? saved === 'wentworth' && !hasOrganization ? 'personal' : saved
+      : hasOrganization ? 'wentworth' : 'personal'
+    queueMicrotask(() => setCurrentScope(initialScope))
   }, [isLoaded, accountModeLoading, orgResolved, hasOrganization])
 
   // ── Data fetching ─────────────────────────────────────────────────────────
 
-  const fetchUserStudios = async () => {
+  const fetchUserStudios = useCallback(async () => {
     try {
       setLoading(true)
+      setFetchError(false)
       const res = await fetch('/api/workspaces')
       if (res.ok) {
         const data = await res.json()
@@ -114,17 +119,21 @@ function DashboardContent() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [router])
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') { router.push('/sign-in'); return }
-    if (authStatus === 'authenticated') fetchUserStudios()
-  }, [authStatus, router])
+    if (authStatus === 'authenticated') {
+      const fetchTimer = window.setTimeout(() => void fetchUserStudios(), 0)
+      return () => window.clearTimeout(fetchTimer)
+    }
+  }, [authStatus, fetchUserStudios, router])
 
   // Institution from URL / sessionStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setInstitutionHome(window.sessionStorage.getItem(INSTITUTION_STORAGE_KEY) || null)
+      const storedInstitution = window.sessionStorage.getItem(INSTITUTION_STORAGE_KEY) || null
+      queueMicrotask(() => setInstitutionHome(storedInstitution))
     }
   }, [])
   useEffect(() => {
@@ -138,7 +147,7 @@ function DashboardContent() {
     const fromUrl = searchParams?.get('institution')
     if (fromUrl && typeof window !== 'undefined') {
       window.sessionStorage.setItem(INSTITUTION_STORAGE_KEY, fromUrl)
-      setInstitutionHome((prev) => prev || fromUrl)
+      queueMicrotask(() => setInstitutionHome((prev) => prev || fromUrl))
     }
   }, [searchParams])
 
@@ -171,7 +180,7 @@ function DashboardContent() {
       setIsAdmin(false)
       setOrgResolved(true)
     })
-  }, [user?.id, searchParams, router])
+  }, [user?.id, searchParams, router, setProfile])
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -181,8 +190,9 @@ function DashboardContent() {
   }
 
   const executeDelete = async () => {
-    if (!confirmDeleteId) return
+    if (!confirmDeleteId || deletePending) return
     try {
+      setDeletePending(true)
       const res = await fetch(`/api/workspaces/${confirmDeleteId}`, { method: 'DELETE' })
       if (res.ok) {
         await fetchUserStudios()
@@ -194,6 +204,7 @@ function DashboardContent() {
     } catch {
       toast.error('Failed to delete. Please try again.')
     } finally {
+      setDeletePending(false)
       setConfirmDeleteId(null)
       setConfirmDeleteName('')
     }
@@ -210,8 +221,9 @@ function DashboardContent() {
   }
 
   const executeLeave = async () => {
-    if (!confirmLeaveId) return
+    if (!confirmLeaveId || leavePending) return
     try {
+      setLeavePending(true)
       const res = await fetch(`/api/workspaces/${confirmLeaveId}/leave`, { method: 'POST' })
       if (res.ok) {
         await fetchUserStudios()
@@ -223,14 +235,16 @@ function DashboardContent() {
     } catch {
       toast.error('Failed to leave. Please try again.')
     } finally {
+      setLeavePending(false)
       setConfirmLeaveId(null)
       setConfirmLeaveName('')
     }
   }
 
   const submitRename = async () => {
-    if (!renamingId || !renamingValue.trim()) return
+    if (!renamingId || !renamingValue.trim() || renamePending) return
     try {
+      setRenamePending(true)
       const res = await fetch(`/api/workspaces/${renamingId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -246,6 +260,7 @@ function DashboardContent() {
     } catch {
       toast.error('Failed to rename. Please try again.')
     } finally {
+      setRenamePending(false)
       setRenamingId(null)
       setRenamingValue('')
     }
@@ -264,34 +279,28 @@ function DashboardContent() {
 
   if (!isLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 mx-auto mb-4" />
-          <p className="text-gray-600">Loading...</p>
-        </div>
+      <div className="flex min-h-dvh items-center justify-center bg-background p-6">
+        <StatusState status="loading" title="Loading dashboard" description="Getting your projects ready." />
       </div>
     )
   }
 
   if (fetchError) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center max-w-sm px-6">
-          <p className="text-gray-900 font-semibold mb-2">Failed to load your projects</p>
-          <p className="text-gray-500 text-sm mb-4">Check your connection and try again.</p>
-          <button
-            onClick={() => { setFetchError(false); fetchUserStudios() }}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
-          >
-            Retry
-          </button>
-        </div>
+      <div className="flex min-h-dvh items-center justify-center bg-background p-6">
+        <StatusState
+          status="error"
+          title="Failed to load your projects"
+          description="Check your connection and try again."
+          action={<Button type="button" onClick={fetchUserStudios}>Try again</Button>}
+          className="w-full max-w-md"
+        />
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white">
+    <div className="flex min-h-dvh max-w-full overflow-x-clip bg-background">
       <DashboardSidebar
         currentScope={currentScope}
         onScopeChange={handleScopeChange}
@@ -326,90 +335,21 @@ function DashboardContent() {
         <JoinClassModal onClose={() => setShowJoinModal(false)} />
       )}
 
-      {renamingId && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Rename Project</h3>
-            <input
-              type="text"
-              value={renamingValue}
-              maxLength={100}
-              onChange={(e) => setRenamingValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') submitRename()
-                if (e.key === 'Escape') { setRenamingId(null); setRenamingValue('') }
-              }}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
-              autoFocus
-            />
-            <div className="flex gap-3">
-              <button
-                onClick={() => { setRenamingId(null); setRenamingValue('') }}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={submitRename}
-                disabled={!renamingValue.trim()}
-                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium"
-              >
-                Rename
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmDeleteId && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Project?</h3>
-            <p className="text-sm text-gray-600 mb-6">
-              <strong>&ldquo;{confirmDeleteName}&rdquo;</strong> and all its boards will be permanently deleted. This cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => { setConfirmDeleteId(null); setConfirmDeleteName('') }}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={executeDelete}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmLeaveId && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Leave this project?</h3>
-            <p className="text-sm text-gray-600 mb-6">
-              You&rsquo;ll lose access to <strong>&ldquo;{confirmLeaveName}&rdquo;</strong> until you&rsquo;re invited again. Boards you created stay with the project.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => { setConfirmLeaveId(null); setConfirmLeaveName('') }}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={executeLeave}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
-              >
-                Leave
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DashboardActionDialogs
+        rename={renamingId ? { id: renamingId, value: renamingValue } : null}
+        deletion={confirmDeleteId ? { id: confirmDeleteId, name: confirmDeleteName } : null}
+        leave={confirmLeaveId ? { id: confirmLeaveId, name: confirmLeaveName } : null}
+        renamePending={renamePending}
+        deletePending={deletePending}
+        leavePending={leavePending}
+        onRenameChange={setRenamingValue}
+        onCancelRename={() => { setRenamingId(null); setRenamingValue('') }}
+        onSubmitRename={submitRename}
+        onCancelDelete={() => { setConfirmDeleteId(null); setConfirmDeleteName('') }}
+        onConfirmDelete={executeDelete}
+        onCancelLeave={() => { setConfirmLeaveId(null); setConfirmLeaveName('') }}
+        onConfirmLeave={executeLeave}
+      />
     </div>
   )
 }
@@ -418,11 +358,8 @@ export default function DashboardPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 mx-auto mb-4" />
-            <p className="text-gray-600">Loading...</p>
-          </div>
+        <div className="flex min-h-dvh items-center justify-center bg-background p-6">
+          <StatusState status="loading" title="Loading dashboard" description="Getting your projects ready." />
         </div>
       }
     >

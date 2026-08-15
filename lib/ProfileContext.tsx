@@ -40,6 +40,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   // they must not prop-drill the role.
   useEffect(() => {
     if (status === 'unauthenticated') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Revoke the cached permission role in the same commit that observes sign-out.
       setProfileState((prev) => ({ ...prev, accountRole: null }))
       return
     }

@@ -9,10 +9,11 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(
   _req: Request,
-  { params }: { params: { workspaceId: string } }
+  { params }: { params: Promise<{ workspaceId: string }> }
 ) {
+  const { workspaceId } = await params
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const { data: { user }, error: userErr } = await supabase.auth.getUser()
     if (userErr || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -23,7 +24,7 @@ export async function GET(
     const { data: workspace } = await admin
       .from('workspaces')
       .select('id, name, owner_id')
-      .eq('id', params.workspaceId)
+      .eq('id', workspaceId)
       .eq('type', 'shared')
       .maybeSingle()
 
@@ -35,7 +36,7 @@ export async function GET(
       const { data: membership } = await admin
         .from('workspace_members')
         .select('user_id')
-        .eq('workspace_id', params.workspaceId)
+        .eq('workspace_id', workspaceId)
         .eq('user_id', user.id)
         .maybeSingle()
 
@@ -47,7 +48,7 @@ export async function GET(
     const { data: rooms, error: roomsErr } = await admin
       .from('rooms')
       .select('id, name')
-      .eq('workspace_id', params.workspaceId)
+      .eq('workspace_id', workspaceId)
       .order('display_order', { ascending: true })
 
     if (roomsErr) {

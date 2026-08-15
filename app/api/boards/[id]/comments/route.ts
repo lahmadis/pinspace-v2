@@ -9,10 +9,10 @@ export const dynamic = 'force-dynamic'
 // GET /api/boards/[id]/comments - Get all comments for a board
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const boardId = params.id
+    const boardId = (await params).id
     const searchParams = request.nextUrl.searchParams
     const isDemo = searchParams.get('demo') === 'true'
 
@@ -83,11 +83,11 @@ export async function GET(
     // 403. We return 403 (not 401) for the no-session case so a logged-out
     // visitor of a board whose IMAGE they can legitimately see is not bounced
     // into a login flow just because the comment layer is hidden.
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    const userId = session?.user?.id
+      data: { user },
+    } = await supabase.auth.getUser()
+    const userId = user?.id
     if (!userId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -138,10 +138,10 @@ export async function GET(
 // POST /api/boards/[id]/comments - Add a new comment to a board
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const boardId = params.id
+    const boardId = (await params).id
     const searchParams = request.nextUrl.searchParams
     const isDemo = searchParams.get('demo') === 'true'
     const { content, authorName } = await request.json()
@@ -181,21 +181,16 @@ export async function POST(
       return NextResponse.json({ comment: mockComment, success: true })
     }
 
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
     // Resolve board → room → workspace with service role; enforce access explicitly.
     const admin = supabaseServiceRole()
@@ -286,10 +281,10 @@ export async function POST(
 // PATCH /api/boards/[id]/comments - Edit an existing comment
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const boardId = params.id
+    const boardId = (await params).id
     const searchParams = request.nextUrl.searchParams
     const isDemo = searchParams.get('demo') === 'true'
     const { commentId, content } = await request.json()
@@ -304,21 +299,16 @@ export async function PATCH(
       return NextResponse.json({ error: 'Editing comments is not available in demo mode' }, { status: 400 })
     }
 
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
     const { data: updatedComment, error: updateError } = await supabase
       .from('comments')
@@ -352,10 +342,10 @@ export async function PATCH(
 // DELETE /api/boards/[id]/comments - Delete an existing comment
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const boardId = params.id
+    const boardId = (await params).id
     const searchParams = request.nextUrl.searchParams
     const isDemo = searchParams.get('demo') === 'true'
     const body = await request.json().catch(() => ({}))
@@ -368,21 +358,16 @@ export async function DELETE(
       return NextResponse.json({ error: 'Deleting comments is not available in demo mode' }, { status: 400 })
     }
 
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
     const { data: deletedComments, error: deleteError } = await supabase
       .from('comments')

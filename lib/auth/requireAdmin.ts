@@ -21,7 +21,7 @@ import { isAdmin } from '@/lib/auth/isAdmin'
 export async function getVerifiedUser(): Promise<
   { userId: string; email: string; isPlatformAdmin: boolean } | null
 > {
-  const supabase = supabaseServer()
+  const supabase = await supabaseServer()
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user?.id) {
     // "No session" is the ordinary logged-out case and would drown the logs, so

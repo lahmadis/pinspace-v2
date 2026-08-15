@@ -2,6 +2,7 @@
 
 import { Html } from '@react-three/drei'
 import { ExternalLink } from 'lucide-react'
+import { ENGINE_PALETTE } from './enginePalette'
 
 interface VideoBadgeProps {
   /** The validated link to open. */
@@ -53,7 +54,7 @@ export default function VideoBadge({ url, width, height }: VideoBadgeProps) {
           borderRadius: '9999px',
           border: '1px solid rgba(255,255,255,0.85)',
           background: 'rgba(15,23,42,0.78)',
-          color: '#ffffff',
+          color: ENGINE_PALETTE.paper,
           cursor: 'pointer',
           boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
         }}

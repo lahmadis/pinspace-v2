@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { useMemo, useState } from 'react'
 import { ThreeEvent } from '@react-three/fiber'
+import { ENGINE_PALETTE } from './enginePalette'
 
 // R3F reports `delta` on click-family events: pixels travelled since the last
 // pointerdown. The browser already refuses to fire dblclick when the two clicks
@@ -88,7 +89,7 @@ export function WallSurface({
       <meshBasicMaterial
         transparent
         opacity={0.01}
-        color={hovered && visibleOutline ? '#4b5563' : '#000000'}
+        color={hovered && visibleOutline ? ENGINE_PALETTE.wallOutline : ENGINE_PALETTE.black}
         side={THREE.DoubleSide}
         depthWrite={false}
       />

@@ -4,7 +4,7 @@ import { supabaseServer } from '@/lib/supabase/server'
 /** PATCH /api/settings/notifications — update notification preferences */
 export async function PATCH(req: NextRequest) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
     if (sessionError || !session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

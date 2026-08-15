@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import type { Session } from '@supabase/supabase-js'
+import { StatusState } from '@/components/ui'
 
 /**
  * Institution handoff: /i/wit → /?institution=wit (home landing page)
@@ -26,12 +27,14 @@ export default function InstitutionHandoffPage() {
       } else {
         router.replace(`/sign-in?institution=${encodeURIComponent(slug)}`)
       }
+    }).catch(() => {
+      router.replace(`/sign-in?institution=${encodeURIComponent(slug)}`)
     })
   }, [slug, router])
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
-    </div>
+    <main className="flex min-h-screen items-center justify-center bg-background px-4">
+      <StatusState status="loading" title="Opening your institution" description="Checking your session before continuing." className="w-full max-w-md" />
+    </main>
   )
 }

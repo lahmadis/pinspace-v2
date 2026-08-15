@@ -5,7 +5,7 @@ import { validateName } from '@/lib/validation/safeName'
 /** GET /api/user-profile – get current user's profile. Returns null if none. */
 export async function GET() {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { session },
       error: sessionError,
@@ -36,7 +36,7 @@ export async function GET() {
 /** POST /api/user-profile – create or update profile (onboarding). */
 export async function POST(req: NextRequest) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
       data: { session },
       error: sessionError,

@@ -40,12 +40,13 @@ async function loadWorkspace(id: string) {
 }
 
 /** POST — add the calling admin to this studio as an instructor. */
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const auth = await requireAdmin()
     if (!auth.ok) return auth.response
 
-    const { admin, workspace } = await loadWorkspace(params.id)
+    const { admin, workspace } = await loadWorkspace(id)
     if (!workspace) {
       return NextResponse.json({ error: 'Studio not found' }, { status: 404 })
     }
@@ -53,7 +54,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     const { data: existing } = await admin
       .from('workspace_members')
       .select('user_id')
-      .eq('workspace_id', params.id)
+      .eq('workspace_id', id)
       .eq('user_id', auth.userId)
       .maybeSingle()
 
@@ -70,7 +71,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     const { error: insertError } = await admin
       .from('workspace_members')
       .insert({
-        workspace_id: params.id,
+        workspace_id: id,
         user_id: auth.userId,
         role: 'instructor',
         name: (profile?.full_name as string | null) || auth.email.split('@')[0] || 'Admin',
@@ -89,12 +90,13 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 }
 
 /** DELETE — remove the calling admin's own membership. */
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const auth = await requireAdmin()
     if (!auth.ok) return auth.response
 
-    const { admin, workspace } = await loadWorkspace(params.id)
+    const { admin, workspace } = await loadWorkspace(id)
     if (!workspace) {
       return NextResponse.json({ error: 'Studio not found' }, { status: 404 })
     }
@@ -112,7 +114,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     const { error: deleteError } = await admin
       .from('workspace_members')
       .delete()
-      .eq('workspace_id', params.id)
+      .eq('workspace_id', id)
       .eq('user_id', auth.userId)
 
     if (deleteError) {

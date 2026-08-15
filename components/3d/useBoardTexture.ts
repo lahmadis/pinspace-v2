@@ -143,18 +143,11 @@ export function useBoardTexture(url: string | null | undefined): {
   // no skeleton flash when the user toggles between 3D and 2D edit views for an already-loaded board.
   const initialCached = url ? resolvedCache.get(url) ?? null : null
   const [texture, setTexture] = useState<THREE.Texture | null>(initialCached)
+  const cachedTexture = url ? resolvedCache.get(url) ?? null : null
+  const displayTexture = url ? cachedTexture ?? texture : null
 
   useEffect(() => {
-    if (!url) {
-      setTexture(null)
-      return
-    }
-    // Cache hit: commit immediately, no network. Catches the remount case described above.
-    const cached = resolvedCache.get(url)
-    if (cached) {
-      setTexture(cached)
-      return
-    }
+    if (!url || resolvedCache.has(url)) return
 
     // Cache miss: load (or join the in-flight promise) but keep the previous texture
     // visible in the meantime so URL swaps don't flash.
@@ -174,8 +167,8 @@ export function useBoardTexture(url: string | null | undefined): {
   }, [url])
 
   return {
-    texture,
+    texture: displayTexture,
     // Only show the skeleton when nothing has ever been displayed for this hook instance.
-    isInitialLoad: texture === null,
+    isInitialLoad: displayTexture === null,
   }
 }

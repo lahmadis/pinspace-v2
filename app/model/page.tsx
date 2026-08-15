@@ -1,13 +1,21 @@
 'use client'
 
 import { useSearchParams, useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { Suspense, useState, useCallback, useEffect, useRef } from 'react'
-import { motion } from 'framer-motion'
-import ModelViewer from '@/components/3d/ModelViewer'
 import Loading from '@/components/Loading'
 import { Upload } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { maxModelBytesForName } from '@/lib/uploadLimits'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { Button, Input } from '@/components/ui'
+
+// The three.js viewer touches renderer internals during module evaluation, so it
+// must stay client-only even though the surrounding utility is a Client Component.
+const ModelViewer = dynamic(() => import('@/components/3d/ModelViewer'), {
+  ssr: false,
+  loading: () => <Loading message="Loading model…" />,
+})
 
 function ModelPageContent() {
   const searchParams = useSearchParams()
@@ -35,6 +43,8 @@ function ModelPageContent() {
         URL.revokeObjectURL(lastObjectUrlRef.current)
         lastObjectUrlRef.current = null
       }
+      // Route search parameters are the external source of truth for this utility.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUrlInput(urlFromQuery)
       setActiveUrl(urlFromQuery)
     }
@@ -82,41 +92,14 @@ function ModelPageContent() {
   const hasUrl = activeUrl.length > 0
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <motion.header
-        className="flex-none z-50 bg-white/95 backdrop-blur-sm border-b border-border shadow-sm"
-        initial={{ y: -100 }}
-        animate={{ y: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <div className="max-w-7xl mx-auto px-6 py-3 flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.back()}
-              className="p-2 hover:bg-background-lighter rounded-lg transition-colors"
-              aria-label="Back"
-            >
-              <svg
-                className="w-5 h-5 text-text-primary"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M10 19l-7-7m0 0l7-7m-7 7h18"
-                />
-              </svg>
-            </button>
-            <h1 className="text-lg font-semibold text-text-primary">
-              3D Model Viewer
-            </h1>
-          </div>
-
-          <div className="flex-1 flex flex-wrap items-center gap-2 min-w-0">
+    <div className="flex min-h-dvh flex-col bg-background">
+      <PageHeader
+        eyebrow="Utility"
+        title="3D model viewer"
+        description="Preview a local GLB, GLTF, 3DM, or STL model, or load one from a trusted URL."
+        actions={
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <Button type="button" variant="ghost" onClick={() => router.back()} aria-label="Back to previous page">← Back</Button>
             <input
               ref={fileInputRef}
               type="file"
@@ -124,31 +107,34 @@ function ModelPageContent() {
               onChange={handleFileChange}
               className="hidden"
             />
-            <button
+            <Button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2 bg-background-lighter hover:bg-background-light text-text-primary rounded-lg text-sm transition-colors whitespace-nowrap flex items-center gap-2 border border-border"
+              variant="ghost"
             >
-              <Upload className="w-4 h-4" />
-              Upload GLB
-            </button>
-            <input
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              Upload model
+            </Button>
+            <label htmlFor="model-url" className="sr-only">Model URL</label>
+            <Input
+              id="model-url"
               type="text"
               placeholder="Or paste a URL (e.g. /models/example.glb)"
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleLoad()}
-              className="flex-1 min-w-[200px] max-w-md px-3 py-2 border border-border rounded-lg text-sm bg-white text-text-primary placeholder:text-text-muted"
+              className="min-w-[min(15rem,70vw)] flex-1 sm:max-w-md"
             />
-            <button
+            <Button
+              type="button"
               onClick={handleLoad}
-              className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg text-sm transition-colors whitespace-nowrap"
+              disabled={!urlInput.trim()}
             >
               Load URL
-            </button>
+            </Button>
           </div>
-        </div>
-      </motion.header>
+        }
+      />
 
       {/* Viewer area */}
       <main className="flex-1 min-h-0 relative">
@@ -156,24 +142,18 @@ function ModelPageContent() {
           <div className="absolute inset-0 flex items-center justify-center bg-background-lighter/50">
             <div className="text-center max-w-md px-6">
               <p className="text-text-muted mb-4">
-                Click <strong>Upload GLB</strong> to choose a .glb or .gltf file from your computer, or enter a URL and click Load URL.
+                Choose <strong>Upload model</strong> to preview a local file, or enter a URL and choose Load URL.
               </p>
               <p className="text-sm text-text-muted">
-                You can also open this page with <code className="text-sm bg-white px-1 rounded">?url=/models/yourfile.glb</code>
+                You can also open this page with <code className="text-sm bg-background-light px-1 rounded">?url=/models/yourfile.glb</code>
               </p>
             </div>
           </div>
         ) : (
           <div className="absolute inset-0">
-            <Suspense
-              fallback={
-                <div className="absolute inset-0 flex items-center justify-center bg-[#D8DEFF]">
-                  <Loading message="Loading model..." />
-                </div>
-              }
-            >
+            <div className="h-full w-full bg-primary-muted">
               <ModelViewer modelUrl={activeUrl} />
-            </Suspense>
+            </div>
           </div>
         )}
       </main>

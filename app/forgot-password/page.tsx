@@ -1,114 +1,120 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+
+import { AuthLoading, AuthShell, fieldLabelClass, textLinkClass } from '@/components/auth/AuthShell'
+import { Button, Input, StatusState } from '@/components/ui'
 import { supabase } from '@/lib/supabase/client'
 
 function ForgotPasswordInner() {
   const searchParams = useSearchParams()
-  const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => searchParams?.get('email') ?? '')
+  const [storedInstitutionSlug, setStoredInstitutionSlug] = useState<string | null>(null)
 
-  const institutionSlug = searchParams?.get('institution') ?? (typeof window !== 'undefined' ? sessionStorage.getItem('pinspace_institution') : null)
+  const institutionFromUrl = searchParams?.get('institution') ?? null
+  const institutionSlug = institutionFromUrl ?? storedInstitutionSlug
 
   useEffect(() => {
-    if (institutionSlug) sessionStorage.setItem('pinspace_institution', institutionSlug)
-    // Pre-fill from ?email= when arriving from /sign-in's reset-hint or
-    // forgot-password link (so the user doesn't retype it). Only sets when
-    // current state is empty so a user editing the field after arrival
-    // doesn't get reset.
-    const emailParam = searchParams?.get('email')
-    if (emailParam) setEmail((prev) => prev || emailParam)
-    setLoading(false)
-  }, [institutionSlug, searchParams])
+    if (institutionFromUrl) sessionStorage.setItem('pinspace_institution', institutionFromUrl)
+    // sessionStorage is unavailable during server rendering; update after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setStoredInstitutionSlug(institutionFromUrl ?? sessionStorage.getItem('pinspace_institution'))
+  }, [institutionFromUrl])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
     setError('')
-    if (!email.trim()) {
+    const normalizedEmail = email.trim()
+    if (!normalizedEmail) {
       setError('Please enter your email')
       return
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError('Please enter a valid email address')
+      return
+    }
+
     setSubmitting(true)
-    const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/reset-password`,
-    })
-    setSubmitting(false)
-    if (err) {
-      setError(err.message || 'Failed to send reset email')
-    } else {
-      setSent(true)
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/reset-password`,
+      })
+      if (resetError) {
+        setError(resetError.message || 'Failed to send reset email')
+      } else {
+        setEmail(normalizedEmail)
+        setSent(true)
+      }
+    } catch {
+      setError('We could not send the reset link. Please try again.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
-      </div>
-    )
-  }
-
-  const signInUrl = institutionSlug ? `/sign-in?institution=${institutionSlug}` : '/sign-in'
+  const signInUrl = institutionSlug
+    ? `/sign-in?institution=${encodeURIComponent(institutionSlug)}`
+    : '/sign-in'
 
   if (sent) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200 text-center">
-          <h1 className="text-xl font-bold text-gray-900 mb-2">Check your email</h1>
-          <p className="text-gray-600 mb-6">We sent a password reset link to {email}</p>
-          <Link href={signInUrl} className="text-indigo-600 hover:underline">← Back to sign in</Link>
-        </div>
-      </div>
+      <AuthShell
+        eyebrow="Recovery email sent"
+        title="Check your email"
+        description={<>We sent a password reset link to <strong className="text-text-primary">{email}</strong>.</>}
+        footer={<Link href={signInUrl} className={textLinkClass}>Back to sign in</Link>}
+      >
+        <StatusState
+          status="success"
+          title="Reset link sent"
+          description="Open the latest email from Kova. The link can only be used once."
+        />
+      </AuthShell>
     )
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Forgot password</h1>
-        <p className="text-sm text-gray-500 mb-6">Enter your school email and we&apos;ll send a reset link</p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@school.edu"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              autoComplete="email"
-            />
-          </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
-          >
-            {submitting ? 'Sending…' : 'Send reset link'}
-          </button>
-        </form>
-        <div className="mt-4 text-sm">
-          <Link href={signInUrl} className="text-indigo-600 hover:underline">← Back to sign in</Link>
+    <AuthShell
+      eyebrow="Account recovery"
+      title="Forgot password?"
+      description="Enter your email and we’ll send a secure, single-use reset link."
+      footer={<Link href={signInUrl} className={textLinkClass}>Back to sign in</Link>}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+        <div>
+          <label htmlFor="email" className={fieldLabelClass}>Email</label>
+          <Input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@school.edu"
+            autoComplete="email"
+            autoFocus
+            aria-invalid={!!error || undefined}
+            aria-describedby={error ? 'forgot-password-error' : 'forgot-password-help'}
+          />
+          <p id="forgot-password-help" className="mt-2 text-xs leading-5 text-text-muted">
+            Use the email connected to your Kova account.
+          </p>
         </div>
-      </div>
-    </div>
+        {error && <StatusState id="forgot-password-error" status="error" title={error} />}
+        <Button type="submit" loading={submitting} className="w-full">
+          {submitting ? 'Sending reset link…' : 'Send reset link'}
+        </Button>
+      </form>
+    </AuthShell>
   )
 }
 
 export default function ForgotPasswordPage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
-      </div>
-    }>
+    <Suspense fallback={<AuthLoading label="Preparing password recovery" />}>
       <ForgotPasswordInner />
     </Suspense>
   )

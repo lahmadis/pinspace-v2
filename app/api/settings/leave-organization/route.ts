@@ -4,7 +4,7 @@ import { supabaseServer } from '@/lib/supabase/server'
 /** POST /api/settings/leave-organization — clear the user's organization membership */
 export async function POST() {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
     if (sessionError || !session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

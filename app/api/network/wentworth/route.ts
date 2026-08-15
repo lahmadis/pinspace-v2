@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 /** GET /api/network/wentworth — returns all class workspaces in the caller's organization. */
 export async function GET() {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const { data: { user }, error: userErr } = await supabase.auth.getUser()
     if (userErr || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -7,17 +7,19 @@ import { supabase } from '@/lib/supabase/client'
 import PasswordInput from '@/components/ui/PasswordInput'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import type { Institution } from '@/types'
+import { safeRedirectPath } from '@/lib/security/safeRedirect'
+import { Button, Input, StatusState } from '@/components/ui'
+import { AuthLoading, AuthShell, fieldLabelClass, textLinkClass } from '@/components/auth/AuthShell'
 
 function SignUpInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [mounted, setMounted] = useState(false)
   const [institution, setInstitution] = useState<Institution | null>(null)
   const [loading, setLoading] = useState(true)
   const [sendingCode, setSendingCode] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState('')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => searchParams?.get('email') ?? '')
   const [code, setCode] = useState('')
   const [codeSent, setCodeSent] = useState(false)
   const [codeSentTo, setCodeSentTo] = useState('')
@@ -35,16 +37,9 @@ function SignUpInner() {
   const pendingSetPasswordRef = useRef(false)
 
   const institutionSlug = searchParams?.get('institution') ?? null
-  const redirectTo = searchParams?.get('redirect') ?? undefined
+  const redirectTo = safeRedirectPath(searchParams?.get('redirect'), '') || undefined
 
   useEffect(() => {
-    setMounted(true)
-    const emailParam = searchParams?.get('email')
-    if (emailParam) setEmail(emailParam)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!mounted) return
     if (institutionSlug) sessionStorage.setItem('pinspace_institution', institutionSlug)
     fetch('/api/institutions', { cache: 'no-store' })
       .then((r) => r.json())
@@ -56,10 +51,9 @@ function SignUpInner() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [mounted, institutionSlug])
+  }, [institutionSlug])
 
   useEffect(() => {
-    if (!mounted) return
     let isInitial = true
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
       if (isInitial) {
@@ -76,7 +70,7 @@ function SignUpInner() {
       }
     })
     return () => subscription.unsubscribe()
-  }, [mounted, router, redirectTo, institutionSlug])
+  }, [router, redirectTo, institutionSlug])
 
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -152,8 +146,8 @@ function SignUpInner() {
     e.preventDefault()
     setError('')
     const trimmedCode = code.trim().replace(/\s/g, '')
-    if (!trimmedCode || trimmedCode.length < 6) {
-      setError('Please enter the verification code from your email')
+    if (!/^\d{6}$/.test(trimmedCode)) {
+      setError('Please enter the 6-digit verification code from your email')
       return
     }
 
@@ -228,198 +222,174 @@ function SignUpInner() {
     }
   }
 
-  if (!mounted) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
-      </div>
-    )
-  }
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
-      </div>
-    )
-  }
-
-  const signInUrl = institutionSlug ? `/sign-in?institution=${institutionSlug}${redirectTo ? `&redirect=${encodeURIComponent(redirectTo)}` : ''}` : '/sign-in'
+  const signInParams = new URLSearchParams()
+  if (institutionSlug) signInParams.set('institution', institutionSlug)
+  if (redirectTo) signInParams.set('redirect', redirectTo)
+  const signInUrl = `/sign-in${signInParams.size ? `?${signInParams}` : ''}`
 
   if (needsPassword) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">Create your password</h1>
-          <p className="text-sm text-gray-500 mb-6">
-            Choose a password so you can sign in with your email next time. Must be at least 8 characters.
-          </p>
-          <form onSubmit={handleSetPassword} className="space-y-4">
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <PasswordInput
-                id="password"
-                value={password}
-                onChange={setPassword}
-                placeholder="••••••••"
-                autoComplete="new-password"
-                minLength={8}
-                shown={showPassword}
-                onShownChange={setShowPassword}
-              />
-            </div>
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">Confirm password</label>
-              <PasswordInput
-                id="confirmPassword"
-                value={confirmPassword}
-                onChange={setConfirmPassword}
-                placeholder="••••••••"
-                autoComplete="new-password"
-                minLength={8}
-                shown={showPassword}
-                onShownChange={setShowPassword}
-              />
-            </div>
-            {passwordError && <p className="text-sm text-red-600">{passwordError}</p>}
-            <button
-              type="submit"
-              disabled={settingPassword || password.length < 8 || confirmPassword.length < 8}
-              className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
-            >
-              {settingPassword ? 'Setting password…' : 'Continue'}
-            </button>
-          </form>
-        </div>
-      </div>
+      <AuthShell
+        eyebrow="Step 2 of 3"
+        title="Create your password"
+        description="Choose a password for quicker sign in next time. Use at least 8 characters."
+      >
+        <form onSubmit={handleSetPassword} className="space-y-4">
+          <div>
+            <label htmlFor="password" className={fieldLabelClass}>Password</label>
+            <PasswordInput
+              id="password"
+              value={password}
+              onChange={setPassword}
+              placeholder="At least 8 characters"
+              autoComplete="new-password"
+              minLength={8}
+              shown={showPassword}
+              onShownChange={setShowPassword}
+              aria-invalid={!!passwordError || undefined}
+              aria-describedby={passwordError ? 'sign-up-password-error' : 'password-help'}
+            />
+            <p id="password-help" className="mt-2 text-xs text-text-muted">Use at least 8 characters.</p>
+          </div>
+          <div>
+            <label htmlFor="confirmPassword" className={fieldLabelClass}>Confirm password</label>
+            <PasswordInput
+              id="confirmPassword"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              placeholder="Repeat your password"
+              autoComplete="new-password"
+              minLength={8}
+              shown={showPassword}
+              onShownChange={setShowPassword}
+              aria-invalid={!!passwordError || undefined}
+              aria-describedby={passwordError ? 'sign-up-password-error' : undefined}
+            />
+          </div>
+          {passwordError && <StatusState id="sign-up-password-error" status="error" title={passwordError} />}
+          <Button type="submit" loading={settingPassword} className="w-full">
+            {settingPassword ? 'Setting password…' : 'Continue to profile'}
+          </Button>
+        </form>
+      </AuthShell>
     )
   }
 
   if (codeSent) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">Enter verification code</h1>
-          <p className="text-sm text-gray-500 mb-6">
-            We sent a verification code to <strong>{codeSentTo}</strong>. Enter it below to verify your email and continue.
-          </p>
-          <form onSubmit={handleVerifyCode} className="space-y-4">
-            <div>
-              <label htmlFor="code" className="block text-sm font-medium text-gray-700 mb-1">Verification code</label>
-              <input
-                id="code"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={8}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                placeholder="00000000"
-                className="w-full px-4 py-3 text-center text-xl tracking-[0.5em] font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                autoComplete="one-time-code"
-                autoFocus
-              />
-            </div>
-            <div className="flex items-start gap-2.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3.5 py-3 text-sm text-indigo-900">
-              <span aria-hidden="true" className="text-base leading-none">📬</span>
-              <p>
-                <span className="font-semibold">Don&apos;t see the code?</span> It may be in your spam or junk folder — please check there.
-              </p>
-            </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
-            <button
-              type="submit"
-              disabled={verifying || code.length < 6}
-              className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
-            >
-              {verifying ? 'Verifying…' : 'Verify and continue'}
-            </button>
-          </form>
-          <p className="mt-4 text-sm text-gray-500 text-center">
-            Still nothing?{' '}
-            <button type="button" onClick={handleBackToEmail} className="text-indigo-600 hover:underline">
-              Use a different email
-            </button>
-          </p>
-          <div className="mt-6 pt-4 border-t border-gray-200">
-            <Link href={signInUrl} className="block text-center text-sm text-indigo-600 hover:underline">
-              Already have an account? Sign in
-            </Link>
+      <AuthShell
+        eyebrow="Step 1 of 3"
+        title="Enter verification code"
+        description={<>We sent a 6-digit code to <strong className="text-text-primary">{codeSentTo}</strong>.</>}
+        footer={<Link href={signInUrl} className={textLinkClass}>Already have an account? Sign in</Link>}
+      >
+        <form onSubmit={handleVerifyCode} className="space-y-4">
+          <div>
+            <label htmlFor="code" className={fieldLabelClass}>Verification code</label>
+            <Input
+              id="code"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="000000"
+              className="py-3 text-center font-mono text-xl tracking-[0.35em]"
+              autoComplete="one-time-code"
+              autoFocus
+              aria-invalid={!!error || undefined}
+              aria-describedby={error ? 'sign-up-code-error' : 'sign-up-code-help'}
+            />
           </div>
-        </div>
-      </div>
+          <StatusState
+            id="sign-up-code-help"
+            status="info"
+            title="Don’t see the code?"
+            description="Check your spam or junk folder, or use a different email."
+          />
+          {error && <StatusState id="sign-up-code-error" status="error" title={error} />}
+          <Button type="submit" loading={verifying} className="w-full">
+            {verifying ? 'Verifying…' : 'Verify and continue'}
+          </Button>
+        </form>
+        <Button type="button" variant="ghost" onClick={handleBackToEmail} className="mt-3 w-full shadow-none">
+          Use a different email
+        </Button>
+      </AuthShell>
     )
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Create account</h1>
-        {institution && (
-          <p className="text-sm text-gray-500 mb-6">Use your {institution.name} email. We&apos;ll send a verification code to confirm it&apos;s real.</p>
-        )}
-        {!institution && (
-          <p className="text-sm text-gray-500 mb-6">Enter your email and we&apos;ll send a verification code to confirm it&apos;s real.</p>
-        )}
-        <form onSubmit={handleSendCode} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              autoComplete="email"
-            />
-          </div>
-          <label className="flex items-start gap-2 text-sm text-gray-600 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={agreedToTerms}
-              onChange={(e) => setAgreedToTerms(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <span>
-              I agree to the{' '}
-              <Link href="/terms" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
-                Terms of Service
-              </Link>{' '}
-              and{' '}
-              <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
-                Privacy Policy
-              </Link>
-              .
-            </span>
-          </label>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={sendingCode || !agreedToTerms}
-            className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-          >
-            {sendingCode ? 'Sending code…' : 'Send verification code'}
-          </button>
-        </form>
-        <div className="mt-6 pt-4 border-t border-gray-200 flex justify-between text-sm">
-          <Link href={signInUrl} className="text-indigo-600 hover:underline">
-            Already have an account? Sign in
-          </Link>
-          <Link href="/" className="text-gray-500 hover:underline">← Back</Link>
+    <AuthShell
+      eyebrow="Step 1 of 3"
+      title="Create account"
+      description={loading
+        ? 'You can start while we look for your institution.'
+        : institution
+          ? `Use your ${institution.name} email. We’ll send a code to verify it.`
+          : 'Enter your email and we’ll send a code to verify it.'}
+      footer={
+        <div className="flex flex-col items-start justify-between gap-1 sm:flex-row sm:items-center">
+          <Link href={signInUrl} className={textLinkClass}>Already have an account? Sign in</Link>
+          <Link href="/" className={textLinkClass}>Back home</Link>
         </div>
-      </div>
-    </div>
+      }
+    >
+      {loading && (
+        <StatusState
+          status="loading"
+          title="Finding your institution"
+          className="mb-4"
+        />
+      )}
+      <form onSubmit={handleSendCode} className="space-y-4" noValidate>
+        <div>
+          <label htmlFor="email" className={fieldLabelClass}>Email</label>
+          <Input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+            aria-invalid={error.toLowerCase().includes('email') || undefined}
+            aria-describedby={error ? 'sign-up-error' : undefined}
+          />
+        </div>
+        <div className="flex items-start gap-3">
+          <input
+            id="terms-agreement"
+            type="checkbox"
+            checked={agreedToTerms}
+            onChange={(e) => setAgreedToTerms(e.target.checked)}
+            className="mt-1 h-5 w-5 shrink-0 rounded border-border bg-background-light text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            aria-invalid={error.toLowerCase().includes('terms') || undefined}
+            aria-describedby={error ? 'sign-up-error' : undefined}
+          />
+          <label htmlFor="terms-agreement" className="text-sm leading-6 text-text-secondary">
+            I agree to the{' '}
+            <Link href="/terms" target="_blank" rel="noopener noreferrer" className="font-semibold text-accent underline-offset-4 hover:underline">
+              Terms of Service
+            </Link>{' '}
+            and{' '}
+            <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="font-semibold text-accent underline-offset-4 hover:underline">
+              Privacy Policy
+            </Link>.
+          </label>
+        </div>
+        {error && <StatusState id="sign-up-error" status="error" title={error} />}
+        <Button type="submit" loading={sendingCode} className="w-full">
+          {sendingCode ? 'Sending code…' : 'Send verification code'}
+        </Button>
+      </form>
+    </AuthShell>
   )
 }
 
 export default function SignUpPage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
-      </div>
-    }>
+    <Suspense fallback={<AuthLoading label="Preparing account creation" />}>
       <SignUpInner />
     </Suspense>
   )

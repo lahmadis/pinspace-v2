@@ -1,6 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { LayoutDashboard, LogOut, Settings } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+
+import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui'
 
 interface AvatarMenuProps {
   email: string | null | undefined
@@ -8,71 +11,42 @@ interface AvatarMenuProps {
 }
 
 export default function AvatarMenu({ email, onSignOut }: AvatarMenuProps) {
-  const [open, setOpen] = useState(false)
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false)
-      }
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [open])
+  const router = useRouter()
 
   const initial = email?.charAt(0).toUpperCase() || 'U'
   const displayEmail = email || 'Signed in'
 
-  const handleSignOut = () => {
-    setOpen(false)
-    onSignOut()
-  }
-
   return (
-    <div ref={containerRef} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
+    <Menu>
+      <MenuTrigger
+        aria-label={`Open account menu for ${displayEmail}`}
         title={displayEmail}
-        className="w-10 h-10 rounded-full bg-primary text-white font-semibold flex items-center justify-center hover:bg-primary-light transition-colors shadow-md focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2"
+        className="h-11 w-11 rounded-full border-border bg-accent p-0 font-bold text-background-light shadow-[var(--shadow-soft)] hover:bg-accent-light"
       >
-        {initial}
-      </button>
+        <span aria-hidden="true">{initial}</span>
+      </MenuTrigger>
 
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 mt-2 w-64 origin-top-right rounded-xl bg-white shadow-xl border border-gray-200 py-1 z-50"
-        >
-          <div className="px-4 py-3 border-b border-gray-100">
-            <p className="text-xs text-gray-500">Signed in as</p>
-            <p className="text-sm font-medium text-gray-900 truncate" title={displayEmail}>
+      <MenuContent aria-label="Account menu" className="w-64">
+        <div className="mb-1 border-b border-border-light px-3 py-2.5">
+          <p className="text-xs text-text-muted">Signed in as</p>
+          <p className="truncate text-sm font-semibold text-text-primary" title={displayEmail}>
               {displayEmail}
-            </p>
-          </div>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={handleSignOut}
-            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            Sign out
-          </button>
+          </p>
         </div>
-      )}
-    </div>
+        <MenuItem onSelect={() => router.push('/dashboard')}>
+          <LayoutDashboard className="mr-2 h-4 w-4 text-text-muted" aria-hidden="true" />
+          Dashboard
+        </MenuItem>
+        <MenuItem onSelect={() => router.push('/settings')}>
+          <Settings className="mr-2 h-4 w-4 text-text-muted" aria-hidden="true" />
+          Settings
+        </MenuItem>
+        <div className="my-1 border-t border-border-light" role="separator" />
+        <MenuItem onSelect={onSignOut}>
+          <LogOut className="mr-2 h-4 w-4 text-text-muted" aria-hidden="true" />
+          Sign out
+        </MenuItem>
+      </MenuContent>
+    </Menu>
   )
 }

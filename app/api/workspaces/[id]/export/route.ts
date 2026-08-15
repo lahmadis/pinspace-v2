@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { isOwnedBoardStoragePath, trustedBoardStoragePath } from '@/lib/storage/boardObjects'
 import JSZip from 'jszip'
 
 export const dynamic = 'force-dynamic'
@@ -35,24 +36,21 @@ function extFromContent(url: string, contentType: string | null): string {
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-    const userId = session?.user?.id
-    if (!userId) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
-    const workspaceId = params.id
+    const workspaceId = (await params).id
     const adminDb = supabaseServiceRole()
 
     const { data: workspace, error: wsError } = await adminDb
@@ -85,6 +83,7 @@ export async function GET(
 
     type BoardRow = {
       id: string
+      owner_id: string
       title: string | null
       description: string | null
       student_name: string | null
@@ -105,13 +104,21 @@ export async function GET(
     for (const board of rows) {
       const imgUrl = board.full_image_url
       if (!imgUrl) continue
+      const storagePath = trustedBoardStoragePath(imgUrl, process.env.NEXT_PUBLIC_SUPABASE_URL)
+      if (!storagePath || !isOwnedBoardStoragePath(storagePath, board.owner_id)) {
+        return NextResponse.json(
+          { error: `Board ${board.id} has an invalid storage object` },
+          { status: 422 }
+        )
+      }
       try {
-        const res = await fetch(imgUrl)
-        if (!res.ok) {
-          console.warn(`export: ${imgUrl} returned ${res.status}`)
+        const { data, error: downloadError } = await adminDb
+          .storage.from('board-images').download(storagePath)
+        if (downloadError || !data) {
+          console.warn(`export: failed to download board ${board.id}:`, downloadError)
           continue
         }
-        const buf = Buffer.from(await res.arrayBuffer())
+        const buf = Buffer.from(await data.arrayBuffer())
         totalBytes += buf.byteLength
         if (totalBytes > SIZE_CAP_BYTES) {
           return NextResponse.json(
@@ -119,7 +126,7 @@ export async function GET(
             { status: 413 }
           )
         }
-        const ext = extFromContent(imgUrl, res.headers.get('content-type'))
+        const ext = extFromContent(imgUrl, data.type || null)
         const wallPart =
           board.position_wall_index != null ? String(board.position_wall_index) : 'unassigned'
         const filename = `${wallPart}_${sanitize(board.title)}_${board.id}.${ext}`

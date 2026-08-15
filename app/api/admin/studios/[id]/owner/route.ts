@@ -137,7 +137,7 @@ async function resolvePreviousOwnerName(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const auth = await requireAdmin()
@@ -147,7 +147,7 @@ export async function PATCH(
     // it from a UUID column), so a malformed path segment does NOT come back as
     // zero rows — it raises 22P02 and fails the statement, turning a plain
     // "no such studio" into a 500. Reject it here so the 404 below is reachable.
-    const workspaceId = params.id
+    const workspaceId = (await params).id
     if (!isUuid(workspaceId)) {
       return NextResponse.json({ error: 'Studio not found' }, { status: 404 })
     }

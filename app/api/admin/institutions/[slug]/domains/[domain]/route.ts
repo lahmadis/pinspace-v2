@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
-import { isAdmin } from '@/lib/auth/isAdmin'
+import { supabaseServiceRole } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/requireAdmin'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,14 +17,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'slug and domain are required' }, { status: 400 })
     }
 
-    const supabase = supabaseServer()
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-    if (sessionError || !session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    if (!isAdmin(session.user.email)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const auth = await requireAdmin()
+    if (!auth.ok) return auth.response
 
     const admin = supabaseServiceRole()
     const { data: org, error: orgErr } = await admin

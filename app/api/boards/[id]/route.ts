@@ -6,26 +6,21 @@ import { validateName } from '@/lib/validation/safeName'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    if (!userId) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
-    const boardId = params.id
+    const boardId = (await params).id
 
     // Fetch board from Supabase
     const { data: board, error } = await supabase
@@ -123,7 +118,7 @@ export async function GET(
 // policies).
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // getUser(), not getSession(): this route ends in a service-role write, so
@@ -134,7 +129,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     const userId = caller.userId
-    const boardId = params.id
+    const boardId = (await params).id
 
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object') {

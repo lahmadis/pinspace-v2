@@ -27,12 +27,12 @@ export async function PATCH(request: NextRequest) {
   // nothing changed, while their boards were already gone.
   let mutated = false
   try {
-    const supabase = supabaseServer()
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-    if (sessionError || !session?.user?.id) {
+    const supabase = await supabaseServer()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    const userId = session.user.id
+    const userId = user.id
 
     const body = await request.json().catch(() => ({}))
     const { roomId, deletedWallIndex, expectedBoardCount } = body as {

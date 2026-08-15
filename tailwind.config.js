@@ -8,38 +8,49 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Modern light palette
         background: {
-          DEFAULT: '#fafafa',
-          light: '#ffffff',
-          lighter: '#f5f5f5',
-          card: '#ffffff',
+          DEFAULT: 'rgb(var(--color-canvas) / <alpha-value>)',
+          light: 'rgb(var(--color-paper) / <alpha-value>)',
+          lighter: 'rgb(var(--color-surface-muted) / <alpha-value>)',
+          card: 'rgb(var(--color-paper) / <alpha-value>)',
         },
         primary: {
-          DEFAULT: '#6366f1', // indigo
-          light: '#818cf8',
-          dark: '#4f46e5',
-          muted: '#a5b4fc',
+          DEFAULT: 'rgb(var(--color-primary) / <alpha-value>)',
+          light: 'rgb(var(--color-primary-hover) / <alpha-value>)',
+          dark: 'rgb(var(--color-forest) / <alpha-value>)',
+          muted: 'rgb(var(--color-primary-muted) / <alpha-value>)',
         },
         accent: {
-          DEFAULT: '#3b82f6', // blue
-          light: '#60a5fa',
-          dark: '#2563eb',
+          DEFAULT: 'rgb(var(--color-secondary) / <alpha-value>)',
+          light: 'rgb(var(--color-secondary-hover) / <alpha-value>)',
+          dark: 'rgb(var(--color-forest) / <alpha-value>)',
         },
         text: {
-          primary: '#0f172a',
-          secondary: '#475569',
-          muted: '#64748b',
-          dim: '#94a3b8',
+          primary: 'rgb(var(--color-ink) / <alpha-value>)',
+          secondary: 'rgb(var(--color-text-secondary) / <alpha-value>)',
+          muted: 'rgb(var(--color-text-muted) / <alpha-value>)',
+          dim: 'rgb(var(--color-text-dim) / <alpha-value>)',
         },
         border: {
-          DEFAULT: '#e2e8f0',
-          light: '#f1f5f9',
-        }
+          DEFAULT: 'rgb(var(--color-border) / <alpha-value>)',
+          light: 'rgb(var(--color-border-light) / <alpha-value>)',
+        },
+        kova: {
+          yellow: '#FFC800',
+          cream: '#FFF3CC',
+          paper: '#FFFCF0',
+          green: '#14705C',
+          forest: '#0A2F28',
+          ink: '#0B0B0B',
+        },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        sans: ['var(--font-figtree)', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-jetbrains-mono)', 'ui-monospace', 'monospace'],
+      },
+      borderRadius: {
+        kova: 'var(--radius-md)',
+        'kova-lg': 'var(--radius-lg)',
       },
       animation: {
         'float': 'float 3s ease-in-out infinite',
@@ -51,8 +62,8 @@ module.exports = {
           '50%': { transform: 'translateY(-10px)' },
         },
         glow: {
-          '0%': { boxShadow: '0 0 5px rgba(99, 102, 241, 0.5)' },
-          '100%': { boxShadow: '0 0 20px rgba(99, 102, 241, 0.8)' },
+          '0%': { boxShadow: '0 0 5px rgb(255 200 0 / 0.45)' },
+          '100%': { boxShadow: '0 0 20px rgb(255 200 0 / 0.75)' },
         },
       },
     },

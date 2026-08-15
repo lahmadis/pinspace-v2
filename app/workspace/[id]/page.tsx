@@ -1,332 +1,456 @@
 'use client'
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { toast } from '@/lib/toast'
-import { Workspace, Room } from '@/types'
-import { useAuthSession } from '@/hooks/useAuthSession'
-import { useAccountMode } from '@/lib/useAccountMode'
-import { useProfile } from '@/lib/ProfileContext'
-import PublishConfirmModal, { NetworkMetadata } from '@/components/PublishConfirmModal'
 import {
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  closestCenter,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  useSortable,
-  arrayMove,
-  rectSortingStrategy,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import {
-  ArrowLeft,
-  Settings,
-  DoorOpen,
-  Plus,
-  Pencil,
-  Trash2,
-  X,
+  ArrowDown,
+  ArrowUp,
   Check,
-  Globe,
   ChevronRight,
+  Copy,
+  DoorOpen,
+  Globe,
+  LayoutDashboard,
+  MoreVertical,
   Network,
-  GripVertical,
+  PanelsTopLeft,
+  Pencil,
+  Plus,
+  Settings,
+  Share2,
+  Trash2,
   UserPlus,
 } from 'lucide-react'
+import { useParams, useRouter } from 'next/navigation'
+
+import { AppShell } from '@/components/layout/AppShell'
+import { PageHeader } from '@/components/layout/PageHeader'
+import {
+  Badge,
+  Button,
+  Card,
+  Dialog,
+  EmptyState,
+  Input,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
+  Select,
+  Skeleton,
+  StatusState,
+} from '@/components/ui'
+import { useAuthSession } from '@/hooks/useAuthSession'
+import { academicYearOptions, currentAcademicYear } from '@/lib/academicYear'
+import { useProfile } from '@/lib/ProfileContext'
+import { toast } from '@/lib/toast'
+import { useAccountMode } from '@/lib/useAccountMode'
+import type { Room, Workspace } from '@/types'
+
+const navigation = [
+  { href: '/dashboard', label: 'Projects', icon: <LayoutDashboard className="h-4 w-4" />, exact: true },
+  { href: '/my-boards', label: 'My boards', icon: <PanelsTopLeft className="h-4 w-4" />, exact: true },
+]
+
+const footerNavigation = [
+  { href: '/settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
+]
+
+const actionLink = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-kova border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary shadow-[var(--shadow-soft)] hover:border-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+
+type NetworkMetadata = { department: string; year: string; instructor: string; academicYear: string }
+const departments = ['Aerospace Engineering', 'Architecture', 'Civil Engineering', 'Electrical Engineering', 'Industrial Design', 'Interior Design', 'Mechanical Engineering', 'Robotics Engineering']
+const yearLevels = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Masters']
+
+function NetworkSettingsDialog({ current, publishing, onOpenChange, onConfirm }: { current?: NetworkMetadata; publishing: boolean; onOpenChange: (open: boolean) => void; onConfirm: (metadata: NetworkMetadata) => Promise<void> }) {
+  const [metadata, setMetadata] = useState<NetworkMetadata>(current ?? { department: '', year: '', instructor: '', academicYear: currentAcademicYear() })
+  const [validationError, setValidationError] = useState('')
+  const [pending, setPending] = useState(false)
+
+  const submit = async () => {
+    if (pending) return
+    if (!metadata.department || !metadata.year || !metadata.academicYear || !metadata.instructor.trim()) {
+      setValidationError('Complete every network field before saving')
+      return
+    }
+    setPending(true)
+    setValidationError('')
+    try {
+      await onConfirm({ ...metadata, instructor: metadata.instructor.trim() })
+      onOpenChange(false)
+    } catch (caughtError) {
+      setValidationError(caughtError instanceof Error ? caughtError.message : 'Failed to save network settings')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(next) => { if (!pending) onOpenChange(next) }} closeOnOutsideClick={!pending} hideCloseButton={pending} title={publishing ? 'Publish room to network' : 'Network settings'} description="Add the metadata used to organize this room in the Wentworth network.">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div><label htmlFor="network-department" className="mb-1.5 block text-sm font-semibold text-text-primary">Department</label><Select id="network-department" value={metadata.department} disabled={pending} aria-invalid={Boolean(validationError && !metadata.department)} aria-describedby={validationError && !metadata.department ? 'network-form-error' : undefined} onChange={(event) => setMetadata((value) => ({ ...value, department: event.target.value }))}><option value="">Select department</option>{departments.map((department) => <option key={department} value={department}>{department}</option>)}</Select></div>
+        <div><label htmlFor="network-year" className="mb-1.5 block text-sm font-semibold text-text-primary">Year level</label><Select id="network-year" value={metadata.year} disabled={pending} aria-invalid={Boolean(validationError && !metadata.year)} aria-describedby={validationError && !metadata.year ? 'network-form-error' : undefined} onChange={(event) => setMetadata((value) => ({ ...value, year: event.target.value }))}><option value="">Select year</option>{yearLevels.map((year) => <option key={year} value={year}>{year}</option>)}</Select></div>
+        <div><label htmlFor="network-academic-year" className="mb-1.5 block text-sm font-semibold text-text-primary">Academic year</label><Select id="network-academic-year" value={metadata.academicYear} disabled={pending} onChange={(event) => setMetadata((value) => ({ ...value, academicYear: event.target.value }))}>{academicYearOptions().map((year) => <option key={year} value={year}>{year}</option>)}</Select></div>
+        <div><label htmlFor="network-instructor" className="mb-1.5 block text-sm font-semibold text-text-primary">Instructor name</label><Input id="network-instructor" value={metadata.instructor} maxLength={80} disabled={pending} aria-invalid={Boolean(validationError && !metadata.instructor.trim())} aria-describedby={validationError && !metadata.instructor.trim() ? 'network-form-error' : undefined} onChange={(event) => setMetadata((value) => ({ ...value, instructor: event.target.value }))} /></div>
+      </div>
+      {validationError && <StatusState id="network-form-error" role="alert" status="error" title={validationError} className="mt-4" />}
+      <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>Cancel</Button><Button type="button" loading={pending} onClick={() => void submit()}>{publishing ? 'Save and publish' : 'Save settings'}</Button></div>
+    </Dialog>
+  )
+}
+
+type RoomCardProps = {
+  room: Room
+  index: number
+  total: number
+  busy: boolean
+  editing: boolean
+  editingName: string
+  nameError: boolean
+  canRename: boolean
+  canShare: boolean
+  canPublish: boolean
+  canDelete: boolean
+  canReorder: boolean
+  onEditingNameChange: (name: string) => void
+  onStartRename: (room: Room) => void
+  onShare: (room: Room) => void
+  onSaveRename: (room: Room) => void
+  onCancelRename: () => void
+  onTogglePublish: (room: Room) => void
+  onDelete: (room: Room) => void
+  onMove: (index: number, direction: -1 | 1) => void
+}
+
+function RoomCard({
+  room,
+  index,
+  total,
+  busy,
+  editing,
+  editingName,
+  nameError,
+  canRename,
+  canShare,
+  canPublish,
+  canDelete,
+  canReorder,
+  onEditingNameChange,
+  onStartRename,
+  onShare,
+  onSaveRename,
+  onCancelRename,
+  onTogglePublish,
+  onDelete,
+  onMove,
+}: RoomCardProps) {
+  return (
+    <Card className="relative flex min-w-0 flex-col overflow-visible p-0">
+      <div className="absolute right-2 top-2 z-10">
+        {(canRename || canShare || canPublish || canDelete || canReorder) && (
+          <Menu>
+            <MenuTrigger aria-label={`Actions for ${room.name}`} className="min-h-11 min-w-11 bg-background-light/95 p-0 text-text-secondary">
+              <MoreVertical className="h-5 w-5" aria-hidden="true" />
+            </MenuTrigger>
+            <MenuContent aria-label={`Actions for ${room.name}`}>
+              {canRename && <MenuItem className="min-h-11" onSelect={() => onStartRename(room)}><Pencil className="mr-2 h-4 w-4" aria-hidden="true" />Rename</MenuItem>}
+              {canShare && <MenuItem className="min-h-11" onSelect={() => onShare(room)}><Share2 className="mr-2 h-4 w-4" aria-hidden="true" />Share room</MenuItem>}
+              {canPublish && <MenuItem className="min-h-11" onSelect={() => onTogglePublish(room)}><Globe className="mr-2 h-4 w-4" aria-hidden="true" />{room.isPublished ? 'Unpublish from network' : 'Publish to network'}</MenuItem>}
+              {canReorder && index > 0 && <MenuItem className="min-h-11" onSelect={() => onMove(index, -1)}><ArrowUp className="mr-2 h-4 w-4" aria-hidden="true" />Move earlier</MenuItem>}
+              {canReorder && index < total - 1 && <MenuItem className="min-h-11" onSelect={() => onMove(index, 1)}><ArrowDown className="mr-2 h-4 w-4" aria-hidden="true" />Move later</MenuItem>}
+              {canDelete && (
+                <MenuItem onSelect={() => onDelete(room)} className="min-h-11 text-[rgb(var(--color-danger))] focus:bg-[rgb(var(--color-danger)/0.1)]">
+                  <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />Delete room
+                </MenuItem>
+              )}
+            </MenuContent>
+          </Menu>
+        )}
+      </div>
+
+      {editing ? (
+        <form
+          className="flex min-h-48 min-w-0 flex-col justify-center gap-3 p-5 pr-16"
+          onSubmit={(event) => { event.preventDefault(); onSaveRename(room) }}
+        >
+          <label htmlFor={`rename-${room.id}`} className="text-sm font-semibold text-text-primary">Room name</label>
+          <Input
+            id={`rename-${room.id}`}
+            value={editingName}
+            maxLength={100}
+            disabled={busy}
+            autoFocus
+            aria-invalid={nameError}
+            aria-describedby={nameError ? 'room-error' : undefined}
+            onChange={(event) => onEditingNameChange(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Escape') onCancelRename() }}
+          />
+          <div className="flex flex-wrap gap-2">
+          <Button type="submit" size="sm" className="min-h-11" loading={busy}>Save name</Button>
+          <Button type="button" size="sm" className="min-h-11" variant="ghost" disabled={busy} onClick={onCancelRename}>Cancel</Button>
+          </div>
+        </form>
+      ) : (
+        <Link
+          href={`/studio/${room.id}`}
+          aria-label={`Enter ${room.name}`}
+          className="flex min-h-48 min-w-0 flex-1 flex-col rounded-kova-lg p-5 pr-16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+        >
+          <span className="mb-5 flex h-11 w-11 items-center justify-center rounded-kova bg-primary-muted text-accent">
+            <DoorOpen className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div className="mt-auto min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="break-words text-lg font-bold text-text-primary">{room.name}</h3>
+              {room.isPublished && <Badge variant="success">Published</Badge>}
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3 text-sm text-text-secondary">
+              <span>{room.boardCount ?? 0} {(room.boardCount ?? 0) === 1 ? 'board' : 'boards'}</span>
+              <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+            </div>
+          </div>
+        </Link>
+      )}
+    </Card>
+  )
+}
 
 export default function WorkspaceRoomsPage() {
   const params = useParams()
   const router = useRouter()
   const workspaceId = params.id as string
-
   const { status: authStatus, user } = useAuthSession()
   const { mode: accountMode, resolved: accountModeResolved } = useAccountMode(user?.id, user?.email)
   const { profile } = useProfile()
-  const isAuthLoaded = authStatus !== 'loading'
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
+  const [rooms, setRooms] = useState<Room[]>([])
   const [loading, setLoading] = useState(true)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
-
-  // Owner-only mutation state
-  const [editingRoomId, setEditingRoomId] = useState<string | null>(null)
-  const [editingRoomName, setEditingRoomName] = useState('')
+  const [error, setError] = useState('')
   const [addingRoom, setAddingRoom] = useState(false)
   const [newRoomName, setNewRoomName] = useState('')
-  const [roomBusy, setRoomBusy] = useState<string | null>(null) // room id, or 'create'
-  // In-flight guard for room creation. A ref, not `roomBusy`: the button's
-  // disabled state and the Enter handler both read the render's stale value, so a
-  // double-click / double-Enter in one tick would fire two create POSTs before a
-  // re-render. The ref, set synchronously, stops the second one.
-  const creatingRoomRef = useRef(false)
+  const [roomError, setRoomError] = useState('')
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null)
+  const [editingRoomName, setEditingRoomName] = useState('')
+  const [roomBusy, setRoomBusy] = useState<string | null>(null)
   const [roomToDelete, setRoomToDelete] = useState<Room | null>(null)
-
-  // Publish modal: null = closed; room = waiting to flip is_published after metadata; 'settings' = editing existing metadata only
+  const [roomToShare, setRoomToShare] = useState<Room | null>(null)
+  const [shareBusy, setShareBusy] = useState(false)
+  const [shareUrl, setShareUrl] = useState('')
+  const [shareError, setShareError] = useState('')
+  const [shareCopied, setShareCopied] = useState(false)
   const [publishModalRoom, setPublishModalRoom] = useState<Room | null>(null)
   const [networkSettingsOpen, setNetworkSettingsOpen] = useState(false)
-  const [bannerDismissed, setBannerDismissed] = useState(false)
-
-  // Enroll-students-by-email (class owner only)
   const [enrollOpen, setEnrollOpen] = useState(false)
   const [enrollText, setEnrollText] = useState('')
   const [enrollBusy, setEnrollBusy] = useState(false)
-  const [enrollResult, setEnrollResult] = useState<{
-    enrolled: { email: string; name: string | null }[]
-    alreadyMember: string[]
-    notFound: string[]
-  } | null>(null)
+  const [enrollResult, setEnrollResult] = useState<{ enrolled: { email: string; name: string | null }[]; alreadyMember: string[]; notFound: string[] } | null>(null)
+  const creatingRoomRef = useRef(false)
+  const reorderingRef = useRef(false)
 
-  // --- Drag-to-reorder (owner only) ----------------------------------------
-  // `orderedRooms` is the local, reorderable copy the grid renders from, so a
-  // drag can reorder instantly without a server round-trip. We reconcile it
-  // from workspace.rooms DURING render (flash-free, unlike a post-paint
-  // effect): whenever the server list reference changes we keep the owner's
-  // current local order if the room SET is unchanged — so an optimistic
-  // reorder or a publish-toggle re-render doesn't clobber it — and otherwise
-  // adopt the server order (first load, room added/removed). Either way we pull
-  // fresh per-room fields (e.g. isPublished) from the server copy.
-  const [orderedRooms, setOrderedRooms] = useState<Room[]>([])
-  const [syncedRooms, setSyncedRooms] = useState<Room[] | null>(null)
-  const sourceRooms = workspace?.rooms ?? null
-  if (sourceRooms !== syncedRooms) {
-    const source = sourceRooms ?? []
-    const byId = new Map(source.map((r) => [r.id, r] as const))
-    const sameSet =
-      orderedRooms.length === source.length && orderedRooms.every((r) => byId.has(r.id))
-    setOrderedRooms(sameSet ? orderedRooms.map((r) => byId.get(r.id) ?? r) : source)
-    setSyncedRooms(sourceRooms)
-  }
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  )
-
-  useEffect(() => {
-    if (authStatus === 'unauthenticated') {
-      // Preserve the target so post-login we land back here, which then routes
-      // shared-room visitors into the join prompt.
-      router.push(`/sign-in?redirect=${encodeURIComponent(`/workspace/${workspaceId}`)}`)
-    }
-  }, [authStatus, router, workspaceId])
-
-  useEffect(() => {
-    if (isAuthLoaded && user) fetchWorkspace()
-  }, [isAuthLoaded, user, workspaceId])
-
-  const fetchWorkspace = async () => {
+  const fetchWorkspace = useCallback(async () => {
+    setLoading(true)
     try {
       const response = await fetch(`/api/workspaces/${workspaceId}`)
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        throw new Error(err?.error || 'Failed to load workspace')
-      }
-      const data = await response.json()
-      // Non-member arriving at a shared workspace by link: bounce to the join
-      // prompt (/join/{code}) which handles sign-in + membership insertion.
-      if (data.canJoin && data.inviteCode) {
-        router.replace(`/join/${encodeURIComponent(data.inviteCode)}`)
-        return
-      }
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Failed to load workspace')
       if (!data.workspace) throw new Error('Workspace data missing in response')
       setWorkspace(data.workspace)
-      setErrorMsg(null)
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to load workspace'
-      setErrorMsg(msg)
+      setRooms(Array.isArray(data.workspace.rooms) ? data.workspace.rooms : [])
+      setError('')
+    } catch (caughtError) {
+      setWorkspace(null)
+      setError(caughtError instanceof Error ? caughtError.message : 'Failed to load workspace')
     } finally {
       setLoading(false)
     }
-  }
+  }, [workspaceId])
 
-  const isInstructor = !!workspace && workspace.members.some(m => m.userId === user?.id && m.role === 'instructor')
-  // Publishing to the network is an instructor-only ACCOUNT power, layered on top
-  // of workspace ownership. Mirrors the server gate in PATCH /api/rooms/[id].
-  const isAccountInstructor = profile.accountRole === 'instructor'
-  const canPublish = isInstructor && isAccountInstructor
-  // accountMode reads 'personal' both for a real personal account and for one
-  // whose load FAILED (resolved=false). Publishing is already gated on
-  // canPublish — workspace instructor AND instructor account — so an unresolved
-  // mode must not additionally strip the control from someone whose membership
-  // role has already earned it. Only a positively resolved personal account
-  // hides it, which is the pre-existing behaviour for genuine personal accounts.
-  const orgModeAllowsPublish = !accountModeResolved || accountMode !== 'personal'
-  // Adding rooms is allowed for any collaborator on a SHARED project, not just
-  // the owner. Shared projects join new collaborators as `student`-role members
-  // (see /api/workspaces/[id]/join), so an instructor-only gate hides the
-  // affordance from people who are explicitly invited to collaborate. Class
-  // workspaces keep the instructor-only behavior.
-  const isSharedProject = workspace?.type === 'shared'
-  const isAnyMember = !!workspace && workspace.members.some(m => m.userId === user?.id)
-  const canAddRoom = isInstructor || (isSharedProject && isAnyMember)
-  // Phase 10: any workspace member (owner or invited collaborator, any role)
-  // may rename rooms. Other room controls (publish, delete) stay owner-only.
-  const canRename = isAnyMember
-
-  const handleCreateRoom = async () => {
-    // Refuse a second create while one is in flight — see creatingRoomRef. Must
-    // run before any await (and before the name check is fine either way).
-    if (creatingRoomRef.current) return
-    const trimmed = newRoomName.trim()
-    if (!trimmed) {
-      toast.error('Room name required')
+  useEffect(() => {
+    if (authStatus === 'unauthenticated') {
+      router.push(`/sign-in?redirect=${encodeURIComponent(`/workspace/${workspaceId}`)}`)
       return
     }
+    if (authStatus === 'authenticated') {
+      const fetchTimer = window.setTimeout(() => void fetchWorkspace(), 0)
+      return () => window.clearTimeout(fetchTimer)
+    }
+  }, [authStatus, fetchWorkspace, router, workspaceId])
+
+  const member = workspace?.members.some((item) => item.userId === user?.id) ?? false
+  const instructorMember = workspace?.members.some((item) => item.userId === user?.id && item.role === 'instructor') ?? false
+  const owner = workspace?.createdBy === user?.id
+  const accountInstructor = profile.accountRole === 'instructor'
+  const canRename = member || owner
+  const canDelete = owner
+  const canShare = owner
+  const canPublish = accountInstructor && owner && (!accountModeResolved || accountMode !== 'personal')
+  const canAddRoom = instructorMember || owner || (workspace?.type === 'shared' && member)
+
+  const refresh = async () => { await fetchWorkspace() }
+
+  const handleCreateRoom = async () => {
+    if (creatingRoomRef.current) return
+    const name = newRoomName.trim()
+    if (!name) { setRoomError('Enter a room name'); return }
+    creatingRoomRef.current = true
+    setRoomBusy('create')
+    setRoomError('')
     try {
-      creatingRoomRef.current = true
-      setRoomBusy('create')
-      const res = await fetch(`/api/workspaces/${workspaceId}/rooms`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: trimmed }),
+      const response = await fetch(`/api/workspaces/${workspaceId}/rooms`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || 'Failed to create room')
-      setAddingRoom(false)
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Failed to create room')
       setNewRoomName('')
-      await fetchWorkspace()
-      toast.success(`Created room "${trimmed}"`)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to create room')
+      setAddingRoom(false)
+      await refresh()
+      toast.success(`Created room "${name}"`)
+    } catch (caughtError) {
+      setRoomError(caughtError instanceof Error ? caughtError.message : 'Failed to create room')
     } finally {
-      // Re-enable on success and failure so a failed create can be retried.
       creatingRoomRef.current = false
       setRoomBusy(null)
     }
   }
 
   const handleRenameRoom = async (room: Room) => {
-    const trimmed = editingRoomName.trim()
-    if (!trimmed) {
-      toast.error('Room name required')
-      return
-    }
-    if (trimmed === room.name) {
-      setEditingRoomId(null)
-      setEditingRoomName('')
-      return
-    }
+    const name = editingRoomName.trim()
+    if (!name) { setRoomError('Enter a room name'); return }
+    if (name === room.name) { setEditingRoomId(null); return }
+    setRoomBusy(room.id)
     try {
-      setRoomBusy(room.id)
-      const res = await fetch(`/api/rooms/${room.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: trimmed }),
+      const response = await fetch(`/api/rooms/${room.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || 'Failed to rename room')
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Failed to rename room')
       setEditingRoomId(null)
       setEditingRoomName('')
-      await fetchWorkspace()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to rename room')
+      await refresh()
+    } catch (caughtError) {
+      setRoomError(caughtError instanceof Error ? caughtError.message : 'Failed to rename room')
     } finally {
       setRoomBusy(null)
     }
   }
 
-  const handleConfirmDeleteRoom = async () => {
-    if (!roomToDelete) return
+  const handleDeleteRoom = async () => {
+    if (!roomToDelete || roomBusy) return
+    const room = roomToDelete
+    setRoomBusy(room.id)
     try {
-      setRoomBusy(roomToDelete.id)
-      const res = await fetch(`/api/rooms/${roomToDelete.id}`, { method: 'DELETE' })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || 'Failed to delete room')
+      const response = await fetch(`/api/rooms/${room.id}`, { method: 'DELETE' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Failed to delete room')
       setRoomToDelete(null)
-      await fetchWorkspace()
-      toast.success(`Deleted room "${roomToDelete.name}"`)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to delete room')
+      await refresh()
+      toast.success(`Deleted room "${room.name}"`)
+    } catch (caughtError) {
+      setRoomError(caughtError instanceof Error ? caughtError.message : 'Failed to delete room')
     } finally {
       setRoomBusy(null)
     }
   }
 
-  const flipRoomPublish = async (room: Room, next: boolean) => {
-    setWorkspace((prev) => {
-      if (!prev) return prev
-      return {
-        ...prev,
-        rooms: (prev.rooms ?? []).map((r) =>
-          r.id === room.id ? { ...r, isPublished: next } : r
-        ),
-      }
-    })
+  const handleShareRoom = async (room: Room) => {
+    if (shareBusy) return
+    setRoomToShare(room)
+    setShareBusy(true)
+    setShareUrl('')
+    setShareError('')
+    setShareCopied(false)
     try {
-      const res = await fetch(`/api/rooms/${room.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isPublished: next }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || 'Failed to update room')
-      toast.success(next ? `Published "${room.name}" to Wentworth` : `Unpublished "${room.name}"`)
-    } catch (e) {
-      setWorkspace((prev) => {
-        if (!prev) return prev
-        return {
-          ...prev,
-          rooms: (prev.rooms ?? []).map((r) =>
-            r.id === room.id ? { ...r, isPublished: !next } : r
-          ),
-        }
-      })
-      toast.error(e instanceof Error ? e.message : 'Failed to update room')
+      const response = await fetch(`/api/rooms/${room.id}/share`, { method: 'POST' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || typeof data.shareUrl !== 'string') throw new Error(data.error || 'Failed to create share link')
+      setShareUrl(data.shareUrl)
+    } catch (caughtError) {
+      setShareError(caughtError instanceof Error ? caughtError.message : 'Failed to create share link')
+    } finally {
+      setShareBusy(false)
     }
   }
 
-  // Optimistic reorder FIRST, then persist in the background — mirrors
-  // flipRoomPublish's optimistic-with-rollback. On success we deliberately do
-  // NOT await fetchWorkspace: the local order already matches what we wrote, so
-  // a refetch would only flash the list through a server round-trip (T2).
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    const oldIndex = orderedRooms.findIndex((r) => r.id === active.id)
-    const newIndex = orderedRooms.findIndex((r) => r.id === over.id)
-    if (oldIndex === -1 || newIndex === -1) return
+  const copyShareLink = async () => {
+    if (!shareUrl) return
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setShareCopied(true)
+      window.setTimeout(() => setShareCopied(false), 2000)
+    } catch {
+      toast.error('Could not copy the share link')
+    }
+  }
 
-    const previous = orderedRooms
-    const next = arrayMove(orderedRooms, oldIndex, newIndex)
-    setOrderedRooms(next)
+  const updatePublish = async (room: Room, isPublished: boolean) => {
+    setRooms((current) => current.map((item) => item.id === room.id ? { ...item, isPublished } : item))
+    try {
+      const response = await fetch(`/api/rooms/${room.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isPublished }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Failed to update room')
+      toast.success(isPublished ? `Published "${room.name}" to Wentworth` : `Unpublished "${room.name}"`)
+    } catch (caughtError) {
+      setRooms((current) => current.map((item) => item.id === room.id ? { ...item, isPublished: !isPublished } : item))
+      toast.error(caughtError instanceof Error ? caughtError.message : 'Failed to update room')
+    }
+  }
 
-    fetch(`/api/workspaces/${workspaceId}/rooms/reorder`, {
-      method: 'POST',
+  const handleTogglePublish = async (room: Room) => {
+    if (room.isPublished) { await updatePublish(room, false); return }
+    if (workspace?.networkMetadata?.department && workspace.networkMetadata.year) await updatePublish(room, true)
+    else setPublishModalRoom(room)
+  }
+
+  const saveNetworkMetadata = async (metadata: NetworkMetadata) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/network-metadata`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderedRoomIds: next.map((r) => r.id) }),
+      body: JSON.stringify({ department: metadata.department, yearLevel: metadata.year, instructor: metadata.instructor, academicYear: metadata.academicYear }),
     })
-      .then(async (res) => {
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
-          throw new Error(data?.error || 'Failed to reorder rooms')
-        }
-      })
-      .catch((e) => {
-        setOrderedRooms(previous)
-        toast.error(e instanceof Error ? e.message : 'Failed to reorder rooms')
-      })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'Failed to save network metadata')
+    setWorkspace((current) => current ? {
+      ...current,
+      networkMetadata: { department: metadata.department as Workspace['networkMetadata'] extends infer T ? T extends { department: infer D } ? D : never : never, year: metadata.year as Workspace['networkMetadata'] extends infer T ? T extends { year: infer Y } ? Y : never : never },
+      academicYear: metadata.academicYear,
+      instructor: metadata.instructor,
+    } : current)
   }
 
-  const handleEnrollStudents = async () => {
-    // Accept comma- or newline-separated emails. The server re-normalizes
-    // (trim/lowercase/dedupe/cap) and is the source of truth for validation.
-    const emails = enrollText.split(/[\n,]/).map((e) => e.trim()).filter(Boolean)
-    if (emails.length === 0) {
-      toast.error('Enter at least one email address')
-      return
-    }
+  const moveRoom = (index: number, direction: -1 | 1) => {
+    if (reorderingRef.current) return
+    const nextIndex = index + direction
+    if (nextIndex < 0 || nextIndex >= rooms.length) return
+    reorderingRef.current = true
+    const previous = rooms
+    const next = [...rooms]
+    ;[next[index], next[nextIndex]] = [next[nextIndex], next[index]]
+    setRooms(next)
+    fetch(`/api/workspaces/${workspaceId}/rooms/reorder`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderedRoomIds: next.map((room) => room.id) }),
+    }).then(async (response) => {
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to reorder rooms')
+      }
+    }).catch((caughtError) => {
+      setRooms(previous)
+      toast.error(caughtError instanceof Error ? caughtError.message : 'Failed to reorder rooms')
+    }).finally(() => { reorderingRef.current = false })
+  }
+
+  const handleEnroll = async () => {
+    const emails = enrollText.split(/[\n,]/).map((email) => email.trim()).filter(Boolean)
+    if (!emails.length) { setRoomError('Enter at least one email address'); return }
+    setEnrollBusy(true)
     try {
-      setEnrollBusy(true)
-      const res = await fetch(`/api/workspaces/${workspaceId}/members/enroll`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emails }),
+      const response = await fetch(`/api/workspaces/${workspaceId}/members/enroll`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emails }),
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || 'Failed to add students')
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Failed to add students')
       const result = {
         enrolled: Array.isArray(data.enrolled) ? data.enrolled : [],
         alreadyMember: Array.isArray(data.alreadyMember) ? data.alreadyMember : [],
@@ -334,678 +458,136 @@ export default function WorkspaceRoomsPage() {
       }
       setEnrollResult(result)
       setEnrollText('')
-      if (result.enrolled.length > 0) {
-        toast.success(`Added ${result.enrolled.length} student${result.enrolled.length === 1 ? '' : 's'}`)
-        // Refresh the member list. Not a hot path — a refetch is fine here.
-        await fetchWorkspace()
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to add students')
+      if (result.enrolled.length) await refresh()
+    } catch (caughtError) {
+      setRoomError(caughtError instanceof Error ? caughtError.message : 'Failed to add students')
     } finally {
       setEnrollBusy(false)
     }
   }
 
-  const saveNetworkMetadata = async (metadata: NetworkMetadata): Promise<boolean> => {
-    try {
-      const res = await fetch(`/api/workspaces/${workspaceId}/network-metadata`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          department: metadata.department,
-          yearLevel: metadata.year,
-          instructor: metadata.instructor,
-          academicYear: metadata.academicYear,
-        }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || 'Failed to save network metadata')
-      // Update local workspace state so subsequent publishes skip the modal
-      setWorkspace((prev) => {
-        if (!prev) return prev
-        return {
-          ...prev,
-          networkMetadata: {
-            department: metadata.department as 'Aerospace Engineering' | 'Architecture' | 'Civil Engineering' | 'Electrical Engineering' | 'Industrial Design' | 'Interior Design' | 'Mechanical Engineering' | 'Robotics Engineering',
-            year: metadata.year as 'Year 1' | 'Year 2' | 'Year 3' | 'Year 4' | 'Year 5' | 'Masters',
-          },
-          academicYear: metadata.academicYear,
-          instructor: metadata.instructor,
-        }
-      })
-      return true
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save network settings')
-      return false
-    }
-  }
+  const shellProps = { navigation, footerNavigation, currentPath: `/workspace/${workspaceId}`, contentClassName: 'bg-background' }
 
-  const handleTogglePublish = async (room: Room) => {
-    if (!workspace) return
-    const next = !room.isPublished
-
-    if (!next) {
-      // Unpublishing — no metadata needed
-      await flipRoomPublish(room, false)
-      return
-    }
-
-    // Publishing ON: check if workspace already has metadata
-    const hasMetadata = !!(workspace.networkMetadata?.department && workspace.networkMetadata?.year)
-    if (hasMetadata) {
-      await flipRoomPublish(room, true)
-    } else {
-      // First publish in workspace — open modal to collect metadata
-      setPublishModalRoom(room)
-    }
-  }
-
-  const handlePublishModalConfirm = async (metadata?: NetworkMetadata) => {
-    setPublishModalRoom(null)
-    if (!publishModalRoom || !metadata) return
-    const saved = await saveNetworkMetadata(metadata)
-    if (saved) {
-      await flipRoomPublish(publishModalRoom, true)
-    }
-  }
-
-  const handleNetworkSettingsConfirm = async (metadata?: NetworkMetadata) => {
-    setNetworkSettingsOpen(false)
-    if (!metadata) return
-    await saveNetworkMetadata(metadata)
-    toast.success('Network settings saved')
-  }
-
-  if (!isAuthLoaded || loading) {
+  if (authStatus === 'loading' || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 mx-auto mb-4" />
-          <p className="text-gray-600">Loading rooms...</p>
+      <AppShell {...shellProps}>
+        <div role="status" className="mx-auto w-full max-w-[96rem] space-y-5 px-4 py-8 sm:px-6 lg:px-8">
+          <p className="font-semibold text-text-primary">Loading workspace…</p>
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-48" />)}</div>
         </div>
-      </div>
+      </AppShell>
     )
   }
 
-  if (errorMsg || !workspace) {
+  if (error || !workspace) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-6">
-        <div className="text-center max-w-sm">
-          <p className="text-gray-900 font-semibold mb-2">Failed to load workspace</p>
-          <p className="text-gray-500 text-sm mb-4">{errorMsg || 'Unknown error'}</p>
-          <Link href="/dashboard" className="inline-block px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium">
-            Back to Dashboard
-          </Link>
+      <AppShell {...shellProps}>
+        <div className="mx-auto w-full max-w-xl px-4 py-12 sm:px-6">
+          <StatusState role="alert" status="error" title="Workspace unavailable" description={error || 'Workspace not found'} action={<div className="flex flex-wrap gap-3"><Button type="button" onClick={() => void fetchWorkspace()}>Try again</Button><Link href="/dashboard" className={actionLink}>Back to projects</Link></div>} />
         </div>
-      </div>
+      </AppShell>
     )
   }
 
-  const instructorName = workspace.members.find(m => m.role === 'instructor')?.name ?? null
-  // Reorder UI is an owner-only power. `createdBy` is the workspace owner_id.
-  const isOwner = workspace.createdBy === user?.id
-
-  // Owner hardening, mirroring app/studio/[id]/page.tsx:403-407: `createdBy` is
-  // owner_id and needs only the session, so the owner keeps their powers even
-  // when the members array is missing or malformed. Every predicate feeding the
-  // card affordance row is otherwise derived purely from workspace.members, and
-  // the whole row hangs off canRename — so one bad members payload silently
-  // strips the real owner of rename, publish AND delete at once. Widens to the
-  // OWNER only; non-owners are unaffected, and publish still additionally
-  // requires an instructor ACCOUNT (isAccountInstructor), which is the server
-  // gate in PATCH /api/rooms/[id].
-  const ownerOrInstructor = isInstructor || isOwner
-
-  // Shared per-card handlers/flags. Per-room props (room, isEditing, isBusy)
-  // are supplied at each call site.
-  const cardHandlers: RoomCardHandlers = {
-    editingRoomName,
-    setEditingRoomName,
-    onSaveRename: handleRenameRoom,
-    onCancelEdit: () => { setEditingRoomId(null); setEditingRoomName('') },
-    onStartEdit: (r) => { setEditingRoomId(r.id); setEditingRoomName(r.name) },
-    canRename: canRename || isOwner,
-    canShowPublish: orgModeAllowsPublish && ownerOrInstructor && isAccountInstructor,
-    isInstructor: ownerOrInstructor,
-    onTogglePublish: (r) => { handleTogglePublish(r) },
-    onRequestDelete: (r) => setRoomToDelete(r),
-  }
+  const instructorName = workspace.members.find((item) => item.role === 'instructor')?.name
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/dashboard">
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" aria-label="Back to Dashboard">
-                <ArrowLeft className="w-5 h-5 text-gray-600" />
-              </button>
-            </Link>
-            <div>
-              <h1 className="text-xl font-semibold text-gray-900">{workspace.name}</h1>
-              {instructorName && (
-                <p className="text-sm text-gray-500 mt-0.5">Owner: {instructorName}</p>
-              )}
-            </div>
-          </div>
-          {isInstructor && (
-            <div className="flex items-center gap-2">
-              {orgModeAllowsPublish && canPublish && (
-                <button
-                  onClick={() => setNetworkSettingsOpen(true)}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
-                  title="Edit network metadata (department, year, instructor)"
-                >
-                  <Network className="w-4 h-4" />
-                  Network
-                </button>
-              )}
-              <Link
-                href={`/workspace/${workspaceId}/settings`}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
-              >
-                <Settings className="w-4 h-4" />
-                Settings
-              </Link>
-            </div>
-          )}
-        </div>
-      </div>
+    <AppShell {...shellProps}>
+      <PageHeader
+        eyebrow={workspace.type === 'shared' ? 'Shared project' : workspace.type === 'personal' ? 'Personal project' : 'Class project'}
+        title={workspace.name}
+        description={instructorName ? `Owner: ${instructorName}` : 'Organize the project into focused rooms.'}
+        actions={instructorMember || owner ? <>{canPublish && <Button type="button" variant="ghost" onClick={() => setNetworkSettingsOpen(true)}><Network className="h-4 w-4" aria-hidden="true" />Network settings</Button>}<Link href={`/workspace/${workspaceId}/settings`} className={actionLink}>{owner ? 'Invite and settings' : 'Project details'}</Link></> : undefined}
+      />
 
-      {/* Backfill banner — shown to owners with published rooms but missing network metadata */}
-      {(() => {
-        const hasPublishedRoom = (workspace.rooms ?? []).some((r) => r.isPublished)
-        const missingMetadata = !workspace.networkMetadata?.department || !workspace.academicYear
-        if (!isInstructor || !hasPublishedRoom || !missingMetadata || bannerDismissed) return null
-        return (
-          <div className="max-w-5xl mx-auto px-6 pt-6">
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start justify-between gap-4">
-              <p className="text-sm text-amber-900">
-                <strong>This class is published but missing network info.</strong>{' '}
-                Add it so students can find your studio on the Wentworth Network.
-              </p>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={() => setNetworkSettingsOpen(true)}
-                  className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  Add network settings
-                </button>
-                <button
-                  onClick={() => setBannerDismissed(true)}
-                  className="p-1.5 text-amber-700 hover:bg-amber-100 rounded-lg transition-colors"
-                  aria-label="Dismiss"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+      <div className="mx-auto w-full max-w-[96rem] px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-text-primary">Rooms</h2>
+            <p className="mt-1 text-sm text-text-secondary">Enter a room to open its 3D studio.</p>
+          </div>
+          {canAddRoom && rooms.length > 0 && !addingRoom && <Button type="button" onClick={() => { setAddingRoom(true); setRoomError('') }}><Plus className="h-4 w-4" aria-hidden="true" />Add room</Button>}
+        </div>
+
+        {roomError && <StatusState id="room-error" role="alert" status="error" title={roomError} className="mb-5" />}
+
+        {addingRoom && (
+          <Card className="mb-5">
+            <form onSubmit={(event) => { event.preventDefault(); void handleCreateRoom() }} className="flex flex-col gap-3 sm:flex-row sm:items-end" noValidate>
+              <div className="min-w-0 flex-1">
+                <label htmlFor="new-room-name" className="mb-1.5 block text-sm font-semibold text-text-primary">Room name</label>
+                <Input id="new-room-name" value={newRoomName} maxLength={100} disabled={roomBusy === 'create'} autoFocus aria-invalid={roomError === 'Enter a room name'} aria-describedby={roomError ? 'room-error' : undefined} onChange={(event) => { setNewRoomName(event.target.value); setRoomError('') }} placeholder="e.g. Midterm review" />
               </div>
-            </div>
-          </div>
-        )
-      })()}
+              <Button type="submit" loading={roomBusy === 'create'}>Create room</Button>
+              <Button type="button" variant="ghost" disabled={roomBusy === 'create'} onClick={() => { setAddingRoom(false); setNewRoomName(''); setRoomError('') }}>Cancel</Button>
+            </form>
+          </Card>
+        )}
 
-      {/* Body */}
-      <div className="max-w-5xl mx-auto px-6 py-12">
-        <div className="mb-8">
-          <h2 className="text-2xl font-semibold text-gray-900 flex items-center gap-2.5">
-            <DoorOpen className="w-6 h-6 text-indigo-600" />
-            Rooms
-          </h2>
-          <p className="text-sm text-gray-500 mt-1.5">
-            Click a room to enter its 3D studio.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {/* Room cards. Owners get drag-to-reorder (each card carries its own
-              handle); everyone else gets the same cards statically. The Add
-              Room card stays OUTSIDE the sortable context (S3) so it never
-              participates in reordering. */}
-          {isOwner ? (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={orderedRooms.map((r) => r.id)}
-                strategy={rectSortingStrategy}
-              >
-                {orderedRooms.map((room) => (
-                  <SortableRoomCard
-                    key={room.id}
-                    room={room}
-                    isEditing={editingRoomId === room.id}
-                    isBusy={roomBusy === room.id}
-                    {...cardHandlers}
-                  />
-                ))}
-              </SortableContext>
-            </DndContext>
-          ) : (
-            orderedRooms.map((room) => (
-              <div
+        {rooms.length === 0 ? (
+          <EmptyState title="No rooms yet" description={canAddRoom ? 'Add the first room to start organizing this project.' : 'The project owner has not added any rooms yet.'} icon={<DoorOpen className="h-8 w-8" aria-hidden="true" />} action={canAddRoom && !addingRoom ? <Button type="button" onClick={() => setAddingRoom(true)}>Add room</Button> : undefined} />
+        ) : (
+          <div className="grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {rooms.map((room, index) => (
+              <RoomCard
                 key={room.id}
-                className="relative group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
-              >
-                <RoomCardInner
-                  room={room}
-                  isEditing={editingRoomId === room.id}
-                  isBusy={roomBusy === room.id}
-                  {...cardHandlers}
-                />
-              </div>
-            ))
-          )}
-
-          {/* Add Room card — owner/instructor on class workspaces; any member on shared projects */}
-          {canAddRoom && (
-            addingRoom ? (
-              <div className="bg-indigo-50 border-2 border-indigo-200 rounded-xl p-6 flex flex-col gap-3">
-                <p className="text-sm font-semibold text-indigo-900">Name your new room</p>
-                <input
-                  type="text"
-                  value={newRoomName}
-                  maxLength={100}
-                  onChange={(e) => setNewRoomName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleCreateRoom()
-                    if (e.key === 'Escape') { setAddingRoom(false); setNewRoomName('') }
-                  }}
-                  placeholder="e.g. Pin-up 2, Midterm Review"
-                  disabled={roomBusy === 'create'}
-                  autoFocus
-                  className="w-full px-3 py-2 border border-indigo-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleCreateRoom}
-                    disabled={roomBusy === 'create' || !newRoomName.trim()}
-                    className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm disabled:opacity-50"
-                  >
-                    {roomBusy === 'create' ? 'Creating…' : 'Create'}
-                  </button>
-                  <button
-                    onClick={() => { setAddingRoom(false); setNewRoomName('') }}
-                    disabled={roomBusy === 'create'}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => setAddingRoom(true)}
-                className="bg-white border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-gray-500 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors min-h-[180px]"
-              >
-                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
-                  <Plus className="w-5 h-5" />
-                </div>
-                <span className="font-medium text-sm">Add Room</span>
-              </button>
-            )
-          )}
-        </div>
-
-        {orderedRooms.length === 0 && !canAddRoom && (
-          <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
-              <DoorOpen className="w-8 h-8 text-gray-600" />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No rooms yet</h3>
-            <p className="text-sm text-gray-500 max-w-sm mx-auto">
-              The instructor hasn&apos;t set up any rooms in this workspace yet. Check back later.
-            </p>
+                room={room}
+                index={index}
+                total={rooms.length}
+                busy={roomBusy === room.id}
+                editing={editingRoomId === room.id}
+                editingName={editingRoomName}
+                nameError={roomError === 'Enter a room name'}
+                canRename={canRename}
+                canShare={canShare}
+                canPublish={canPublish}
+                canDelete={canDelete}
+                canReorder={owner}
+                onEditingNameChange={setEditingRoomName}
+                onStartRename={(selectedRoom) => { setEditingRoomId(selectedRoom.id); setEditingRoomName(selectedRoom.name); setRoomError('') }}
+                onShare={(selectedRoom) => void handleShareRoom(selectedRoom)}
+                onSaveRename={(selectedRoom) => void handleRenameRoom(selectedRoom)}
+                onCancelRename={() => { setEditingRoomId(null); setEditingRoomName('') }}
+                onTogglePublish={(selectedRoom) => void handleTogglePublish(selectedRoom)}
+                onDelete={setRoomToDelete}
+                onMove={moveRoom}
+              />
+            ))}
           </div>
         )}
 
-        {/* Add students by email — class owner only. Enrolls students who
-            already have a PinSpace account into workspace_members (which is
-            what actually grants room access; org membership alone does not). */}
-        {isOwner && workspace.type === 'class' && (
-          <div className="mt-12 bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                  <UserPlus className="w-5 h-5 text-indigo-600" />
-                  Add students
-                </h2>
-                <p className="text-sm text-gray-500 mt-1 max-w-xl">
-                  Enroll students by email. They must already have a PinSpace account —
-                  anyone without one is listed below so you can ask them to sign up first.
-                </p>
+        {owner && workspace.type === 'class' && (
+          <Card className="mt-8">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <h2 className="flex items-center gap-2 text-lg font-bold text-text-primary"><UserPlus className="h-5 w-5 text-accent" aria-hidden="true" />Add students</h2>
+                <p className="mt-1 max-w-2xl text-sm text-text-secondary">Enroll existing accounts by comma- or line-separated email addresses.</p>
               </div>
-              {!enrollOpen && (
-                <button
-                  onClick={() => { setEnrollOpen(true); setEnrollResult(null) }}
-                  className="shrink-0 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center gap-2"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  Add students
-                </button>
-              )}
+              {!enrollOpen && <Button type="button" variant="secondary" onClick={() => { setEnrollOpen(true); setEnrollResult(null) }}>Add students</Button>}
             </div>
-
-            {enrollOpen && (
-              <div className="mt-4">
-                <textarea
-                  value={enrollText}
-                  onChange={(e) => setEnrollText(e.target.value)}
-                  rows={4}
-                  placeholder={'Paste student emails, separated by commas or new lines\ne.g. jane@wit.edu, john@wit.edu'}
-                  disabled={enrollBusy}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
-                />
-                <div className="flex gap-2 mt-3">
-                  <button
-                    onClick={handleEnrollStudents}
-                    disabled={enrollBusy || !enrollText.trim()}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm disabled:opacity-50"
-                  >
-                    {enrollBusy ? 'Adding…' : 'Add students'}
-                  </button>
-                  <button
-                    onClick={() => { setEnrollOpen(false); setEnrollText('') }}
-                    disabled={enrollBusy}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {enrollResult && (
-              <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                <p className="text-sm font-medium text-gray-900">
-                  {enrollResult.enrolled.length} enrolled
-                  <span className="text-gray-400"> · </span>
-                  {enrollResult.alreadyMember.length} already in
-                  <span className="text-gray-400"> · </span>
-                  {enrollResult.notFound.length} have no account yet
-                </p>
-                {enrollResult.notFound.length > 0 && (
-                  <div className="mt-3">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-                      No account yet — ask them to sign up first
-                    </p>
-                    <ul className="text-sm text-gray-700 space-y-0.5">
-                      {enrollResult.notFound.map((email) => (
-                        <li key={email} className="font-mono text-xs break-all">{email}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+            {enrollOpen && <div className="mt-4"><label htmlFor="student-emails" className="mb-1.5 block text-sm font-semibold text-text-primary">Student emails</label><textarea id="student-emails" rows={4} value={enrollText} disabled={enrollBusy} onChange={(event) => setEnrollText(event.target.value)} className="min-h-28 w-full rounded-kova border border-border bg-background-light px-3.5 py-2 text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" /><div className="mt-3 flex flex-wrap gap-2"><Button type="button" loading={enrollBusy} onClick={() => void handleEnroll()}>Add students</Button><Button type="button" variant="ghost" disabled={enrollBusy} onClick={() => { setEnrollOpen(false); setEnrollText('') }}>Cancel</Button></div></div>}
+            {enrollResult && <StatusState status="info" title={`${enrollResult.enrolled.length} enrolled · ${enrollResult.alreadyMember.length} already joined · ${enrollResult.notFound.length} without accounts`} description={enrollResult.notFound.length ? enrollResult.notFound.join(', ') : undefined} className="mt-4" />}
+          </Card>
         )}
       </div>
 
-      {/* Publish confirm modal — shown when publishing first room in workspace */}
-      {publishModalRoom && workspace && (
-        <PublishConfirmModal
-          workspaceName={workspace.name}
-          isCurrentlyPublic={false}
-          currentMetadata={
-            workspace.networkMetadata
-              ? {
-                  department: workspace.networkMetadata.department,
-                  year: workspace.networkMetadata.year,
-                  instructor: workspace.instructor || '',
-                  academicYear: workspace.academicYear || '',
-                }
-              : undefined
-          }
-          onConfirm={handlePublishModalConfirm}
-          onCancel={() => setPublishModalRoom(null)}
-        />
-      )}
+      {publishModalRoom && <NetworkSettingsDialog publishing current={workspace.networkMetadata ? { department: workspace.networkMetadata.department, year: workspace.networkMetadata.year, instructor: workspace.instructor || '', academicYear: workspace.academicYear || currentAcademicYear() } : undefined} onOpenChange={(open) => { if (!open) setPublishModalRoom(null) }} onConfirm={async (metadata) => { await saveNetworkMetadata(metadata); await updatePublish(publishModalRoom, true) }} />}
+      {networkSettingsOpen && <NetworkSettingsDialog publishing={false} current={workspace.networkMetadata ? { department: workspace.networkMetadata.department, year: workspace.networkMetadata.year, instructor: workspace.instructor || '', academicYear: workspace.academicYear || currentAcademicYear() } : undefined} onOpenChange={setNetworkSettingsOpen} onConfirm={async (metadata) => { await saveNetworkMetadata(metadata); toast.success('Network settings saved') }} />}
 
-      {/* Network settings modal — re-open from header button to edit existing metadata */}
-      {networkSettingsOpen && workspace && (
-        <PublishConfirmModal
-          workspaceName={workspace.name}
-          isCurrentlyPublic={false}
-          currentMetadata={
-            workspace.networkMetadata
-              ? {
-                  department: workspace.networkMetadata.department,
-                  year: workspace.networkMetadata.year,
-                  instructor: workspace.instructor || '',
-                  academicYear: workspace.academicYear || '',
-                }
-              : undefined
-          }
-          onConfirm={handleNetworkSettingsConfirm}
-          onCancel={() => setNetworkSettingsOpen(false)}
-        />
-      )}
+      <Dialog open={Boolean(roomToShare)} onOpenChange={(open) => { if (!open && !shareBusy) setRoomToShare(null) }} closeOnOutsideClick={!shareBusy} hideCloseButton={shareBusy} title="Share room" description={roomToShare ? `Create a read-only link to “${roomToShare.name}”.` : undefined}>
+        {shareBusy && <StatusState role="status" status="loading" title="Creating secure share link…" />}
+        {shareError && <StatusState role="alert" status="error" title="Could not create share link" description={shareError} />}
+        {shareUrl && <div><label htmlFor="room-share-link" className="mb-1.5 block text-sm font-semibold text-text-primary">Share link</label><div className="flex min-w-0 flex-col gap-3 sm:flex-row"><Input id="room-share-link" readOnly value={shareUrl} className="min-w-0 font-mono text-sm" /><Button type="button" variant="secondary" onClick={() => void copyShareLink()}>{shareCopied ? <Check className="h-4 w-4" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}{shareCopied ? 'Copied' : 'Copy share link'}</Button></div><p className="mt-3 text-sm text-text-secondary">Anyone with this link can view the room. Share it only with people you trust.</p></div>}
+        <div className="mt-5 flex justify-end"><Button type="button" variant="ghost" disabled={shareBusy} onClick={() => setRoomToShare(null)}>Close</Button></div>
+      </Dialog>
 
-      {/* Delete confirmation. Boards in the room cascade-delete via the
-          boards.room_id FK. Spell that out so an instructor doesn't lose work
-          by accident. */}
-      {roomToDelete && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete room?</h3>
-            <p className="text-sm text-gray-700 mb-3">
-              <strong>&ldquo;{roomToDelete.name}&rdquo;</strong> will be permanently deleted.
-            </p>
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-6">
-              <p className="text-sm text-red-800">
-                Every board in this room will be deleted along with it. This cannot be undone.
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setRoomToDelete(null)}
-                disabled={roomBusy === roomToDelete.id}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmDeleteRoom}
-                disabled={roomBusy === roomToDelete.id}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium disabled:opacity-50"
-              >
-                {roomBusy === roomToDelete.id ? 'Deleting…' : 'Delete room'}
-              </button>
-            </div>
-          </div>
+      <Dialog open={Boolean(roomToDelete)} onOpenChange={(open) => { if (!open && !roomBusy) setRoomToDelete(null) }} closeOnOutsideClick={!roomBusy} hideCloseButton={Boolean(roomBusy)} title="Delete room?" description={roomToDelete ? `“${roomToDelete.name}” will be permanently deleted.` : undefined}>
+        <StatusState status="warning" title="Every board in this room will also be deleted." description="This cannot be undone." />
+        <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <Button type="button" variant="ghost" disabled={Boolean(roomBusy)} onClick={() => setRoomToDelete(null)}>Cancel</Button>
+          <Button type="button" variant="danger" loading={Boolean(roomBusy)} onClick={() => void handleDeleteRoom()}>Delete room</Button>
         </div>
-      )}
-    </div>
-  )
-}
-
-// Handlers/flags shared by every room card, independent of which room. The
-// parent builds one of these and spreads it into each card.
-type RoomCardHandlers = {
-  editingRoomName: string
-  setEditingRoomName: (v: string) => void
-  onSaveRename: (room: Room) => void
-  onCancelEdit: () => void
-  onStartEdit: (room: Room) => void
-  canRename: boolean
-  canShowPublish: boolean
-  isInstructor: boolean
-  onTogglePublish: (room: Room) => void
-  onRequestDelete: (room: Room) => void
-}
-
-type RoomCardProps = RoomCardHandlers & {
-  room: Room
-  isEditing: boolean
-  isBusy: boolean
-}
-
-// Presentational card innards (the Link/inline-edit block + the hover
-// affordances row). Rendered inside whichever outer wrapper the caller
-// provides — a sortable div for owners, a plain div for everyone else — so the
-// card markup lives in exactly one place.
-function RoomCardInner({
-  room,
-  isEditing,
-  isBusy,
-  editingRoomName,
-  setEditingRoomName,
-  onSaveRename,
-  onCancelEdit,
-  onStartEdit,
-  canRename,
-  canShowPublish,
-  isInstructor,
-  onTogglePublish,
-  onRequestDelete,
-}: RoomCardProps) {
-  return (
-    <>
-      {/* Card body — the Link is the click target unless we're inline editing */}
-      {isEditing ? (
-        <div className="p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <input
-              type="text"
-              value={editingRoomName}
-              maxLength={100}
-              onChange={(e) => setEditingRoomName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') onSaveRename(room)
-                if (e.key === 'Escape') onCancelEdit()
-              }}
-              disabled={isBusy}
-              autoFocus
-              className="flex-1 px-3 py-1.5 border border-indigo-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <button
-              onClick={() => onSaveRename(room)}
-              disabled={isBusy}
-              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-50"
-              aria-label="Save name"
-            >
-              <Check className="w-4 h-4" />
-            </button>
-            <button
-              onClick={onCancelEdit}
-              disabled={isBusy}
-              className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg disabled:opacity-50"
-              aria-label="Cancel"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      ) : (
-        <Link
-          href={`/studio/${room.id}`}
-          className="block p-6 cursor-pointer"
-        >
-          <div className="flex items-start justify-between mb-3">
-            <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-              <DoorOpen className="w-5 h-5 text-indigo-600" />
-            </div>
-            {room.isPublished && (
-              <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-md text-xs font-medium flex items-center gap-1">
-                <Globe className="w-3 h-3" />
-                Published
-              </span>
-            )}
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-1.5 group-hover:text-indigo-700 transition-colors">
-            {room.name}
-          </h3>
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500">
-              {(room.boardCount ?? 0)} {(room.boardCount ?? 0) === 1 ? 'board' : 'boards'}
-            </p>
-            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
-          </div>
-        </Link>
-      )}
-
-      {/* Edit affordances. Visible on hover so they don't crowd the card.
-          Hover effects suppressed when editing. Rename is open to any member
-          (Phase 10); publish + delete stay owner-only. */}
-      {canRename && !isEditing && (
-        <div className="px-6 pb-4 flex items-center justify-end gap-1 -mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          {canShowPublish && (
-            <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTogglePublish(room) }}
-              disabled={isBusy}
-              className={`p-1.5 rounded-lg disabled:opacity-50 ${
-                room.isPublished
-                  ? 'text-green-700 hover:text-gray-700 hover:bg-gray-50'
-                  : 'text-gray-500 hover:text-green-700 hover:bg-green-50'
-              }`}
-              aria-label={room.isPublished ? 'Unpublish room' : 'Publish to Wentworth'}
-              title={room.isPublished ? 'Unpublish' : 'Publish to Wentworth'}
-            >
-              <Globe className="w-3.5 h-3.5" />
-            </button>
-          )}
-          <button
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onStartEdit(room) }}
-            disabled={isBusy}
-            className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-50"
-            aria-label="Rename room"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
-          {isInstructor && (
-            <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRequestDelete(room) }}
-              disabled={isBusy}
-              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
-              aria-label="Delete room"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-      )}
-    </>
-  )
-}
-
-// Owner-only sortable wrapper. The drag handle is the ONLY draggable surface
-// (S2) — the rest of the card stays a working Link. The handle sits in the
-// left padding gutter (vertically centered) and carries a higher z-index, so
-// its pointer events never reach the underlying Link and it doesn't overlap the
-// Link's content. Hidden while inline-renaming to avoid an accidental drag.
-function SortableRoomCard(props: RoomCardProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: props.room.id })
-
-  const style: CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : undefined,
-    zIndex: isDragging ? 20 : undefined,
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="relative group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
-    >
-      {!props.isEditing && (
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          className="absolute left-1 top-1/2 -translate-y-1/2 z-20 p-1 rounded-md text-gray-300 hover:text-gray-600 hover:bg-gray-100 cursor-grab active:cursor-grabbing touch-none"
-          aria-label={`Drag to reorder ${props.room.name}`}
-          title="Drag to reorder"
-        >
-          <GripVertical className="w-4 h-4" />
-        </button>
-      )}
-      <RoomCardInner {...props} />
-    </div>
+      </Dialog>
+    </AppShell>
   )
 }

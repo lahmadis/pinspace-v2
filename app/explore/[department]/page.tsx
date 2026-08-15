@@ -1,416 +1,132 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { notFound, useSearchParams, useRouter } from 'next/navigation'
-import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
+import { notFound, useParams, useRouter, useSearchParams } from 'next/navigation'
+import { Network } from 'lucide-react'
+import BubbleNetwork, { type BubbleNode } from '@/components/network/BubbleNetwork'
+import { Button, Card, EmptyState, Select, StatusState } from '@/components/ui'
 
-const DEPT_MAP: Record<string, { name: string; color: string; accent: string }> = {
-  'aerospace-engineering': { name: 'Aerospace Engineering', color: '#0ea5e9', accent: 'text-sky-600' },
-  'architecture': { name: 'Architecture', color: '#6366f1', accent: 'text-indigo-600' },
-  'civil-engineering': { name: 'Civil Engineering', color: '#14b8a6', accent: 'text-teal-600' },
-  'electrical-engineering': { name: 'Electrical Engineering', color: '#eab308', accent: 'text-yellow-600' },
-  'industrial-design': { name: 'Industrial Design', color: '#f59e0b', accent: 'text-orange-600' },
-  'interior-design': { name: 'Interior Design', color: '#10b981', accent: 'text-emerald-600' },
-  'mechanical-engineering': { name: 'Mechanical Engineering', color: '#ef4444', accent: 'text-red-600' },
-  'robotics-engineering': { name: 'Robotics Engineering', color: '#8b5cf6', accent: 'text-violet-600' },
-}
-
-const YEAR_COLORS: Record<string, string> = {
-  'Year 1': '#3B82F6',
-  'Year 2': '#60A5FA',
-  'Year 3': '#8B5CF6',
-  'Year 4': '#A78BFA',
-  'Masters': '#EC4899',
+const DEPARTMENTS: Record<string, string> = {
+  'aerospace-engineering': 'Aerospace Engineering', architecture: 'Architecture',
+  'civil-engineering': 'Civil Engineering', 'electrical-engineering': 'Electrical Engineering',
+  'industrial-design': 'Industrial Design', 'interior-design': 'Interior Design',
+  'mechanical-engineering': 'Mechanical Engineering', 'robotics-engineering': 'Robotics Engineering',
 }
 
 type ViewMode = 'years' | 'all'
-
 type YearItem = { year: string; slug: string; studioCount: number }
-type StudioItem = {
-  id: string
-  name: string
-  studioId?: string
-  memberCount?: number
-  members?: unknown[]
-  instructor?: string
-  semester?: string
-  networkMetadata?: { year?: string }
+type StudioItem = { id: string; name: string; studioId?: string; memberCount?: number; members?: unknown[]; instructor?: string; semester?: string; networkMetadata?: { year?: string } }
+type LoadState = 'loading' | 'ok' | 'error'
+
+function yearColor(year?: string) {
+  const colors = ['rgb(var(--color-primary))', 'rgb(var(--color-secondary))', 'rgb(var(--color-warning))', 'rgb(var(--color-success))', 'rgb(var(--color-paper))']
+  const match = year?.match(/\d+/)?.[0]
+  return colors[Math.max(0, Math.min(colors.length - 1, Number(match || 1) - 1))]
 }
 
-export default function DepartmentPage({ params }: { params: { department: string } }) {
+export default function DepartmentPage() {
+  const params = useParams<{ department: string }>()
   const searchParams = useSearchParams()
   const router = useRouter()
-  const viewParam = searchParams.get('view')
-  const [viewMode, setViewMode] = useState<ViewMode>(viewParam === 'all' ? 'all' : 'years')
-  const [yearNodes, setYearNodes] = useState<BubbleNode[]>([])
+  const departmentName = DEPARTMENTS[params.department]
+  const [viewMode, setViewMode] = useState<ViewMode>(searchParams.get('view') === 'all' ? 'all' : 'years')
   const [years, setYears] = useState<YearItem[]>([])
-  const [studioNodes, setStudioNodes] = useState<BubbleNode[]>([])
   const [studios, setStudios] = useState<StudioItem[]>([])
-  const [yearFilter, setYearFilter] = useState<string>('All Years')
-  // See app/explore/page.tsx: default wide (All Years), then narrow to a year
-  // that actually has published rooms. Defaulting to the calendar year rendered
-  // an empty page with no tab available to escape it.
-  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('')
-  const [availableAcademicYears, setAvailableAcademicYears] = useState<{ year: string; count: number }[]>([])
+  const [yearFilter, setYearFilter] = useState('All years')
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState('')
+  const [academicYears, setAcademicYears] = useState<{ year: string; count: number }[]>([])
+  const [loadState, setLoadState] = useState<LoadState>('loading')
 
-  const meta = DEPT_MAP[params.department]
-
+  useEffect(() => { if (departmentName) document.title = `${departmentName} Studios – PinSpace` }, [departmentName])
   useEffect(() => {
-    if (!meta) return
-    document.title = `${meta.name} Studios – PinSpace`
-  }, [meta])
-
-  // Load available academic years for the tab bar
-  useEffect(() => {
-    if (!meta) return
-    const loadAcademicYears = async () => {
+    if (!departmentName) return
+    const load = async () => {
       try {
-        const res = await fetch(`/api/explore/academic-years`, { cache: 'no-store' })
-        if (res.ok) {
-          const data = await res.json()
-          const ayList: { year: string; count: number }[] = data.academicYears || []
-          setAvailableAcademicYears(ayList)
-          // Most recent year with published rooms, or All Years if there are none.
-          setSelectedAcademicYear(ayList.length > 0 ? ayList[0].year : '')
-        }
-      } catch (e) {
-        console.error(e)
-      }
+        const response = await fetch('/api/explore/academic-years', { cache: 'no-store' })
+        if (!response.ok) return
+        const data = await response.json()
+        const nextYears = data.academicYears || []
+        setAcademicYears(nextYears)
+        setSelectedAcademicYear(nextYears[0]?.year ?? '')
+      } catch (error) { console.error(error) }
     }
-    loadAcademicYears()
-  }, [meta])
+    void load()
+  }, [departmentName])
 
-  // sync URL
   useEffect(() => {
-    const current = viewMode === 'all' ? 'all' : null
     const url = new URL(window.location.href)
-    if (current) url.searchParams.set('view', 'all')
+    if (viewMode === 'all') url.searchParams.set('view', 'all')
     else url.searchParams.delete('view')
-    router.replace(url.pathname + (url.search ? url.search : ''), { scroll: false })
-  }, [viewMode, router])
+    router.replace(url.pathname + url.search, { scroll: false })
+  }, [router, viewMode])
 
-  // Load years (for years view)
-  useEffect(() => {
-    if (!meta) return
-    const loadYears = async () => {
-      try {
-        const qs = selectedAcademicYear ? `?academic_year=${encodeURIComponent(selectedAcademicYear)}` : ''
-        const res = await fetch(`/api/explore/${params.department}/years${qs}`, { cache: 'no-store' })
-        if (!res.ok) return
-        const resp = await res.json()
-        const data: YearItem[] = resp.years || []
-        setYears(data)
-        setYearNodes(data.map((y) => ({
-          id: y.slug,
-          name: y.year,
-          label: y.year,
-          count: y.studioCount,
-          url: `/explore/${params.department}/${y.slug}`,
-          color: YEAR_COLORS[y.year] || meta.color,
-          radius: 70,
-        })))
-      } catch (e) {
-        console.error(e)
+  const loadResults = useCallback(async () => {
+    if (!departmentName) return
+    await Promise.resolve()
+    setLoadState('loading')
+    try {
+      if (viewMode === 'years') {
+        const query = selectedAcademicYear ? `?academic_year=${encodeURIComponent(selectedAcademicYear)}` : ''
+        const response = await fetch(`/api/explore/${params.department}/years${query}`, { cache: 'no-store' })
+        if (!response.ok) throw new Error('Department years request failed')
+        const data = await response.json()
+        setYears(data.years || [])
+      } else {
+        const query = new URLSearchParams({ department: departmentName })
+        if (selectedAcademicYear) query.set('academic_year', selectedAcademicYear)
+        const response = await fetch(`/api/workspaces/public?${query}`, { cache: 'no-store' })
+        if (!response.ok) throw new Error('Department studios request failed')
+        const data = await response.json()
+        setStudios(data.workspaces || [])
       }
-    }
-    loadYears()
-  }, [params.department, meta?.color, selectedAcademicYear])
+      setLoadState('ok')
+    } catch (error) { console.error(error); setLoadState('error') }
+  }, [departmentName, params.department, selectedAcademicYear, viewMode])
+  // The effect starts an external request; loading state is part of that request lifecycle.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void loadResults() }, [loadResults])
 
-  // Load all studios for "view all"
-  useEffect(() => {
-    if (!meta || viewMode !== 'all') return
-    const loadStudios = async () => {
-      try {
-        const params = new URLSearchParams({ department: meta.name })
-        if (selectedAcademicYear) params.set('academic_year', selectedAcademicYear)
-        const res = await fetch(`/api/workspaces/public?${params.toString()}`, { cache: 'no-store' })
-        if (!res.ok) return
-        const data = await res.json()
-        const list: StudioItem[] = data.workspaces || []
-        setStudios(list)
-      } catch (e) {
-        console.error(e)
-      }
-    }
-    loadStudios()
-  }, [viewMode, meta?.name, selectedAcademicYear])
+  if (!departmentName) return notFound()
 
-  // Build studio nodes with filters
-  useEffect(() => {
-    if (!meta || viewMode !== 'all') return
-    const filtered = studios.filter((s) => {
-      if (yearFilter === 'All Years') return true
-      return s.networkMetadata?.year === yearFilter
-    })
+  const filteredStudios = yearFilter === 'All years' ? studios : studios.filter((studio) => studio.networkMetadata?.year === yearFilter)
+  const nodes: BubbleNode[] = viewMode === 'years'
+    ? years.map((year) => ({ id: year.slug, name: year.year, label: year.year, count: year.studioCount, url: `/explore/${params.department}/${year.slug}`, color: yearColor(year.year), radius: 70 }))
+    : filteredStudios.map((studio) => ({ id: studio.id, name: studio.name, label: studio.name, count: studio.memberCount ?? studio.members?.length ?? 0, memberCount: studio.memberCount ?? studio.members?.length ?? 0, url: `/studio/${studio.studioId || studio.id}/view`, color: yearColor(studio.networkMetadata?.year), instructor: studio.instructor, semester: studio.semester, year: studio.networkMetadata?.year === 'Masters' ? 'Masters' : Number(studio.networkMetadata?.year?.match(/\d+/)?.[0] || 0) || undefined }))
+  const uniqueYears = ['All years', ...Array.from(new Set(studios.map((studio) => studio.networkMetadata?.year).filter((year): year is string => Boolean(year))))]
 
-    // Parse year number from "Year X" string
-    const parseYear = (yearStr?: string): number | undefined => {
-      if (!yearStr) return undefined
-      if (yearStr === 'Masters') return 5
-      const match = yearStr.match(/Year (\d+)/)
-      return match ? parseInt(match[1], 10) : undefined
-    }
-
-    setStudioNodes(filtered.map((s) => ({
-      id: s.id,
-      label: s.name,
-      name: s.name,
-      count: s.memberCount ?? s.members?.length ?? 0,
-      memberCount: s.memberCount ?? s.members?.length ?? 0,
-      url: `/studio/${s.studioId || s.id}/view`,
-      color: YEAR_COLORS[s.networkMetadata?.year || 'Year 1'] || meta.color,
-      radius: 65,
-      // Add relationship data
-      instructor: s.instructor,
-      semester: s.semester,
-      year: parseYear(s.networkMetadata?.year),
-    })))
-  }, [studios, viewMode, yearFilter, meta?.color])
-
-  const handleNodeClick = (node: BubbleNode) => {
-    if (node.url) window.location.href = node.url
-  }
-
-  const uniqueYears = useMemo(() => ['All Years', ...Array.from(new Set(studios.map(s => s.networkMetadata?.year).filter(Boolean)))], [studios])
-
-  if (!meta) return notFound()
-
-  // Full screen mode for "View All Studios"
-  if (viewMode === 'all') {
-    return (
-      <div className="min-h-screen bg-slate-900">
-        {/* Floating Header */}
-        <header className="fixed top-0 left-0 right-0 z-40 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-md">
-          <div className="max-w-full px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setViewMode('years')}
-                className="flex items-center gap-2 text-sm text-slate-300 hover:text-white transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
-                Back to Years
-              </button>
-              <div className="h-5 w-px bg-slate-600" />
-              <div>
-                <h1 className="text-lg font-semibold text-white">{meta.name} Network</h1>
-                <p className="text-xs text-slate-400">{studioNodes.length} studios</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              {/* Year Filter */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Filter:</span>
-                <select
-                  value={yearFilter}
-                  onChange={(e) => setYearFilter(e.target.value)}
-                  className="px-3 py-1.5 bg-slate-800 border border-slate-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  {uniqueYears.map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Year Legend */}
-              <div className="hidden md:flex items-center gap-3 text-xs">
-                {Object.entries(YEAR_COLORS).map(([year, color]) => (
-                  <div key={year} className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-                    <span className="text-slate-400">{year}</span>
-                  </div>
-                ))}
-              </div>
-
-              <Link 
-                href="/my-boards" 
-                className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors"
-              >
-                My Boards
-              </Link>
-            </div>
-          </div>
-        </header>
-
-        {/* Academic Year Tab Bar */}
-        {availableAcademicYears.length > 0 && (
-          <div className="fixed top-[73px] left-0 right-0 z-30 bg-slate-900/95 border-b border-slate-700/50 px-6 py-2 flex items-center gap-2 overflow-x-auto">
-            <button
-              onClick={() => setSelectedAcademicYear('')}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                selectedAcademicYear === ''
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600'
-              }`}
-            >
-              All Years
-            </button>
-            {availableAcademicYears.map(({ year, count }) => (
-              <button
-                key={year}
-                onClick={() => setSelectedAcademicYear(year)}
-                className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                  selectedAcademicYear === year
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600'
-                }`}
-              >
-                {year}
-                <span className={`ml-1.5 text-xs ${selectedAcademicYear === year ? 'text-indigo-200' : 'text-slate-500'}`}>
-                  {count}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Full Canvas Bubble Network */}
-        {studioNodes.length === 0 ? (
-          <div className="flex items-center justify-center h-full" style={{ paddingTop: availableAcademicYears.length > 0 ? 113 : 73 }}>
-            <div className="text-center">
-              <p className="text-slate-400 text-lg font-medium">No studios yet</p>
-              <p className="text-slate-500 text-sm mt-1">
-                {selectedAcademicYear ? `No published studios for ${selectedAcademicYear}` : 'No published studios in this department'}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <BubbleNetwork
-            nodes={studioNodes}
-            onNodeClick={handleNodeClick}
-            fullScreen={true}
-            headerHeight={availableAcademicYears.length > 0 ? 113 : 73}
-          />
-        )}
-      </div>
-    )
-  }
-
-  // Standard layout for "By Year" view
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      <header className="border-b border-gray-200 bg-white/90 backdrop-blur-sm sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/explore" className="text-sm text-gray-600 hover:text-gray-900">← Back to Explore</Link>
-            <div className="text-sm text-gray-500">/</div>
-            <div className="text-sm font-semibold text-gray-900">{meta.name}</div>
-          </div>
-          <Link href="/my-boards" className="text-sm px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50">My Boards</Link>
+    <div className="min-h-screen overflow-x-hidden bg-background text-text-primary">
+      <header className="border-b border-border bg-background-light">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+          <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm"><Link href="/explore" className="min-h-11 content-center rounded-kova px-2 font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Explore</Link><span aria-hidden="true">/</span><span className="break-words">{departmentName}</span></nav>
+          <p className="mt-5 font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Department discovery</p>
+          <h1 className="mt-1 break-words text-3xl font-black sm:text-5xl">{departmentName}</h1>
+          <p className="mt-2 text-text-secondary">Browse published studios by programme year or as one network.</p>
+          <Link href="/my-boards" className="mt-4 inline-flex min-h-11 items-center rounded-kova border border-border bg-background px-4 py-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">My boards</Link>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-12 grid grid-cols-1 lg:grid-cols-4 gap-8">
-        <div className="lg:col-span-3 space-y-8">
-          <div>
-            <p className={`text-sm font-semibold uppercase ${meta.accent}`}>Explore / {meta.name}</p>
-            <h1 className="text-3xl font-bold text-gray-900 mt-1">{meta.name}</h1>
-            <p className="text-gray-600 mt-2">Browse by year or see the full network of studios.</p>
-            {(() => {
-              const getViewState = (mode: ViewMode) => ({
-                isYears: mode === 'years',
-                isAll: mode === 'all'
-              })
-              const viewState = getViewState(viewMode)
-              return (
-                <div className="mt-4 flex items-center gap-3 text-sm">
-                  <span className="text-gray-700 font-semibold">View:</span>
-                  <button
-                    onClick={() => setViewMode('years')}
-                    className={`px-3 py-1 rounded-full border text-sm ${viewState.isYears ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    By Year
-                  </button>
-                  <button
-                    onClick={() => setViewMode('all')}
-                    className={`px-3 py-1 rounded-full border text-sm ${viewState.isAll ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    View All Studios
-                  </button>
-                </div>
-              )
-            })()}
-          </div>
-
-          {/* Academic Year Tab Bar */}
-          {availableAcademicYears.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => setSelectedAcademicYear('')}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                  selectedAcademicYear === ''
-                    ? 'bg-indigo-600 text-white border-indigo-600'
-                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                }`}
-              >
-                All Years
-              </button>
-              {availableAcademicYears.map(({ year, count }) => (
-                <button
-                  key={year}
-                  onClick={() => setSelectedAcademicYear(year)}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                    selectedAcademicYear === year
-                      ? 'bg-indigo-600 text-white border-indigo-600'
-                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  {year}
-                  <span className={`ml-1.5 text-xs ${selectedAcademicYear === year ? 'text-indigo-200' : 'text-gray-400'}`}>
-                    {count}
-                  </span>
-                </button>
-              ))}
+      <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="min-w-0">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Department view">
+              <Button type="button" variant={viewMode === 'years' ? 'primary' : 'ghost'} aria-pressed={viewMode === 'years'} onClick={() => setViewMode('years')}>By year</Button>
+              <Button type="button" variant={viewMode === 'all' ? 'primary' : 'ghost'} aria-pressed={viewMode === 'all'} onClick={() => setViewMode('all')}>All studios</Button>
             </div>
-          )}
-
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden" style={{ height: 620 }}>
-            {yearNodes.every((n) => n.count === 0) && yearNodes.length > 0 ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <p className="text-gray-500 text-lg font-medium">No studios yet</p>
-                  <p className="text-gray-400 text-sm mt-1">
-                    {selectedAcademicYear ? `No published studios for ${selectedAcademicYear}` : 'No published studios in this department'}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <BubbleNetwork nodes={yearNodes} onNodeClick={handleNodeClick} />
-            )}
+            {academicYears.length > 0 && <div className="w-full sm:ml-auto sm:w-56"><label htmlFor="department-academic-year" className="mb-1 block text-xs font-semibold">Academic year</label><Select id="department-academic-year" value={selectedAcademicYear} onChange={(event) => setSelectedAcademicYear(event.target.value)}><option value="">All years</option>{academicYears.map(({ year, count }) => <option key={year} value={year}>{year} ({count})</option>)}</Select></div>}
+            {viewMode === 'all' && <div className="w-full sm:w-48"><label htmlFor="programme-year" className="mb-1 block text-xs font-semibold">Programme year</label><Select id="programme-year" value={yearFilter} onChange={(event) => setYearFilter(event.target.value)}>{uniqueYears.map((year) => <option key={year}>{year}</option>)}</Select></div>}
           </div>
+
+          <section aria-label={`${departmentName} network`} className="min-h-[34rem] overflow-hidden rounded-kova-lg border border-border bg-kova-forest sm:min-h-[40rem]">
+            {loadState === 'loading' ? <div className="flex min-h-[34rem] items-center justify-center p-4"><StatusState status="loading" title={`Loading ${departmentName} studios`} /></div>
+              : loadState === 'error' ? <div className="flex min-h-[34rem] items-center justify-center p-4"><StatusState status="error" title="Could not load department studios" description="Try again without changing your filters." action={<Button type="button" onClick={() => void loadResults()}>Try again</Button>} className="w-full max-w-lg" /></div>
+                : nodes.length === 0 ? <div className="flex min-h-[34rem] items-center justify-center p-4"><EmptyState title="No studios match these filters" description="Choose another year or check back when studios are published." icon={<Network className="h-8 w-8" aria-hidden="true" />} className="w-full max-w-lg" /></div>
+                  : <BubbleNetwork nodes={nodes} onNodeClick={(node) => { if (node.url) window.location.href = node.url }} />}
+          </section>
         </div>
 
-        <aside className="space-y-4">
-          <div className="bg-white rounded-2xl shadow p-6 border border-gray-100">
-            <div className={`text-sm font-semibold uppercase ${meta.accent}`}>{meta.name} Program</div>
-            <h3 className="text-xl font-bold text-gray-900 mt-1">Studios by Year</h3>
-            <p className="text-gray-600 text-sm mt-1">WIT Design Network</p>
-            <div className="mt-4 space-y-2 text-sm">
-              {years.map((y) => (
-                <div className="flex justify-between" key={y.slug}>
-                  <span className="text-gray-600">{y.year}</span>
-                  <span className="text-gray-900 font-semibold">{y.studioCount}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Year Colors Legend */}
-          <div className="bg-white rounded-2xl shadow p-6 border border-gray-100">
-            <h4 className="text-sm font-semibold text-gray-900 mb-3">Year Colors</h4>
-            <div className="space-y-2">
-              {Object.entries(YEAR_COLORS).map(([year, color]) => (
-                <div key={year} className="flex items-center gap-2 text-sm">
-                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
-                  <span className="text-gray-600">{year}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </aside>
+        <aside><Card><p className="font-mono text-xs uppercase tracking-[0.16em] text-accent">Programme summary</p><h2 className="mt-2 break-words text-xl font-bold">{viewMode === 'years' ? 'Studios by year' : 'Published studios'}</h2><dl className="mt-4 space-y-2 text-sm">{viewMode === 'years' ? years.map((year) => <div key={year.slug} className="flex justify-between gap-4"><dt>{year.year}</dt><dd className="font-bold">{year.studioCount}</dd></div>) : <div className="flex justify-between gap-4"><dt>Visible studios</dt><dd className="font-bold">{filteredStudios.length}</dd></div>}</dl></Card></aside>
       </main>
     </div>
   )

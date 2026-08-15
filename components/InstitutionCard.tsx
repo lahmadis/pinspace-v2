@@ -1,9 +1,10 @@
 'use client'
 
-import { motion } from 'framer-motion'
-import Link from 'next/link'
 import Image from 'next/image'
-import { Building2, Briefcase } from 'lucide-react'
+import Link from 'next/link'
+import { Briefcase, Building2, ArrowUpRight } from 'lucide-react'
+
+import { Badge, Card } from '@/components/ui'
 
 export interface Institution {
   id: string
@@ -20,55 +21,41 @@ interface InstitutionCardProps {
   index?: number
 }
 
-export default function InstitutionCard({ institution, index = 0 }: InstitutionCardProps) {
+export default function InstitutionCard({ institution }: InstitutionCardProps) {
   const { name, slug, type, logo_url, studio_count, student_count } = institution
   const isUniversity = type === 'university'
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-40px' }}
-      transition={{ duration: 0.4, delay: index * 0.05 }}
-      className="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-4 hover:shadow-md transition-shadow duration-200"
+    <Link
+      href={`/explore?institution_slug=${slug}`}
+      className="group block h-full min-w-0 rounded-kova-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
     >
-      {/* Logo / Fallback */}
-      <div className="flex items-start justify-between">
-        <div className="w-12 h-12 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-          {logo_url ? (
-            <Image src={logo_url} alt={name} width={48} height={48} className="object-contain w-full h-full p-1" />
-          ) : isUniversity ? (
-            <Building2 className="w-6 h-6 text-gray-400" />
-          ) : (
-            <Briefcase className="w-6 h-6 text-gray-400" />
-          )}
+      <Card className="flex h-full min-w-0 flex-col gap-4 transition-[transform,box-shadow] group-hover:-translate-y-0.5 group-hover:shadow-[var(--shadow-raised)]">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-kova border border-border bg-background-lighter">
+            {logo_url ? (
+              <Image src={logo_url} alt="" width={48} height={48} className="h-full w-full object-contain p-1" />
+            ) : isUniversity ? (
+              <Building2 className="h-6 w-6 text-accent" aria-hidden="true" />
+            ) : (
+              <Briefcase className="h-6 w-6 text-accent" aria-hidden="true" />
+            )}
+          </span>
+          <Badge variant={isUniversity ? 'accent' : 'warning'}>{isUniversity ? 'University' : 'Firm'}</Badge>
         </div>
 
-        {/* Type badge */}
-        <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-          isUniversity
-            ? 'bg-blue-50 text-blue-600'
-            : 'bg-amber-50 text-amber-600'
-        }`}>
-          {isUniversity ? 'University' : 'Firm'}
+        <div className="min-w-0">
+          <h3 className="break-words text-base font-bold leading-snug text-text-primary">{name}</h3>
+          <p className="mt-1 break-words text-sm text-text-secondary">
+            {studio_count} {studio_count === 1 ? 'studio' : 'studios'} · {student_count} {student_count === 1 ? 'student' : 'students'}
+          </p>
+        </div>
+
+        <span className="mt-auto inline-flex min-h-11 items-center gap-2 self-start font-semibold text-accent">
+          Explore institution
+          <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
         </span>
-      </div>
-
-      {/* Name */}
-      <div>
-        <h3 className="font-semibold text-gray-900 text-base leading-snug">{name}</h3>
-        <p className="text-sm text-gray-400 mt-1">
-          {studio_count} {studio_count === 1 ? 'studio' : 'studios'} · {student_count} {student_count === 1 ? 'student' : 'students'}
-        </p>
-      </div>
-
-      {/* CTA */}
-      <Link
-        href={`/explore?institution_slug=${slug}`}
-        className="mt-auto self-start text-sm font-medium text-primary hover:text-primary-light transition-colors"
-      >
-        Enter →
-      </Link>
-    </motion.div>
+      </Card>
+    </Link>
   )
 }

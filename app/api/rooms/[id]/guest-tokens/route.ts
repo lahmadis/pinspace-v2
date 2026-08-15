@@ -31,22 +31,20 @@ async function requireRoomOwner(
   return { ok: true }
 }
 
-async function requireSession(): Promise<{ userId: string } | { error: NextResponse }> {
-  const supabase = supabaseServer()
-  const { data: { session }, error } = await supabase.auth.getSession()
-  if (error) return { error: NextResponse.json({ error: 'Failed to get session' }, { status: 500 }) }
-  const userId = session?.user?.id
-  if (!userId) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
-  return { userId }
+async function requireVerifiedUser(): Promise<{ userId: string } | { error: NextResponse }> {
+  const supabase = await supabaseServer()
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error || !user?.id) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
+  return { userId: user.id }
 }
 
 // POST — create a guest token for the room.
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const roomId = params.id
-  const auth = await requireSession()
+  const roomId = (await params).id
+  const auth = await requireVerifiedUser()
   if ('error' in auth) return auth.error
   const admin = supabaseServiceRole()
   const gate = await requireRoomOwner(admin, roomId, auth.userId)
@@ -100,10 +98,10 @@ export async function POST(
 // GET — list the room's guest tokens (owner only). Token VALUE is not returned.
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const roomId = params.id
-  const auth = await requireSession()
+  const roomId = (await params).id
+  const auth = await requireVerifiedUser()
   if ('error' in auth) return auth.error
   const admin = supabaseServiceRole()
   const gate = await requireRoomOwner(admin, roomId, auth.userId)
@@ -135,10 +133,10 @@ export async function GET(
 // PATCH — revoke a token by id (owner only).
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const roomId = params.id
-  const auth = await requireSession()
+  const roomId = (await params).id
+  const auth = await requireVerifiedUser()
   if ('error' in auth) return auth.error
   const admin = supabaseServiceRole()
   const gate = await requireRoomOwner(admin, roomId, auth.userId)
@@ -172,10 +170,10 @@ export async function PATCH(
 // NULL and the rows render from the stored author_name (see migration 029).
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const roomId = params.id
-  const auth = await requireSession()
+  const roomId = (await params).id
+  const auth = await requireVerifiedUser()
   if ('error' in auth) return auth.error
   const admin = supabaseServiceRole()
   const gate = await requireRoomOwner(admin, roomId, auth.userId)

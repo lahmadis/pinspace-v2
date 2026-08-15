@@ -6,7 +6,6 @@ const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
 // TEMP diagnostic — always-on (NOT devLog-gated) tracing of placedBoards3D
 // rebuilds and the lightbox link read/write path. Remove once root-caused.
 const postrace = (...args: unknown[]) => {
-  // eslint-disable-next-line no-console
   console.log('[POSTRACE]', new Date().toISOString(), ...args)
 }
 
@@ -16,6 +15,7 @@ import { supabase } from '@/lib/supabase/client'
 import { Board, FloorTable } from '@/types'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import WallSystem from './WallSystem'
+import { SceneErrorBoundary } from './SceneErrorBoundary'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry } from './CameraController'
@@ -37,7 +37,10 @@ import ModelViewer from './ModelViewer'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import { toast } from '@/lib/toast'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
+import { Dialog } from '@/components/ui'
+import { ENGINE_PALETTE } from './enginePalette'
 
+const STUDIO_SCENE_BACKGROUND = ENGINE_PALETTE.sceneNeutral
 
 interface WallDimensions {
   height: number
@@ -270,8 +273,12 @@ function SceneContent({
   suppressCallouts: boolean
 }) {
   useThree()
-  const maxWallHeightRef = useRef<number>(96)
-  const [targetY, setTargetY] = useState<number>(48) // inches; focus point for zoom
+  const targetY = useMemo(() => {
+    const maxWallHeight = wallConfig?.walls?.length
+      ? Math.max(...wallConfig.walls.map((wall) => wall.height)) * 12
+      : 96
+    return Math.max(60, Math.min(maxWallHeight * 0.65, maxWallHeight)) || 60
+  }, [wallConfig])
   const sceneInitLoggedRef = useRef(false)
   
 
@@ -285,6 +292,8 @@ function SceneContent({
   useFrame(() => {
     const controlsObj = orbitControlsRef.current?.get ? orbitControlsRef.current.get() : orbitControlsRef.current
     if (controlsObj?.mouseButtons) {
+      // OrbitControls is an external mutable Three.js controller configured on each frame.
+      // eslint-disable-next-line react-hooks/immutability
       ;(controlsObj as { enableDamping?: boolean; dampingFactor?: number }).enableDamping = false
       ;(controlsObj as { enableDamping?: boolean; dampingFactor?: number }).dampingFactor = 0
       controlsObj.mouseButtons = {
@@ -303,14 +312,14 @@ function SceneContent({
       controlsObj.target.set(0, targetY, 0)
       controlsObj.update?.()
     }
-  }, [targetY])
+  }, [targetY, orbitControlsRef])
 
   // Removed aggressive wheel clamping; let OrbitControls zoom to cursor naturally
   
   return (
     <>
       {/* Background matches wall color */}
-      <color attach="background" args={['#D8DEFF']} />
+      <color attach="background" args={[STUDIO_SCENE_BACKGROUND]} />
       {/* Ambient light - reduced for better shadow definition */}
       <ambientLight intensity={0.5} />
       
@@ -336,11 +345,11 @@ function SceneContent({
       <directionalLight position={[0, 25, 0]} intensity={0.4} />
       
       {/* Rim lighting for wall edges - enhances depth */}
-      <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
-      <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
+      <directionalLight position={[-8, 10, -12]} intensity={0.3} color={ENGINE_PALETTE.paper} />
+      <directionalLight position={[8, 10, 12]} intensity={0.3} color={ENGINE_PALETTE.paper} />
       
       {/* Hemisphere light for natural ambient */}
-      <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
+      <hemisphereLight args={[ENGINE_PALETTE.paper, ENGINE_PALETTE.groundLight, 0.3]} />
       
       {/* Floor is now created dynamically in WallSystem based on wall configuration */}
       
@@ -562,13 +571,6 @@ function SceneContent({
         const cameraHeight = targetHeight + (baseDistance * Math.sin(elevationAngle))
         const cameraX = horizontalDistance * Math.sin(azimuthAngle)
         const cameraZ = horizontalDistance * Math.cos(azimuthAngle)
-        
-        maxWallHeightRef.current = maxWallHeightInches
-
-        // Keep target in sync for OrbitControls updates
-        if (targetY !== targetHeight) {
-          setTargetY(targetHeight)
-        }
         
         return (
           <>
@@ -812,6 +814,8 @@ export default function StudioRoom(props: StudioRoomProps) {
       props.onFloorEditorOpenChange?.(open)
       if (props.floorEditorOpen === undefined) setFloorEditorOpenInternal(open)
     },
+    // These two controlled/uncontrolled props are the intentional callback boundary.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [props.onFloorEditorOpenChange, props.floorEditorOpen]
   )
   const [modelViewerUrl, setModelViewerUrl] = useState<string | null>(null)
@@ -907,6 +911,8 @@ export default function StudioRoom(props: StudioRoomProps) {
   // Sync tables when wall config loads or studio changes (strip blob URLs so GLTF never sees them)
   useEffect(() => {
     const configTables = (props.wallConfig as { tables?: FloorTable[] }).tables
+    // Local editor state intentionally mirrors a newly loaded external room config.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTables(sanitizeTables(configTables))
   }, [props.studioId, props.wallConfig, sanitizeTables])
 
@@ -915,6 +921,8 @@ export default function StudioRoom(props: StudioRoomProps) {
   // through here — last-writer-wins, same coarse behavior as tables.
   useEffect(() => {
     const raw = (props.wallConfig as { textItems?: WallTextItem[] }).textItems
+    // Local text editor state intentionally mirrors a newly loaded external room config.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTextItems(Array.isArray(raw) ? raw : [])
   }, [props.studioId, props.wallConfig])
 
@@ -923,6 +931,8 @@ export default function StudioRoom(props: StudioRoomProps) {
   // become the copy source next time a wall is opened.
   useEffect(() => {
     if (editingWall === null) {
+      // Selection is scoped to an edit session and must be retired when that session closes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedTextId(null)
       clearBoardSelection()
     }
@@ -990,7 +1000,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         toast.error(`Could not save studio model layout. ${result.error.message}`)
       }
     })()
-  }, [props.studioId, props.workspaceId, props.wallConfig, props.wallConfigWriter, props.canEditWalls, tables, textItems])
+  }, [props.studioId, props.workspaceId, props.wallConfig, props.wallConfigWriter, props.canEditWalls, tables, textItems, setFloorEditorOpen])
 
   /**
    * Wall indices for the floor editor's board-safety guard. Just the indices —
@@ -1073,6 +1083,8 @@ export default function StudioRoom(props: StudioRoomProps) {
         return { ok: false }
       }
     },
+    // Individual API props are the stable persistence boundary; the full props object would recreate the callback every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [props.studioId, props.onBoardUpdate]
   )
 
@@ -1276,6 +1288,8 @@ export default function StudioRoom(props: StudioRoomProps) {
   // page can broadcast it via presence. Additive — onEditModeChange is unchanged.
   useEffect(() => {
     props.onEditingWallChange?.(editingWall)
+    // The callback prop is listed explicitly; the full props object would resubscribe on unrelated presentation changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingWall, props.onEditingWallChange])
 
   /**
@@ -1512,6 +1526,8 @@ export default function StudioRoom(props: StudioRoomProps) {
     } catch {
       return false
     }
+    // Individual API props are the stable persistence boundary; the full props object would recreate the callback every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.roomId, props.onBoardUpdate])
 
   const handleLightboxNavigate = (direction: 'prev' | 'next') => {
@@ -1551,6 +1567,8 @@ export default function StudioRoom(props: StudioRoomProps) {
   useEffect(() => {
     if (!props.isFollowing) return
     const id = props.followLightboxBoardId ?? null
+    // Follower lightbox state intentionally mirrors the external presenter state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!id) { setLightboxBoard(null); return }
     setLightboxBoard((prev) => {
       if (prev?.id === id) return prev
@@ -2193,24 +2211,17 @@ export default function StudioRoom(props: StudioRoomProps) {
     <>
       {/* Full-screen 3D model viewer overlay (keeps blob URLs valid) */}
       {modelViewerUrl && (
-        <div className="fixed inset-0 z-[100] flex flex-col bg-white">
-          <div className="flex-none flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white/95">
-            <span className="text-sm font-medium text-gray-700">3D model</span>
-            <button
-              type="button"
-              onClick={() => setModelViewerUrl(null)}
-              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
-              aria-label="Close"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <div className="flex-1 min-h-0">
+        <Dialog
+          open
+          onOpenChange={(open) => { if (!open) setModelViewerUrl(null) }}
+          title="3D model"
+          description="Interactive model viewer. Use pointer, touch, or the keyboard controls provided by the viewer."
+          className="flex h-[min(90dvh,56rem)] max-w-6xl flex-col motion-reduce:transition-none [&>button.absolute]:h-11 [&>button.absolute]:w-11 [&>div.mt-5]:min-h-0 [&>div.mt-5]:flex-1"
+        >
+          <div className="h-full min-h-0 overflow-hidden rounded-kova bg-primary-dark">
             <ModelViewer modelUrl={modelViewerUrl} />
           </div>
-        </div>
+        </Dialog>
       )}
 
       {floorEditorOpen && (
@@ -2230,14 +2241,14 @@ export default function StudioRoom(props: StudioRoomProps) {
 
       {/* Drag-and-drop overlay — only shown when user is in wall edit mode and dragging files */}
       {isDragOver && showEditUI && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none">
-          <div className="absolute inset-4 rounded-2xl border-4 border-dashed border-indigo-400 bg-indigo-600/20" />
-          <div className="relative bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl px-10 py-8 flex flex-col items-center gap-3">
-            <svg className="w-12 h-12 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="pointer-events-none fixed inset-0 z-[200] flex items-center justify-center p-4" aria-hidden="true">
+          <div className="absolute inset-4 rounded-kova-lg border-4 border-dashed border-primary bg-primary/20" />
+          <div className="relative flex max-w-md flex-col items-center gap-3 rounded-kova-lg border border-border bg-background-light/95 px-6 py-8 text-center shadow-[var(--shadow-raised)] backdrop-blur-sm sm:px-10">
+            <svg className="h-12 w-12 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
-            <p className="text-indigo-700 font-semibold text-xl">Drop to add to wall</p>
-            <p className="text-indigo-400 text-sm">JPG, PNG, or PDF · max 75 MB each</p>
+            <p className="text-xl font-semibold text-text-primary">Drop to add to wall</p>
+            <p className="text-sm text-text-secondary">JPG, PNG, or PDF · max 75 MB each</p>
           </div>
         </div>
       )}
@@ -2278,54 +2289,65 @@ export default function StudioRoom(props: StudioRoomProps) {
           this a non-owner could add a label, watch it appear, and have it vanish
           on reload — the write no-ops silently. Don't offer what can't be saved. */}
       {showEditUI && editingWall !== null && props.canEditWalls && (
-        <div className="fixed left-6 top-48 z-50 flex flex-col gap-2 w-56">
+        <section
+          aria-label="Wall text controls"
+          className="fixed bottom-[calc(max(1rem,env(safe-area-inset-bottom))+4rem)] left-[max(1rem,env(safe-area-inset-left))] z-50 flex max-h-[42dvh] w-[min(20rem,calc(100vw-2rem))] flex-col gap-2 overflow-y-auto rounded-kova sm:bottom-auto sm:left-64 sm:top-32"
+        >
           <button
+            type="button"
             onClick={handleAddText}
-            className="px-4 py-2 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-lg text-sm font-medium flex items-center justify-center gap-2"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-kova border border-kova-ink bg-primary px-4 py-2 text-sm font-semibold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
           >
-            <span className="text-lg leading-none text-indigo-600">＋</span>
+            <span className="text-lg leading-none" aria-hidden="true">＋</span>
             Add text
           </button>
 
           {(() => {
             const sel = textItems.find((t) => t.id === selectedTextId && t.wallIndex === editingWall)
             if (!sel) return null
+            const textInputId = `wall-text-${sel.id}`
             return (
-              <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-3 flex flex-col gap-2">
-                <label className="text-xs font-medium text-gray-500">Text</label>
+              <div className="flex flex-col gap-3 rounded-kova border border-border bg-background-light p-3 text-text-primary shadow-[var(--shadow-raised)]">
+                <label htmlFor={textInputId} className="text-sm font-semibold text-text-primary">Text</label>
                 <input
+                  id={textInputId}
                   value={sel.text}
                   onChange={(e) => handleTextContentChange(sel.id, e.target.value)}
                   placeholder="Label text"
                   maxLength={200}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="min-h-11 w-full rounded-kova border border-border bg-background-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 />
-                <label className="text-xs font-medium text-gray-500 mt-1">Font size (in)</label>
-                <div className="flex items-center gap-1">
+                <span className="text-sm font-semibold text-text-primary">Font size in inches</span>
+                <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Font size in inches">
                   <button
+                    type="button"
                     onClick={() => handleTextFontSizeChange(sel.id, Math.max(2, Math.round(sel.fontSize) - 2))}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50"
+                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova border border-border bg-background-light text-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     aria-label="Decrease font size"
                   >
                     −
                   </button>
-                  <span className="w-9 text-center text-sm tabular-nums">{Math.round(sel.fontSize)}</span>
+                  <output className="w-9 text-center text-sm tabular-nums" aria-live="polite">{Math.round(sel.fontSize)}</output>
                   <button
+                    type="button"
                     onClick={() => handleTextFontSizeChange(sel.id, Math.min(96, Math.round(sel.fontSize) + 2))}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50"
+                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova border border-border bg-background-light text-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     aria-label="Increase font size"
                   >
                     ＋
                   </button>
-                  <div className="flex gap-1 ml-1">
+                  <div className="flex flex-wrap gap-1 sm:ml-1">
                     {[6, 12, 24, 48].map((sz) => (
                       <button
+                        type="button"
                         key={sz}
                         onClick={() => handleTextFontSizeChange(sel.id, sz)}
-                        className={`px-1.5 py-1 rounded text-xs border ${
+                        aria-pressed={Math.round(sel.fontSize) === sz}
+                        aria-label={`Set font size to ${sz} inches`}
+                        className={`min-h-11 min-w-11 rounded-kova border px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                           Math.round(sel.fontSize) === sz
-                            ? 'bg-indigo-600 text-white border-indigo-600'
-                            : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                            ? 'border-kova-ink bg-primary text-kova-ink'
+                            : 'border-border bg-background-light text-text-secondary hover:bg-background-lighter'
                         }`}
                       >
                         {sz}
@@ -2334,18 +2356,20 @@ export default function StudioRoom(props: StudioRoomProps) {
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => handleRemoveText(sel.id)}
-                  className="mt-1 px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded text-sm hover:bg-red-100 transition-colors"
+                  className="min-h-11 rounded-kova border border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger))] px-3 py-2 text-sm font-semibold text-white hover:bg-[rgb(var(--color-danger)/0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
                 >
                   Remove text
                 </button>
               </div>
             )
           })()}
-        </div>
+        </section>
       )}
 
       <div className="w-full h-screen">
+        <SceneErrorBoundary resetKey={props.studioId}>
         <Canvas 
           shadows 
           gl={{ 
@@ -2354,7 +2378,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             premultipliedAlpha: false
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } as any}
-          style={{ background: '#D8DEFF' }}
+          style={{ background: STUDIO_SCENE_BACKGROUND }}
         >
           <CameraController
             orbitControlsRef={orbitControlsRef}
@@ -2378,7 +2402,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             isPresenter={!!props.isPresenter}
             editingWall={editingWall}
           />
-          <LaserPointer laserRef={props.laserRef} color={props.laserColor ?? '#22d3ee'} />
+          <LaserPointer laserRef={props.laserRef} color={props.laserColor ?? ENGINE_PALETTE.cursor} />
           <SceneContent
             {...props}
             orbitControlsRef={orbitControlsRef}
@@ -2424,6 +2448,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             onTableModelClick={handleTableModelClick}
           />
         </Canvas>
+        </SceneErrorBoundary>
       </div>
 
       {/* Right Comment Panel */}
@@ -2454,7 +2479,7 @@ export default function StudioRoom(props: StudioRoomProps) {
       viewportDriven={!!props.isFollowing && lightboxBoard !== null}
       viewportTargetRef={props.lbViewportRef}
       lbCursorRef={props.lbCursorRef}
-      cursorColor={props.laserColor ?? '#22d3ee'}
+      cursorColor={props.laserColor ?? ENGINE_PALETTE.cursor}
       critDirty={props.critDirty}
       traceStreamRef={props.traceStreamRef}
       onLinkSaved={(boardId, linkUrl) => {

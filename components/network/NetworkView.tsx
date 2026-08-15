@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import * as d3 from 'd3'
+import { useRouter } from 'next/navigation'
 import { School } from '@/types'
 import { getYearsBySchool, getStudiosByYear } from '@/lib/mockData'
 
@@ -27,208 +27,67 @@ interface NetworkViewProps {
   onSelectStudio: (studioId: string) => void
 }
 
-export default function NetworkView({
-  schools,
-  selectedSchool,
-  selectedYear,
-  onSelectSchool,
-  onSelectYear,
-}: NetworkViewProps) {
+export default function NetworkView({ schools, selectedSchool, selectedYear, onSelectSchool, onSelectYear }: NetworkViewProps) {
+  const router = useRouter()
   const containerRef = useRef<HTMLDivElement>(null)
   const [nodes, setNodes] = useState<NetworkNode[]>([])
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
+  const [dimensions, setDimensions] = useState({ width: 900, height: 640 })
 
-  // Update dimensions on mount and resize
   useEffect(() => {
     const updateDimensions = () => {
-      if (containerRef.current) {
-        setDimensions({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
-        })
-      }
+      if (!containerRef.current) return
+      setDimensions({ width: containerRef.current.clientWidth || 900, height: containerRef.current.clientHeight || 640 })
     }
-
     updateDimensions()
-    window.addEventListener('resize', updateDimensions)
-    return () => window.removeEventListener('resize', updateDimensions)
+    const observer = new ResizeObserver(updateDimensions)
+    if (containerRef.current) observer.observe(containerRef.current)
+    return () => observer.disconnect()
   }, [])
 
-  // Generate nodes based on selection state
   useEffect(() => {
-    if (dimensions.width === 0) return
-
-    let newNodes: NetworkNode[] = []
-
+    let nextNodes: NetworkNode[]
     if (!selectedSchool) {
-      // Show all schools as bubbles
-      newNodes = schools.map((school) => ({
-        id: school.id,
-        type: 'school' as const,
-        label: school.abbreviation,
-        data: school,
-        radius: 80,
-        color: school.color || '#6366f1',
-      }))
+      nextNodes = schools.map((school) => ({ id: school.id, type: 'school', label: school.abbreviation, data: school, radius: 72, color: school.color || 'rgb(var(--color-primary))' }))
     } else if (!selectedYear) {
-      // Show years for selected school
-      const years = getYearsBySchool(selectedSchool.id)
-      newNodes = years.map((year) => ({
-        id: year.id,
-        type: 'year' as const,
-        label: `Year ${year.year}\n${year.semester}`,
-        data: year,
-        radius: 60,
-        color: '#ec4899',
-      }))
+      nextNodes = getYearsBySchool(selectedSchool.id).map((year) => ({ id: year.id, type: 'year', label: `Year ${year.year} · ${year.semester}`, data: year, radius: 60, color: 'rgb(var(--color-primary))' }))
     } else {
-      // Show studios for selected year
-      const studios = getStudiosByYear(selectedYear)
-      newNodes = studios.map((studio) => ({
-        id: studio.id,
-        type: 'studio' as const,
-        label: studio.name,
-        data: studio,
-        radius: 70,
-        color: '#8b5cf6',
-      }))
+      nextNodes = getStudiosByYear(selectedYear).map((studio) => ({ id: studio.id, type: 'studio', label: studio.name, data: studio, radius: 68, color: 'rgb(var(--color-secondary))' }))
     }
-
-    // Run D3 force simulation to position nodes
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const simulation = d3.forceSimulation(newNodes as any)
-      .force('charge', d3.forceManyBody().strength(100))
+    const simulation = d3.forceSimulation(nextNodes)
+      .force('charge', d3.forceManyBody().strength(80))
       .force('center', d3.forceCenter(dimensions.width / 2, dimensions.height / 2))
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .force('collision', d3.forceCollide().radius((d: any) => (d as NetworkNode).radius + 20))
+      .force('collision', d3.forceCollide<NetworkNode>().radius((node) => node.radius + 24))
       .stop()
+    for (let index = 0; index < 240; index += 1) simulation.tick()
+    queueMicrotask(() => setNodes(nextNodes))
+  }, [dimensions, schools, selectedSchool, selectedYear])
 
-    // Run simulation
-    for (let i = 0; i < 300; ++i) simulation.tick()
-
-    setNodes(newNodes)
-  }, [schools, selectedSchool, selectedYear, dimensions])
-
-  const handleNodeClick = (node: NetworkNode) => {
-    if (node.type === 'school') {
-      onSelectSchool(node.data as School)
-    } else if (node.type === 'year') {
-      onSelectYear(node.id)
-    } else if (node.type === 'studio') {
-      // Navigate to 3D room view (view mode for public network)
-      window.location.href = `/studio/${node.id}/view`
-    }
-  }
-
-  const handleBack = () => {
-    if (selectedYear) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      onSelectYear(null as any)
-    } else if (selectedSchool) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      onSelectSchool(null as any)
-    }
+  const selectNode = (node: NetworkNode) => {
+    if (node.type === 'school') onSelectSchool(node.data as School)
+    else if (node.type === 'year') onSelectYear(node.id)
+    else router.push(`/studio/${node.id}/view`)
   }
 
   return (
-    <div ref={containerRef} className="w-full h-screen relative">
-      {/* Back button */}
+    <section ref={containerRef} aria-label="Network directory" className="relative min-h-[38rem] w-full overflow-hidden rounded-kova-lg bg-kova-forest text-white">
       {(selectedSchool || selectedYear) && (
-        <motion.button
-          initial={{ x: -100, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          className="fixed left-6 top-24 bg-white border border-border rounded-full p-3 hover:bg-background-lighter transition-colors z-10 shadow-md"
-          onClick={handleBack}
-        >
-          <svg
-            className="w-6 h-6 text-text-primary"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M10 19l-7-7m0 0l7-7m-7 7h18"
-            />
-          </svg>
-        </motion.button>
+        <button type="button" onClick={() => selectedYear ? onSelectYear(null as unknown as string) : onSelectSchool(null as unknown as School)} className="absolute left-4 top-4 z-20 min-h-11 rounded-kova border border-white/25 bg-kova-forest/90 px-4 py-2 text-sm font-semibold hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">← Back one level</button>
       )}
-
-      {/* Network nodes */}
-      <svg className="w-full h-full absolute inset-0">
-        <AnimatePresence mode="wait">
-          {nodes.map((node, i) => (
-            <motion.g
-              key={node.id}
-              initial={{ opacity: 0, scale: 0 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0 }}
-              transition={{ delay: i * 0.05, duration: 0.5 }}
-            >
-              {/* Subtle shadow effect */}
-              <circle
-                cx={node.x}
-                cy={node.y}
-                r={node.radius + 3}
-                fill={node.color}
-                opacity="0.15"
-                className="blur-sm"
-              />
-              
-              {/* Main circle */}
-              <circle
-                cx={node.x}
-                cy={node.y}
-                r={node.radius}
-                fill={node.color}
-                stroke="#ffffff"
-                strokeWidth="2"
-                opacity="0.95"
-                className="cursor-pointer transition-all hover:opacity-100 hover:stroke-[3]"
-                onClick={() => handleNodeClick(node)}
-                style={{
-                  filter: 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15))',
-                }}
-              />
-
-              {/* Label */}
-              <text
-                x={node.x}
-                y={node.y}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                fill="white"
-                fontSize={node.type === 'school' ? '20' : '14'}
-                fontWeight="600"
-                className="pointer-events-none"
-                style={{ userSelect: 'none' }}
-              >
-                {node.label.split('\n').map((line, i) => (
-                  <tspan key={i} x={node.x} dy={i === 0 ? 0 : 18}>
-                    {line}
-                  </tspan>
-                ))}
-              </text>
-            </motion.g>
-          ))}
-        </AnimatePresence>
-      </svg>
-
-      {/* Subtle grid background */}
-      <div className="absolute inset-0 pointer-events-none opacity-[0.03]">
-        <div
-          className="w-full h-full"
-          style={{
-            backgroundImage: `
-              linear-gradient(to right, #64748b 1px, transparent 1px),
-              linear-gradient(to bottom, #64748b 1px, transparent 1px)
-            `,
-            backgroundSize: '60px 60px',
-          }}
-        />
-      </div>
-    </div>
+      <div role="img" aria-label={`Network map with ${nodes.length} items. Items are also available as keyboard buttons.`} className="absolute inset-0 opacity-20" style={{ backgroundImage: 'linear-gradient(to right, rgb(var(--color-paper) / 0.35) 1px, transparent 1px), linear-gradient(to bottom, rgb(var(--color-paper) / 0.35) 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
+      <ul className="absolute inset-0">
+        {nodes.map((node) => {
+          const width = Math.min(176, Math.max(112, node.radius * 2))
+          const left = Math.max(8, Math.min(dimensions.width - width - 8, (node.x ?? dimensions.width / 2) - width / 2))
+          const top = Math.max(72, Math.min(dimensions.height - width - 8, (node.y ?? dimensions.height / 2) - width / 2))
+          return (
+            <li key={node.id} className="absolute" style={{ left, top, width, height: width }}>
+              <button type="button" onClick={() => selectNode(node)} aria-label={`Open ${node.label}`} className="flex h-full w-full items-center justify-center rounded-full border-2 border-white/55 p-4 text-center text-sm font-bold text-kova-ink shadow-[var(--shadow-soft)] transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-kova-forest motion-reduce:transform-none" style={{ backgroundColor: node.color }}>
+                <span className="break-words">{node.label}</span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }

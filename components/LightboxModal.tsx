@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable react-hooks/exhaustive-deps, react-hooks/immutability, react-hooks/purity, react-hooks/refs, react-hooks/set-state-in-effect, @next/next/no-img-element -- This legacy media surface intentionally coordinates imperative canvas/viewport refs and staged effects. This pass freezes those contracts and changes modal chrome only. */
+
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
@@ -16,8 +18,16 @@ import type { TraceStreamEntry } from '@/components/3d/CameraController'
 import { toast } from '@/lib/toast'
 import { Download, ExternalLink } from 'lucide-react'
 
-// Trace ink palette + brush widths (width = fraction of image width).
-const TRACE_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6']
+// Canvas scene colors keep concurrent trace authors distinct on light and dark media.
+export const MEDIA_ANNOTATION_PALETTE = {
+  trace: ['#EF4444', '#F59E0B', '#22C55E', '#3B82F6'],
+  cursor: '#22D3EE',
+  fallbackAuthor: '#94A3B8',
+} as const
+const TRACE_COLORS = MEDIA_ANNOTATION_PALETTE.trace
+const DEFAULT_MEDIA_CURSOR_COLOR = MEDIA_ANNOTATION_PALETTE.cursor
+const DEFAULT_TRACE_AUTHOR_COLOR = MEDIA_ANNOTATION_PALETTE.fallbackAuthor
+const MEDIA_CURSOR_HALO = '0 0 0 2px rgba(255,255,255,0.75)'
 const TRACE_WIDTHS: Array<{ label: string; value: number }> = [
   { label: 'Thin', value: 0.004 },
   { label: 'Thick', value: 0.01 },
@@ -194,22 +204,24 @@ function getInitials(name: string): string {
 
 function getAvatarColor(name: string): string {
   const colors = [
-    'bg-purple-500',
-    'bg-blue-500',
-    'bg-green-500',
-    'bg-yellow-500',
-    'bg-pink-500',
-    'bg-indigo-500',
-    'bg-red-500',
-    'bg-teal-500',
+    'bg-primary-dark',
+    'bg-kova-green',
+    'bg-kova-forest',
+    'bg-accent-dark',
+    'bg-primary',
+    'bg-accent',
+    'bg-text-primary',
+    'bg-primary-light',
   ]
   const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, hideCallouts = false, currentUserRole = null, canReorder = false, onReorder, onLinkSaved, onBoardSizeSaved, onTitleSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, hideCallouts = false, currentUserRole = null, canReorder = false, onReorder, onLinkSaved, onBoardSizeSaved, onTitleSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = DEFAULT_MEDIA_CURSOR_COLOR, critDirty, traceStreamRef }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const restoreFocusRef = useRef<HTMLElement | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(false)
@@ -220,6 +232,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const [commentsAccessible, setCommentsAccessible] = useState(false)
   const [newComment, setNewComment] = useState('')
   const [posting, setPosting] = useState(false)
+  const postingRef = useRef(false)
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [editingContent, setEditingContent] = useState('')
   const [savingCommentId, setSavingCommentId] = useState<string | null>(null)
@@ -328,9 +341,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const [composer, setComposer] = useState<{ fx: number; fy: number } | null>(null)
   const [composerText, setComposerText] = useState('')
   const [composerPosting, setComposerPosting] = useState(false)
+  const composerPostingRef = useRef(false)
   const [activeThreadRootId, setActiveThreadRootId] = useState<string | null>(null)
   const [replyText, setReplyText] = useState('')
   const [replyPosting, setReplyPosting] = useState(false)
+  const replyPostingRef = useRef(false)
   const [showResolved, setShowResolved] = useState(true)
   const [editingCalloutId, setEditingCalloutId] = useState<string | null>(null)
   const [editingCalloutText, setEditingCalloutText] = useState('')
@@ -354,7 +369,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const [myStrokes, setMyStrokes] = useState<TraceStroke[]>([])      // local authoritative copy of MY strokes
   const [drawingPoints, setDrawingPoints] = useState<[number, number][] | null>(null) // in-progress stroke
   const [hiddenTraceAuthors, setHiddenTraceAuthors] = useState<Set<string>>(new Set())
-  const [traceColor, setTraceColor] = useState(TRACE_COLORS[0])
+  const [traceColor, setTraceColor] = useState<string>(TRACE_COLORS[0])
   const [traceWidth, setTraceWidth] = useState(TRACE_WIDTHS[0].value)
   const [pendingClearTrace, setPendingClearTrace] = useState(false)
   const [tracesLoaded, setTracesLoaded] = useState(false)
@@ -376,6 +391,51 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   useEffect(() => () => { if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current) }, [])
 
   const isOpen = board !== null
+
+  // This lightbox has layered Escape behavior (trace → callout → zoom → close),
+  // so it intentionally keeps its own modal shell instead of wrapping the
+  // shared Dialog. Focus containment/restoration is scoped to chrome only and
+  // leaves all board transforms and mutation behavior untouched.
+  useEffect(() => {
+    if (!isOpen) return
+    const dialog = dialogRef.current
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+    dialog?.focus()
+
+    const containFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !dialog) return
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true')
+      if (focusable.length === 0) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && (
+        document.activeElement === dialog
+        || document.activeElement === first
+        || !dialog.contains(document.activeElement)
+      )) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    window.addEventListener('keydown', containFocus)
+    return () => {
+      window.removeEventListener('keydown', containFocus)
+      restoreFocusRef.current?.focus()
+      restoreFocusRef.current = null
+    }
+  }, [isOpen])
   const [profileFullName, setProfileFullName] = useState<string | null>(null)
   // Platform superadmin flag for the signed-in user, read from their own
   // user_profiles row via /api/user-profile (already fetched below for the
@@ -513,7 +573,6 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     fetchComments()
     fetchBoardComments()
     fetchBoardTraces()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board?.id])
 
   useEffect(() => {
@@ -872,7 +931,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       if (!res.ok) {
         setBoardComments([])
         setCalloutsAccessible(false)
-        setCalloutError(data?.error || 'Failed to load callouts')
+        setCalloutError('Failed to load callouts')
         return
       }
       setBoardComments(data.comments || [])
@@ -888,7 +947,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // Create a root pin at an image-fraction anchor. Optimistic, reconciled with
   // the server row on success.
   const handleSubmitCallout = async () => {
-    if (!board || !composer || composerPosting) return
+    if (!board || !composer || composerPostingRef.current) return
     const text = composerText.trim()
     if (!text) return
     if (!canComment) { setCalloutError('You don’t have comment access'); return }
@@ -901,6 +960,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       authorId: isGuest ? null : (user?.id ?? null), guestTokenId: isGuest ? guestTokenId : null, authorName,
       resolved: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     }
+    composerPostingRef.current = true
     setComposerPosting(true)
     setCalloutError(null)
     setBoardComments((prev) => [...prev, optimistic])
@@ -914,7 +974,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.comment) {
         setBoardComments((prev) => prev.filter((c) => c.id !== tempId))
-        setCalloutError(data?.error || 'Failed to add callout')
+        setCalloutError('Failed to add callout')
         return
       }
       setBoardComments((prev) => prev.map((c) => (c.id === tempId ? data.comment : c)))
@@ -927,13 +987,14 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       setBoardComments((prev) => prev.filter((c) => c.id !== tempId))
       setCalloutError('Failed to add callout')
     } finally {
+      composerPostingRef.current = false
       setComposerPosting(false)
     }
   }
 
   // Reply to a root thread (no anchors). Optimistic.
   const handleSubmitReply = async (rootId: string) => {
-    if (!board || replyPosting) return
+    if (!board || replyPostingRef.current) return
     const text = replyText.trim()
     if (!text) return
     if (!canComment) { setCalloutError('You don’t have comment access'); return }
@@ -944,6 +1005,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       authorId: isGuest ? null : (user?.id ?? null), guestTokenId: isGuest ? guestTokenId : null, authorName,
       resolved: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     }
+    replyPostingRef.current = true
     setReplyPosting(true)
     setCalloutError(null)
     setBoardComments((prev) => [...prev, optimistic])
@@ -957,7 +1019,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.comment) {
         setBoardComments((prev) => prev.filter((c) => c.id !== tempId))
-        setCalloutError(data?.error || 'Failed to reply')
+        setCalloutError('Failed to reply')
         return
       }
       setBoardComments((prev) => prev.map((c) => (c.id === tempId ? data.comment : c)))
@@ -968,6 +1030,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       setBoardComments((prev) => prev.filter((c) => c.id !== tempId))
       setCalloutError('Failed to reply')
     } finally {
+      replyPostingRef.current = false
       setReplyPosting(false)
     }
   }
@@ -986,7 +1049,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.comment) {
-        setCalloutError(data?.error || 'Failed to edit callout')
+        setCalloutError('Failed to edit callout')
         return
       }
       setBoardComments((prev) => prev.map((c) => (c.id === id ? data.comment : c)))
@@ -1013,9 +1076,9 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         headers: guestHeader(),
         credentials: 'include',
       })
-      const data = await res.json().catch(() => ({}))
+      await res.json().catch(() => ({}))
       if (!res.ok) {
-        setCalloutError(data?.error || 'Failed to delete callout')
+        setCalloutError('Failed to delete callout')
         return
       }
       setBoardComments((prev) => prev.filter((c) => c.id !== id && c.parentId !== id))
@@ -1044,7 +1107,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       if (!res.ok || !data.comment) {
         // Roll back.
         setBoardComments((prev) => prev.map((c) => (c.id === rootId ? { ...c, resolved: !nextResolved } : c)))
-        setCalloutError(data?.error || 'Failed to update callout')
+        setCalloutError('Failed to update callout')
         return
       }
       setBoardComments((prev) => prev.map((c) => (c.id === rootId ? data.comment : c)))
@@ -1322,7 +1385,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       for (const e of stream.values()) {
         if (e.boardId !== board.id || e.authorKey === myKey) continue
         if (hiddenTraceAuthors.has(e.authorKey)) continue
-        const color = e.color || '#94a3b8'
+        const color = e.color || DEFAULT_TRACE_AUTHOR_COLOR
         for (const pts of e.completed) drawStroke({ color, width: STREAM_WIDTH, points: pts })
         if (e.live && e.live.length) drawStroke({ color, width: STREAM_WIDTH, points: e.live })
       }
@@ -1532,17 +1595,17 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     handledCritSeqRef.current = critDirty.seq
     if (critDirty.trace) fetchBoardTraces()
     if (critDirty.callout) fetchBoardComments()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [critDirty, board?.id, drawingPoints !== null, composerPosting, replyPosting, savingCalloutId, deletingCalloutId])
 
   const handlePost = async () => {
-    if (!board || !newComment.trim() || posting) return
+    if (!board || !newComment.trim() || postingRef.current) return
     if (!user) {
       setError('Sign in to post a comment')
       return
     }
 
     try {
+      postingRef.current = true
       setPosting(true)
       setError(null)
       const url = isDemoMode
@@ -1574,6 +1637,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       console.error('Error posting comment:', err)
       setError('Failed to post comment')
     } finally {
+      postingRef.current = false
       setPosting(false)
     }
   }
@@ -1843,19 +1907,24 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   const atMaxZoom = viewport.scale >= MAX_ZOOM - 0.001
 
   return (
-    <div 
-      className={`fixed inset-0 bg-slate-950/85 z-50 transition-opacity duration-300 ${
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={resolvedTitle}
+      tabIndex={-1}
+      className={`fixed inset-0 bg-kova-forest/90 z-50 transition-opacity duration-300 motion-reduce:transition-none focus:outline-none ${
         isVisible ? 'opacity-100' : 'opacity-0'
       }`}
       onClick={handleBackdropClick}
     >
       {/* Top Header Bar (hidden in present mode) */}
       {!isPresentMode && (
-      <div className="absolute top-3 left-3 right-3 rounded-2xl bg-slate-900/75 backdrop-blur-xl border border-slate-700/70 shadow-[0_10px_30px_rgba(2,6,23,0.45)] flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5 z-20">
+      <div className="absolute top-[calc(env(safe-area-inset-top)+0.75rem)] left-3 right-3 rounded-kova-lg bg-kova-forest/90 backdrop-blur-xl border border-background-light/20 shadow-[var(--shadow-raised)] flex items-center justify-between gap-3 overflow-x-auto px-3 sm:px-5 py-2.5 z-20">
         {/* Title block — title + author · sheet size (title-block feel) */}
-        <div className="flex-1 min-w-0">
+        <div className="hidden flex-1 min-w-0 sm:block">
           {compareBoards.length > 1 ? (
-            <h2 className="text-slate-50 font-semibold text-sm sm:text-[15px] truncate">
+            <h2 className="text-background-light font-semibold text-sm sm:text-[15px] truncate">
               {`Compare selection (${compareBoards.length})`}
             </h2>
           ) : editingTitle && canEditTitle ? (
@@ -1880,30 +1949,30 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               autoFocus
               maxLength={120}
               disabled={savingTitle}
-              className="w-full text-slate-900 bg-white/95 border border-indigo-400 rounded px-2 py-0.5 text-sm sm:text-[15px] font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+              className="w-full text-text-primary bg-background-light/95 border border-border rounded-kova px-2 py-0.5 text-sm sm:text-[15px] font-semibold focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
               placeholder="Board title"
             />
           ) : canEditTitle ? (
-            <h2
-              className="text-slate-50 font-semibold text-sm sm:text-[15px] flex items-center gap-1 min-w-0 group/title cursor-pointer hover:text-white"
-              onClick={(e) => {
-                e.stopPropagation()
-                // Clear a cancel flag left set by a prior Esc: the unmount that
-                // followed it may never have fired blur, and a stale true would
-                // silently cancel THIS edit's commit.
-                titleEditCancelRef.current = false
-                setTitleInput(resolvedTitle)
-                setEditingTitle(true)
-              }}
-              title="Rename board"
-            >
-              <span className="truncate">{resolvedTitle}</span>
-              <svg className="w-3.5 h-3.5 opacity-0 group-hover/title:opacity-60 transition-opacity flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
-              </svg>
+            <h2 className="min-w-0 text-sm font-semibold text-background-light sm:text-[15px]">
+              <button
+                type="button"
+                className="group/title flex min-h-11 min-w-0 items-center gap-1 rounded-kova text-left hover:text-kova-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  titleEditCancelRef.current = false
+                  setTitleInput(resolvedTitle)
+                  setEditingTitle(true)
+                }}
+                title="Rename board"
+              >
+                <span className="truncate">{resolvedTitle}</span>
+                <svg className="h-3.5 w-3.5 flex-shrink-0 opacity-60 transition-opacity group-hover/title:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
+                </svg>
+              </button>
             </h2>
           ) : (
-            <h2 className="text-slate-50 font-semibold text-sm sm:text-[15px] truncate">
+            <h2 className="text-background-light font-semibold text-sm sm:text-[15px] truncate">
               {resolvedTitle}
             </h2>
           )}
@@ -1924,36 +1993,40 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                     onBlur={handleSaveAuthorName}
                     autoFocus
                     disabled={isSavingAuthorName}
-                    className="text-[11px] text-slate-900 bg-white/95 border border-indigo-400 rounded px-1.5 py-0.5 w-36 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+                    className="text-[11px] text-text-primary bg-background-light/95 border border-border rounded-kova px-1.5 py-0.5 w-36 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
                     placeholder="Author name"
                   />
                   {isSavingAuthorName && (
-                    <div className="w-3 h-3 rounded-full border border-slate-400 border-t-white animate-spin flex-shrink-0" />
+                    <div className="w-3 h-3 rounded-full border border-background-light/40 border-t-background-light animate-spin motion-reduce:animate-none flex-shrink-0" />
                   )}
                 </div>
               )
             }
 
             return (
-              <p className="text-[11px] text-slate-300/90 truncate mt-0.5 flex items-center gap-1.5">
-                <span
-                  className={`inline-flex items-center gap-1 ${isEditMode ? 'group/author cursor-pointer hover:text-white' : ''}`}
-                  onClick={isEditMode ? () => {
-                    setAuthorNameInput(resolvedName === 'Unknown' ? '' : resolvedName)
-                    setEditingAuthorName(true)
-                  } : undefined}
-                >
-                  {resolvedName}
-                  {isEditMode && (
+              <p className="text-[11px] text-background-light/80 truncate mt-0.5 flex items-center gap-1.5">
+                {isEditMode ? (
+                  <button
+                    type="button"
+                    aria-label="Rename board author"
+                    className="group/author inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-kova hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    onClick={() => {
+                      setAuthorNameInput(resolvedName === 'Unknown' ? '' : resolvedName)
+                      setEditingAuthorName(true)
+                    }}
+                  >
+                    {resolvedName}
                     <svg className="w-3 h-3 opacity-0 group-hover/author:opacity-60 transition-opacity flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
                     </svg>
-                  )}
-                </span>
-                <span className="font-mono uppercase tracking-wider text-[10px] text-slate-400/80 flex-shrink-0">
+                  </button>
+                ) : (
+                  <span>{resolvedName}</span>
+                )}
+                <span className="font-mono uppercase tracking-wider text-[10px] text-background-light/70 flex-shrink-0">
                   · {sizeDisplay.label}
                   {sizeDisplay.provenance === 'assumed' && (
-                    <span className="text-slate-500/70"> (assumed)</span>
+                    <span className="text-background-light/60"> (assumed)</span>
                   )}
                 </span>
               </p>
@@ -1968,7 +2041,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             <button
               onClick={(e) => { e.stopPropagation(); onNavigate('prev') }}
               disabled={!hasPrev}
-              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="min-h-11 min-w-11 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors motion-reduce:transition-none"
               aria-label="Previous"
             >
               <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
@@ -1980,7 +2053,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 // Editable slideshow position. Same shell/typography as the
                 // read-only counter below, so the header is pixel-identical
                 // apart from the hover affordance.
-                <span className="px-1 text-[11px] font-mono tabular-nums text-slate-300/80 select-none whitespace-nowrap inline-flex items-center gap-1">
+                <span className="px-1 text-[11px] font-mono tabular-nums text-background-light/80 select-none whitespace-nowrap inline-flex items-center gap-1">
                   {editingPosition ? (
                     <input
                       type="text"
@@ -2007,7 +2080,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       maxLength={navTotalLabel.length + 1}
                       disabled={savingPosition}
                       style={{ width: `${navPositionWidthCh}ch` }}
-                      className="text-slate-900 bg-white/95 border border-indigo-400 rounded px-1 py-0 text-[11px] font-mono tabular-nums text-center focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+                      className="text-text-primary bg-background-light/95 border border-border rounded px-1 py-0 text-[11px] font-mono tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
                       aria-label="Slideshow position"
                     />
                   ) : (
@@ -2035,7 +2108,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   <span>/ {navTotalLabel}</span>
                 </span>
               ) : (
-                <span className="px-1 text-[11px] font-mono tabular-nums text-slate-300/80 select-none whitespace-nowrap">
+                <span className="px-1 text-[11px] font-mono tabular-nums text-background-light/80 select-none whitespace-nowrap">
                   {navCounter}
                 </span>
               )
@@ -2043,7 +2116,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             <button
               onClick={(e) => { e.stopPropagation(); onNavigate('next') }}
               disabled={!hasNext}
-              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="min-h-11 min-w-11 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors motion-reduce:transition-none"
               aria-label="Next"
             >
               <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
@@ -2059,7 +2132,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 e.stopPropagation()
                 setIsPresentMode(true)
               }}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold bg-indigo-500 text-white hover:bg-indigo-400 border border-indigo-400/50 shadow-sm transition-colors"
+              className="flex min-h-11 items-center gap-1.5 px-3 rounded-full text-xs font-semibold bg-primary text-text-primary hover:bg-primary-light border border-primary shadow-sm transition-colors motion-reduce:transition-none"
               title="Present (board fills screen)"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
@@ -2073,7 +2146,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {resolvedLinkUrl && (
             <button
               onClick={(e) => { e.stopPropagation(); openVideo() }}
-              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors"
+              className="min-h-11 min-w-11 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors motion-reduce:transition-none"
               title="Open link in a new tab"
               aria-label="Open link in a new tab"
             >
@@ -2089,9 +2162,9 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 if (editingLink) { setEditingLink(false); setLinkError(null) }
                 else { setEditingSize(false); setLinkInput(resolvedLinkUrl ?? ''); setEditingLink(true); setLinkError(null) }
               }}
-              className={`w-8 h-8 flex items-center justify-center rounded-full border transition-colors ${
+              className={`min-h-11 min-w-11 flex items-center justify-center rounded-full border transition-colors motion-reduce:transition-none ${
                 editingLink
-                  ? 'border-indigo-300 bg-indigo-500/30 text-white'
+                  ? 'border-primary bg-primary/30 text-background-light'
                   : 'border-white/20 bg-white/5 text-white/90 hover:bg-white/15'
               }`}
               title={resolvedLinkUrl ? 'Edit link' : 'Add link'}
@@ -2118,9 +2191,9 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   setEditingSize(true)
                 }
               }}
-              className={`w-8 h-8 flex items-center justify-center rounded-full border transition-colors ${
+              className={`min-h-11 min-w-11 flex items-center justify-center rounded-full border transition-colors motion-reduce:transition-none ${
                 editingSize
-                  ? 'border-indigo-300 bg-indigo-500/30 text-white'
+                  ? 'border-primary bg-primary/30 text-background-light'
                   : 'border-white/20 bg-white/5 text-white/90 hover:bg-white/15'
               }`}
               title="Set real-world board size"
@@ -2139,9 +2212,9 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 e.stopPropagation()
                 setCommentsOpen(prev => !prev)
               }}
-              className={`relative w-8 h-8 flex items-center justify-center rounded-full border transition-colors ${
+              className={`relative min-h-11 min-w-11 flex items-center justify-center rounded-full border transition-colors motion-reduce:transition-none ${
                 commentsOpen
-                  ? 'border-indigo-300 bg-indigo-500/30 text-white'
+                  ? 'border-primary bg-primary/30 text-background-light'
                   : 'border-white/20 bg-white/5 text-white/90 hover:bg-white/15'
               }`}
               title="Toggle comments panel"
@@ -2151,7 +2224,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.3-3.9A7.6 7.6 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
               {comments.length > 0 && (
-                <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 text-[10px] font-semibold bg-indigo-500 text-white rounded-full border border-slate-900">
+                <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 text-[10px] font-semibold bg-primary text-text-primary rounded-full border border-kova-forest">
                   {comments.length}
                 </span>
               )}
@@ -2164,7 +2237,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {compareBoards.length <= 1 && !!imageUrl && (
             <button
               onClick={(e) => { e.stopPropagation(); void handleDownload() }}
-              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors"
+            className="min-h-11 min-w-11 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors motion-reduce:transition-none"
               title="Download image"
               aria-label="Download image"
             >
@@ -2175,7 +2248,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {/* Close */}
           <button
             onClick={handleClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 border border-white/30 transition-colors"
+            className="min-h-11 min-w-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 border border-white/30 transition-colors motion-reduce:transition-none"
             aria-label="Close"
           >
             <svg
@@ -2196,10 +2269,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             Opens under the Add/Edit-link icon button; all handlers preserved. */}
         {isEditMode && editingLink && (
           <div className="absolute right-4 top-full mt-2 z-30" onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-col gap-1 rounded-xl bg-slate-900/90 backdrop-blur-xl border border-slate-700/70 shadow-[0_10px_30px_rgba(2,6,23,0.45)] p-2">
+            <div className="flex flex-col gap-1 rounded-kova bg-kova-forest/95 backdrop-blur-xl border border-background-light/20 shadow-[var(--shadow-raised)] p-2">
               <div className="flex items-center gap-1.5">
                 <input
                   type="text"
+                  aria-label="Board link URL"
                   value={linkInput}
                   onChange={(e) => {
                     setLinkInput(e.target.value)
@@ -2212,12 +2286,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   autoFocus
                   disabled={savingLink}
                   placeholder="https://..."
-                  className="text-[11px] text-slate-900 bg-white/95 border border-indigo-400 rounded px-1.5 py-0.5 w-52 sm:w-64 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+                  className="text-[11px] text-text-primary bg-background-light/95 border border-border rounded px-1.5 py-0.5 w-52 sm:w-64 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
                 />
                 <button
                   onClick={handleSaveLink}
                   disabled={savingLink}
-                  className="text-[11px] px-2 py-0.5 rounded bg-indigo-500 text-white hover:bg-indigo-400 disabled:opacity-60"
+                  className="min-h-11 text-[11px] px-3 rounded bg-primary text-text-primary hover:bg-primary-light disabled:opacity-60"
                 >
                   {savingLink ? 'Saving…' : 'Save'}
                 </button>
@@ -2229,7 +2303,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   Cancel
                 </button>
               </div>
-              {linkError && <p className="text-[10px] text-red-300">{linkError}</p>}
+              {linkError && <p role="alert" className="text-[10px] font-semibold text-background-light">{linkError}</p>}
             </div>
           </div>
         )}
@@ -2240,9 +2314,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             editable. */}
         {canEditSize && editingSize && (
           <div className="absolute right-4 top-full mt-2 z-30" onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-col gap-2 w-64 rounded-xl bg-slate-900/90 backdrop-blur-xl border border-slate-700/70 shadow-[0_10px_30px_rgba(2,6,23,0.45)] p-3">
-              <div className="text-[10px] uppercase tracking-wider text-slate-400">Board size (real-world)</div>
+            <div className="flex flex-col gap-2 w-64 rounded-kova bg-kova-forest/95 backdrop-blur-xl border border-background-light/20 shadow-[var(--shadow-raised)] p-3">
+              <div className="text-[10px] uppercase tracking-wider text-background-light/70">Board size (real-world)</div>
               <select
+                aria-label="Sheet size preset"
                 value=""
                 onChange={(e) => {
                   const preset: SheetSizePreset | undefined = SHEET_SIZE_PRESETS.find((p) => p.label === e.target.value)
@@ -2252,7 +2327,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   setSizeHeightInput(String(Math.round(fit.heightIn * 10) / 10))
                   setSizeError(null)
                 }}
-                className="w-full text-xs text-slate-800 bg-white/95 border border-slate-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="w-full min-h-11 text-xs text-text-primary bg-background-light/95 border border-border rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="">Sheet preset…</option>
                 {SHEET_SIZE_PRESETS.map((p) => (
@@ -2260,28 +2335,28 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 ))}
               </select>
               <div className="flex items-center gap-1.5">
-                <label className="flex items-center gap-1 text-[11px] text-slate-300">
+                <label className="flex items-center gap-1 text-[11px] text-background-light/80">
                   <span className="font-semibold">W</span>
                   <input
                     type="number" min={1} max={600} step={0.5}
                     value={sizeWidthInput}
                     onChange={(e) => { setSizeWidthInput(e.target.value); if (sizeError) setSizeError(null) }}
-                    className="w-16 text-[11px] text-slate-900 bg-white/95 border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    className="w-16 min-h-11 text-[11px] text-text-primary bg-background-light/95 border border-border rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </label>
-                <label className="flex items-center gap-1 text-[11px] text-slate-300">
+                <label className="flex items-center gap-1 text-[11px] text-background-light/80">
                   <span className="font-semibold">H</span>
                   <input
                     type="number" min={1} max={600} step={0.5}
                     value={sizeHeightInput}
                     onChange={(e) => { setSizeHeightInput(e.target.value); if (sizeError) setSizeError(null) }}
-                    className="w-16 text-[11px] text-slate-900 bg-white/95 border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    className="w-16 min-h-11 text-[11px] text-text-primary bg-background-light/95 border border-border rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </label>
-                <span className="text-[11px] text-slate-400">in</span>
+                <span className="text-[11px] text-background-light/70">in</span>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] text-slate-500 truncate">
+                <span className="text-[10px] text-background-light/60 truncate">
                   Now: {sizeDisplay.label}{sizeDisplay.provenance === 'assumed' ? ' (assumed)' : ''}
                 </span>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -2295,13 +2370,13 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   <button
                     onClick={() => handleSaveSize(parseFloat(sizeWidthInput), parseFloat(sizeHeightInput))}
                     disabled={savingSize}
-                    className="text-[11px] px-2 py-0.5 rounded bg-indigo-500 text-white hover:bg-indigo-400 disabled:opacity-60"
+                    className="min-h-11 text-[11px] px-3 rounded bg-primary text-text-primary hover:bg-primary-light disabled:opacity-60"
                   >
                     {savingSize ? 'Saving…' : 'Save'}
                   </button>
                 </div>
               </div>
-              {sizeError && <p className="text-[10px] text-red-300">{sizeError}</p>}
+              {sizeError && <p role="alert" className="text-[10px] font-semibold text-background-light">{sizeError}</p>}
             </div>
           </div>
         )}
@@ -2321,7 +2396,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 setIsPresentMode(false)
               }
             }}
-            className="absolute top-6 right-6 z-20 px-3 py-1.5 rounded-lg text-xs font-medium text-white/80 hover:text-white bg-black/40 hover:bg-black/60 border border-white/20 transition-colors"
+            className="absolute top-[calc(env(safe-area-inset-top)+1.5rem)] right-6 z-20 min-h-11 px-3 rounded-kova text-xs font-medium text-background-light/80 hover:text-background-light bg-kova-forest/60 hover:bg-kova-forest/90 border border-background-light/20 transition-colors motion-reduce:transition-none"
           >
             Exit present
           </button>
@@ -2329,7 +2404,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {!isComparePresentMode && hasPrev && (
             <button
               onClick={(e) => { e.stopPropagation(); onNavigate('prev') }}
-              className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 text-white/90 hover:text-white border border-white/20 transition-colors"
+              className="absolute left-2 top-1/2 -translate-y-1/2 z-20 min-h-11 min-w-11 flex items-center justify-center rounded-full bg-kova-forest/70 hover:bg-kova-forest/90 text-background-light border border-background-light/20 transition-colors motion-reduce:transition-none"
               aria-label="Previous board"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
@@ -2340,7 +2415,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {!isComparePresentMode && hasNext && (
             <button
               onClick={(e) => { e.stopPropagation(); onNavigate('next') }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 text-white/90 hover:text-white border border-white/20 transition-colors"
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-20 min-h-11 min-w-11 flex items-center justify-center rounded-full bg-kova-forest/70 hover:bg-kova-forest/90 text-background-light border border-background-light/20 transition-colors motion-reduce:transition-none"
               aria-label="Next board"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
@@ -2406,20 +2481,20 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* PDF Header */}
-                <div className="flex items-center justify-between px-4 py-3 bg-gray-100 border-b">
+                <div className="flex items-center justify-between px-4 py-3 bg-background-lighter border-b border-border">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-red-100 rounded-lg">
-                      <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                    <div className="p-2 bg-primary-muted rounded-kova">
+                      <svg className="w-5 h-5 text-primary-dark" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
                       </svg>
                     </div>
-                    <span className="font-medium text-gray-800 text-sm">{board.title}.pdf</span>
+                    <span className="font-medium text-text-primary text-sm">{board.title}.pdf</span>
                   </div>
                   <a 
                     href={imageUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-3 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm text-gray-700 transition-colors"
+                    className="flex min-h-11 items-center gap-2 px-3 bg-background-light hover:bg-background-card rounded-kova text-sm text-text-secondary transition-colors"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -2428,7 +2503,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   </a>
                 </div>
                 {/* PDF Embed */}
-                <div className="flex-1 bg-gray-200">
+                <div className="flex-1 bg-background-lighter">
                   <embed
                     src={`${imageUrl}#toolbar=1&navpanes=1&scrollbar=1`}
                     type="application/pdf"
@@ -2490,7 +2565,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       height: 12,
                       background: cursorColor,
                       transform: 'translate(-50%, -50%)',
-                      boxShadow: '0 0 0 2px rgba(255,255,255,0.75)',
+                      boxShadow: MEDIA_CURSOR_HALO,
                     }}
                   />
                 )}
@@ -2503,7 +2578,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 {!isPresentMode && (
                   <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
                     <div
-                      className="pointer-events-auto flex items-center gap-1 px-2 py-1.5 rounded-full bg-slate-900/85 backdrop-blur-md border border-white/15 shadow-[0_10px_30px_rgba(2,6,23,0.45)]"
+                      className="pointer-events-auto flex items-center gap-1 px-2 py-1.5 rounded-full bg-kova-forest/90 backdrop-blur-md border border-background-light/20 shadow-[var(--shadow-raised)]"
                       onClick={(e) => e.stopPropagation()}
                       onPointerDown={(e) => e.stopPropagation()}
                       onDoubleClick={(e) => e.stopPropagation()}
@@ -2517,9 +2592,9 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                             setTraceMode(false)
                             setCalloutMode((m) => !m)
                           }}
-                          className={`flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium border transition-colors ${
+                          className={`flex items-center gap-1.5 min-h-11 px-3 rounded-full text-xs font-medium border transition-colors motion-reduce:transition-none ${
                             calloutMode
-                              ? 'border-pink-300 bg-pink-500/30 text-white'
+                              ? 'border-accent bg-accent/30 text-background-light'
                               : 'border-white/15 bg-white/5 text-white/90 hover:bg-white/15'
                           }`}
                           title={calloutMode ? 'Click the image to place a callout (Esc to cancel)' : 'Add a callout pin to the image'}
@@ -2545,9 +2620,9 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                             setComposer(null)
                             setTraceMode((m) => !m)
                           }}
-                          className={`flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium border transition-colors ${
+                          className={`flex items-center gap-1.5 min-h-11 px-3 rounded-full text-xs font-medium border transition-colors motion-reduce:transition-none ${
                             traceMode
-                              ? 'border-amber-300 bg-amber-500/30 text-white'
+                              ? 'border-primary bg-primary/30 text-background-light'
                               : 'border-white/15 bg-white/5 text-white/90 hover:bg-white/15'
                           }`}
                           title={traceMode ? 'Stop tracing (Esc)' : 'Draw a trace over the board'}
@@ -2568,7 +2643,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       <button
                         onClick={(e) => { e.stopPropagation(); stepZoom(-1) }}
                         disabled={atMinZoom}
-                        className="w-8 h-8 flex items-center justify-center rounded-full text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        className="min-h-11 min-w-11 flex items-center justify-center rounded-full text-background-light/90 hover:bg-background-light/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors motion-reduce:transition-none"
                         title="Zoom out"
                         aria-label="Zoom out"
                       >
@@ -2586,7 +2661,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       <button
                         onClick={(e) => { e.stopPropagation(); stepZoom(1) }}
                         disabled={atMaxZoom}
-                        className="w-8 h-8 flex items-center justify-center rounded-full text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        className="min-h-11 min-w-11 flex items-center justify-center rounded-full text-background-light/90 hover:bg-background-light/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors motion-reduce:transition-none"
                         title="Zoom in"
                         aria-label="Zoom in"
                       >
@@ -2599,7 +2674,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       <button
                         onClick={(e) => { e.stopPropagation(); resetViewport() }}
                         disabled={atMinZoom}
-                        className="flex items-center h-8 px-3 rounded-full text-[11px] font-medium text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        className="flex items-center min-h-11 px-3 rounded-full text-[11px] font-medium text-background-light/90 hover:bg-background-light/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors motion-reduce:transition-none"
                         title="Fit to screen"
                         aria-label="Fit to screen"
                       >
@@ -2647,10 +2722,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                             type="button"
                             onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => { e.stopPropagation(); setActiveThreadRootId(root.id) }}
-                            className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 w-7 h-7 rounded-full border-2 text-[11px] font-bold flex items-center justify-center shadow-md transition-transform hover:scale-110 ${
+                            className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 min-w-11 min-h-11 rounded-full border-2 text-[11px] font-bold flex items-center justify-center shadow-md transition-transform motion-reduce:transition-none hover:scale-110 motion-reduce:hover:scale-100 ${
                               root.resolved
-                                ? 'bg-slate-500/70 border-white/70 text-white/90 opacity-50'
-                                : 'bg-pink-500 border-white text-white'
+                                ? 'bg-kova-forest/70 border-background-light/70 text-background-light opacity-60'
+                                : 'bg-accent border-background-light text-text-primary'
                             } ${isActive ? 'ring-2 ring-white scale-110' : ''}`}
                             style={{ left: `${pt.x}px`, top: `${pt.y}px` }}
                             title={root.resolved ? 'Resolved callout' : 'Open callout thread'}
@@ -2684,7 +2759,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           onPointerDown={(e) => e.stopPropagation()}
                           onDoubleClick={(e) => e.stopPropagation()}
                         >
-                          <div className="w-64 bg-white rounded-xl shadow-2xl border border-gray-200 p-3">
+                          <div className="w-64 bg-background-light rounded-kova shadow-[var(--shadow-raised)] border border-border p-3">
                             <textarea
                               value={composerText}
                               onChange={(e) => setComposerText(e.target.value)}
@@ -2695,20 +2770,24 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                               rows={3}
                               placeholder="Add a callout…"
                               disabled={composerPosting}
-                              className="w-full px-2.5 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-400 resize-none bg-white text-gray-800 placeholder:text-gray-400"
+                              aria-label="Callout"
+                              maxLength={2000}
+                              aria-busy={composerPosting}
+                              className="w-full px-2.5 py-2 text-xs border border-border rounded-kova focus:outline-none focus:ring-2 focus:ring-primary resize-none bg-background-light text-text-primary placeholder:text-text-muted"
                             />
                             <div className="flex items-center justify-end gap-2 mt-2">
                               <button
                                 onClick={() => { setComposer(null); setComposerText('') }}
                                 disabled={composerPosting}
-                                className="px-2.5 py-1.5 text-[11px] font-semibold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                                className="min-h-11 px-3 text-[11px] font-semibold rounded-kova bg-background-lighter text-text-secondary hover:bg-background-card disabled:opacity-50"
                               >
                                 Cancel
                               </button>
                               <button
                                 onClick={handleSubmitCallout}
                                 disabled={!composerText.trim() || composerPosting}
-                                className="px-2.5 py-1.5 text-[11px] font-semibold rounded-md bg-pink-600 text-white hover:bg-pink-500 disabled:opacity-40"
+                                aria-busy={composerPosting}
+                                className="min-h-11 px-3 text-[11px] font-semibold rounded-kova bg-primary text-text-primary hover:bg-primary-light disabled:opacity-40"
                               >
                                 {composerPosting ? 'Adding…' : 'Add callout'}
                               </button>
@@ -2726,21 +2805,21 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         onPointerDown={(e) => e.stopPropagation()}
                       >
                         {rootCallouts.length > 0 && (
-                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/70 backdrop-blur-md border border-white/15 text-white text-[11px] font-medium">
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-kova-forest/80 backdrop-blur-md border border-background-light/20 text-background-light text-[11px] font-medium">
                             <span>{rootCallouts.length} callout{rootCallouts.length === 1 ? '' : 's'}</span>
                             <button
                               type="button"
                               onClick={() => setShowResolved((v) => !v)}
-                              className="flex items-center gap-1.5 text-[11px] text-white/90 hover:text-white"
+                              className="flex min-h-11 items-center gap-1.5 text-[11px] text-background-light/90 hover:text-background-light"
                               title="Toggle resolved callouts"
                             >
-                              <span className={`w-3 h-3 rounded-sm border flex items-center justify-center text-[8px] leading-none ${showResolved ? 'bg-pink-500 border-pink-500 text-white' : 'border-white/40 text-transparent'}`}>✓</span>
+                              <span className={`w-3 h-3 rounded-sm border flex items-center justify-center text-[8px] leading-none ${showResolved ? 'bg-accent border-accent text-text-primary' : 'border-background-light/40 text-transparent'}`}>✓</span>
                               Show resolved
                             </button>
                           </div>
                         )}
                         {calloutError && (
-                          <div className="px-3 py-1.5 rounded-full bg-red-600/85 text-white text-[11px] font-medium">{calloutError}</div>
+                          <div role="alert" className="px-3 py-1.5 rounded-full bg-kova-ink text-background-light text-[11px] font-medium">{calloutError}</div>
                         )}
                       </div>
                     )}
@@ -2755,12 +2834,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           ? (t.guestTokenId != null && t.guestTokenId === guestTokenId)
                           : (!!user?.id && t.authorId === user.id)
                         if (isMine) continue
-                        layers.push({ key: t.authorId ?? t.guestTokenId ?? t.id, name: t.authorName, color: t.authorColor ?? '#94a3b8' })
+                        layers.push({ key: t.authorId ?? t.guestTokenId ?? t.id, name: t.authorName, color: t.authorColor ?? DEFAULT_TRACE_AUTHOR_COLOR })
                       }
                       if (layers.length === 0) return null
                       return (
                         <div
-                          className="absolute top-3 right-3 z-40 pointer-events-auto w-44 rounded-xl bg-slate-900/80 backdrop-blur-md border border-white/15 p-2"
+                          className="absolute top-3 right-3 z-40 pointer-events-auto w-44 rounded-kova bg-kova-forest/90 backdrop-blur-md border border-background-light/20 p-2"
                           onClick={(e) => e.stopPropagation()}
                           onPointerDown={(e) => e.stopPropagation()}
                         >
@@ -2776,7 +2855,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                                     if (n.has(l.key)) n.delete(l.key); else n.add(l.key)
                                     return n
                                   })}
-                                  className="w-full flex items-center gap-2 px-1.5 py-1 rounded hover:bg-white/10 text-left"
+                                  className="w-full min-h-11 flex items-center gap-2 px-1.5 rounded hover:bg-background-light/10 text-left"
                                   title={hidden ? 'Show layer' : 'Hide layer'}
                                 >
                                   <span className="w-3 h-3 rounded-full flex-shrink-0 border border-white/30" style={{ backgroundColor: l.color, opacity: hidden ? 0.25 : 1 }} />
@@ -2794,7 +2873,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         never overlap and neither collides with the ESC hint. */}
                     {traceMode && (
                       <div
-                        className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-full bg-slate-900/85 backdrop-blur-md border border-white/15"
+                        className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-full bg-kova-forest/90 backdrop-blur-md border border-background-light/20"
                         onClick={(e) => e.stopPropagation()}
                         onPointerDown={(e) => e.stopPropagation()}
                       >
@@ -2802,7 +2881,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           <button
                             key={c}
                             onClick={() => setTraceColor(c)}
-                            className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 ${traceColor === c ? 'border-white' : 'border-transparent'}`}
+                            className={`min-w-11 min-h-11 rounded-full border-2 transition-transform motion-reduce:transition-none hover:scale-110 motion-reduce:hover:scale-100 ${traceColor === c ? 'border-background-light' : 'border-transparent'}`}
                             style={{ backgroundColor: c }}
                             title="Ink color"
                             aria-label={`Ink color ${c}`}
@@ -2813,7 +2892,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           <button
                             key={w.value}
                             onClick={() => setTraceWidth(w.value)}
-                            className={`px-2 py-1 rounded text-[10px] font-medium ${traceWidth === w.value ? 'bg-white/25 text-white' : 'text-white/70 hover:text-white'}`}
+                            className={`min-h-11 px-3 rounded text-[10px] font-medium ${traceWidth === w.value ? 'bg-background-light/25 text-background-light' : 'text-background-light/70 hover:text-background-light'}`}
                             title={`${w.label} brush`}
                           >
                             {w.label}
@@ -2823,7 +2902,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         <button
                           onClick={handleTraceUndo}
                           disabled={myStrokes.length === 0}
-                          className="px-2 py-1 rounded text-[10px] font-medium text-white/80 hover:text-white disabled:opacity-40"
+                          className="min-h-11 px-3 rounded text-[10px] font-medium text-background-light/80 hover:text-background-light disabled:opacity-40"
                           title="Undo last stroke"
                         >
                           Undo
@@ -2831,7 +2910,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         {pendingClearTrace ? (
                           <button
                             onClick={handleTraceClear}
-                            className="px-2 py-1 rounded text-[10px] font-semibold bg-red-600 text-white hover:bg-red-500"
+                            className="min-h-11 px-3 rounded text-[10px] font-semibold bg-kova-ink text-background-light hover:bg-text-secondary"
                             title="Confirm — clear your whole trace"
                           >
                             Confirm clear
@@ -2840,7 +2919,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           <button
                             onClick={() => { setPendingClearTrace(true); window.setTimeout(() => setPendingClearTrace(false), 4000) }}
                             disabled={myStrokes.length === 0}
-                            className="px-2 py-1 rounded text-[10px] font-medium text-white/80 hover:text-white disabled:opacity-40"
+                            className="min-h-11 px-3 rounded text-[10px] font-medium text-background-light/80 hover:text-background-light disabled:opacity-40"
                             title="Clear my trace"
                           >
                             Clear
@@ -2853,7 +2932,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               </div>
             )
           ) : (
-            <div className="text-center text-gray-500">
+            <div className="text-center text-background-light/70">
               <div className="text-6xl mb-4">🖼️</div>
               <p>No image available</p>
             </div>
@@ -2863,23 +2942,23 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         {/* Right Side - Comment Panel (hidden in present mode; members only) */}
         {!isPresentMode && commentsOpen && commentsAccessible ? (
         <div 
-          className="w-full lg:w-[340px] xl:w-[380px] bg-white/95 backdrop-blur-md flex flex-col shadow-[0_18px_60px_rgba(15,23,42,0.35)] border-l border-gray-200"
+          className="w-full lg:w-[340px] xl:w-[380px] bg-background-light/95 backdrop-blur-md flex flex-col shadow-[var(--shadow-raised)] border-l border-border"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Panel Header */}
-          <div className="flex-shrink-0 px-5 py-4 border-b border-gray-200/80">
-            <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-2">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-500">
+          <div className="flex-shrink-0 px-5 py-4 border-b border-border">
+            <h3 className="text-sm font-semibold text-text-primary mb-1 flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary-muted text-primary-dark">
                 <span className="text-xs">💬</span>
               </span>
               Comments
               {comments.length > 0 && (
-                <span className="inline-flex items-center justify-center px-2 py-0.5 text-[11px] font-medium bg-indigo-50 text-indigo-600 rounded-full border border-indigo-100">
+                <span className="inline-flex items-center justify-center px-2 py-0.5 text-[11px] font-medium bg-primary-muted text-primary-dark rounded-full border border-primary/30">
                   {comments.length}
                 </span>
               )}
             </h3>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Share concise feedback to help the work grow.
             </p>
           </div>
@@ -2888,28 +2967,28 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
             {loading && (
               <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#4444ff]/20 border-t-[#4444ff]"></div>
+                <div role="status" aria-label="Loading comments" className="animate-spin motion-reduce:animate-none rounded-full h-10 w-10 border-2 border-primary/20 border-t-primary"></div>
               </div>
             )}
 
             {error && (
               <div className="text-center py-12">
-                <p className="text-red-600 text-sm">{error}</p>
+                <p role="alert" className="text-text-primary text-sm font-semibold">{error}</p>
               </div>
             )}
 
             {!loading && !error && comments.length === 0 && (
               <div className="text-center py-16">
                 <div className="text-6xl mb-3">💭</div>
-                <p className="text-gray-500 text-sm font-medium">No comments yet</p>
-                <p className="text-gray-400 text-xs mt-1">Be the first to share feedback!</p>
+                <p className="text-text-secondary text-sm font-medium">No comments yet</p>
+                <p className="text-text-muted text-xs mt-1">Be the first to share feedback!</p>
               </div>
             )}
 
             {!loading && !error && comments.length > 0 && comments.map((comment) => (
               <div 
                 key={comment.id}
-                className="flex gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100 hover:border-gray-200 hover:bg-white transition-colors"
+                className="flex gap-3 p-3 rounded-kova bg-background-lighter border border-border-light hover:border-border hover:bg-background-light transition-colors motion-reduce:transition-none"
               >
                 {/* Avatar */}
                 <div className={`flex-shrink-0 w-8 h-8 rounded-full ${getAvatarColor(comment.authorName)} flex items-center justify-center text-white font-bold text-xs shadow-sm`}>
@@ -2919,11 +2998,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 {/* Content */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline justify-between gap-2 mb-1">
-                    <span className="font-semibold text-gray-900 text-xs">
+                    <span className="font-semibold text-text-primary text-xs">
                       {comment.authorName}
                     </span>
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-gray-500 whitespace-nowrap">
+                      <span className="text-[11px] text-text-muted whitespace-nowrap">
                         {formatTimestamp(comment.createdAt)}
                       </span>
                       {canManageComment(comment) && (
@@ -2931,7 +3010,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           <button
                             onClick={() => handleStartEdit(comment)}
                             disabled={deletingCommentId === comment.id || savingCommentId === comment.id}
-                            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-50"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova text-primary-dark hover:bg-primary-muted disabled:opacity-50"
                             aria-label="Edit comment"
                             title="Edit"
                           >
@@ -2943,12 +3022,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                             <button
                               onClick={() => handleDeleteComment(comment.id)}
                               disabled={deletingCommentId === comment.id || savingCommentId === comment.id}
-                              className="inline-flex items-center justify-center rounded-md px-1.5 h-6 text-[10px] font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                              className="inline-flex min-h-11 items-center justify-center rounded-kova px-3 text-[10px] font-semibold bg-kova-ink text-background-light hover:bg-text-secondary disabled:opacity-50"
                               aria-label="Confirm delete comment"
                               title="Confirm delete"
                             >
                               {deletingCommentId === comment.id ? (
-                                <div className="h-3.5 w-3.5 rounded-full border-2 border-red-200 border-t-white animate-spin" />
+                                <div className="h-3.5 w-3.5 rounded-full border-2 border-background-light/30 border-t-background-light animate-spin motion-reduce:animate-none" />
                               ) : (
                                 'Confirm delete'
                               )}
@@ -2957,12 +3036,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                             <button
                               onClick={() => handleDeleteComment(comment.id)}
                               disabled={deletingCommentId === comment.id || savingCommentId === comment.id}
-                              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova text-text-primary hover:bg-background-lighter disabled:opacity-50"
                               aria-label={deletingCommentId === comment.id ? 'Deleting comment' : 'Delete comment'}
                               title="Delete"
                             >
                               {deletingCommentId === comment.id ? (
-                                <div className="h-3.5 w-3.5 rounded-full border-2 border-red-300 border-t-red-600 animate-spin" />
+                                <div className="h-3.5 w-3.5 rounded-full border-2 border-border border-t-text-primary animate-spin motion-reduce:animate-none" />
                               ) : (
                                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7v12m6-12v12M10 4h4a1 1 0 011 1v2H9V5a1 1 0 011-1zM5 7h14l-1 13a2 2 0 01-2 2H8a2 2 0 01-2-2L5 7z" />
@@ -2979,7 +3058,9 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       <textarea
                         value={editingContent}
                         onChange={(e) => setEditingContent(e.target.value)}
-                        className="w-full px-2.5 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6366f1] focus:border-transparent resize-none bg-white text-gray-800"
+                        aria-label="Edit comment"
+                        maxLength={2000}
+                        className="w-full px-2.5 py-2 text-xs border border-border rounded-kova focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none bg-background-light text-text-primary"
                         rows={3}
                         disabled={savingCommentId === comment.id}
                       />
@@ -2987,21 +3068,21 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         <button
                           onClick={() => handleSaveEdit(comment.id)}
                           disabled={!editingContent.trim() || savingCommentId === comment.id}
-                          className="px-2.5 py-1.5 bg-[#4f46e5] text-white rounded-md hover:bg-[#4338ca] disabled:opacity-40 text-[11px] font-semibold"
+                          className="min-h-11 px-3 bg-primary text-text-primary rounded-kova hover:bg-primary-light disabled:opacity-40 text-[11px] font-semibold"
                         >
                           {savingCommentId === comment.id ? 'Saving...' : 'Save'}
                         </button>
                         <button
                           onClick={handleCancelEdit}
                           disabled={savingCommentId === comment.id}
-                          className="px-2.5 py-1.5 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-[11px] font-semibold"
+                          className="min-h-11 px-3 bg-background-lighter text-text-secondary rounded-kova hover:bg-background-card text-[11px] font-semibold"
                         >
                           Cancel
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-xs text-gray-800 leading-relaxed whitespace-pre-wrap">
+                    <p className="text-xs text-text-primary leading-relaxed whitespace-pre-wrap">
                       {comment.content}
                     </p>
                   )}
@@ -3011,7 +3092,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           </div>
 
           {/* Add Comment Form */}
-          <div className="flex-shrink-0 border-t border-gray-200 px-4 py-4 bg-gray-50">
+          <div className="flex-shrink-0 border-t border-border px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-4 bg-background-lighter">
             {user ? (
               <div className="space-y-3">
                 <textarea
@@ -3019,15 +3100,18 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
                   onKeyDown={handleKeyDown}
+                  aria-label="Comment"
+                  maxLength={2000}
+                  aria-busy={posting}
                   placeholder="Share your thoughts..."
-                  className="w-full px-3 py-2.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6366f1] focus:border-transparent resize-none bg-white text-gray-800 placeholder:text-gray-400 shadow-sm"
+                  className="w-full px-3 py-2.5 text-xs border border-border rounded-kova focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none bg-background-light text-text-primary placeholder:text-text-muted shadow-sm"
                   rows={3}
                   disabled={posting}
                 />
                 <div className="flex items-center justify-between">
-                  <p className="text-[11px] text-gray-500">
+                  <p className="text-[11px] text-text-muted" aria-live="polite">
                     {newComment.length > 0 ? (
-                      <span className="text-gray-700 font-medium">{newComment.length} characters</span>
+                      <span className="text-text-secondary font-medium">{newComment.length} characters</span>
                     ) : (
                       'Cmd+Enter to post'
                     )}
@@ -3035,11 +3119,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   <button
                     onClick={handlePost}
                     disabled={!newComment.trim() || posting}
-                    className="px-4 py-2 bg-[#4f46e5] text-white rounded-lg hover:bg-[#4338ca] disabled:opacity-40 disabled:cursor-not-allowed transition-all text-xs font-semibold shadow-sm hover:shadow-md disabled:shadow-none"
+                    aria-busy={posting}
+                    className="min-h-11 px-4 bg-primary text-text-primary rounded-kova hover:bg-primary-light disabled:opacity-40 disabled:cursor-not-allowed transition-all motion-reduce:transition-none text-xs font-semibold shadow-sm hover:shadow-md disabled:shadow-none"
                   >
                     {posting ? (
                       <span className="flex items-center gap-2">
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        <div className="w-4 h-4 border-2 border-text-primary/30 border-t-text-primary rounded-full animate-spin motion-reduce:animate-none"></div>
                         Posting...
                       </span>
                     ) : (
@@ -3051,10 +3136,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             ) : (
               <div className="text-center py-5">
                 <div className="mb-3 text-3xl">🔒</div>
-                <p className="text-xs text-gray-600 mb-3">Sign in to leave feedback</p>
+                <p className="text-xs text-text-secondary mb-3">Sign in to leave feedback</p>
                 <a
                   href="/sign-in"
-                  className="inline-block px-5 py-2 bg-[#4f46e5] text-white rounded-lg hover:bg-[#4338ca] transition-all text-xs font-semibold shadow-md hover:shadow-lg"
+                  className="inline-flex min-h-11 items-center px-5 bg-primary text-text-primary rounded-kova hover:bg-primary-light transition-all motion-reduce:transition-none text-xs font-semibold shadow-md hover:shadow-lg"
                 >
                   Sign In to Comment
                 </a>
@@ -3068,16 +3153,16 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       {/* ---- Callout thread panel (separate from the legacy comment panel) ---- */}
       {!isPresentMode && activeRoot && (
         <div
-          className="fixed top-24 right-4 z-40 w-[320px] max-h-[70vh] bg-white rounded-2xl shadow-[0_18px_60px_rgba(15,23,42,0.45)] border border-gray-200 flex flex-col overflow-hidden"
+          className="fixed top-24 right-4 z-40 w-[min(320px,calc(100vw-2rem))] max-h-[70vh] bg-background-light rounded-kova-lg shadow-[var(--shadow-raised)] border border-border flex flex-col overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
+          <div className="flex-shrink-0 px-4 py-3 border-b border-border flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-pink-500 text-white text-[11px] font-bold">
+              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-accent text-text-primary text-[11px] font-bold">
                 {calloutNumber.get(activeRoot.id)}
               </span>
-              <h3 className="text-sm font-semibold text-gray-900 truncate">
+              <h3 className="text-sm font-semibold text-text-primary truncate">
                 Callout{activeRoot.resolved ? ' · Resolved' : ''}
               </h3>
             </div>
@@ -3087,8 +3172,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   onClick={() => handleToggleResolved(activeRoot.id, !activeRoot.resolved)}
                   className={`px-2 py-1 text-[11px] font-semibold rounded-md border transition-colors ${
                     activeRoot.resolved
-                      ? 'border-gray-300 text-gray-600 hover:bg-gray-100'
-                      : 'border-green-300 text-green-700 hover:bg-green-50'
+                      ? 'border-border text-text-secondary hover:bg-background-lighter'
+                      : 'border-primary text-primary-dark hover:bg-primary-muted'
                   }`}
                   title={activeRoot.resolved ? 'Reopen this callout' : 'Mark resolved'}
                 >
@@ -3097,7 +3182,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               )}
               <button
                 onClick={() => setActiveThreadRootId(null)}
-                className="w-7 h-7 flex items-center justify-center rounded-md text-gray-500 hover:bg-gray-100"
+                className="min-w-11 min-h-11 flex items-center justify-center rounded-kova text-text-muted hover:bg-background-lighter"
                 aria-label="Close thread"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -3117,16 +3202,16 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               return (
                 <div
                   key={c.id}
-                  className={`rounded-xl border p-2.5 ${isRoot ? 'bg-pink-50/60 border-pink-100' : 'bg-gray-50 border-gray-100 ml-3'}`}
+                  className={`rounded-kova border p-2.5 ${isRoot ? 'bg-primary-muted border-primary/30' : 'bg-background-lighter border-border-light ml-3'}`}
                 >
                   <div className="flex items-baseline justify-between gap-2 mb-1">
-                    <span className="text-[11px] font-semibold text-gray-900 truncate">{c.authorName}</span>
+                    <span className="text-[11px] font-semibold text-text-primary truncate">{c.authorName}</span>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span className="text-[10px] text-gray-500 whitespace-nowrap">{formatTimestamp(c.createdAt)}</span>
+                      <span className="text-[10px] text-text-muted whitespace-nowrap">{formatTimestamp(c.createdAt)}</span>
                       {canEdit && !editing && (
                         <button
                           onClick={() => { setEditingCalloutId(c.id); setEditingCalloutText(c.body) }}
-                          className="text-[10px] text-indigo-600 hover:text-indigo-800"
+                          className="min-h-11 px-2 text-[10px] text-primary-dark hover:bg-primary-muted rounded-kova"
                           title="Edit"
                         >
                           Edit
@@ -3136,7 +3221,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         <button
                           onClick={() => handleDeleteCallout(c.id)}
                           disabled={deletingCalloutId === c.id}
-                          className="text-[10px] text-red-600 hover:text-red-800 disabled:opacity-50"
+                          className="min-h-11 px-2 text-[10px] text-text-primary hover:bg-background-lighter rounded-kova disabled:opacity-50"
                           title={isRoot ? 'Delete callout (and replies)' : 'Delete reply'}
                         >
                           {deletingCalloutId === c.id ? '…' : 'Delete'}
@@ -3149,29 +3234,31 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       <textarea
                         value={editingCalloutText}
                         onChange={(e) => setEditingCalloutText(e.target.value)}
+                        aria-label="Edit callout"
+                        maxLength={2000}
                         rows={2}
                         disabled={savingCalloutId === c.id}
-                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-400 resize-none bg-white text-gray-800"
+                        className="w-full px-2 py-1.5 text-xs border border-border rounded-kova focus:outline-none focus:ring-2 focus:ring-primary resize-none bg-background-light text-text-primary"
                       />
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => handleEditCallout(c.id)}
                           disabled={!editingCalloutText.trim() || savingCalloutId === c.id}
-                          className="px-2 py-1 text-[10px] font-semibold rounded-md bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40"
+                          className="min-h-11 px-3 text-[10px] font-semibold rounded-kova bg-primary text-text-primary hover:bg-primary-light disabled:opacity-40"
                         >
                           {savingCalloutId === c.id ? 'Saving…' : 'Save'}
                         </button>
                         <button
                           onClick={() => { setEditingCalloutId(null); setEditingCalloutText('') }}
                           disabled={savingCalloutId === c.id}
-                          className="px-2 py-1 text-[10px] font-semibold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          className="min-h-11 px-3 text-[10px] font-semibold rounded-kova bg-background-lighter text-text-secondary hover:bg-background-card"
                         >
                           Cancel
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-xs text-gray-800 leading-relaxed whitespace-pre-wrap">{c.body}</p>
+                    <p className="text-xs text-text-primary leading-relaxed whitespace-pre-wrap">{c.body}</p>
                   )}
                 </div>
               )
@@ -3179,32 +3266,36 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           </div>
 
           {/* Reply composer */}
-          <div className="flex-shrink-0 border-t border-gray-200 px-3 py-2.5 bg-gray-50">
+          <div className="flex-shrink-0 border-t border-border px-3 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] pt-2.5 bg-background-lighter">
             {canComment ? (
               <div className="space-y-2">
                 <textarea
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
+                  aria-label="Reply"
+                  maxLength={2000}
+                  aria-busy={replyPosting}
                   onKeyDown={(e) => {
                     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); handleSubmitReply(activeRoot.id) }
                   }}
                   rows={2}
                   placeholder="Reply…"
                   disabled={replyPosting}
-                  className="w-full px-2.5 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-400 resize-none bg-white text-gray-800 placeholder:text-gray-400"
+                  className="w-full px-2.5 py-2 text-xs border border-border rounded-kova focus:outline-none focus:ring-2 focus:ring-primary resize-none bg-background-light text-text-primary placeholder:text-text-muted"
                 />
                 <div className="flex justify-end">
                   <button
                     onClick={() => handleSubmitReply(activeRoot.id)}
                     disabled={!replyText.trim() || replyPosting}
-                    className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-pink-600 text-white hover:bg-pink-500 disabled:opacity-40"
+                    aria-busy={replyPosting}
+                    className="min-h-11 px-3 text-[11px] font-semibold rounded-kova bg-primary text-text-primary hover:bg-primary-light disabled:opacity-40"
                   >
                     {replyPosting ? 'Replying…' : 'Reply'}
                   </button>
                 </div>
               </div>
             ) : (
-              <p className="text-[11px] text-gray-500 text-center py-1">Sign in to reply</p>
+              <p className="text-[11px] text-text-muted text-center py-1">Sign in to reply</p>
             )}
           </div>
         </div>
@@ -3217,7 +3308,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       <style>{`@keyframes lbHintFade { to { opacity: 0; visibility: hidden; } }`}</style>
       <div
         key={`${board.id}-${isPresentMode}`}
-        className="absolute bottom-3 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-slate-900/65 border border-white/10 backdrop-blur-md rounded-full text-white text-xs sm:text-sm pointer-events-none"
+        className="absolute bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] left-1/2 transform -translate-x-1/2 px-4 py-2 bg-kova-forest/80 border border-background-light/20 backdrop-blur-md rounded-full text-background-light text-xs sm:text-sm pointer-events-none motion-reduce:animate-none"
         style={{ animation: 'lbHintFade 600ms ease 5s forwards' }}
       >
         {isPresentMode ? (
@@ -3249,4 +3340,3 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
     </div>
   )
 }
-

@@ -1,6 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+
+import { Button, Dialog, Input, Select } from '@/components/ui'
 import { academicYearOptions, currentAcademicYear } from '@/lib/academicYear'
 
 export interface NetworkMetadata {
@@ -29,256 +31,177 @@ const DEPARTMENTS = [
   'Robotics Engineering',
 ]
 
-const YEARS = [
-  'Year 1',
-  'Year 2',
-  'Year 3',
-  'Year 4',
-  'Year 5',
-  'Masters',
-]
+const YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Masters']
 
-export default function PublishConfirmModal({ 
-  workspaceName, 
+type FieldErrors = Partial<Record<'department' | 'year' | 'academicYear' | 'instructor', string>>
+
+export default function PublishConfirmModal({
+  workspaceName,
   isCurrentlyPublic,
   currentMetadata,
-  onConfirm, 
-  onCancel 
+  onConfirm,
+  onCancel,
 }: PublishConfirmModalProps) {
   const [department, setDepartment] = useState(currentMetadata?.department || '')
   const [year, setYear] = useState(currentMetadata?.year || '')
   const [academicYear, setAcademicYear] = useState(currentMetadata?.academicYear || currentAcademicYear())
   const [instructor, setInstructor] = useState(currentMetadata?.instructor || '')
-  const [errors, setErrors] = useState<{ department?: string; year?: string; academicYear?: string; instructor?: string }>({})
+  const [errors, setErrors] = useState<FieldErrors>({})
+  const confirmingRef = useRef(false)
 
-  const handleConfirm = () => {
+  const handleConfirm = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (confirmingRef.current) return
+
     if (isCurrentlyPublic) {
-      // Unpublishing - no metadata needed
+      confirmingRef.current = true
       onConfirm()
       return
     }
 
-    // Validate fields for publishing
-    const newErrors: typeof errors = {}
-    if (!department) newErrors.department = 'Please select a department'
-    if (!year) newErrors.year = 'Please select a year'
-    if (!academicYear) newErrors.academicYear = 'Please select an academic year'
-    if (!instructor.trim()) newErrors.instructor = 'Please enter instructor name'
-
+    const newErrors: FieldErrors = {}
+    if (!department) newErrors.department = 'Select a department.'
+    if (!year) newErrors.year = 'Select a year.'
+    if (!academicYear) newErrors.academicYear = 'Select an academic year.'
+    if (!instructor.trim()) newErrors.instructor = 'Enter the instructor name.'
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
       return
     }
 
+    confirmingRef.current = true
     onConfirm({ department, year, academicYear, instructor: instructor.trim() })
   }
 
-  // If unpublishing, show simple confirmation
   if (isCurrentlyPublic) {
     return (
-      <div 
-        className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-        onClick={onCancel}
+      <Dialog
+        open
+        onOpenChange={(open) => { if (!open) onCancel() }}
+        title="Remove from network?"
+        description={<>Make <strong>{workspaceName}</strong> private again.</>}
+        className="max-w-md pb-[max(1.5rem,env(safe-area-inset-bottom))] [&>button.absolute]:h-11 [&>button.absolute]:w-11"
       >
-        <div 
-          className="bg-white rounded-xl shadow-2xl max-w-md w-full p-8"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="text-center mb-4">
-            <div className="text-6xl mb-2">🔒</div>
+        <form onSubmit={handleConfirm} className="space-y-5">
+          <div className="rounded-kova border border-border bg-background-lighter p-4 text-sm text-text-secondary">
+            <p className="font-semibold text-text-primary">This will:</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              <li>Remove the workspace from the public network</li>
+              <li>Limit access to members</li>
+              <li>Public links will stop working</li>
+            </ul>
           </div>
-
-          <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">
-            Remove from Network?
-          </h2>
-
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-            <p className="font-semibold text-gray-900 text-center">{workspaceName}</p>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
+            <Button type="submit" variant="danger">Remove from network</Button>
           </div>
-
-          <div className="mb-6">
-            <div className="space-y-2 text-sm text-gray-700">
-              <p className="font-medium">This will:</p>
-              <ul className="space-y-1 ml-4">
-                <li>• Remove the workspace from public network</li>
-                <li>• Only members can access it</li>
-                <li>• Public links will stop working</li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              onClick={onCancel}
-              className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleConfirm}
-              className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-semibold"
-            >
-              Remove from Network
-            </button>
-          </div>
-        </div>
-      </div>
+        </form>
+      </Dialog>
     )
   }
 
-  // Publishing - show form to collect metadata
   return (
-    <div 
-      className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-      onClick={onCancel}
+    <Dialog
+      open
+      onOpenChange={(open) => { if (!open) onCancel() }}
+      title="Publish to network"
+      description={<>Add public discovery details for <strong>{workspaceName}</strong>.</>}
+      className="max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-2rem)] max-w-lg pb-[max(1.5rem,env(safe-area-inset-bottom))] [&>button.absolute]:h-11 [&>button.absolute]:w-11"
     >
-      <div 
-        className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-8"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="text-center mb-6">
-          <div className="text-5xl mb-3">🌐</div>
-          <h2 className="text-2xl font-bold text-gray-900">Publish to Network</h2>
-          <p className="text-gray-600 mt-1">Share your studio with the WIT community</p>
-        </div>
-
-        {/* Studio Name */}
-        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-6">
-          <p className="font-semibold text-gray-900 text-center">{workspaceName}</p>
-        </div>
-
-        {/* Form */}
-        <div className="space-y-4 mb-6">
-          {/* Department */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Department <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={department}
-              onChange={(e) => {
-                setDepartment(e.target.value)
-                setErrors(prev => ({ ...prev, department: undefined }))
-              }}
-              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
-                errors.department ? 'border-red-500' : 'border-gray-300'
-              }`}
-            >
-              <option value="">Select department...</option>
-              {DEPARTMENTS.map(d => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-            {errors.department && (
-              <p className="text-red-500 text-xs mt-1">{errors.department}</p>
-            )}
-          </div>
-
-          {/* Year */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Year <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={year}
-              onChange={(e) => {
-                setYear(e.target.value)
-                setErrors(prev => ({ ...prev, year: undefined }))
-              }}
-              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
-                errors.year ? 'border-red-500' : 'border-gray-300'
-              }`}
-            >
-              <option value="">Select year...</option>
-              {YEARS.map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-            {errors.year && (
-              <p className="text-red-500 text-xs mt-1">{errors.year}</p>
-            )}
-          </div>
-
-          {/* Academic Year */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Academic Year <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={academicYear}
-              onChange={(e) => {
-                setAcademicYear(e.target.value)
-                setErrors(prev => ({ ...prev, academicYear: undefined }))
-              }}
-              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
-                errors.academicYear ? 'border-red-500' : 'border-gray-300'
-              }`}
-            >
-              <option value="">Select academic year...</option>
-              {academicYearOptions().map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-            {errors.academicYear && (
-              <p className="text-red-500 text-xs mt-1">{errors.academicYear}</p>
-            )}
-          </div>
-
-          {/* Instructor */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Instructor <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={instructor}
-              maxLength={80}
-              onChange={(e) => {
-                setInstructor(e.target.value)
-                setErrors(prev => ({ ...prev, instructor: undefined }))
-              }}
-              placeholder="e.g., Prof. Sarah Lee"
-              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
-                errors.instructor ? 'border-red-500' : 'border-gray-300'
-              }`}
-            />
-            {errors.instructor && (
-              <p className="text-red-500 text-xs mt-1">{errors.instructor}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Info Box */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-          <p className="text-sm text-blue-800">
-            <strong>📍 Network Connections:</strong> Studios with the same instructor, year, or department will be connected in the public network visualization.
-          </p>
-        </div>
-
-        {/* Visibility Warning */}
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6">
-          <p className="text-xs text-yellow-900">
-            ⚠️ <strong>Note:</strong> Anyone can view this studio in the network, but only workspace members can edit or add boards.
-          </p>
-        </div>
-
-        {/* Buttons */}
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+      <form onSubmit={handleConfirm} className="space-y-4" noValidate>
+        <Field label="Department" id="publish-department" error={errors.department}>
+          <Select
+            id="publish-department"
+            value={department}
+            onChange={(event) => {
+              setDepartment(event.target.value)
+              setErrors((previous) => ({ ...previous, department: undefined }))
+            }}
+            aria-invalid={Boolean(errors.department)}
+            aria-describedby={errors.department ? 'publish-department-error' : undefined}
           >
-            Cancel
-          </button>
-          <button
-            onClick={handleConfirm}
-            className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-semibold"
+            <option value="">Select department</option>
+            {DEPARTMENTS.map((item) => <option key={item} value={item}>{item}</option>)}
+          </Select>
+        </Field>
+
+        <Field label="Year" id="publish-year" error={errors.year}>
+          <Select
+            id="publish-year"
+            value={year}
+            onChange={(event) => {
+              setYear(event.target.value)
+              setErrors((previous) => ({ ...previous, year: undefined }))
+            }}
+            aria-invalid={Boolean(errors.year)}
+            aria-describedby={errors.year ? 'publish-year-error' : undefined}
           >
-            Publish to Network
-          </button>
+            <option value="">Select year</option>
+            {YEARS.map((item) => <option key={item} value={item}>{item}</option>)}
+          </Select>
+        </Field>
+
+        <Field label="Academic year" id="publish-academic-year" error={errors.academicYear}>
+          <Select
+            id="publish-academic-year"
+            value={academicYear}
+            onChange={(event) => {
+              setAcademicYear(event.target.value)
+              setErrors((previous) => ({ ...previous, academicYear: undefined }))
+            }}
+            aria-invalid={Boolean(errors.academicYear)}
+            aria-describedby={errors.academicYear ? 'publish-academic-year-error' : undefined}
+          >
+            <option value="">Select academic year</option>
+            {academicYearOptions().map((item) => <option key={item} value={item}>{item}</option>)}
+          </Select>
+        </Field>
+
+        <Field label="Instructor" id="publish-instructor" error={errors.instructor}>
+          <Input
+            id="publish-instructor"
+            type="text"
+            value={instructor}
+            maxLength={80}
+            onChange={(event) => {
+              setInstructor(event.target.value)
+              setErrors((previous) => ({ ...previous, instructor: undefined }))
+            }}
+            placeholder="e.g. Prof. Sarah Lee"
+            aria-invalid={Boolean(errors.instructor)}
+            aria-describedby={errors.instructor ? 'publish-instructor-error' : undefined}
+          />
+        </Field>
+
+        <p className="rounded-kova border border-border bg-primary-muted p-3 text-sm text-text-primary">
+          Anyone can view this studio in the network. Only workspace members can edit or add boards.
+        </p>
+
+        <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
+          <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
+          <Button type="submit">Publish to network</Button>
         </div>
-      </div>
+      </form>
+    </Dialog>
+  )
+}
+
+function Field({
+  label,
+  id,
+  error,
+  children,
+}: {
+  label: string
+  id: string
+  error?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1.5 block text-sm font-semibold text-text-primary">{label}</label>
+      {children}
+      {error && <p id={`${id}-error`} role="alert" className="mt-1.5 text-xs font-semibold text-text-primary">{error}</p>}
     </div>
   )
 }

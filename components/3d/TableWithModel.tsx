@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import type { FloorTable } from '@/types'
 import { useRhino3dm } from '@/components/3d/useRhino3dm'
 import { useStlLoader } from '@/components/3d/useStlLoader'
+import { ENGINE_PALETTE } from './enginePalette'
 
 function is3dm(url: string) {
   return url.toLowerCase().endsWith('.3dm')
@@ -23,7 +24,7 @@ function isModelUrlLoadable(url: string): boolean {
 }
 
 const TABLE_TOP_MARGIN = 0.5 // inches – minimal gap so model fills table
-const MODEL_COLOR = '#ffffff' // white
+const MODEL_COLOR = ENGINE_PALETTE.paper
 const EMISSIVE_BASE = 0.2
 const EMISSIVE_HOVER = 0.45
 
@@ -205,7 +206,7 @@ export default function TableWithModel({ table, onTableClick }: TableWithModelPr
       {/* Table pedestal */}
       <mesh castShadow receiveShadow position={[0, TABLE_HEIGHT / 2, 0]}>
         <boxGeometry args={[table.width, TABLE_HEIGHT, table.depth]} />
-        <meshStandardMaterial color="#D8DEFF" roughness={0.9} metalness={0} />
+        <meshStandardMaterial color={ENGINE_PALETTE.wallMain} roughness={0.9} metalness={0} />
       </mesh>
 
       {hasModel && (
@@ -213,7 +214,7 @@ export default function TableWithModel({ table, onTableClick }: TableWithModelPr
           fallback={
             <mesh position={[0, TABLE_HEIGHT + 2, 0]}>
               <boxGeometry args={[4, 4, 4]} />
-              <meshStandardMaterial color="#888" wireframe />
+              <meshStandardMaterial color={ENGINE_PALETTE.modelWire} wireframe />
             </mesh>
           }
         >

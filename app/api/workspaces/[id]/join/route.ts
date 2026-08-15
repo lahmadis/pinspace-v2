@@ -1,32 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { validateName } from '@/lib/validation/safeName'
+import { workspaceInviteMatches } from '@/lib/workspaces/inviteCodes'
 
 
-// JOIN workspace - Add user to workspace_members table. Enforces the institution
-// email domain only for org workspaces (type 'class'); shared/personal workspaces
-// accept any signed-in account.
+// JOIN workspace - Add user to workspace_members table after validating the
+// persisted invite capability. Personal workspaces are never joinable.
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error('Session error:', sessionError)
-      return NextResponse.json({ error: 'Failed to get session' }, { status: 500 })
-    }
-
-    const userId = session?.user?.id
-    const userEmail = session?.user?.email
-    if (!userId) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
+    const userEmail = user.email
 
     const body = await request.json()
     const nameResult = validateName(body?.userName, { maxLength: 80, fieldLabel: 'Display name' })
@@ -34,13 +29,13 @@ export async function POST(
       return NextResponse.json({ error: nameResult.error }, { status: 400 })
     }
     const userName = nameResult.value
-    const workspaceId = params.id
+    const workspaceId = (await params).id
 
     // Fetch workspace and its institution (use service role so we can read institution for non-members)
     const admin = supabaseServiceRole()
     const { data: workspace, error: workspaceError } = await admin
       .from('workspaces')
-      .select('id, name, organization_id, type')
+      .select('id, name, organization_id, type, invite_code')
       .eq('id', workspaceId)
       .single()
 
@@ -49,11 +44,15 @@ export async function POST(
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
-    // Domain gate applies ONLY to org workspaces (type 'class'). Shared and
-    // personal workspaces accept any signed-in account, even when an
+    if (workspace.type === 'personal' || !workspaceInviteMatches(workspace.type, workspace.invite_code, body?.inviteCode)) {
+      return NextResponse.json({ error: 'Invalid workspace invite' }, { status: 403 })
+    }
+
+    // Domain gate applies ONLY to org workspaces (type 'class'). Shared
+    // workspaces accept any signed-in account, even when an
     // organization_id was stamped on them at creation (the creator's org is
     // copied onto every type). We skip the gate for the two explicitly
-    // peer/personal types and leave every other type — incl. legacy rows
+    // peer type and leave every other type — incl. legacy rows
     // where `type` predates the column and reads back null — gated exactly as
     // before, so org/class behavior is unchanged.
     const isOrgGated = workspace.type !== 'shared' && workspace.type !== 'personal'

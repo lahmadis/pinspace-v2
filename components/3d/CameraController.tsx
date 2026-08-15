@@ -1,5 +1,5 @@
 import { useThree, useFrame } from '@react-three/fiber'
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useLayoutEffect, useRef } from 'react'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 
@@ -169,7 +169,10 @@ export function CameraController({
   const followPosVec = useRef(new THREE.Vector3())
   const followTargetVec = useRef(new THREE.Vector3())
   const editingWallRef = useRef(editingWall)
-  editingWallRef.current = editingWall
+
+  useLayoutEffect(() => {
+    editingWallRef.current = editingWall
+  }, [editingWall])
 
   // Track the controls instance we registered the 'end' listener on so we
   // can remove it if the instance changes or the component unmounts.
@@ -281,7 +284,7 @@ export function CameraController({
 
     prevEditingWall.current = editingWall
     lastHandledTransitionKey.current = transitionKey
-  }, [editingWall, wallPosition, wallRotation, wallDimensions, camera, transitionKey])
+  }, [editingWall, wallPosition, wallRotation, wallDimensions, camera, transitionKey, orbitControlsRef])
 
   // Remove the 'end' listener when the component unmounts
   useEffect(() => {
@@ -296,6 +299,7 @@ export function CameraController({
   // Runs inside useFrame so we pick up the controls as soon as they're available,
   // but we avoid the anti-pattern of addEventListener inside the hot frame path by
   // guarding on instance identity rather than a boolean flag.
+  // eslint-disable-next-line react-hooks/immutability -- R3F owns this imperative camera; frame callbacks must mutate it in place.
   useFrame((_state, delta) => {
     const controls = getControls(orbitControlsRef)
     if (!controls) return
@@ -336,6 +340,7 @@ export function CameraController({
       camera.up.set(0, 1, 0)
 
       if (camera instanceof THREE.PerspectiveCamera) {
+        // eslint-disable-next-line react-hooks/immutability -- Three.js projection state is intentionally updated in the render loop.
         camera.fov = THREE.MathUtils.lerp(startFov.current, endFov.current, easeT)
         camera.updateProjectionMatrix()
       }

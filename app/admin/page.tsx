@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import PasswordInput from '@/components/ui/PasswordInput'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
@@ -8,7 +8,6 @@ import Link from 'next/link'
 import {
   Building2,
   ExternalLink,
-  LayoutDashboard,
   BarChart3,
   Briefcase,
   ChevronRight,
@@ -26,6 +25,8 @@ import {
 import { toast } from '@/lib/toast'
 import CreateStudioForm from '@/components/admin/CreateStudioForm'
 import InstructorPicker, { type UserSearchResult } from '@/components/admin/InstructorPicker'
+import { Button, Dialog, StatusState } from '@/components/ui'
+import { AdminShell } from '@/components/admin/AdminShell'
 
 type WorkspaceRow = { id: string; name: string; type?: string; created_at?: string }
 
@@ -85,19 +86,19 @@ function StatBlock({ title, data }: { title: string; data: Record<string, number
   if (entries.length === 0) {
     return (
       <div>
-        <h3 className="text-sm font-medium text-gray-700 mb-2">{title}</h3>
-        <p className="text-sm text-gray-500">No data yet</p>
+        <h3 className="text-sm font-medium text-text-primary mb-2">{title}</h3>
+        <p className="text-sm text-text-secondary">No data yet</p>
       </div>
     )
   }
   return (
     <div>
-      <h3 className="text-sm font-medium text-gray-700 mb-2">{title}</h3>
+      <h3 className="text-sm font-medium text-text-primary mb-2">{title}</h3>
       <ul className="space-y-1">
         {entries.map(([key, count]) => (
           <li key={key} className="flex justify-between text-sm">
-            <span className="text-gray-600 truncate max-w-[140px]">{key}</span>
-            <span className="font-medium text-gray-900">{count}</span>
+            <span className="text-text-secondary truncate max-w-[140px]">{key}</span>
+            <span className="font-medium text-text-primary">{count}</span>
           </li>
         ))}
       </ul>
@@ -128,31 +129,31 @@ function timeAgo(iso: string) {
 }
 
 const SIGNUP_STATUS: Record<SignupStatus, { label: string; className: string }> = {
-  active: { label: 'Active', className: 'bg-green-100 text-green-800' },
-  no_profile: { label: 'No profile', className: 'bg-amber-100 text-amber-800' },
-  unverified: { label: 'Unverified', className: 'bg-gray-100 text-gray-600' },
+  active: { label: 'Active', className: 'bg-success/15 text-success' },
+  no_profile: { label: 'No profile', className: 'bg-warning/15 text-warning' },
+  unverified: { label: 'Unverified', className: 'bg-background-lighter text-text-secondary' },
 }
 
 function RecentSignupsCard({ signups, loading }: { signups: RecentSignup[]; loading: boolean }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
-      <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
-        <UserPlus className="w-4 h-4 text-indigo-600" />
-        <h2 className="text-sm font-semibold text-gray-900">Recent signups</h2>
-        <span className="text-xs text-gray-400 ml-1">newest accounts first</span>
+    <div className="bg-background-light rounded-xl border border-border shadow-sm overflow-hidden mb-6">
+      <div className="px-6 py-3 border-b border-border bg-background flex items-center gap-2">
+        <UserPlus className="w-4 h-4 text-accent" />
+        <h2 className="text-sm font-semibold text-text-primary">Recent signups</h2>
+        <span className="text-xs text-text-dim ml-1">newest accounts first</span>
       </div>
 
       {loading ? (
         <div className="p-8 text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 mx-auto" />
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-accent border-t-accent mx-auto" />
         </div>
       ) : signups.length === 0 ? (
-        <div className="p-8 text-center text-gray-500">No signups yet.</div>
+        <div className="p-8 text-center text-text-secondary">No signups yet.</div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" tabIndex={0} role="region" aria-label="Administrative data table">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
+              <tr className="bg-background border-b border-border text-left text-xs uppercase tracking-wide text-text-dim">
                 <th className="px-4 py-3 font-medium">User</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Organization</th>
@@ -164,15 +165,15 @@ function RecentSignupsCard({ signups, loading }: { signups: RecentSignup[]; load
               {signups.map((s) => {
                 const status = SIGNUP_STATUS[s.status] ?? SIGNUP_STATUS.unverified
                 return (
-                  <tr key={s.userId} className="border-b border-gray-100 last:border-0 hover:bg-indigo-50/30">
+                  <tr key={s.userId} className="border-b border-border last:border-0 hover:bg-primary-muted">
                     <td className="px-4 py-3">
                       {s.fullName ? (
                         <>
-                          <p className="font-medium text-gray-900">{s.fullName}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">{s.email || '—'}</p>
+                          <p className="font-medium text-text-primary">{s.fullName}</p>
+                          <p className="text-xs text-text-dim mt-0.5">{s.email || '—'}</p>
                         </>
                       ) : (
-                        <p className="font-medium text-gray-900">{s.email || '—'}</p>
+                        <p className="font-medium text-text-primary">{s.email || '—'}</p>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -182,23 +183,23 @@ function RecentSignupsCard({ signups, loading }: { signups: RecentSignup[]; load
                     </td>
                     <td className="px-4 py-3">
                       {s.organization ? (
-                        <span className="text-gray-700">{s.organization}</span>
+                        <span className="text-text-primary">{s.organization}</span>
                       ) : (
-                        <span className="text-gray-400">Personal</span>
+                        <span className="text-text-dim">Personal</span>
                       )}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <p className="text-gray-700">{formatDate(s.createdAt)}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">{timeAgo(s.createdAt)}</p>
+                      <p className="text-text-primary">{formatDate(s.createdAt)}</p>
+                      <p className="text-xs text-text-dim mt-0.5">{timeAgo(s.createdAt)}</p>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {s.lastSignInAt ? (
                         <>
-                          <p className="text-gray-700">{formatDate(s.lastSignInAt)}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">{timeAgo(s.lastSignInAt)}</p>
+                          <p className="text-text-primary">{formatDate(s.lastSignInAt)}</p>
+                          <p className="text-xs text-text-dim mt-0.5">{timeAgo(s.lastSignInAt)}</p>
                         </>
                       ) : (
-                        <span className="text-gray-400">Never</span>
+                        <span className="text-text-dim">Never</span>
                       )}
                     </td>
                   </tr>
@@ -245,41 +246,41 @@ function InstructorsCard({
       )
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
-      <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
-        <UserPlus className="w-4 h-4 text-indigo-600" />
-        <h2 className="text-sm font-semibold text-gray-900">Instructors</h2>
-        <span className="text-xs text-gray-400 ml-1">owns a class, or has the instructor role</span>
+    <div className="bg-background-light rounded-xl border border-border shadow-sm overflow-hidden mb-6">
+      <div className="px-6 py-3 border-b border-border bg-background flex items-center gap-2">
+        <UserPlus className="w-4 h-4 text-accent" />
+        <h2 className="text-sm font-semibold text-text-primary">Instructors</h2>
+        <span className="text-xs text-text-dim ml-1">owns a class, or has the instructor role</span>
         <div className="ml-auto relative">
-          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Search className="w-3.5 h-3.5 text-text-dim absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search instructors"
-            className="pl-8 pr-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm w-56"
+            className="pl-8 pr-3 py-1.5 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent text-sm w-56"
           />
         </div>
       </div>
 
       {loading ? (
         <div className="p-8 text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 mx-auto" />
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-accent border-t-accent mx-auto" />
         </div>
       ) : failed ? (
         <div className="p-8 text-center">
-          <p className="text-sm text-amber-700">Couldn’t load instructors.</p>
-          <p className="text-xs text-gray-500 mt-1">This is a failed request, not an empty list. Reload to try again.</p>
+          <p className="text-sm text-warning">Couldn’t load instructors.</p>
+          <p className="text-xs text-text-secondary mt-1">This is a failed request, not an empty list. Reload to try again.</p>
         </div>
       ) : instructors.length === 0 ? (
-        <div className="p-8 text-center text-gray-500">No instructors yet.</div>
+        <div className="p-8 text-center text-text-secondary">No instructors yet.</div>
       ) : filtered.length === 0 ? (
-        <div className="p-8 text-center text-gray-500">No instructor matches “{query.trim()}”.</div>
+        <div className="p-8 text-center text-text-secondary">No instructor matches “{query.trim()}”.</div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" tabIndex={0} role="region" aria-label="Administrative data table">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
+              <tr className="bg-background border-b border-border text-left text-xs uppercase tracking-wide text-text-dim">
                 <th className="px-4 py-3 font-medium">Instructor</th>
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Organization</th>
@@ -289,30 +290,30 @@ function InstructorsCard({
             </thead>
             <tbody>
               {filtered.map((i) => (
-                <tr key={i.userId} className="border-b border-gray-100 last:border-0 hover:bg-indigo-50/30">
+                <tr key={i.userId} className="border-b border-border last:border-0 hover:bg-primary-muted">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-gray-900">{i.fullName || '—'}</p>
+                    <p className="font-medium text-text-primary">{i.fullName || '—'}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       {/* Owns a class but cannot create another: POST /api/workspaces
                           gates class creation on account_role. Admin-actionable
                           from /admin/users. */}
                       {i.accountRole !== 'instructor' && (
-                        <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-800">
+                        <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-warning/15 text-warning">
                           No instructor role
                         </span>
                       )}
                       {!i.hasProfile && (
-                        <span className="text-xs text-gray-400">Has not onboarded</span>
+                        <span className="text-xs text-text-dim">Has not onboarded</span>
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-gray-500">{i.email || '—'}</td>
-                  <td className="px-4 py-3 text-gray-500">{i.organization || '—'}</td>
-                  <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{i.classCount}</td>
+                  <td className="px-4 py-3 text-text-secondary">{i.email || '—'}</td>
+                  <td className="px-4 py-3 text-text-secondary">{i.organization || '—'}</td>
+                  <td className="px-4 py-3 text-right text-text-primary tabular-nums">{i.classCount}</td>
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`/admin/instructors/${i.userId}`}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                      className="inline-flex min-h-11 items-center gap-1 rounded-kova px-2 text-xs font-medium text-accent hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
                       View
                       <ChevronRight className="w-3.5 h-3.5" />
@@ -343,6 +344,7 @@ function TransferOwnerModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (loading) return
     setError('')
     if (!target) { setError('Pick the new owner'); return }
     setLoading(true)
@@ -370,57 +372,43 @@ function TransferOwnerModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div
-        className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-lg font-semibold text-gray-900">Transfer ownership</h3>
-          <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <Dialog
+      open
+      onOpenChange={(next) => { if (!next && !loading) onClose() }}
+      closeOnOutsideClick={!loading}
+      hideCloseButton={loading}
+      title="Transfer ownership?"
+      description="Confirm the new owner and review exactly which permissions change."
+    >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
-            <p className="text-sm font-medium text-gray-900">{studio.name}</p>
-            <p className="text-xs text-gray-500 mt-0.5">
+          <div className="px-3 py-2 bg-background border border-border rounded-lg">
+            <p className="text-sm font-medium text-text-primary">{studio.name}</p>
+            <p className="text-xs text-text-secondary mt-0.5">
               Currently owned by {studio.ownerName || 'an unresolved account'}
             </p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">New owner</label>
             <InstructorPicker
+              label="New owner"
               selected={target}
               onSelect={setTarget}
               emptyHint="No account matches. They must sign up before a studio can be transferred to them."
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-text-secondary mt-1">
               They become the owner and are added as an instructor. The previous owner keeps
               instructor access — their boards stay in this studio — but loses publish, archive,
               delete and enrol.
             </p>
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 py-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium text-sm"
-            >
+          {error && <StatusState status="error" title={error} />}
+          <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Cancel transfer</Button>
+            <Button type="submit" loading={loading} aria-label={loading ? 'Transferring ownership' : 'Confirm ownership transfer'}>
               {loading ? 'Transferring…' : 'Transfer'}
-            </button>
+            </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Dialog>
   )
 }
 
@@ -456,11 +444,11 @@ function StudiosCard({
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
-      <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
-        <GraduationCap className="w-4 h-4 text-indigo-600" />
-        <h2 className="text-sm font-semibold text-gray-900">Studios</h2>
-        <span className="text-xs text-gray-400 ml-1">newest first</span>
+    <div className="bg-background-light rounded-xl border border-border shadow-sm overflow-hidden mb-6">
+      <div className="px-6 py-3 border-b border-border bg-background flex items-center gap-2">
+        <GraduationCap className="w-4 h-4 text-accent" />
+        <h2 className="text-sm font-semibold text-text-primary">Studios</h2>
+        <span className="text-xs text-text-dim ml-1">newest first</span>
         <div className="ml-auto">
           <CreateStudioForm onCreated={onChanged} />
         </div>
@@ -468,15 +456,15 @@ function StudiosCard({
 
       {loading ? (
         <div className="p-8 text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 mx-auto" />
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-accent border-t-accent mx-auto" />
         </div>
       ) : studios.length === 0 ? (
-        <div className="p-8 text-center text-gray-500">No studios yet.</div>
+        <div className="p-8 text-center text-text-secondary">No studios yet.</div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" tabIndex={0} role="region" aria-label="Administrative data table">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
+              <tr className="bg-background border-b border-border text-left text-xs uppercase tracking-wide text-text-dim">
                 <th className="px-4 py-3 font-medium">Studio</th>
                 <th className="px-4 py-3 font-medium">Owner</th>
                 <th className="px-4 py-3 font-medium">Department</th>
@@ -487,33 +475,33 @@ function StudiosCard({
             </thead>
             <tbody>
               {studios.map((s) => (
-                <tr key={s.id} className="border-b border-gray-100 last:border-0 hover:bg-indigo-50/30">
+                <tr key={s.id} className="border-b border-border last:border-0 hover:bg-primary-muted">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-gray-900">{s.name}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="font-medium text-text-primary">{s.name}</p>
+                    <p className="text-xs text-text-dim mt-0.5">
                       {s.type}
                       {s.isArchived && ' · archived'}
                     </p>
                   </td>
-                  <td className="px-4 py-3 text-gray-700">
+                  <td className="px-4 py-3 text-text-primary">
                     <p>{s.ownerName || '—'}</p>
                     <button
                       type="button"
                       onClick={() => setTransferring(s)}
-                      className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline mt-0.5"
+                      className="text-xs text-accent hover:text-accent hover:underline mt-0.5"
                     >
                       Transfer
                     </button>
                   </td>
-                  <td className="px-4 py-3 text-gray-500">{s.department || '—'}</td>
-                  <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{s.academicYear || '—'}</td>
+                  <td className="px-4 py-3 text-text-secondary">{s.department || '—'}</td>
+                  <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{s.academicYear || '—'}</td>
                   <td className="px-4 py-3">
                     {s.provisionedByAdmin ? (
-                      <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-100 text-indigo-800">
+                      <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-primary-muted text-accent">
                         Provisioned
                       </span>
                     ) : (
-                      <span className="text-xs text-gray-400">Organic</span>
+                      <span className="text-xs text-text-dim">Organic</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -521,10 +509,10 @@ function StudiosCard({
                       type="button"
                       onClick={() => toggleMembership(s)}
                       disabled={busyId === s.id}
-                      className={`px-2.5 py-1 rounded text-xs font-medium disabled:opacity-50 ${
+                      className={`min-h-11 rounded-kova px-2.5 py-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
                         s.adminIsMember
-                          ? 'border border-gray-300 text-gray-700 hover:bg-gray-50'
-                          : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                          ? 'border border-border text-text-primary hover:bg-background'
+                          : 'bg-accent text-background-light hover:bg-accent-light'
                       }`}
                     >
                       {busyId === s.id ? '…' : s.adminIsMember ? 'Leave' : 'Join'}
@@ -549,17 +537,21 @@ function StudiosCard({
 }
 
 function DomainChipInput({
+  inputId,
   domains,
   onAdd,
   onRemove,
   error,
   onErrorClear,
+  disabled = false,
 }: {
+  inputId: string
   domains: string[]
   onAdd: (d: string) => void
   onRemove: (d: string) => void
   error: string
   onErrorClear: () => void
+  disabled?: boolean
 }) {
   const [input, setInput] = useState('')
 
@@ -579,28 +571,31 @@ function DomainChipInput({
     <div>
       <div className="flex gap-2">
         <input
+          id={inputId}
           type="text"
+          disabled={disabled}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit() } }}
           placeholder="e.g. wit.edu"
-          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+          className="flex-1 px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent text-sm"
         />
         <button
           type="button"
           onClick={commit}
-          className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium"
+          disabled={disabled}
+          className="min-h-11 px-3 py-2 bg-background-lighter hover:bg-background-lighter text-text-primary rounded-lg text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           Add
         </button>
       </div>
-      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      {error && <p className="text-xs text-danger mt-1">{error}</p>}
       {domains.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-2">
           {domains.map((d) => (
-            <span key={d} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-xs font-medium border border-indigo-100">
+            <span key={d} className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-muted text-accent rounded text-xs font-medium border border-accent">
               {d}
-              <button type="button" onClick={() => onRemove(d)} className="text-indigo-400 hover:text-indigo-600 ml-0.5">
+              <button type="button" onClick={() => onRemove(d)} disabled={disabled} aria-label={`Remove ${d}`} className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50">
                 <X className="w-3 h-3" />
               </button>
             </span>
@@ -651,6 +646,12 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
     setError('')
   }
 
+  const setDialogOpen = (next: boolean) => {
+    if (!next && loading) return
+    if (!next) reset()
+    setOpen(next)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -690,105 +691,104 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
     <div>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
+        onClick={() => setOpen(true)}
+        className="inline-flex min-h-11 items-center gap-2 rounded-kova px-4 py-2 bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent text-background-light rounded-lg hover:bg-accent-light transition-colors font-medium text-sm"
       >
         <Plus className="w-4 h-4" />
         New org
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => { reset(); setOpen(false) }}>
-          <div
-            className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-semibold text-gray-900">Create organization</h3>
-              <button type="button" onClick={() => { reset(); setOpen(false) }} className="p-1 text-gray-400 hover:text-gray-600 rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <Dialog
+        open={open}
+        onOpenChange={setDialogOpen}
+        closeOnOutsideClick={!loading}
+        hideCloseButton={loading}
+        title="Create organization"
+        description="Create an institution or firm and define its verified email domains."
+      >
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <label htmlFor="create-org-type" className="block text-sm font-medium text-text-primary mb-1">Type</label>
                 <select
+                  id="create-org-type"
                   value={form.type}
                   onChange={(e) => setForm((p) => ({ ...p, type: e.target.value as 'university' | 'firm' }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
                 >
                   <option value="university">University (school)</option>
                   <option value="firm">Firm</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <label htmlFor="create-org-name" className="block text-sm font-medium text-text-primary mb-1">Name</label>
                 <input
+                  id="create-org-name"
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
                   onBlur={autoSlug}
                   placeholder="e.g. Wentworth Institute of Technology"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Slug</label>
+                <label htmlFor="create-org-slug" className="block text-sm font-medium text-text-primary mb-1">Slug</label>
                 <input
+                  id="create-org-slug"
                   type="text"
                   value={form.slug}
                   onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value }))}
                   placeholder="e.g. wit"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
                 />
-                <p className="text-xs text-gray-500 mt-1">Handoff link: /i/{form.slug || 'slug'}</p>
+                <p className="text-xs text-text-secondary mt-1">Handoff link: /i/{form.slug || 'slug'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Network label <span className="font-normal text-gray-400">(optional)</span>
+                <label htmlFor="create-org-network-label" className="block text-sm font-medium text-text-primary mb-1">
+                  Network label <span className="font-normal text-text-dim">(optional)</span>
                 </label>
                 <input
+                  id="create-org-network-label"
                   type="text"
                   value={form.network_label}
                   onChange={(e) => setForm((p) => ({ ...p, network_label: e.target.value }))}
                   placeholder="e.g. WIT Design Network"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="create-org-domain" className="block text-sm font-medium text-text-primary mb-1">
                   Allowed email domains
                 </label>
                 <DomainChipInput
+                  inputId="create-org-domain"
                   domains={domains}
                   onAdd={handleDomainAdd}
                   onRemove={(d) => setDomains((prev) => prev.filter((x) => x !== d))}
                   error={domainError}
                   onErrorClear={() => setDomainError('')}
                 />
-                <p className="text-xs text-gray-500 mt-1">Leave empty for no restriction.</p>
+                <p className="text-xs text-text-secondary mt-1">Leave empty for no restriction.</p>
               </div>
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && <p className="text-sm text-danger">{error}</p>}
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => { reset(); setOpen(false) }}
-                  className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm"
+                  onClick={() => setDialogOpen(false)}
+                  className="min-h-11 flex-1 py-2 px-4 border border-border text-text-primary rounded-lg hover:bg-background font-medium text-sm"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 py-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium text-sm"
+                  className="min-h-11 flex-1 py-2 px-4 bg-accent text-background-light rounded-lg hover:bg-accent-light disabled:opacity-50 font-medium text-sm"
                 >
                   {loading ? 'Creating…' : 'Create'}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Dialog>
     </div>
   )
 }
@@ -797,52 +797,53 @@ function OrgRow({ inst, onEdit }: { inst: InstitutionWithCount; onEdit: (inst: I
   const [expanded, setExpanded] = useState(false)
 
   return (
-    <li className="border-b border-gray-100 last:border-0">
-      <div className="flex items-center gap-4 px-6 py-4 hover:bg-indigo-50/30 transition-colors">
+    <li className="border-b border-border last:border-0">
+      <div className="flex flex-col items-stretch gap-3 px-4 py-4 transition-colors hover:bg-primary-muted sm:flex-row sm:items-center sm:gap-4 sm:px-6">
         {/* Expand toggle */}
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="p-1 text-gray-400 hover:text-gray-600 rounded shrink-0"
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-kova text-text-dim hover:bg-background-lighter hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           title={expanded ? 'Collapse' : 'Show studios'}
         >
-          {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4 text-gray-300" />}
+          {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4 text-text-dim" />}
         </button>
 
         {/* Name + meta */}
         <div className="min-w-0 flex-1">
-          <p className="font-medium text-gray-900 truncate">{inst.name}</p>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="font-medium text-text-primary truncate">{inst.name}</p>
+          <p className="text-xs text-text-dim mt-0.5">
             /i/{inst.slug}
             {inst.domains?.length ? ` · ${inst.domains.join(', ')}` : ' · no domain restriction'}
           </p>
         </div>
 
         {/* Counts */}
-        <div className="flex items-center gap-5 shrink-0">
-          <span className="flex items-center gap-1 text-sm text-gray-600 whitespace-nowrap" title="Users">
-            <Users className="w-4 h-4 text-gray-400" />
+        <div className="flex shrink-0 flex-wrap items-center gap-4">
+          <span className="flex items-center gap-1 text-sm text-text-secondary whitespace-nowrap" title="Users">
+            <Users className="w-4 h-4 text-text-dim" />
             {inst.user_count}
           </span>
-          <span className="flex items-center gap-1 text-sm text-gray-600 whitespace-nowrap" title="Studio rooms">
-            <LayoutGrid className="w-4 h-4 text-gray-400" />
+          <span className="flex items-center gap-1 text-sm text-text-secondary whitespace-nowrap" title="Studio rooms">
+            <LayoutGrid className="w-4 h-4 text-text-dim" />
             {inst.workspace_count}
           </span>
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Link
             href={`/admin/institutions/${inst.slug}`}
-            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1 rounded hover:bg-indigo-50 whitespace-nowrap"
+            className="inline-flex min-h-11 items-center rounded-kova px-3 py-2 text-xs font-medium text-accent hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             Full stats
           </Link>
           <button
             type="button"
             onClick={() => onEdit(inst)}
-            className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova text-text-dim hover:bg-background-lighter hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             title="Edit"
+            aria-label={`Edit ${inst.name}`}
           >
             <Pencil className="w-3.5 h-3.5" />
           </button>
@@ -850,8 +851,9 @@ function OrgRow({ inst, onEdit }: { inst: InstitutionWithCount; onEdit: (inst: I
             href={`/i/${inst.slug}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova text-text-dim hover:bg-background-lighter hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             title="Open explore"
+            aria-label={`Open ${inst.name} explore page`}
           >
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
@@ -862,13 +864,13 @@ function OrgRow({ inst, onEdit }: { inst: InstitutionWithCount; onEdit: (inst: I
       {expanded && (
         <div className="px-6 pb-4 ml-10">
           {inst.workspaces.length === 0 ? (
-            <p className="text-sm text-gray-400 italic">No studio rooms yet</p>
+            <p className="text-sm text-text-dim italic">No studio rooms yet</p>
           ) : (
             <ul className="space-y-1.5">
               {inst.workspaces.map((ws) => (
-                <li key={ws.id} className="flex items-center justify-between text-sm text-gray-600 py-1 border-b border-gray-50 last:border-0">
-                  <span className="font-medium text-gray-800">{ws.name || 'Unnamed'}</span>
-                  <span className="text-xs text-gray-400">
+                <li key={ws.id} className="flex items-center justify-between text-sm text-text-secondary py-1 border-b border-border last:border-0">
+                  <span className="font-medium text-text-primary">{ws.name || 'Unnamed'}</span>
+                  <span className="text-xs text-text-dim">
                     {ws.type || 'class'} · {ws.created_at ? new Date(ws.created_at).toLocaleDateString() : ''}
                   </span>
                 </li>
@@ -900,12 +902,16 @@ function EditOrgModal({
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const deleteCancelRef = useRef<HTMLButtonElement>(null)
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null)
 
   // Domain management — fetched live on open
   const [domains, setDomains] = useState<{ id: string; domain: string }[]>([])
   const [domainsLoading, setDomainsLoading] = useState(true)
   const [domainError, setDomainError] = useState('')
   const [domainAdding, setDomainAdding] = useState(false)
+  const [domainRemoving, setDomainRemoving] = useState<string | null>(null)
+  const mutationPending = loading || deleting || domainAdding || domainRemoving !== null
 
   useEffect(() => {
     fetch(`/api/admin/institutions/${encodeURIComponent(inst.slug)}/domains`, { cache: 'no-store' })
@@ -918,6 +924,7 @@ function EditOrgModal({
   }, [inst.slug])
 
   const handleDomainAdd = async (d: string) => {
+    if (mutationPending) return
     if (d.startsWith('\x00INVALID:')) {
       setDomainError('Invalid format — use e.g. wit.edu')
       return
@@ -944,7 +951,9 @@ function EditOrgModal({
   }
 
   const handleDomainRemove = async (domainId: string, domainStr: string) => {
+    if (mutationPending) return
     setDomainError('')
+    setDomainRemoving(domainId)
     try {
       const res = await fetch(
         `/api/admin/institutions/${encodeURIComponent(inst.slug)}/domains/${encodeURIComponent(domainStr)}`,
@@ -958,10 +967,13 @@ function EditOrgModal({
       setDomains((prev) => prev.filter((d) => d.id !== domainId))
     } catch {
       setDomainError('Request failed')
+    } finally {
+      setDomainRemoving(null)
     }
   }
 
   const handleDelete = async () => {
+    if (mutationPending) return
     setDeleting(true)
     try {
       const res = await fetch(`/api/admin/institutions/${encodeURIComponent(inst.slug)}`, { method: 'DELETE' })
@@ -983,6 +995,7 @@ function EditOrgModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (mutationPending) return
     setError('')
     if (!form.name.trim() || !form.slug.trim()) {
       setError('Name and slug are required')
@@ -1014,70 +1027,90 @@ function EditOrgModal({
     }
   }
 
+  const beginDeleteConfirmation = () => {
+    setConfirmDelete(true)
+    window.setTimeout(() => deleteCancelRef.current?.focus(), 0)
+  }
+
+  const cancelDeleteConfirmation = () => {
+    setConfirmDelete(false)
+    window.setTimeout(() => deleteTriggerRef.current?.focus(), 0)
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="bg-white rounded-xl border border-gray-200 shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-lg font-semibold text-gray-900">Edit org</h3>
-          <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <Dialog
+      open
+      onOpenChange={(next) => { if (!next && !mutationPending) onClose() }}
+      closeOnOutsideClick={!mutationPending}
+      hideCloseButton={mutationPending}
+      title="Edit organization"
+      description={`Update ${inst.name} without changing its existing access contract.`}
+    >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+            <label htmlFor="edit-org-type" className="block text-sm font-medium text-text-primary mb-1">Type</label>
             <select
+              id="edit-org-type"
               value={form.type}
+              disabled={mutationPending}
               onChange={(e) => setForm((p) => ({ ...p, type: e.target.value as 'university' | 'firm' }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
             >
               <option value="university">University (school)</option>
               <option value="firm">Firm</option>
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <label htmlFor="edit-org-name" className="block text-sm font-medium text-text-primary mb-1">Name</label>
             <input
+              id="edit-org-name"
               type="text"
               value={form.name}
+              disabled={mutationPending}
               onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Slug</label>
+            <label htmlFor="edit-org-slug" className="block text-sm font-medium text-text-primary mb-1">Slug</label>
             <input
+              id="edit-org-slug"
               type="text"
               value={form.slug}
+              disabled={mutationPending}
               onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
             />
-            <p className="text-xs text-gray-500 mt-1">Handoff link: /i/{form.slug || 'slug'}</p>
+            <p className="text-xs text-text-secondary mt-1">Handoff link: /i/{form.slug || 'slug'}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Network label <span className="font-normal text-gray-400">(optional)</span></label>
+            <label htmlFor="edit-org-network-label" className="block text-sm font-medium text-text-primary mb-1">Network label <span className="font-normal text-text-dim">(optional)</span></label>
             <input
+              id="edit-org-network-label"
               type="text"
               value={form.network_label}
+              disabled={mutationPending}
               onChange={(e) => setForm((p) => ({ ...p, network_label: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Allowed email domains</label>
+            <label htmlFor="edit-org-domain" className="block text-sm font-medium text-text-primary mb-2">Allowed email domains</label>
             {domainsLoading ? (
-              <p className="text-xs text-gray-400">Loading…</p>
+              <p className="text-xs text-text-dim">Loading…</p>
             ) : (
               <>
                 {domains.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {domains.map((d) => (
-                      <span key={d.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-xs font-medium border border-indigo-100">
+                      <span key={d.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-muted text-accent rounded text-xs font-medium border border-accent">
                         {d.domain}
                         <button
                           type="button"
                           onClick={() => handleDomainRemove(d.id, d.domain)}
-                          className="text-indigo-400 hover:text-indigo-600 ml-0.5"
+                          disabled={mutationPending}
+                          aria-label={`Remove ${d.domain}`}
+                          className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -1086,29 +1119,32 @@ function EditOrgModal({
                   </div>
                 )}
                 <DomainChipInput
+                  inputId="edit-org-domain"
                   domains={[]}
                   onAdd={handleDomainAdd}
                   onRemove={() => {}}
                   error={domainError}
                   onErrorClear={() => setDomainError('')}
+                  disabled={mutationPending}
                 />
-                {domainAdding && <p className="text-xs text-gray-400 mt-1">Adding…</p>}
+                {domainAdding && <p className="text-xs text-text-dim mt-1">Adding…</p>}
               </>
             )}
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2 pt-1">
             <button
               type="button"
-              onClick={onClose}
-              className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm"
+              onClick={() => { if (!mutationPending) onClose() }}
+              disabled={mutationPending}
+              className="min-h-11 flex-1 py-2 px-4 border border-border text-text-primary rounded-lg hover:bg-background font-medium text-sm"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={loading}
-              className="flex-1 py-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium text-sm"
+              disabled={mutationPending}
+              className="min-h-11 flex-1 py-2 px-4 bg-accent text-background-light rounded-lg hover:bg-accent-light disabled:opacity-50 font-medium text-sm"
             >
               {loading ? 'Saving…' : 'Save changes'}
             </button>
@@ -1116,32 +1152,36 @@ function EditOrgModal({
         </form>
 
         {/* Delete zone */}
-        <div className="mt-5 pt-4 border-t border-gray-100">
+        <div className="mt-5 pt-4 border-t border-border">
           {!confirmDelete ? (
             <button
+              ref={deleteTriggerRef}
               type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700"
+              onClick={beginDeleteConfirmation}
+              disabled={mutationPending}
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-kova px-2 text-sm font-semibold text-danger hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
             >
               <Trash2 className="w-4 h-4" />
               Delete org
             </button>
           ) : (
             <div className="space-y-2">
-              <p className="text-sm text-red-700 font-medium">Delete <span className="font-bold">{inst.name}</span>? This cannot be undone.</p>
+              <p className="text-sm text-danger font-medium">Delete <span className="font-bold">{inst.name}</span>? This cannot be undone.</p>
               <div className="flex gap-2">
                 <button
+                  ref={deleteCancelRef}
                   type="button"
-                  onClick={() => setConfirmDelete(false)}
-                  className="flex-1 py-1.5 px-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"
+                  onClick={cancelDeleteConfirmation}
+                  disabled={mutationPending}
+                  className="min-h-11 flex-1 py-2 px-3 border border-border text-text-primary rounded-lg hover:bg-background text-sm"
                 >
                   Keep org
                 </button>
                 <button
                   type="button"
                   onClick={handleDelete}
-                  disabled={deleting}
-                  className="flex-1 py-1.5 px-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
+                  disabled={mutationPending}
+                  className="min-h-11 flex-1 py-2 px-3 bg-danger text-background-light rounded-lg hover:bg-danger disabled:opacity-50 text-sm font-medium"
                 >
                   {deleting ? 'Deleting…' : 'Yes, delete'}
                 </button>
@@ -1149,8 +1189,7 @@ function EditOrgModal({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Dialog>
   )
 }
 
@@ -1169,6 +1208,7 @@ export default function AdminDashboardPage() {
   const [studios, setStudios] = useState<AdminStudio[]>([])
   const [instructors, setInstructors] = useState<AdminInstructor[]>([])
   const [instructorsFailed, setInstructorsFailed] = useState(false)
+  const [dataError, setDataError] = useState('')
   const [stats, setStats] = useState<{
     total: number
     by_year: Record<string, number>
@@ -1215,11 +1255,16 @@ export default function AdminDashboardPage() {
   const loadData = () => {
     if (!isAdmin) return
     setLoading(true)
+    setDataError('')
+    const fetchRequired = (url: string) => fetch(url, { cache: 'no-store' }).then((response) => {
+      if (!response.ok) throw new Error('Failed to load administrative data')
+      return response.json()
+    })
     Promise.all([
-      fetch('/api/admin/overview', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { institutions: [] })),
-      fetch('/api/admin/stats', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)),
-      fetch('/api/admin/recent-signups', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { signups: [] })),
-      fetch('/api/admin/studios', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { studios: [] })),
+      fetchRequired('/api/admin/overview'),
+      fetchRequired('/api/admin/stats'),
+      fetchRequired('/api/admin/recent-signups'),
+      fetchRequired('/api/admin/studios'),
       // `failed` rather than an empty list: "the request broke" and "there are
       // no instructors" render as very different things, and the card must not
       // report the first as the second.
@@ -1236,6 +1281,7 @@ export default function AdminDashboardPage() {
         setInstructorsFailed(instructorsData?.failed === true)
       })
       .catch(() => {
+        setDataError('Failed to load administrative data')
         setInstitutions([])
         setRecentSignups([])
         setStudios([])
@@ -1246,40 +1292,42 @@ export default function AdminDashboardPage() {
   }
 
   useEffect(() => {
+    // The request lifecycle intentionally owns the loading state for this admin view.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData()
   }, [isAdmin]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-200 border-t-indigo-600" />
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-accent" />
       </div>
     )
   }
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-xl border border-gray-200">
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <div className="w-full max-w-md rounded-xl bg-background-light p-8 shadow-xl border border-border">
           <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">PinSpace Admin</h1>
-            <p className="text-sm text-gray-500 mt-1">Sign in with your admin email</p>
+            <h1 className="text-2xl font-bold text-text-primary">PinSpace Admin</h1>
+            <p className="text-sm text-text-secondary mt-1">Sign in with your admin email</p>
           </div>
           <form onSubmit={handleAdminSignIn} className="space-y-4">
             <div>
-              <label htmlFor="admin-email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label htmlFor="admin-email" className="block text-sm font-medium text-text-primary mb-1">Email</label>
               <input
                 id="admin-email"
                 type="email"
                 value={signInEmail}
                 onChange={(e) => setSignInEmail(e.target.value)}
                 placeholder="you@gmail.com"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
                 autoComplete="email"
               />
             </div>
             <div>
-              <label htmlFor="admin-password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label htmlFor="admin-password" className="block text-sm font-medium text-text-primary mb-1">Password</label>
               <PasswordInput
                 id="admin-password"
                 value={signInPassword}
@@ -1287,11 +1335,11 @@ export default function AdminDashboardPage() {
                 autoComplete="current-password"
               />
             </div>
-            {signInError && <p className="text-sm text-red-600">{signInError}</p>}
+            {signInError && <p className="text-sm text-danger">{signInError}</p>}
             <button
               type="submit"
               disabled={signingIn}
-              className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
+              className="w-full py-2.5 bg-accent text-background-light rounded-lg hover:bg-accent-light disabled:opacity-50 font-medium"
             >
               {signingIn ? 'Signing in…' : 'Sign in'}
             </button>
@@ -1301,20 +1349,54 @@ export default function AdminDashboardPage() {
     )
   }
 
+  if (isAdmin === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background" role="status" aria-label="Checking administrator access">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-transparent" />
+      </div>
+    )
+  }
+
   if (isAdmin === false) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-md rounded-xl bg-white p-8 shadow border border-gray-200 text-center">
-          <h1 className="text-xl font-bold text-gray-900 mb-2">Access denied</h1>
-          <p className="text-gray-600 mb-6">This account is not in PINSPACE_ADMIN_EMAILS.</p>
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <div className="w-full max-w-md rounded-xl bg-background-light p-8 shadow border border-border text-center">
+          <h1 className="text-xl font-bold text-text-primary mb-2">Access denied</h1>
+          <p className="text-text-secondary mb-6">This account is not in PINSPACE_ADMIN_EMAILS.</p>
           <button
             onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-            className="text-indigo-600 hover:underline"
+            className="text-accent hover:underline"
           >
             Sign out
           </button>
         </div>
       </div>
+    )
+  }
+
+  if (dataError) {
+    return (
+      <AdminShell
+        currentPath="/admin"
+        title="Admin overview"
+        description="Manage organizations, users, instructors, and studios."
+        actions={
+          <button
+            type="button"
+            onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
+            className="inline-flex min-h-11 items-center rounded-kova px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            Sign out
+          </button>
+        }
+      >
+        <StatusState
+          status="error"
+          title={dataError}
+          description="The request failed; no empty administrative state is being inferred."
+          action={<Button type="button" variant="secondary" onClick={loadData}>Try again</Button>}
+        />
+      </AdminShell>
     )
   }
 
@@ -1328,18 +1410,18 @@ export default function AdminDashboardPage() {
     icon: React.ReactNode,
     emptyMsg: string
   ) => (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
-      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+    <div className="bg-background-light rounded-xl border border-border shadow-sm overflow-hidden mb-6">
+      <div className="px-6 py-4 border-b border-border bg-background flex items-center justify-between">
         <div className="flex items-center gap-2">
           {icon}
           <div>
-            <h2 className="text-base font-semibold text-gray-900">{title}</h2>
-            <p className="text-xs text-gray-500">{description}</p>
+            <h2 className="text-base font-semibold text-text-primary">{title}</h2>
+            <p className="text-xs text-text-secondary">{description}</p>
           </div>
         </div>
         {/* Column headers */}
         {list.length > 0 && (
-          <div className="hidden sm:flex items-center gap-5 mr-32 text-xs text-gray-400 font-medium uppercase tracking-wide">
+          <div className="hidden sm:flex items-center gap-5 mr-32 text-xs text-text-dim font-medium uppercase tracking-wide">
             <span className="flex items-center gap-1"><Users className="w-3 h-3" /> Users</span>
             <span className="flex items-center gap-1"><LayoutGrid className="w-3 h-3" /> Studios</span>
           </div>
@@ -1348,11 +1430,11 @@ export default function AdminDashboardPage() {
 
       {loading ? (
         <div className="p-8 text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 mx-auto" />
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-accent border-t-accent mx-auto" />
         </div>
       ) : list.length === 0 ? (
-        <div className="p-8 text-center text-gray-500">
-          <p className="font-medium text-gray-700">{emptyMsg}</p>
+        <div className="p-8 text-center text-text-secondary">
+          <p className="font-medium text-text-primary">{emptyMsg}</p>
           <p className="mt-1 text-sm">Create one with the button above.</p>
         </div>
       ) : (
@@ -1366,25 +1448,14 @@ export default function AdminDashboardPage() {
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-slate-50 to-indigo-50">
-      <div className="max-w-5xl mx-auto px-6 py-8">
-
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="p-2 hover:bg-white/80 rounded-lg transition-colors text-gray-600">←</Link>
-            <div className="flex items-center gap-2">
-              <LayoutDashboard className="w-7 h-7 text-indigo-600" />
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Admin</h1>
-                <p className="text-sm text-gray-500">Orgs, users, and studios</p>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
+    <AdminShell
+      currentPath="/admin"
+      title="Admin overview"
+      description="Manage organizations, users, instructors, and studios."
+      actions={<>
             <Link
               href="/admin/users"
-              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-white/80 transition-colors font-medium text-sm"
+              className="inline-flex min-h-11 items-center gap-2 rounded-kova border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <Users className="w-4 h-4" />
               Users &amp; roles
@@ -1392,20 +1463,20 @@ export default function AdminDashboardPage() {
             <CreateOrgForm onCreated={loadData} />
             <button
               onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-              className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-white/80 rounded-lg transition-colors"
+              className="inline-flex min-h-11 items-center rounded-kova px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               Sign out
             </button>
-          </div>
-        </div>
+          </>}
+    >
 
         {/* Global student stats */}
         {stats && (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
-            <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-indigo-600" />
-              <h2 className="text-sm font-semibold text-gray-900">Global stats</h2>
-              <span className="text-xs text-gray-400 ml-1">{stats.total} profiles</span>
+          <div className="bg-background-light rounded-xl border border-border shadow-sm overflow-hidden mb-6">
+            <div className="px-6 py-3 border-b border-border bg-background flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-accent" />
+              <h2 className="text-sm font-semibold text-text-primary">Global stats</h2>
+              <span className="text-xs text-text-dim ml-1">{stats.total} profiles</span>
             </div>
             <div className="p-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
               <StatBlock title="By year" data={stats.by_year} />
@@ -1429,22 +1500,20 @@ export default function AdminDashboardPage() {
           institutionsList,
           'Institutions',
           'Schools and universities — click a row to expand studio rooms.',
-          <Building2 className="w-4 h-4 text-indigo-600" />,
+          <Building2 className="w-4 h-4 text-accent" />,
           'No institutions yet.'
         )}
         {renderOrgSection(
           firmsList,
           'Firms',
           'Architecture and design firms.',
-          <Briefcase className="w-4 h-4 text-amber-500" />,
+          <Briefcase className="w-4 h-4 text-warning" />,
           'No firms yet.'
         )}
 
-        <p className="text-xs text-gray-400 text-center mt-2">
+        <p className="text-xs text-text-dim text-center mt-2">
           User counts reflect profiles with <code>institution_id</code> set. Studio counts are workspaces linked to this org.
         </p>
-      </div>
-
       {editingInst && (
         <EditOrgModal
           inst={editingInst}
@@ -1452,6 +1521,6 @@ export default function AdminDashboardPage() {
           onSaved={() => { setEditingInst(null); loadData() }}
         />
       )}
-    </div>
+    </AdminShell>
   )
 }

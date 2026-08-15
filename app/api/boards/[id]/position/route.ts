@@ -3,21 +3,21 @@ import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const boardId = (await params).id
   try {
-    const supabase = supabaseServer()
+    const supabase = await supabaseServer()
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-    if (sessionError || !session?.user?.id) {
+    if (userError || !user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = session.user.id
-    const boardId = params.id
+    const userId = user.id
     const { wallIndex, x, y, width, height, side, rotation, boardWidthIn, boardHeightIn } = await request.json()
 
     if (wallIndex === undefined || x === undefined || y === undefined) {
@@ -114,7 +114,7 @@ export async function PATCH(
     // dereference, network blip). Surface the message so we can debug
     // without server-log access.
     console.error('Error updating position (uncaught)', {
-      boardId: params.id,
+      boardId,
       error,
       stack: error instanceof Error ? error.stack : undefined,
     })
