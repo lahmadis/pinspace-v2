@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
-import { isInstructorAccount } from '@/lib/auth/getAccountRole'
 import { isSuperadmin } from '@/lib/auth/superadmin'
 import { validateName } from '@/lib/validation/safeName'
 import {
@@ -34,7 +33,7 @@ async function authorizeRoomMutation(
   roomId: string,
   options: { allowMembers?: boolean; allowSuperadmin?: boolean } = {}
 ): Promise<
-  | { ok: true; room: Record<string, unknown>; workspaceId: string; userId: string }
+  | { ok: true; room: Record<string, unknown>; workspace: Record<string, unknown>; workspaceId: string; userId: string }
   | { ok: false; response: NextResponse }
 > {
   void request
@@ -62,7 +61,7 @@ async function authorizeRoomMutation(
   const workspaceId = room.workspace_id as string
   const { data: workspace } = await admin
     .from('workspaces')
-    .select('owner_id')
+    .select('owner_id, type, organization_id')
     .eq('id', workspaceId)
     .maybeSingle()
   if (!workspace) {
@@ -99,7 +98,7 @@ async function authorizeRoomMutation(
     }
   }
 
-  return { ok: true, room, workspaceId, userId }
+  return { ok: true, room, workspace, workspaceId, userId }
 }
 
 /**
@@ -144,7 +143,8 @@ export async function PATCH(
       allowSuperadmin: wantsWallColor,
     })
     if (!auth.ok) return auth.response
-    const { room } = auth
+    const { room, workspace } = auth
+    const admin = supabaseServiceRole()
 
     const updates: Record<string, unknown> = {}
 
@@ -165,11 +165,23 @@ export async function PATCH(
     if (typeof body?.isPublished === 'boolean') {
       // Publishing to the network is an instructor-only action. Unpublishing is
       // always allowed (retracting content is never a privilege escalation).
-      if (body.isPublished === true && !(await isInstructorAccount(auth.userId))) {
-        return NextResponse.json(
-          { error: 'Only instructors can publish rooms to the network.' },
-          { status: 403 }
-        )
+      if (body.isPublished === true) {
+        const { data: profile } = await admin
+          .from('user_profiles')
+          .select('account_role, organization_id')
+          .eq('user_id', auth.userId)
+          .maybeSingle()
+        if (
+          workspace.type !== 'class'
+          || !workspace.organization_id
+          || profile?.account_role !== 'instructor'
+          || profile.organization_id !== workspace.organization_id
+        ) {
+          return NextResponse.json(
+            { error: 'Only verified instructors can publish classes in their organization.' },
+            { status: 403 }
+          )
+        }
       }
       updates.is_published = body.isPublished
       // Mirror published_at so timestamp metadata stays coherent with the flag.
@@ -185,8 +197,6 @@ export async function PATCH(
       }
       updates.wall_color = wc
     }
-
-    const admin = supabaseServiceRole()
 
     if (Object.keys(updates).length > 0) {
       const { error: updateError } = await admin

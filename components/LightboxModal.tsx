@@ -2273,6 +2273,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               <div className="flex items-center gap-1.5">
                 <input
                   type="text"
+                  aria-label="Board link URL"
                   value={linkInput}
                   onChange={(e) => {
                     setLinkInput(e.target.value)
@@ -2316,6 +2317,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             <div className="flex flex-col gap-2 w-64 rounded-kova bg-kova-forest/95 backdrop-blur-xl border border-background-light/20 shadow-[var(--shadow-raised)] p-3">
               <div className="text-[10px] uppercase tracking-wider text-background-light/70">Board size (real-world)</div>
               <select
+                aria-label="Sheet size preset"
                 value=""
                 onChange={(e) => {
                   const preset: SheetSizePreset | undefined = SHEET_SIZE_PRESETS.find((p) => p.label === e.target.value)

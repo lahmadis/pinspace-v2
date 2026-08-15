@@ -82,7 +82,7 @@ test.describe('Kova discovery routes', () => {
     await page.route('**/api/explore/academic-years**', (route) => route.fulfill({ json: { academicYears: [] } }))
     await page.route('**/api/explore/studios**', (route) => route.fulfill({ status: 500, json: { error: 'Unavailable' } }))
     await page.goto('/explore')
-    await expect(page.getByRole('alert')).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Studio network results' }).getByRole('alert')).toBeVisible()
     const results = await new AxeBuilder({ page }).analyze()
     expect(results.violations.filter((violation) => ['serious', 'critical'].includes(violation.impact || ''))).toEqual([])
   })

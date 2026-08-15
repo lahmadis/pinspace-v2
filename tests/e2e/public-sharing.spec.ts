@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test, type Page, type Response } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 const isolatedBaseUrl = process.env.PUBLIC_SHARING_E2E_BASE_URL ?? ''
 const publicUrl = (path: string) => `${isolatedBaseUrl}${path}`
@@ -7,27 +7,6 @@ const publicUrl = (path: string) => `${isolatedBaseUrl}${path}`
 async function expectNoSeriousAxeFindings(page: Page) {
   const results = await new AxeBuilder({ page }).analyze()
   expect(results.violations.filter((violation) => ['serious', 'critical'].includes(violation.impact || ''))).toEqual([])
-}
-
-function skipIfR3fCannotLoad(response: Response | null) {
-  test.skip(
-    response?.status() === 500,
-    'This route is blocked locally by the existing Next.js 16 / React Three Fiber ReactCurrentOwner module-evaluation failure.',
-  )
-}
-
-function trackKnownR3fHydrationFailure(page: Page) {
-  let blocked = false
-  page.on('response', (response) => {
-    if (response.status() >= 500 && response.url().includes('/_next/')) blocked = true
-  })
-  page.on('console', (message) => {
-    if (message.text().includes('ReactCurrentOwner')) blocked = true
-  })
-  page.on('pageerror', (error) => {
-    if (error.message.includes('ReactCurrentOwner')) blocked = true
-  })
-  return () => blocked
 }
 
 async function mockEmptyShare(page: Page) {
@@ -40,15 +19,15 @@ async function mockEmptyShare(page: Page) {
 }
 
 test.describe('Kova public sharing', () => {
-  for (const width of [360, 390, 768, 1024, 1440]) {
+  for (const width of [360, 390, 768, 1024, 1440, 1920]) {
     test(`empty share remains usable at ${width}px`, async ({ page }) => {
       await mockEmptyShare(page)
       await page.setViewportSize({ width, height: 900 })
       const response = await page.goto(publicUrl('/share/public-example'), { waitUntil: 'domcontentloaded' })
-      skipIfR3fCannotLoad(response)
+      expect(response?.status()).toBeLessThan(500)
 
-      await expect(page.getByText('No boards in this studio yet')).toBeVisible()
-      await expect(page.getByRole('status').filter({ hasText: '0 boards' })).toBeVisible()
+      await expect(page.getByText('No boards in this studio yet')).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByText('0 boards', { exact: true })).toBeVisible()
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     })
   }
@@ -59,7 +38,7 @@ test.describe('Kova public sharing', () => {
       json: { error: 'Internal lookup referenced room-123 and can_comment=true' },
     }))
     const shareResponse = await page.goto(publicUrl('/share/private-token-value'))
-    skipIfR3fCannotLoad(shareResponse)
+    expect(shareResponse?.status()).toBeLessThan(500)
     const shareAlert = page.getByRole('alert').filter({ hasText: 'Link unavailable' })
     await expect(shareAlert).toContainText('Link unavailable')
     await expect(shareAlert).not.toContainText(/private-token-value|room-123|can_comment/i)
@@ -70,7 +49,7 @@ test.describe('Kova public sharing', () => {
       json: { error: 'Expired capability token guest-token-123' },
     }))
     const critResponse = await page.goto(publicUrl('/crit/private-crit-value'))
-    skipIfR3fCannotLoad(critResponse)
+    expect(critResponse?.status()).toBeLessThan(500)
     const critAlert = page.getByRole('alert').filter({ hasText: 'Link unavailable' })
     await expect(critAlert).toContainText('Link unavailable')
     await expect(critAlert).not.toContainText(/private-crit-value|guest-token-123|capability/i)
@@ -86,29 +65,25 @@ test.describe('Kova public sharing', () => {
       },
     }))
     const response = await page.goto(publicUrl('/crit/crit-example'))
-    skipIfR3fCannotLoad(response)
+    expect(response?.status()).toBeLessThan(500)
 
     const name = page.getByLabel('Your name')
     await expect(name).toHaveAttribute('maxlength', '80')
     await name.fill('Ada Reviewer')
     await page.keyboard.press('Enter')
-    await expect(page.getByRole('status').filter({ hasText: '0 boards' })).toBeVisible()
+    await expect(page.getByText('0 boards', { exact: true })).toBeVisible()
     await expect(page.getByText('Guest critic · Ada Reviewer')).toBeVisible()
   })
 
   test('invalid join hides invite details and the valid signed-out handoff is preserved', async ({ page }) => {
-    const isRuntimeBlocked = trackKnownR3fHydrationFailure(page)
     await page.route('**/api/workspaces/by-invite/JOIN-SECRET', (route) => route.fulfill({
       status: 404,
       json: { error: 'Invite JOIN-SECRET belongs to workspace-internal-id' },
     }))
-    await page.goto(publicUrl('/join/JOIN-SECRET'))
+    const response = await page.goto(publicUrl('/join/JOIN-SECRET'))
+    expect(response?.status()).toBeLessThan(500)
     const alert = page.getByRole('alert').filter({ hasText: 'Invitation unavailable' })
-    await expect.poll(async () => isRuntimeBlocked() || await alert.isVisible()).toBe(true)
-    test.skip(
-      isRuntimeBlocked(),
-      'This route could not hydrate because the existing Next.js 16 / React Three Fiber ReactCurrentOwner module-evaluation failure also blocked a shared client chunk.',
-    )
+    await expect(alert).toBeVisible()
     await expect(alert).toContainText('Invitation unavailable')
     await expect(alert).not.toContainText(/JOIN-SECRET|workspace-internal-id/)
     await expectNoSeriousAxeFindings(page)
@@ -129,7 +104,7 @@ test.describe('Kova public sharing', () => {
     await page.route('**/api/share/zoom-check/boards', (route) => route.fulfill({ status: 404, json: {} }))
     await page.setViewportSize({ width: 768, height: 900 })
     const response = await page.goto(publicUrl('/share/zoom-check'))
-    skipIfR3fCannotLoad(response)
+    expect(response?.status()).toBeLessThan(500)
     await page.evaluate(() => { document.documentElement.style.zoom = '2' })
     await expect(page.getByRole('alert').filter({ hasText: 'Link unavailable' })).toBeVisible()
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)

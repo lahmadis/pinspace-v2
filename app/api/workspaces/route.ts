@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
-import { isInstructorAccount } from '@/lib/auth/getAccountRole'
 import { validateName } from '@/lib/validation/safeName'
 import { createWorkspace } from '@/lib/workspaces/createWorkspace'
 
@@ -117,8 +116,6 @@ export async function POST(req: Request) {
     const name = nameResult.value
     const description = body?.description?.trim() ?? null
     const type = body?.type || 'class' // 'class' or 'personal'
-    const institutionIdFromBody = body?.institution_id ?? null
-    const institutionSlugFromBody = body?.institution_slug?.trim() ?? null
 
     // Validate the workspace type before the instructor gate so an unknown
     // value can't slip past it.
@@ -126,43 +123,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid workspace type' }, { status: 400 })
     }
 
+    const supabaseAdmin = supabaseServiceRole()
+    const { data: profile } = await supabaseAdmin
+      .from('user_profiles')
+      .select('organization_id, account_role')
+      .eq('user_id', userId)
+      .maybeSingle()
+
     // Security gate: only instructors may create org-facing classes. Shared
     // rooms (peer-to-peer collab) and personal rooms (the creator's own space)
     // stay open to every account — neither reaches the org network. This is the
     // real server-side boundary; the dashboard merely hides the buttons.
-    if (type === 'class' && !(await isInstructorAccount(userId))) {
+    if (type === 'class' && profile?.account_role !== 'instructor') {
       return NextResponse.json(
         { error: 'Only instructors can create classes. Ask an admin to grant you instructor access.' },
         { status: 403 }
       )
-    }
-
-    // Resolve institution_id: from body or default to Wentworth (slug "wit")
-    const supabaseAdmin = supabaseServiceRole()
-    let institutionId: string | null = null
-    if (institutionIdFromBody) {
-      const { data: inst } = await supabaseAdmin
-        .from('organizations')
-        .select('id')
-        .eq('id', institutionIdFromBody)
-        .single()
-      if (inst?.id) institutionId = inst.id
-    }
-    if (!institutionId && institutionSlugFromBody) {
-      const { data: inst } = await supabaseAdmin
-        .from('organizations')
-        .select('id')
-        .eq('slug', institutionSlugFromBody)
-        .single()
-      if (inst?.id) institutionId = inst.id
-    }
-    if (!institutionId) {
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('organization_id')
-        .eq('user_id', userId)
-        .maybeSingle()
-      if (profile?.organization_id) institutionId = profile.organization_id
     }
 
     const ownerName =
@@ -180,7 +156,7 @@ export async function POST(req: Request) {
       type,
       ownerId: userId,
       ownerName,
-      organizationId: institutionId,
+      organizationId: type === 'class' ? profile?.organization_id ?? null : null,
     })
 
     if (!result.ok) {

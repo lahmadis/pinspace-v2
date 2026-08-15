@@ -124,4 +124,22 @@ describe('Kova public lightbox chrome', () => {
     expect(opener).toHaveFocus()
     opener.remove()
   })
+
+  it('names the link URL and sheet preset edit controls', async () => {
+    const user = userEvent.setup()
+    renderLightbox({
+      isEditMode: true,
+      currentUserRole: 'instructor',
+      board: {
+        ...first,
+        position: { wallIndex: 0, x: 0.5, y: 0.5, width: 0.5, height: 0.5 },
+      },
+    })
+
+    await user.click(await screen.findByRole('button', { name: 'Add link' }))
+    expect(screen.getByRole('textbox', { name: 'Board link URL' })).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Set board size' }))
+    expect(screen.getByRole('combobox', { name: 'Sheet size preset' })).toBeVisible()
+  })
 })

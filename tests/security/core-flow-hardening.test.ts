@@ -64,6 +64,63 @@ describe('profile privilege boundaries', () => {
   })
 })
 
+describe('workspace, room, and board authority boundaries', () => {
+  it('derives class organization membership from the verified profile', () => {
+    const route = read('app/api/workspaces/route.ts')
+
+    expect(route).toContain(".select('organization_id, account_role')")
+    expect(route).toContain("organizationId: type === 'class' ? profile?.organization_id ?? null : null")
+    expect(route).not.toContain('institutionIdFromBody')
+    expect(route).not.toContain('institutionSlugFromBody')
+  })
+
+  it('ships an unapplied database boundary for direct browser mutations', () => {
+    const migration = read('migrations/039_harden_workspace_room_board_authority.sql')
+
+    expect(migration).toContain('workspace_authority_columns_are_server_managed')
+    expect(migration).toContain('NEW.owner_id IS DISTINCT FROM OLD.owner_id')
+    expect(migration).toContain('NEW.organization_id IS DISTINCT FROM OLD.organization_id')
+    expect(migration).toContain('NEW.type IS DISTINCT FROM OLD.type')
+    expect(migration).toContain("owner_account_role IS DISTINCT FROM 'instructor'")
+    expect(migration).toContain('NEW.organization_id IS DISTINCT FROM owner_organization_id')
+    expect(migration).toContain("coalesce(NEW.type, 'class') <> 'class' AND NEW.organization_id IS NOT NULL")
+    expect(migration).toContain('NEW.is_public IS DISTINCT FROM false')
+    expect(migration).toContain('NEW.is_public IS DISTINCT FROM OLD.is_public')
+    expect(migration).toContain('NEW.published_at IS DISTINCT FROM OLD.published_at')
+
+    expect(migration).toContain('room_publication_columns_are_server_managed')
+    expect(migration).toContain('NEW.is_published IS DISTINCT FROM OLD.is_published')
+    expect(migration).not.toContain('NEW.is_globally_public')
+    expect(migration).not.toContain('OLD.is_globally_public')
+    expect(migration).toContain('NEW.published_at IS DISTINCT FROM OLD.published_at')
+
+    expect(migration).toContain('board_parent_columns_are_server_managed')
+    expect(migration).toContain('NEW.workspace_id IS DISTINCT FROM OLD.workspace_id')
+    expect(migration).toContain('NEW.room_id IS DISTINCT FROM OLD.room_id')
+    expect(migration).toContain('r.workspace_id = NEW.workspace_id')
+    expect(migration).toContain('wm.user_id = auth.uid()::text')
+    expect(migration).toContain('ordinary board title and position updates remain allowed')
+
+    const roomRoute = read('app/api/rooms/[id]/route.ts')
+    expect(roomRoute).toContain(".select('owner_id, type, organization_id')")
+    expect(roomRoute).toContain("workspace.type !== 'class'")
+    expect(roomRoute).toContain('profile.organization_id !== workspace.organization_id')
+
+    const verification = read('scripts/verify-workspace-room-board-authority.sql')
+    expect(verification).toContain("'Migration 039 shared org check', auth.uid()::text, 'shared'")
+    expect(verification).toContain("'Migration 039 personal org check', auth.uid()::text, 'personal'")
+    expect(verification).toContain('SET is_public = NOT is_public')
+    expect(verification).toContain('direct legacy workspace publication update denied')
+    expect(verification).toContain("'Migration 039 room insert check'")
+    expect(verification).toContain("SET name = 'Migration 039 renamed room', display_order = 1")
+    expect(verification).toContain('ordinary room insert and name/order update accepted')
+    expect(verification).toContain('SET is_published = true')
+    expect(verification).toContain('direct room is_published update denied')
+    expect(verification).toContain('SET published_at = now()')
+    expect(verification).toContain('direct room published_at update denied')
+  })
+})
+
 describe('feedback abuse controls', () => {
   it('bounds accepted payloads and page URLs', () => {
     expect(parseFeedbackPayload({ message: ' Useful idea ', page_url: '/studio/1' })).toEqual({

@@ -6,6 +6,7 @@ import {
   collectWallConfigModelPaths,
   extractBoardStoragePath,
   isOwnedBoardStoragePath,
+  trustedBoardStoragePath,
   unreferencedBoardStoragePaths,
 } from '@/lib/storage/boardObjects'
 
@@ -24,6 +25,25 @@ describe('board storage objects', () => {
     expect(isOwnedBoardStoragePath('user-2/123.jpg', 'user-1')).toBe(false)
     expect(isOwnedBoardStoragePath('user-1/../user-2/123.jpg', 'user-1')).toBe(false)
     expect(isOwnedBoardStoragePath('/user-1/123.jpg', 'user-1')).toBe(false)
+  })
+
+  it('accepts export objects only from the configured Supabase public bucket origin', () => {
+    const supabaseUrl = 'https://project.supabase.co'
+    expect(trustedBoardStoragePath(
+      `${supabaseUrl}/storage/v1/object/public/board-images/user-1/board.jpg`,
+      supabaseUrl,
+    )).toBe('user-1/board.jpg')
+    expect(trustedBoardStoragePath(
+      `${supabaseUrl}/storage/v1/object/public/board-images/user-1/a%20b.jpg?download=1`,
+      supabaseUrl,
+    )).toBe('user-1/a b.jpg')
+
+    expect(trustedBoardStoragePath('http://project.supabase.co/storage/v1/object/public/board-images/user-1/board.jpg', supabaseUrl)).toBeNull()
+    expect(trustedBoardStoragePath('https://evil.test/storage/v1/object/public/board-images/user-1/board.jpg', supabaseUrl)).toBeNull()
+    expect(trustedBoardStoragePath('https://project.supabase.co@evil.test/storage/v1/object/public/board-images/user-1/board.jpg', supabaseUrl)).toBeNull()
+    expect(trustedBoardStoragePath('https://project.supabase.co/storage/v1/object/public/other/user-1/board.jpg', supabaseUrl)).toBeNull()
+    expect(trustedBoardStoragePath('file:///storage/v1/object/public/board-images/user-1/board.jpg', supabaseUrl)).toBeNull()
+    expect(trustedBoardStoragePath(`${supabaseUrl}/storage/v1/object/public/board-images/user-1/../user-2/board.jpg`, supabaseUrl)).toBeNull()
   })
 
   it('creates one independent copy when thumbnail and full image share an object', () => {

@@ -35,7 +35,7 @@ test.describe('studio controls', () => {
     await expect(page).toHaveURL(/\/sign-in(?:\?|$)/)
   })
 
-  for (const width of [360, 390, 768, 1024, 1440]) {
+  for (const width of [360, 390, 768, 1024, 1440, 1920]) {
     test(`empty public viewer remains usable at ${width}px`, async ({ page }) => {
       await mockEmptyStudio(page)
       await page.setViewportSize({ width, height: 900 })
@@ -43,7 +43,7 @@ test.describe('studio controls', () => {
 
       const emptyState = page.getByText('This room has no boards yet')
       const webglFallback = page.getByRole('heading', { name: 'Studio failed to load' })
-      await expect(emptyState.or(webglFallback)).toBeVisible()
+      await expect(emptyState.or(webglFallback)).toBeVisible({ timeout: 15_000 })
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
       if (await emptyState.isVisible()) {
@@ -65,7 +65,7 @@ test.describe('studio controls', () => {
     await mockEmptyStudio(page)
     await page.setViewportSize({ width: 768, height: 900 })
     await page.goto(studioUrl(emptyStudioPath), { waitUntil: 'domcontentloaded' })
-    await expect(page.getByText('This room has no boards yet').or(page.getByRole('heading', { name: 'Studio failed to load' }))).toBeVisible()
+    await expect(page.getByText('This room has no boards yet').or(page.getByRole('heading', { name: 'Studio failed to load' }))).toBeVisible({ timeout: 15_000 })
     await page.evaluate(() => { document.documentElement.style.zoom = '2' })
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   })

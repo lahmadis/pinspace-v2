@@ -1371,10 +1371,13 @@ function MovementController({
   return null
 }
 
-function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avatarPos: Vec3 }) {
+export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avatarPos: Vec3 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const expandTriggerRef = useRef<HTMLButtonElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const wasExpandedRef = useRef(false)
   
   // Ensure component is mounted and container is in DOM before rendering Canvas
   useEffect(() => {
@@ -1388,14 +1391,55 @@ function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avatarPos: 
     return () => cancelAnimationFrame(rafId)
   }, [])
   
-  // Close on ESC key
+  // Treat the expanded map as a modal: move focus in, contain keyboard focus,
+  // close on Escape, and restore focus to the stable expand trigger.
   useEffect(() => {
-    if (!isExpanded) return
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsExpanded(false)
+    if (!isExpanded) {
+      if (wasExpandedRef.current) {
+        wasExpandedRef.current = false
+        expandTriggerRef.current?.focus()
+      }
+      return
     }
-    window.addEventListener('keydown', handleEsc)
-    return () => window.removeEventListener('keydown', handleEsc)
+
+    wasExpandedRef.current = true
+    closeButtonRef.current?.focus()
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setIsExpanded(false)
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = Array.from(
+        containerRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]):not([aria-hidden="true"]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ) ?? []
+      )
+      if (focusable.length === 0) {
+        event.preventDefault()
+        containerRef.current?.focus()
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = previousOverflow
+    }
   }, [isExpanded])
   
   // Calculate view size based on studio positions
@@ -1461,25 +1505,38 @@ function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avatarPos: 
   return (
     <>
       {isExpanded && (
-        <button
-          type="button"
-          aria-label="Close expanded gallery map"
+        <div
+          aria-hidden="true"
           className="fixed inset-0 z-40 bg-kova-forest/45 backdrop-blur-sm"
-          onClick={() => setIsExpanded(false)}
+          onMouseDown={() => setIsExpanded(false)}
         />
       )}
       <div 
         ref={containerRef}
+        role={isExpanded ? 'dialog' : undefined}
+        aria-modal={isExpanded ? 'true' : undefined}
+        aria-labelledby={isExpanded ? 'gallery-map-title' : undefined}
+        tabIndex={isExpanded ? -1 : undefined}
         className={`absolute right-4 top-4 overflow-hidden rounded-kova-lg border border-border bg-background-light/95 shadow-[var(--shadow-raised)] backdrop-blur-sm transition-[width,height] duration-300 motion-reduce:transition-none ${
           isExpanded 
             ? 'w-[80vw] h-[80vh] max-w-5xl max-h-[90vh] z-50' 
             : 'h-40 w-40'
         }`}
       >
-        {!isExpanded && <button type="button" onClick={() => setIsExpanded(true)} className="absolute inset-0 z-20 rounded-kova-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent" aria-label="Expand gallery map" />}
+        <button
+          ref={expandTriggerRef}
+          type="button"
+          onClick={() => setIsExpanded(true)}
+          tabIndex={isExpanded ? -1 : 0}
+          aria-hidden={isExpanded ? 'true' : undefined}
+          className={`absolute inset-0 z-20 rounded-kova-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent ${isExpanded ? 'pointer-events-none opacity-0' : ''}`}
+          aria-label="Expand gallery map"
+        />
         {isExpanded && (
           <div className="absolute top-3 right-3 z-10">
             <button
+              ref={closeButtonRef}
+              type="button"
               onClick={(e) => {
                 e.stopPropagation()
                 setIsExpanded(false)
@@ -1493,7 +1550,7 @@ function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avatarPos: 
         )}
         {isExpanded && (
           <div className="absolute left-3 top-3 z-10 rounded-kova border border-border bg-background-light/95 px-3 py-1.5 shadow-[var(--shadow-soft)] backdrop-blur-sm">
-            <p className="text-xs font-semibold text-text-primary">Gallery Map</p>
+            <p id="gallery-map-title" className="text-xs font-semibold text-text-primary">Gallery Map</p>
           </div>
         )}
         {isMounted && typeof window !== 'undefined' && (

@@ -15,6 +15,7 @@ export interface BoardStorageCopyPlan {
 }
 
 const BUCKET_MARKER = '/board-images/'
+const PUBLIC_BOARD_BUCKET_PREFIX = '/storage/v1/object/public/board-images/'
 
 export function extractBoardStoragePath(
   url: string | null | undefined
@@ -35,6 +36,38 @@ export function isOwnedBoardStoragePath(path: string, userId: string): boolean {
   const segments = path.split('/')
   if (segments[0] !== userId || segments.length < 2) return false
   return segments.every((segment) => segment.length > 0 && segment !== '.' && segment !== '..')
+}
+
+/**
+ * Resolve an exportable board object without allowing the stored URL to become
+ * a server-side request target. Only the configured HTTPS Supabase origin and
+ * the exact public board-images bucket are accepted.
+ */
+export function trustedBoardStoragePath(
+  url: string | null | undefined,
+  configuredSupabaseUrl: string | null | undefined
+): string | null {
+  if (!url || !configuredSupabaseUrl) return null
+  try {
+    const candidate = new URL(url)
+    const configured = new URL(configuredSupabaseUrl)
+    if (
+      candidate.protocol !== 'https:'
+      || configured.protocol !== 'https:'
+      || candidate.origin !== configured.origin
+      || candidate.username
+      || candidate.password
+      || !candidate.pathname.startsWith(PUBLIC_BOARD_BUCKET_PREFIX)
+    ) return null
+
+    const path = extractBoardStoragePath(url)
+    if (!path || path.startsWith('/') || path.includes('\\')) return null
+    const segments = path.split('/')
+    if (segments.some((segment) => !segment || segment === '.' || segment === '..')) return null
+    return path
+  } catch {
+    return null
+  }
 }
 
 function safeSegment(value: string): string {

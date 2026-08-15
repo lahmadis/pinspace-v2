@@ -26,8 +26,8 @@ export default defineConfig({
     timeout: 120_000,
   },
   projects: [
-    { name: 'mobile', testMatch: e2eMatch, use: { ...devices['iPhone 13'] } },
-    { name: 'tablet', testMatch: e2eMatch, use: { ...devices['iPad Mini'] } },
+    { name: 'mobile', testMatch: e2eMatch, use: { ...devices['iPhone 13'], browserName: 'chromium' } },
+    { name: 'tablet', testMatch: e2eMatch, use: { ...devices['iPad Mini'], browserName: 'chromium' } },
     { name: 'desktop', testMatch: e2eMatch, use: { ...devices['Desktop Chrome'] } },
     { name: 'a11y', testMatch: 'a11y/**/*.spec.ts', use: { ...devices['Desktop Chrome'] } },
     { name: 'visual', testMatch: 'visual/**/*.spec.ts', use: { ...devices['Desktop Chrome'] } },

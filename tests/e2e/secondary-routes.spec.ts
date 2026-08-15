@@ -31,7 +31,7 @@ test.describe('Kova secondary routes', () => {
 
   test('demo route always announces demo identity', async ({ page }) => {
     await page.goto(routeUrl('/demo'))
-    await expect(page.getByRole('status')).toContainText('Demo Mode')
+    await expect(page.getByRole('main', { name: 'Kova demo network' }).getByRole('status')).toContainText('Demo Mode')
     await expect(page.getByRole('button', { name: 'Exit demo mode' })).toBeVisible()
   })
 

@@ -39,4 +39,12 @@ describe('storage route contracts', () => {
     expect(source).toContain('Skipping recent or timestamp-unknown object')
     expect(source).toContain('Re-checking references before deletion batch')
   })
+
+  it('exports only verified board-images objects through the Storage API', () => {
+    const source = readFileSync('app/api/workspaces/[id]/export/route.ts', 'utf8')
+    expect(source).toContain('trustedBoardStoragePath')
+    expect(source).toContain(".storage.from('board-images').download(storagePath)")
+    expect(source).toContain('isOwnedBoardStoragePath(storagePath, board.owner_id)')
+    expect(source).not.toContain('fetch(imgUrl)')
+  })
 })
