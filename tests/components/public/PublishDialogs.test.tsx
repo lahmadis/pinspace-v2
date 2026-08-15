@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import PublishCategoryModal from '@/components/PublishCategoryModal'
 import PublishConfirmModal from '@/components/PublishConfirmModal'
 
-describe('Kova publish dialogs', () => {
+describe('PinSpace publish dialogs', () => {
   it('uses modal semantics, visible labels, announced validation, and Escape dismissal', async () => {
     const user = userEvent.setup()
     const onCancel = vi.fn()

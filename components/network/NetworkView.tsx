@@ -69,9 +69,9 @@ export default function NetworkView({ schools, selectedSchool, selectedYear, onS
   }
 
   return (
-    <section ref={containerRef} aria-label="Network directory" className="relative min-h-[38rem] w-full overflow-hidden rounded-kova-lg bg-kova-forest text-white">
+    <section ref={containerRef} aria-label="Network directory" className="relative min-h-[38rem] w-full overflow-hidden rounded-pinspace-lg bg-pinspace-forest text-white">
       {(selectedSchool || selectedYear) && (
-        <button type="button" onClick={() => selectedYear ? onSelectYear(null as unknown as string) : onSelectSchool(null as unknown as School)} className="absolute left-4 top-4 z-20 min-h-11 rounded-kova border border-white/25 bg-kova-forest/90 px-4 py-2 text-sm font-semibold hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">← Back one level</button>
+        <button type="button" onClick={() => selectedYear ? onSelectYear(null as unknown as string) : onSelectSchool(null as unknown as School)} className="absolute left-4 top-4 z-20 min-h-11 rounded-pinspace border border-white/25 bg-pinspace-forest/90 px-4 py-2 text-sm font-semibold hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">← Back one level</button>
       )}
       <div role="img" aria-label={`Network map with ${nodes.length} items. Items are also available as keyboard buttons.`} className="absolute inset-0 opacity-20" style={{ backgroundImage: 'linear-gradient(to right, rgb(var(--color-paper) / 0.35) 1px, transparent 1px), linear-gradient(to bottom, rgb(var(--color-paper) / 0.35) 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
       <ul className="absolute inset-0">
@@ -81,7 +81,7 @@ export default function NetworkView({ schools, selectedSchool, selectedYear, onS
           const top = Math.max(72, Math.min(dimensions.height - width - 8, (node.y ?? dimensions.height / 2) - width / 2))
           return (
             <li key={node.id} className="absolute" style={{ left, top, width, height: width }}>
-              <button type="button" onClick={() => selectNode(node)} aria-label={`Open ${node.label}`} className="flex h-full w-full items-center justify-center rounded-full border-2 border-white/55 p-4 text-center text-sm font-bold text-kova-ink shadow-[var(--shadow-soft)] transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-kova-forest motion-reduce:transform-none" style={{ backgroundColor: node.color }}>
+              <button type="button" onClick={() => selectNode(node)} aria-label={`Open ${node.label}`} className="flex h-full w-full items-center justify-center rounded-full border-2 border-white/55 p-4 text-center text-sm font-bold text-pinspace-ink shadow-[var(--shadow-soft)] transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-pinspace-forest motion-reduce:transform-none" style={{ backgroundColor: node.color }}>
                 <span className="break-words">{node.label}</span>
               </button>
             </li>

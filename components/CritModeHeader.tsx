@@ -54,7 +54,7 @@ export default function CritModeHeader({
           <button
             type="button"
             onClick={onEndCrit}
-            className="min-h-11 rounded-kova border border-white/40 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="min-h-11 rounded-pinspace border border-white/40 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             End Crit
           </button>

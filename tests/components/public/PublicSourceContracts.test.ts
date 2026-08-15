@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 
-describe('Kova public source contracts', () => {
+describe('PinSpace public source contracts', () => {
   it('keeps the critique presenter banner below mobile and desktop safe areas', async () => {
     const source = await readFile('app/crit/[token]/page.tsx', 'utf8')
 

@@ -12,7 +12,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
-    "check:kova-ui": "node scripts/check-kova-ui.mjs",
+    "check:pinspace-ui": "node scripts/check-pinspace-ui.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

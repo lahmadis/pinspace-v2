@@ -2218,7 +2218,7 @@ export default function StudioRoom(props: StudioRoomProps) {
           description="Interactive model viewer. Use pointer, touch, or the keyboard controls provided by the viewer."
           className="flex h-[min(90dvh,56rem)] max-w-6xl flex-col motion-reduce:transition-none [&>button.absolute]:h-11 [&>button.absolute]:w-11 [&>div.mt-5]:min-h-0 [&>div.mt-5]:flex-1"
         >
-          <div className="h-full min-h-0 overflow-hidden rounded-kova bg-primary-dark">
+          <div className="h-full min-h-0 overflow-hidden rounded-pinspace bg-primary-dark">
             <ModelViewer modelUrl={modelViewerUrl} />
           </div>
         </Dialog>
@@ -2242,8 +2242,8 @@ export default function StudioRoom(props: StudioRoomProps) {
       {/* Drag-and-drop overlay — only shown when user is in wall edit mode and dragging files */}
       {isDragOver && showEditUI && (
         <div className="pointer-events-none fixed inset-0 z-[200] flex items-center justify-center p-4" aria-hidden="true">
-          <div className="absolute inset-4 rounded-kova-lg border-4 border-dashed border-primary bg-primary/20" />
-          <div className="relative flex max-w-md flex-col items-center gap-3 rounded-kova-lg border border-border bg-background-light/95 px-6 py-8 text-center shadow-[var(--shadow-raised)] backdrop-blur-sm sm:px-10">
+          <div className="absolute inset-4 rounded-pinspace-lg border-4 border-dashed border-primary bg-primary/20" />
+          <div className="relative flex max-w-md flex-col items-center gap-3 rounded-pinspace-lg border border-border bg-background-light/95 px-6 py-8 text-center shadow-[var(--shadow-raised)] backdrop-blur-sm sm:px-10">
             <svg className="h-12 w-12 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
@@ -2291,12 +2291,12 @@ export default function StudioRoom(props: StudioRoomProps) {
       {showEditUI && editingWall !== null && props.canEditWalls && (
         <section
           aria-label="Wall text controls"
-          className="fixed bottom-[calc(max(1rem,env(safe-area-inset-bottom))+4rem)] left-[max(1rem,env(safe-area-inset-left))] z-50 flex max-h-[42dvh] w-[min(20rem,calc(100vw-2rem))] flex-col gap-2 overflow-y-auto rounded-kova sm:bottom-auto sm:left-64 sm:top-32"
+          className="fixed bottom-[calc(max(1rem,env(safe-area-inset-bottom))+4rem)] left-[max(1rem,env(safe-area-inset-left))] z-50 flex max-h-[42dvh] w-[min(20rem,calc(100vw-2rem))] flex-col gap-2 overflow-y-auto rounded-pinspace sm:bottom-auto sm:left-64 sm:top-32"
         >
           <button
             type="button"
             onClick={handleAddText}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-kova border border-kova-ink bg-primary px-4 py-2 text-sm font-semibold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 text-sm font-semibold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
           >
             <span className="text-lg leading-none" aria-hidden="true">＋</span>
             Add text
@@ -2307,7 +2307,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             if (!sel) return null
             const textInputId = `wall-text-${sel.id}`
             return (
-              <div className="flex flex-col gap-3 rounded-kova border border-border bg-background-light p-3 text-text-primary shadow-[var(--shadow-raised)]">
+              <div className="flex flex-col gap-3 rounded-pinspace border border-border bg-background-light p-3 text-text-primary shadow-[var(--shadow-raised)]">
                 <label htmlFor={textInputId} className="text-sm font-semibold text-text-primary">Text</label>
                 <input
                   id={textInputId}
@@ -2315,14 +2315,14 @@ export default function StudioRoom(props: StudioRoomProps) {
                   onChange={(e) => handleTextContentChange(sel.id, e.target.value)}
                   placeholder="Label text"
                   maxLength={200}
-                  className="min-h-11 w-full rounded-kova border border-border bg-background-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="min-h-11 w-full rounded-pinspace border border-border bg-background-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 />
                 <span className="text-sm font-semibold text-text-primary">Font size in inches</span>
                 <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Font size in inches">
                   <button
                     type="button"
                     onClick={() => handleTextFontSizeChange(sel.id, Math.max(2, Math.round(sel.fontSize) - 2))}
-                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova border border-border bg-background-light text-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace border border-border bg-background-light text-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     aria-label="Decrease font size"
                   >
                     −
@@ -2331,7 +2331,7 @@ export default function StudioRoom(props: StudioRoomProps) {
                   <button
                     type="button"
                     onClick={() => handleTextFontSizeChange(sel.id, Math.min(96, Math.round(sel.fontSize) + 2))}
-                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova border border-border bg-background-light text-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace border border-border bg-background-light text-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     aria-label="Increase font size"
                   >
                     ＋
@@ -2344,9 +2344,9 @@ export default function StudioRoom(props: StudioRoomProps) {
                         onClick={() => handleTextFontSizeChange(sel.id, sz)}
                         aria-pressed={Math.round(sel.fontSize) === sz}
                         aria-label={`Set font size to ${sz} inches`}
-                        className={`min-h-11 min-w-11 rounded-kova border px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                        className={`min-h-11 min-w-11 rounded-pinspace border px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                           Math.round(sel.fontSize) === sz
-                            ? 'border-kova-ink bg-primary text-kova-ink'
+                            ? 'border-pinspace-ink bg-primary text-pinspace-ink'
                             : 'border-border bg-background-light text-text-secondary hover:bg-background-lighter'
                         }`}
                       >
@@ -2358,7 +2358,7 @@ export default function StudioRoom(props: StudioRoomProps) {
                 <button
                   type="button"
                   onClick={() => handleRemoveText(sel.id)}
-                  className="min-h-11 rounded-kova border border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger))] px-3 py-2 text-sm font-semibold text-white hover:bg-[rgb(var(--color-danger)/0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+                  className="min-h-11 rounded-pinspace border border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger))] px-3 py-2 text-sm font-semibold text-white hover:bg-[rgb(var(--color-danger)/0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
                 >
                   Remove text
                 </button>

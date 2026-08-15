@@ -132,7 +132,7 @@ export default function CreateStudioForm({
           {lockedInstructor ? (
             <div>
               <span id={`${ids.instructor}-label`} className="mb-1 block text-sm font-semibold text-text-primary">Instructor</span>
-              <div aria-labelledby={`${ids.instructor}-label`} className="min-w-0 rounded-kova border border-border bg-background-lighter px-3 py-2">
+              <div aria-labelledby={`${ids.instructor}-label`} className="min-w-0 rounded-pinspace border border-border bg-background-lighter px-3 py-2">
                 <p className="break-words text-sm font-semibold text-text-primary">
                   {lockedInstructor.fullName || lockedInstructor.email || lockedInstructor.userId}
                 </p>

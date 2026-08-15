@@ -34,9 +34,9 @@ function SharedNetworkInner() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load() }, [load])
 
-  return <NetworkRouteShell title="Your shared network" eyebrow="Shared discovery" countLabel={nodes.length === 1 ? 'room' : 'rooms'} backHref="/dashboard" backLabel="Dashboard" nodes={nodes} loadState={authStatus === 'loading' ? 'loading' : loadState} loadingTitle="Loading shared network" errorTitle="Could not load shared network" errorDescription="Check your connection and try again." emptyTitle="No shared rooms yet" emptyDescription="Rooms shared with you will appear here." emptyAction={<Link href="/dashboard" className="inline-flex min-h-11 items-center rounded-kova border border-kova-ink bg-primary px-4 py-2 font-semibold text-kova-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Go to dashboard</Link>} onRetry={() => void load()} onNodeClick={(node) => router.push(`/network/shared/${node.id}`)} />
+  return <NetworkRouteShell title="Your shared network" eyebrow="Shared discovery" countLabel={nodes.length === 1 ? 'room' : 'rooms'} backHref="/dashboard" backLabel="Dashboard" nodes={nodes} loadState={authStatus === 'loading' ? 'loading' : loadState} loadingTitle="Loading shared network" errorTitle="Could not load shared network" errorDescription="Check your connection and try again." emptyTitle="No shared rooms yet" emptyDescription="Rooms shared with you will appear here." emptyAction={<Link href="/dashboard" className="inline-flex min-h-11 items-center rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 font-semibold text-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Go to dashboard</Link>} onRetry={() => void load()} onNodeClick={(node) => router.push(`/network/shared/${node.id}`)} />
 }
 
 export default function SharedNetworkPage() {
-  return <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-kova-forest px-4"><StatusState status="loading" title="Loading shared network" /></main>}><SharedNetworkInner /></Suspense>
+  return <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-pinspace-forest px-4"><StatusState status="loading" title="Loading shared network" /></main>}><SharedNetworkInner /></Suspense>
 }

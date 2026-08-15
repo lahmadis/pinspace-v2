@@ -155,7 +155,7 @@ function Overlay({
   return (
     <div
       className={cn(
-        'fixed inset-0 z-[100] flex bg-kova-forest/55 p-4 backdrop-blur-[2px]',
+        'fixed inset-0 z-[100] flex bg-pinspace-forest/55 p-4 backdrop-blur-[2px]',
         kind === 'dialog' && 'items-center justify-center',
         kind === 'sheet' && (side === 'left' ? 'justify-start' : 'justify-end')
       )}
@@ -173,8 +173,8 @@ function Overlay({
         data-side={kind === 'sheet' ? side : undefined}
         className={cn(
           'relative border border-border bg-background-light text-text-primary shadow-[var(--shadow-raised)]',
-          kind === 'dialog' && 'max-h-[min(90vh,48rem)] w-full max-w-lg overflow-y-auto rounded-kova-lg p-6',
-          kind === 'sheet' && 'h-full w-full max-w-md overflow-y-auto rounded-kova-lg p-6',
+          kind === 'dialog' && 'max-h-[min(90vh,48rem)] w-full max-w-lg overflow-y-auto rounded-pinspace-lg p-6',
+          kind === 'sheet' && 'h-full w-full max-w-md overflow-y-auto rounded-pinspace-lg p-6',
           className
         )}
       >

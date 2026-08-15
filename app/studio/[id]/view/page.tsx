@@ -529,7 +529,7 @@ export default function StudioViewPage() {
       <div className="fixed left-[max(0.75rem,env(safe-area-inset-left))] top-[max(0.75rem,env(safe-area-inset-top))] z-40 flex max-w-[calc(100vw-5rem)] flex-wrap items-center gap-2 sm:max-w-[calc(100vw-14rem)]">
         <button
           onClick={() => router.push('/')}
-          className="min-h-11 rounded-kova border border-kova-ink bg-primary px-4 py-2 font-bold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="min-h-11 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 font-bold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           PinSpace
         </button>
@@ -555,7 +555,7 @@ export default function StudioViewPage() {
             }
             router.push(base)
           }}
-          className="flex min-h-11 items-center gap-2 rounded-kova border border-border/40 bg-primary-dark/80 px-4 py-2 text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="flex min-h-11 items-center gap-2 rounded-pinspace border border-border/40 bg-primary-dark/80 px-4 py-2 text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <ArrowLeft className="w-4 h-4" />
           {searchParams.get('returnTo') === 'gallery' ? 'Gallery' : 'Network'}
@@ -567,7 +567,7 @@ export default function StudioViewPage() {
             viewports so the Network button stays reachable. */}
         {roomName && (
           <div
-            className="max-w-[45vw] truncate rounded-kova border border-border/40 bg-primary-dark/80 px-3 py-2 font-mono text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md sm:max-w-xs"
+            className="max-w-[45vw] truncate rounded-pinspace border border-border/40 bg-primary-dark/80 px-3 py-2 font-mono text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md sm:max-w-xs"
             title={roomName}
           >
             {roomName}
@@ -577,7 +577,7 @@ export default function StudioViewPage() {
 
       {/* Top-right status pill (view mode + board count) */}
       <div className="fixed right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] z-40 flex items-center gap-2">
-        <div role="status" className="flex min-h-11 items-center gap-2 rounded-kova border border-border/40 bg-primary-dark/80 px-3 py-2 font-mono text-xs font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md sm:px-4 sm:text-sm">
+        <div role="status" className="flex min-h-11 items-center gap-2 rounded-pinspace border border-border/40 bg-primary-dark/80 px-3 py-2 font-mono text-xs font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md sm:px-4 sm:text-sm">
           <div className="h-2 w-2 rounded-full bg-accent motion-safe:animate-pulse" aria-hidden="true" />
           <span className="hidden sm:inline">View mode</span>
           <span className="opacity-80">{boards.length} {boards.length === 1 ? 'board' : 'boards'}</span>
@@ -586,17 +586,17 @@ export default function StudioViewPage() {
 
       {/* Instructions Overlay */}
       <div className="absolute inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 flex justify-center sm:inset-x-6">
-        <details className="max-h-[40dvh] w-full max-w-2xl overflow-y-auto rounded-kova border border-border bg-background-light/95 px-4 py-3 text-sm text-text-secondary shadow-[var(--shadow-raised)] backdrop-blur-md">
-          <summary className="min-h-11 cursor-pointer rounded-kova font-semibold text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Room controls and board list</summary>
+        <details className="max-h-[40dvh] w-full max-w-2xl overflow-y-auto rounded-pinspace border border-border bg-background-light/95 px-4 py-3 text-sm text-text-secondary shadow-[var(--shadow-raised)] backdrop-blur-md">
+          <summary className="min-h-11 cursor-pointer rounded-pinspace font-semibold text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Room controls and board list</summary>
           <p className="mt-2">Use pointer or touch to rotate the room. Keyboard users can open any board from the list below.</p>
-          {boards.length > 0 && <ul className="mt-3 grid gap-2 sm:grid-cols-2">{boards.map((board) => <li key={board.id}><button type="button" onClick={() => handleBoardClick(board)} className="min-h-11 w-full rounded-kova border border-border bg-background-light px-3 py-2 text-left font-medium text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">{board.title || 'Untitled board'}</button></li>)}</ul>}
+          {boards.length > 0 && <ul className="mt-3 grid gap-2 sm:grid-cols-2">{boards.map((board) => <li key={board.id}><button type="button" onClick={() => handleBoardClick(board)} className="min-h-11 w-full rounded-pinspace border border-border bg-background-light px-3 py-2 text-left font-medium text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">{board.title || 'Untitled board'}</button></li>)}</ul>}
         </details>
       </div>
 
       {/* Full-screen 3D model viewer overlay */}
       {modelViewerUrl && (
         <Dialog open onOpenChange={(open) => { if (!open) setModelViewerUrl(null) }} title="3D model" description="Interactive model viewer. Use pointer, touch, or keyboard controls provided by the viewer." className="flex h-[min(90dvh,56rem)] max-w-6xl flex-col motion-reduce:transition-none [&>button.absolute]:h-11 [&>button.absolute]:w-11 [&>div.mt-5]:min-h-0 [&>div.mt-5]:flex-1">
-          <div className="h-full min-h-0 overflow-hidden rounded-kova bg-primary-dark">
+          <div className="h-full min-h-0 overflow-hidden rounded-pinspace bg-primary-dark">
             <ModelViewer modelUrl={modelViewerUrl} />
           </div>
         </Dialog>
@@ -727,7 +727,7 @@ export default function StudioViewPage() {
       />
       {boards.length === 0 && (
         <div className="pointer-events-none absolute inset-x-4 bottom-24 z-10 flex justify-center sm:bottom-28">
-          <div role="status" className="max-w-md rounded-kova border border-border/40 bg-primary-dark/85 px-4 py-3 text-center text-sm text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md">
+          <div role="status" className="max-w-md rounded-pinspace border border-border/40 bg-primary-dark/85 px-4 py-3 text-center text-sm text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md">
             <p className="font-semibold">This room has no boards yet</p>
             <p className="mt-1 text-background-light/75">The 3D space is ready, but there is no work to open yet.</p>
           </div>

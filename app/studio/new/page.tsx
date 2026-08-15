@@ -118,11 +118,11 @@ export default function NewStudioPage() {
                 maxLength={500}
                 disabled={loading}
                 placeholder="Describe what this room is for…"
-                className="min-h-28 w-full resize-y rounded-kova border border-border bg-background-light px-3.5 py-2 text-text-primary placeholder:text-text-dim hover:border-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:bg-background-lighter"
+                className="min-h-28 w-full resize-y rounded-pinspace border border-border bg-background-light px-3.5 py-2 text-text-primary placeholder:text-text-dim hover:border-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:bg-background-lighter"
               />
             </div>
 
-            <div className="rounded-kova border border-border bg-primary-muted p-4 text-sm text-text-primary">
+            <div className="rounded-pinspace border border-border bg-primary-muted p-4 text-sm text-text-primary">
               <p className="font-semibold">What happens next?</p>
               <p className="mt-1 text-text-secondary">We create the workspace and its first room, then take you to the room list so you can review the setup before entering the studio.</p>
             </div>
@@ -130,7 +130,7 @@ export default function NewStudioPage() {
             {error && <StatusState id="room-form-error" status="error" title={error} />}
 
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <Link href="/dashboard" className="inline-flex min-h-11 items-center justify-center rounded-kova px-4 py-2 text-sm font-semibold text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Cancel</Link>
+              <Link href="/dashboard" className="inline-flex min-h-11 items-center justify-center rounded-pinspace px-4 py-2 text-sm font-semibold text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Cancel</Link>
               <Button type="submit" size="lg" loading={loading} aria-label={loading ? 'Creating room' : 'Create room'}>
                 {loading ? 'Creating room…' : 'Create room'}
               </Button>

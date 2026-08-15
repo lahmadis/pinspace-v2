@@ -1205,23 +1205,23 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
       {!loading && !loadError && studios.length === 0 && <div className="absolute inset-0 z-20 flex items-center justify-center bg-background-light/80 p-4 backdrop-blur-sm"><EmptyState title="No studios found" description="No published studios match this gallery selection." className="w-full max-w-lg" /></div>}
 
       {!loading && !loadError && studios.length > 0 && (
-        <aside aria-label="Gallery studio directory" className="absolute bottom-3 left-3 z-20 max-h-44 w-[min(20rem,calc(100%-7rem))] overflow-y-auto rounded-kova-lg border border-border bg-background-light/95 p-3 text-text-primary shadow-[var(--shadow-soft)] backdrop-blur-md sm:bottom-4 sm:left-4">
+        <aside aria-label="Gallery studio directory" className="absolute bottom-3 left-3 z-20 max-h-44 w-[min(20rem,calc(100%-7rem))] overflow-y-auto rounded-pinspace-lg border border-border bg-background-light/95 p-3 text-text-primary shadow-[var(--shadow-soft)] backdrop-blur-md sm:bottom-4 sm:left-4">
           <h2 className="text-sm font-bold">Studio directory</h2>
           <ul className="mt-2 space-y-1">
-            {studios.map((studio) => <li key={studio.id}><button type="button" onClick={() => teleportToStudio(studio)} className="min-h-11 w-full rounded-kova px-3 py-2 text-left hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><span className="block break-words text-sm font-semibold">{studio.name}</span><span className="block break-words text-xs text-text-secondary">{[studio.department, studio.year].filter(Boolean).join(' · ') || 'Published studio'}</span></button></li>)}
+            {studios.map((studio) => <li key={studio.id}><button type="button" onClick={() => teleportToStudio(studio)} className="min-h-11 w-full rounded-pinspace px-3 py-2 text-left hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><span className="block break-words text-sm font-semibold">{studio.name}</span><span className="block break-words text-xs text-text-secondary">{[studio.department, studio.year].filter(Boolean).join(' · ') || 'Published studio'}</span></button></li>)}
           </ul>
         </aside>
       )}
 
-      <div aria-label="Touch gallery controls" className="absolute bottom-3 right-3 z-30 grid grid-cols-3 gap-1 rounded-kova-lg border border-border bg-background-light/95 p-2 shadow-[var(--shadow-raised)] backdrop-blur-md" style={{ touchAction: 'none' }}>
-        <button type="button" aria-label="Rotate camera left" onClick={() => { orbitRef.current.yaw -= 0.18 }} className="flex h-11 w-11 items-center justify-center rounded-kova hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><RotateCcw className="h-4 w-4" aria-hidden="true" /></button>
-        <button type="button" aria-label="Move forward" onPointerDown={() => { moveKeysRef.current.forward = true }} onPointerUp={() => { moveKeysRef.current.forward = false }} onPointerCancel={() => { moveKeysRef.current.forward = false }} className="flex h-11 w-11 items-center justify-center rounded-kova bg-primary text-kova-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><ArrowUp className="h-4 w-4" aria-hidden="true" /></button>
-        <button type="button" aria-label="Rotate camera right" onClick={() => { orbitRef.current.yaw += 0.18 }} className="flex h-11 w-11 items-center justify-center rounded-kova hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><RotateCw className="h-4 w-4" aria-hidden="true" /></button>
-        <button type="button" aria-label="Move left" onPointerDown={() => { moveKeysRef.current.left = true }} onPointerUp={() => { moveKeysRef.current.left = false }} onPointerCancel={() => { moveKeysRef.current.left = false }} className="flex h-11 w-11 items-center justify-center rounded-kova bg-primary text-kova-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><ArrowLeft className="h-4 w-4" aria-hidden="true" /></button>
-        <button type="button" aria-label="Move backward" onPointerDown={() => { moveKeysRef.current.back = true }} onPointerUp={() => { moveKeysRef.current.back = false }} onPointerCancel={() => { moveKeysRef.current.back = false }} className="flex h-11 w-11 items-center justify-center rounded-kova bg-primary text-kova-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><ArrowDown className="h-4 w-4" aria-hidden="true" /></button>
-        <button type="button" aria-label="Move right" onPointerDown={() => { moveKeysRef.current.right = true }} onPointerUp={() => { moveKeysRef.current.right = false }} onPointerCancel={() => { moveKeysRef.current.right = false }} className="flex h-11 w-11 items-center justify-center rounded-kova bg-primary text-kova-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><ArrowRight className="h-4 w-4" aria-hidden="true" /></button>
-        <button type="button" onClick={() => { jumpRequestRef.current = true }} className="col-span-1 min-h-11 rounded-kova text-xs font-semibold hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Jump</button>
-        <button type="button" onClick={interact} disabled={!nearbyBoard && !promptStudio} className="col-span-2 min-h-11 rounded-kova bg-accent px-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Open nearby</button>
+      <div aria-label="Touch gallery controls" className="absolute bottom-3 right-3 z-30 grid grid-cols-3 gap-1 rounded-pinspace-lg border border-border bg-background-light/95 p-2 shadow-[var(--shadow-raised)] backdrop-blur-md" style={{ touchAction: 'none' }}>
+        <button type="button" aria-label="Rotate camera left" onClick={() => { orbitRef.current.yaw -= 0.18 }} className="flex h-11 w-11 items-center justify-center rounded-pinspace hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><RotateCcw className="h-4 w-4" aria-hidden="true" /></button>
+        <button type="button" aria-label="Move forward" onPointerDown={() => { moveKeysRef.current.forward = true }} onPointerUp={() => { moveKeysRef.current.forward = false }} onPointerCancel={() => { moveKeysRef.current.forward = false }} className="flex h-11 w-11 items-center justify-center rounded-pinspace bg-primary text-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><ArrowUp className="h-4 w-4" aria-hidden="true" /></button>
+        <button type="button" aria-label="Rotate camera right" onClick={() => { orbitRef.current.yaw += 0.18 }} className="flex h-11 w-11 items-center justify-center rounded-pinspace hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><RotateCw className="h-4 w-4" aria-hidden="true" /></button>
+        <button type="button" aria-label="Move left" onPointerDown={() => { moveKeysRef.current.left = true }} onPointerUp={() => { moveKeysRef.current.left = false }} onPointerCancel={() => { moveKeysRef.current.left = false }} className="flex h-11 w-11 items-center justify-center rounded-pinspace bg-primary text-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><ArrowLeft className="h-4 w-4" aria-hidden="true" /></button>
+        <button type="button" aria-label="Move backward" onPointerDown={() => { moveKeysRef.current.back = true }} onPointerUp={() => { moveKeysRef.current.back = false }} onPointerCancel={() => { moveKeysRef.current.back = false }} className="flex h-11 w-11 items-center justify-center rounded-pinspace bg-primary text-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><ArrowDown className="h-4 w-4" aria-hidden="true" /></button>
+        <button type="button" aria-label="Move right" onPointerDown={() => { moveKeysRef.current.right = true }} onPointerUp={() => { moveKeysRef.current.right = false }} onPointerCancel={() => { moveKeysRef.current.right = false }} className="flex h-11 w-11 items-center justify-center rounded-pinspace bg-primary text-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><ArrowRight className="h-4 w-4" aria-hidden="true" /></button>
+        <button type="button" onClick={() => { jumpRequestRef.current = true }} className="col-span-1 min-h-11 rounded-pinspace text-xs font-semibold hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Jump</button>
+        <button type="button" onClick={interact} disabled={!nearbyBoard && !promptStudio} className="col-span-2 min-h-11 rounded-pinspace bg-accent px-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Open nearby</button>
       </div>
       
       {/* Lightbox modal for viewing and commenting on boards */}
@@ -1507,7 +1507,7 @@ export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avat
       {isExpanded && (
         <div
           aria-hidden="true"
-          className="fixed inset-0 z-40 bg-kova-forest/45 backdrop-blur-sm"
+          className="fixed inset-0 z-40 bg-pinspace-forest/45 backdrop-blur-sm"
           onMouseDown={() => setIsExpanded(false)}
         />
       )}
@@ -1517,7 +1517,7 @@ export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avat
         aria-modal={isExpanded ? 'true' : undefined}
         aria-labelledby={isExpanded ? 'gallery-map-title' : undefined}
         tabIndex={isExpanded ? -1 : undefined}
-        className={`absolute right-4 top-4 overflow-hidden rounded-kova-lg border border-border bg-background-light/95 shadow-[var(--shadow-raised)] backdrop-blur-sm transition-[width,height] duration-300 motion-reduce:transition-none ${
+        className={`absolute right-4 top-4 overflow-hidden rounded-pinspace-lg border border-border bg-background-light/95 shadow-[var(--shadow-raised)] backdrop-blur-sm transition-[width,height] duration-300 motion-reduce:transition-none ${
           isExpanded 
             ? 'w-[80vw] h-[80vh] max-w-5xl max-h-[90vh] z-50' 
             : 'h-40 w-40'
@@ -1529,7 +1529,7 @@ export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avat
           onClick={() => setIsExpanded(true)}
           tabIndex={isExpanded ? -1 : 0}
           aria-hidden={isExpanded ? 'true' : undefined}
-          className={`absolute inset-0 z-20 rounded-kova-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent ${isExpanded ? 'pointer-events-none opacity-0' : ''}`}
+          className={`absolute inset-0 z-20 rounded-pinspace-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent ${isExpanded ? 'pointer-events-none opacity-0' : ''}`}
           aria-label="Expand gallery map"
         />
         {isExpanded && (
@@ -1541,7 +1541,7 @@ export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avat
                 e.stopPropagation()
                 setIsExpanded(false)
               }}
-              className="flex h-11 w-11 items-center justify-center rounded-kova border border-border bg-background-light shadow-[var(--shadow-soft)] hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-border bg-background-light shadow-[var(--shadow-soft)] hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               aria-label="Close minimap"
             >
               <X className="w-5 h-5 text-text-primary" />
@@ -1549,7 +1549,7 @@ export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avat
           </div>
         )}
         {isExpanded && (
-          <div className="absolute left-3 top-3 z-10 rounded-kova border border-border bg-background-light/95 px-3 py-1.5 shadow-[var(--shadow-soft)] backdrop-blur-sm">
+          <div className="absolute left-3 top-3 z-10 rounded-pinspace border border-border bg-background-light/95 px-3 py-1.5 shadow-[var(--shadow-soft)] backdrop-blur-sm">
             <p id="gallery-map-title" className="text-xs font-semibold text-text-primary">Gallery Map</p>
           </div>
         )}

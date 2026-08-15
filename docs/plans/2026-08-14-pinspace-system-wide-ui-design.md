@@ -1,13 +1,13 @@
-# Kova System-Wide UI Redesign
+# PinSpace System-Wide UI Redesign
 
 ## Decision
 
-PinSpace will adopt the Kova visual concept across the entire product in one coordinated release. Users will not see a mixture of legacy indigo/gray screens and Kova screens. Development may use internal checkpoints, but deployment happens only after the complete interface passes functional, visual, responsive, accessibility, and production-build verification.
+PinSpace will adopt the PinSpace visual concept across the entire product in one coordinated release. Users will not see a mixture of legacy indigo/gray screens and PinSpace screens. Development may use internal checkpoints, but deployment happens only after the complete interface passes functional, visual, responsive, accessibility, and production-build verification.
 
 ## Product principles
 
 - Preserve all existing data, authorization, collaboration, upload, and Supabase behavior.
-- Rebuild the Kova concept as maintainable React components; do not copy its generated standalone runtime.
+- Rebuild the PinSpace concept as maintainable React components; do not copy its generated standalone runtime.
 - Give every route a deliberate loading, empty, error, success, permission, and destructive-action state.
 - Prefer clear navigation and predictable controls over decorative complexity.
 - Use motion to explain state changes, with a reduced-motion alternative.
@@ -19,8 +19,8 @@ PinSpace will adopt the Kova visual concept across the entire product in one coo
 
 | Role | Value | Usage |
 | --- | --- | --- |
-| Kova yellow | `#FFC800` | Primary actions, selected states, signature accents |
-| Kova cream | `#FFF3CC` | Warm application canvas |
+| PinSpace yellow | `#FFC800` | Primary actions, selected states, signature accents |
+| PinSpace cream | `#FFF3CC` | Warm application canvas |
 | Paper | `#FFFCF0` | Cards, dialogs, raised controls |
 | Deep green | `#14705C` | Secondary actions, links, focus support |
 | Forest | `#0A2F28` | Navigation and immersive surfaces |
@@ -32,7 +32,7 @@ Additional neutral, success, warning, and destructive colors must be derived as 
 
 - Figtree is the primary interface face.
 - JetBrains Mono is reserved for metadata, identifiers, compact navigation labels, and studio controls.
-- Bold editorial headings establish Kova's identity without reducing information density.
+- Bold editorial headings establish PinSpace's identity without reducing information density.
 - Rounded rectangles and pills remain consistent through tokenized radii.
 - Shadows stay restrained; state and hierarchy should not depend on shadow alone.
 
@@ -72,7 +72,7 @@ The release is big-bang, but implementation is dependency-ordered: freeze behavi
 
 ## Acceptance criteria
 
-- Every user-facing route and state uses the Kova design system.
+- Every user-facing route and state uses the PinSpace design system.
 - Existing workflows and Supabase contracts remain unchanged unless separately approved.
 - No legacy indigo/purple theme remains except where a semantic data visualization explicitly requires it.
 - Core journeys meet WCAG 2.2 AA.

@@ -41,7 +41,7 @@ describe('WorkspaceSettingsPage', () => {
   beforeEach(() => {
     userId = 'owner-1'
     push.mockReset()
-    Object.defineProperty(window, 'location', { configurable: true, value: { origin: 'https://kova.test' } })
+    Object.defineProperty(window, 'location', { configurable: true, value: { origin: 'https://pinspace.test' } })
   })
 
   it('renders loading and recoverable errors without redirecting away', async () => {

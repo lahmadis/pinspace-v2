@@ -41,7 +41,7 @@ import CritViewError from '@/app/crit/[token]/error'
 import SharePage from '@/app/share/[token]/page'
 import ShareViewError from '@/app/share/[token]/error'
 
-describe('Kova public studio routes', () => {
+describe('PinSpace public studio routes', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     sessionStorage.clear()
@@ -70,7 +70,7 @@ describe('Kova public studio routes', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<SharePage />)
 
-    expect(await screen.findByRole('link', { name: 'Kova home' })).toHaveAttribute('href', '/')
+    expect(await screen.findByRole('link', { name: 'PinSpace home' })).toHaveAttribute('href', '/')
     expect(screen.getByText('Open studio')).toBeInTheDocument()
     expect(screen.getByText('View only')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('No boards in this studio yet')

@@ -70,7 +70,7 @@ describe('global feedback and exceptional states', () => {
     consoleError.mockRestore()
   })
 
-  it('preserves retry and navigation behavior in Kova route error boundaries', async () => {
+  it('preserves retry and navigation behavior in PinSpace route error boundaries', async () => {
     const user = userEvent.setup()
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const reset = vi.fn()
@@ -171,7 +171,7 @@ describe('global feedback and exceptional states', () => {
     })
   })
 
-  it('uses semantic Kova state tokens rather than raw palette utilities', () => {
+  it('uses semantic PinSpace state tokens rather than raw palette utilities', () => {
     const source = readFileSync('components/ui/Primitives.tsx', 'utf8')
     const statusStateSource = source.slice(source.indexOf('export function StatusState'))
     expect(statusStateSource).not.toMatch(/\b(?:red|amber|emerald)-\d+/)

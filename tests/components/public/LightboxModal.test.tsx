@@ -72,7 +72,7 @@ function renderLightbox(overrides: Partial<React.ComponentProps<typeof LightboxM
   return { ...render(<LightboxModal {...props} />), props }
 }
 
-describe('Kova public lightbox chrome', () => {
+describe('PinSpace public lightbox chrome', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))

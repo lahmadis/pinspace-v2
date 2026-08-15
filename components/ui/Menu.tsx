@@ -87,7 +87,7 @@ export const MenuTrigger = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HT
         aria-expanded={menu.open}
         aria-controls={menu.open ? menu.contentId : undefined}
         className={cn(
-          'min-h-11 rounded-kova border border-border bg-background-light px-3 py-2 font-semibold hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+          'min-h-11 rounded-pinspace border border-border bg-background-light px-3 py-2 font-semibold hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
           className
         )}
         onClick={(event) => {
@@ -150,7 +150,7 @@ export const MenuContent = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElem
         id={menu.contentId}
         role="menu"
         className={cn(
-          'absolute right-0 z-50 mt-2 min-w-44 rounded-kova border border-border bg-background-light p-1.5 shadow-[var(--shadow-raised)]',
+          'absolute right-0 z-50 mt-2 min-w-44 rounded-pinspace border border-border bg-background-light p-1.5 shadow-[var(--shadow-raised)]',
           className
         )}
         onKeyDown={handleKeyDown}

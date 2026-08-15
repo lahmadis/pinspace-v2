@@ -61,7 +61,7 @@ export default function PasswordInput({
         type="button"
         onClick={toggle}
         aria-label={revealed ? 'Hide password' : 'Show password'}
-        className="absolute inset-y-0 right-0 flex min-w-11 items-center justify-center rounded-r-kova text-text-muted transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="absolute inset-y-0 right-0 flex min-w-11 items-center justify-center rounded-r-pinspace text-text-muted transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         {revealed ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
       </button>

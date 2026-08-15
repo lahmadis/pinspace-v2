@@ -88,9 +88,9 @@ function HomeInner() {
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
           <Link
             href="/"
-            className="inline-flex min-h-11 items-center rounded-kova px-2 font-mono text-sm font-bold uppercase tracking-[0.2em] text-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex min-h-11 items-center rounded-pinspace px-2 font-mono text-sm font-bold uppercase tracking-[0.2em] text-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            Kova
+            PinSpace
           </Link>
           <nav aria-label="Account" className="flex min-w-0 items-center gap-2 sm:gap-3">
             {loading ? (
@@ -103,7 +103,7 @@ function HomeInner() {
               <>
                 <Link
                   href="/dashboard"
-                  className="inline-flex min-h-11 items-center rounded-kova border border-primary-dark bg-primary px-3 text-sm font-semibold text-kova-ink shadow-[var(--shadow-soft)] transition-transform active:translate-y-0.5 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-4"
+                  className="inline-flex min-h-11 items-center rounded-pinspace border border-primary-dark bg-primary px-3 text-sm font-semibold text-pinspace-ink shadow-[var(--shadow-soft)] transition-transform active:translate-y-0.5 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-4"
                 >
                   Open dashboard
                 </Link>
@@ -119,13 +119,13 @@ function HomeInner() {
               <>
                 <Link
                   href={signInHref}
-                  className="inline-flex min-h-11 items-center rounded-kova px-2 text-sm font-semibold text-text-primary transition-colors hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-3"
+                  className="inline-flex min-h-11 items-center rounded-pinspace px-2 text-sm font-semibold text-text-primary transition-colors hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-3"
                 >
                   Sign in
                 </Link>
                 <Link
                   href={signUpHref}
-                  className="inline-flex min-h-11 items-center rounded-kova border border-primary-dark bg-primary px-3 text-sm font-semibold text-kova-ink shadow-[var(--shadow-soft)] transition-transform active:translate-y-0.5 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-4"
+                  className="inline-flex min-h-11 items-center rounded-pinspace border border-primary-dark bg-primary px-3 text-sm font-semibold text-pinspace-ink shadow-[var(--shadow-soft)] transition-transform active:translate-y-0.5 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-4"
                 >
                   Get started
                 </Link>
@@ -150,7 +150,7 @@ function HomeInner() {
             </div>
             <div className="max-w-xl lg:pb-2">
               <p className="text-lg leading-8 text-text-secondary sm:text-xl">
-                Kova brings rooms, boards, people, and critique into one shared spatial network for creative communities.
+                PinSpace brings rooms, boards, people, and critique into one shared spatial network for creative communities.
               </p>
               <div className="mt-7 flex flex-col gap-3 sm:flex-row">
                 {loading ? (
@@ -160,7 +160,7 @@ function HomeInner() {
                 ) : (
                   <Link
                     href={user ? '/dashboard' : signUpHref}
-                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-kova border border-primary-dark bg-primary px-5 py-2.5 font-semibold text-kova-ink shadow-[var(--shadow-soft)] transition-transform active:translate-y-0.5 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-pinspace border border-primary-dark bg-primary px-5 py-2.5 font-semibold text-pinspace-ink shadow-[var(--shadow-soft)] transition-transform active:translate-y-0.5 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   >
                     {user ? 'Continue to dashboard' : 'Start your space'} <ArrowRight aria-hidden="true" className="h-4 w-4" />
                   </Link>
@@ -173,11 +173,11 @@ function HomeInner() {
           </div>
         </section>
 
-        <section aria-labelledby="how-kova-works" className="px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
+        <section aria-labelledby="how-pinspace-works" className="px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
           <div className="mx-auto w-full max-w-7xl">
             <div className="max-w-2xl">
               <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-accent">One connected practice</p>
-              <h2 id="how-kova-works" className="mt-3 text-3xl font-bold text-text-primary sm:text-4xl">
+              <h2 id="how-pinspace-works" className="mt-3 text-3xl font-bold text-text-primary sm:text-4xl">
                 From first pin to final review.
               </h2>
             </div>
@@ -185,7 +185,7 @@ function HomeInner() {
               {features.map(({ title, description, icon: Icon }, index) => (
                 <Card key={title} className="flex min-w-0 flex-col">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-kova bg-primary-muted text-primary-dark">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-pinspace bg-primary-muted text-primary-dark">
                       <Icon aria-hidden="true" className="h-5 w-5" />
                     </span>
                     <span className="font-mono text-xs font-bold text-text-muted">0{index + 1}</span>
@@ -207,7 +207,7 @@ function HomeInner() {
 
       <footer className="border-t border-border bg-primary-dark text-background-light">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-7 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <p>© {new Date().getFullYear()} Kova. Built for creative communities.</p>
+          <p>© {new Date().getFullYear()} PinSpace. Built for creative communities.</p>
           <nav aria-label="Legal" className="flex flex-wrap gap-x-6 gap-y-2">
             <Link href="/terms" className="min-h-11 py-3 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
               Terms of Service

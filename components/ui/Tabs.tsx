@@ -74,7 +74,7 @@ export const TabList = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>
     <div
       ref={ref}
       role="tablist"
-      className={cn('inline-flex gap-1 rounded-kova bg-background-lighter p-1', className)}
+      className={cn('inline-flex gap-1 rounded-pinspace bg-background-lighter p-1', className)}
       onKeyDown={handleKeyDown}
       {...props}
     />

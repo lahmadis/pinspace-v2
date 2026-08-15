@@ -120,7 +120,7 @@ export default function Toaster() {
       aria-label={t.message}
       aria-live={t.type === 'error' || t.type === 'warning' ? 'assertive' : 'off'}
       aria-atomic="true"
-      className={`pointer-events-auto flex w-fit max-w-sm items-center gap-3 rounded-kova border bg-background-light py-2 pl-4 pr-1 text-sm font-medium text-text-primary shadow-[var(--shadow-raised)] ${ENTER_ANIM[t.position]} ${STYLES[t.type]}`}
+      className={`pointer-events-auto flex w-fit max-w-sm items-center gap-3 rounded-pinspace border bg-background-light py-2 pl-4 pr-1 text-sm font-medium text-text-primary shadow-[var(--shadow-raised)] ${ENTER_ANIM[t.position]} ${STYLES[t.type]}`}
     >
       {t.type === 'loading' ? (
         <span aria-hidden="true" className={`h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none ${ICON_STYLES[t.type]}`} />
@@ -132,7 +132,7 @@ export default function Toaster() {
         type="button"
         aria-label={`Dismiss: ${t.message}`}
         onClick={() => toast.dismiss(t.id)}
-        className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-kova text-xl text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-pinspace text-xl text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <span aria-hidden="true">×</span>
       </button>

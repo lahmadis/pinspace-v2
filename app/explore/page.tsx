@@ -176,8 +176,8 @@ function ExplorePageInner() {
         <div className="mx-auto flex max-w-[96rem] flex-col gap-5 px-4 py-5 sm:px-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
-              <Link href="/" className="inline-flex min-h-11 items-center rounded-kova px-2 text-lg font-black hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Kova</Link>
-              <Link href="/dashboard" className="inline-flex min-h-11 items-center rounded-kova px-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Dashboard</Link>
+              <Link href="/" className="inline-flex min-h-11 items-center rounded-pinspace px-2 text-lg font-black hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">PinSpace</Link>
+              <Link href="/dashboard" className="inline-flex min-h-11 items-center rounded-pinspace px-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Dashboard</Link>
             </div>
             <p className="mt-3 font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Institution discovery</p>
             <h1 className="mt-1 break-words text-3xl font-black tracking-tight sm:text-5xl">Studio network</h1>
@@ -214,7 +214,7 @@ function ExplorePageInner() {
           )}
         </div>
 
-        <section aria-label="Studio network results" className="min-h-[32rem] overflow-hidden rounded-kova-lg border border-border bg-kova-forest shadow-[var(--shadow-soft)] sm:min-h-[40rem]">
+        <section aria-label="Studio network results" className="min-h-[32rem] overflow-hidden rounded-pinspace-lg border border-border bg-pinspace-forest shadow-[var(--shadow-soft)] sm:min-h-[40rem]">
           {loadState === 'loading' ? (
             <div className="flex min-h-[32rem] items-center justify-center p-4 sm:min-h-[40rem]"><StatusState status="loading" title="Loading studio network" description="Finding published studios and their connections." /></div>
           ) : loadState === 'error' ? (

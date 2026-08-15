@@ -25,7 +25,7 @@ import {
   PublicStudioNavigator,
 } from '@/components/public/PublicStudioShell'
 
-const KOVA_FOREST_SCENE_COLOR = ENGINE_PALETTE.forestScene
+const PINSPACE_FOREST_SCENE_COLOR = ENGINE_PALETTE.forestScene
 const MEDIA_KEY_LIGHT_COLOR = ENGINE_PALETTE.paper
 const MEDIA_GROUND_LIGHT_COLOR = ENGINE_PALETTE.groundLight
 
@@ -318,7 +318,7 @@ export default function SharePage() {
   }
 
   return (
-    <main className="relative h-[100dvh] w-full overflow-hidden bg-kova-forest">
+    <main className="relative h-[100dvh] w-full overflow-hidden bg-pinspace-forest">
       <PublicStudioHeader roomName={roomName} modeLabel="View only" boardCount={boards.length} />
       <PublicStudioNavigator
         boards={boards.map(({ id, title }) => ({ id, title }))}
@@ -349,9 +349,9 @@ export default function SharePage() {
           premultipliedAlpha: false,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
-        style={{ background: KOVA_FOREST_SCENE_COLOR }}
+        style={{ background: PINSPACE_FOREST_SCENE_COLOR }}
       >
-        <color attach="background" args={[KOVA_FOREST_SCENE_COLOR]} />
+        <color attach="background" args={[PINSPACE_FOREST_SCENE_COLOR]} />
         <ambientLight intensity={0.5} />
         <directionalLight
           position={[15, 20, 10]}

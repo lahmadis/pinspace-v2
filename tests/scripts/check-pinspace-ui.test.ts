@@ -3,18 +3,18 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { auditSource, auditTree } from '../../scripts/check-kova-ui.mjs'
+import { auditSource, auditTree } from '../../scripts/check-pinspace-ui.mjs'
 
 function rules(source: string, file = 'components/Fixture.tsx') {
   return auditSource(source, file).map((issue) => issue.rule)
 }
 
-describe('Kova UI source audit', () => {
+describe('PinSpace UI source audit', () => {
   it.each([
     ['legacy-theme-class', '<div className="bg-indigo-600 text-slate-100" />'],
     ['legacy-hex', 'const selected = "#4444ff"'],
-    ['raw-kova-color', 'const accent = "#FFC800"'],
-    ['raw-kova-color', 'const accent = "rgb(255 200 0 / 0.4)"'],
+    ['raw-pinspace-color', 'const accent = "#FFC800"'],
+    ['raw-pinspace-color', 'const accent = "rgb(255 200 0 / 0.4)"'],
     ['raw-status-class', '<p className="text-red-700">Failed</p>'],
     ['non-semantic-click', '<div onClick={openPanel}>Open</div>'],
     ['hover-only-action', '<button className="opacity-0 group-hover:opacity-100">Delete</button>'],
@@ -25,25 +25,25 @@ describe('Kova UI source audit', () => {
     expect(rules(source)).toContain(rule)
   })
 
-  it('accepts semantic Kova tokens and accessible native controls', () => {
+  it('accepts semantic PinSpace tokens and accessible native controls', () => {
     const source = `
       export function Fixture() {
-        return <button className="min-h-11 bg-primary text-kova-ink focus-visible:ring-2">Save</button>
+        return <button className="min-h-11 bg-primary text-pinspace-ink focus-visible:ring-2">Save</button>
       }
     `
 
     expect(auditSource(source, 'components/Fixture.tsx')).toEqual([])
   })
 
-  it('allows Kova palette literals only in token definition files', () => {
-    const source = ':root { --color-primary: 255 200 0; }\\n.kova { color: #FFC800; }'
+  it('allows PinSpace palette literals only in token definition files', () => {
+    const source = ':root { --color-primary: 255 200 0; }\\n.pinspace { color: #FFC800; }'
 
     expect(auditSource(source, 'app/globals.css')).toEqual([])
   })
 
   it('rejects inline raw-color allowlists in favor of reviewed named palettes', () => {
     const source = `
-      // kova-ui-allow raw-color -- WebGL material needs a stable sRGB value for scene contrast.
+      // pinspace-ui-allow raw-color -- WebGL material needs a stable sRGB value for scene contrast.
       context.fillStyle = '#ffffff'
     `
 
@@ -52,17 +52,17 @@ describe('Kova UI source audit', () => {
 
   it('does not treat allowlist text inside a runtime string as a comment directive', () => {
     const source = `
-      const note = "kova-ui-allow raw-color -- ordinary UI color override"
+      const note = "pinspace-ui-allow raw-color -- ordinary UI color override"
       const accent = '#FFC800'
     `
 
-    expect(rules(source, 'components/Fixture.tsx')).toContain('raw-kova-color')
+    expect(rules(source, 'components/Fixture.tsx')).toContain('raw-pinspace-color')
   })
 
   it('does not treat comment-shaped lines inside a template literal as directives', () => {
     const source = `
       const note = \`
-      // kova-ui-allow raw-color -- ordinary UI color override
+      // pinspace-ui-allow raw-color -- ordinary UI color override
       context.fillStyle = '#ffffff'
       \`
     `
@@ -75,7 +75,7 @@ describe('Kova UI source audit', () => {
   })
 
   it('includes the active Tailwind config in a whole-tree audit', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'kova-ui-check-'))
+    const root = await mkdtemp(join(tmpdir(), 'pinspace-ui-check-'))
     try {
       await mkdir(join(root, 'app'))
       await mkdir(join(root, 'components'))
@@ -105,7 +105,7 @@ describe('Kova UI source audit', () => {
 
   it('does not accept broad or unexplained allowlists', () => {
     const source = `
-      // kova-ui-allow raw-color
+      // pinspace-ui-allow raw-color
       const SCENE_KEY_LIGHT = '#ffffff'
     `
 
@@ -129,7 +129,7 @@ describe('Kova UI source audit', () => {
 
   it('rejects non-color allowlists even when they include a rationale', () => {
     const source = `
-      {/* kova-ui-allow non-semantic-click -- Event boundary prevents dialog backdrop dismissal. */}
+      {/* pinspace-ui-allow non-semantic-click -- Event boundary prevents dialog backdrop dismissal. */}
       <div onClick={(event) => event.stopPropagation()} />
     `
 
@@ -161,7 +161,7 @@ describe('Kova UI source audit', () => {
   })
 
   it('does not let arbitrary data attributes bypass semantic controls', () => {
-    const source = '<div data-kova-event-boundary="Deletes the entire account forever" onClick={deleteAccount} />'
+    const source = '<div data-pinspace-event-boundary="Deletes the entire account forever" onClick={deleteAccount} />'
 
     expect(rules(source, 'components/Fixture.tsx')).toContain('non-semantic-click')
   })

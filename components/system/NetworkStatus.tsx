@@ -87,7 +87,7 @@ export function NetworkStatus({
           ref={noticeRef}
           aria-hidden="true"
           data-network-notice
-          className="pointer-events-none fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 z-[90] w-[min(30rem,calc(100vw-7rem))] rounded-kova border border-border bg-background-light p-3 text-sm text-text-primary shadow-[var(--shadow-raised)] sm:w-[min(24rem,calc(100vw-16rem))]"
+          className="pointer-events-none fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 z-[90] w-[min(30rem,calc(100vw-7rem))] rounded-pinspace border border-border bg-background-light p-3 text-sm text-text-primary shadow-[var(--shadow-raised)] sm:w-[min(24rem,calc(100vw-16rem))]"
         >
           <p className="font-semibold">{online ? 'Back online' : "You're offline"}</p>
           {!online && (

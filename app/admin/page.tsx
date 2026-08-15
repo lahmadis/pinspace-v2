@@ -313,7 +313,7 @@ function InstructorsCard({
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`/admin/instructors/${i.userId}`}
-                      className="inline-flex min-h-11 items-center gap-1 rounded-kova px-2 text-xs font-medium text-accent hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      className="inline-flex min-h-11 items-center gap-1 rounded-pinspace px-2 text-xs font-medium text-accent hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
                       View
                       <ChevronRight className="w-3.5 h-3.5" />
@@ -509,7 +509,7 @@ function StudiosCard({
                       type="button"
                       onClick={() => toggleMembership(s)}
                       disabled={busyId === s.id}
-                      className={`min-h-11 rounded-kova px-2.5 py-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
+                      className={`min-h-11 rounded-pinspace px-2.5 py-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
                         s.adminIsMember
                           ? 'border border-border text-text-primary hover:bg-background'
                           : 'bg-accent text-background-light hover:bg-accent-light'
@@ -595,7 +595,7 @@ function DomainChipInput({
           {domains.map((d) => (
             <span key={d} className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-muted text-accent rounded text-xs font-medium border border-accent">
               {d}
-              <button type="button" onClick={() => onRemove(d)} disabled={disabled} aria-label={`Remove ${d}`} className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50">
+              <button type="button" onClick={() => onRemove(d)} disabled={disabled} aria-label={`Remove ${d}`} className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50">
                 <X className="w-3 h-3" />
               </button>
             </span>
@@ -692,7 +692,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex min-h-11 items-center gap-2 rounded-kova px-4 py-2 bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent text-background-light rounded-lg hover:bg-accent-light transition-colors font-medium text-sm"
+        className="inline-flex min-h-11 items-center gap-2 rounded-pinspace px-4 py-2 bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent text-background-light rounded-lg hover:bg-accent-light transition-colors font-medium text-sm"
       >
         <Plus className="w-4 h-4" />
         New org
@@ -803,7 +803,7 @@ function OrgRow({ inst, onEdit }: { inst: InstitutionWithCount; onEdit: (inst: I
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-kova text-text-dim hover:bg-background-lighter hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-pinspace text-text-dim hover:bg-background-lighter hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           title={expanded ? 'Collapse' : 'Show studios'}
         >
           {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4 text-text-dim" />}
@@ -834,14 +834,14 @@ function OrgRow({ inst, onEdit }: { inst: InstitutionWithCount; onEdit: (inst: I
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Link
             href={`/admin/institutions/${inst.slug}`}
-            className="inline-flex min-h-11 items-center rounded-kova px-3 py-2 text-xs font-medium text-accent hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex min-h-11 items-center rounded-pinspace px-3 py-2 text-xs font-medium text-accent hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             Full stats
           </Link>
           <button
             type="button"
             onClick={() => onEdit(inst)}
-            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova text-text-dim hover:bg-background-lighter hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace text-text-dim hover:bg-background-lighter hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             title="Edit"
             aria-label={`Edit ${inst.name}`}
           >
@@ -851,7 +851,7 @@ function OrgRow({ inst, onEdit }: { inst: InstitutionWithCount; onEdit: (inst: I
             href={`/i/${inst.slug}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova text-text-dim hover:bg-background-lighter hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace text-text-dim hover:bg-background-lighter hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             title="Open explore"
             aria-label={`Open ${inst.name} explore page`}
           >
@@ -1110,7 +1110,7 @@ function EditOrgModal({
                           onClick={() => handleDomainRemove(d.id, d.domain)}
                           disabled={mutationPending}
                           aria-label={`Remove ${d.domain}`}
-                          className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-kova text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+                          className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -1159,7 +1159,7 @@ function EditOrgModal({
               type="button"
               onClick={beginDeleteConfirmation}
               disabled={mutationPending}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-kova px-2 text-sm font-semibold text-danger hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-pinspace px-2 text-sm font-semibold text-danger hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
             >
               <Trash2 className="w-4 h-4" />
               Delete org
@@ -1384,7 +1384,7 @@ export default function AdminDashboardPage() {
           <button
             type="button"
             onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-            className="inline-flex min-h-11 items-center rounded-kova px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex min-h-11 items-center rounded-pinspace px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             Sign out
           </button>
@@ -1455,7 +1455,7 @@ export default function AdminDashboardPage() {
       actions={<>
             <Link
               href="/admin/users"
-              className="inline-flex min-h-11 items-center gap-2 rounded-kova border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="inline-flex min-h-11 items-center gap-2 rounded-pinspace border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <Users className="w-4 h-4" />
               Users &amp; roles
@@ -1463,7 +1463,7 @@ export default function AdminDashboardPage() {
             <CreateOrgForm onCreated={loadData} />
             <button
               onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-              className="inline-flex min-h-11 items-center rounded-kova px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="inline-flex min-h-11 items-center rounded-pinspace px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               Sign out
             </button>

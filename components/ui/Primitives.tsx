@@ -24,7 +24,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref
 ) {
   const variants = {
-    primary: 'border-kova-ink bg-primary text-kova-ink hover:bg-primary-light',
+    primary: 'border-pinspace-ink bg-primary text-pinspace-ink hover:bg-primary-light',
     secondary: 'border-accent bg-accent text-white hover:bg-accent-light',
     ghost: 'border-transparent bg-transparent text-text-primary hover:bg-background-lighter',
     danger: 'border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger))] text-white hover:bg-[rgb(var(--color-danger)/0.9)]',
@@ -39,7 +39,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-kova border font-semibold shadow-[0_3px_0_rgb(var(--color-ink))] transition-[transform,background-color,box-shadow] duration-150 active:translate-y-0.5 active:shadow-none disabled:cursor-not-allowed disabled:opacity-55',
+        'inline-flex items-center justify-center gap-2 rounded-pinspace border font-semibold shadow-[0_3px_0_rgb(var(--color-ink))] transition-[transform,background-color,box-shadow] duration-150 active:translate-y-0.5 active:shadow-none disabled:cursor-not-allowed disabled:opacity-55',
         focus,
         variants[variant],
         sizes[size],
@@ -76,7 +76,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       type={type}
       aria-label={label}
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-kova border border-border bg-background-light text-text-primary transition-colors hover:border-accent hover:bg-background-lighter disabled:cursor-not-allowed disabled:opacity-55',
+        'inline-flex shrink-0 items-center justify-center rounded-pinspace border border-border bg-background-light text-text-primary transition-colors hover:border-accent hover:bg-background-lighter disabled:cursor-not-allowed disabled:opacity-55',
         focus,
         sizes[size],
         className
@@ -92,7 +92,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       <input
         ref={ref}
         className={cn(
-          'min-h-11 w-full rounded-kova border border-border bg-background-light px-3.5 py-2 text-text-primary placeholder:text-text-dim shadow-sm transition-colors hover:border-text-muted disabled:cursor-not-allowed disabled:bg-background-lighter disabled:text-text-muted aria-[invalid=true]:border-[rgb(var(--color-danger))] aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-[rgb(var(--color-danger))]',
+          'min-h-11 w-full rounded-pinspace border border-border bg-background-light px-3.5 py-2 text-text-primary placeholder:text-text-dim shadow-sm transition-colors hover:border-text-muted disabled:cursor-not-allowed disabled:bg-background-lighter disabled:text-text-muted aria-[invalid=true]:border-[rgb(var(--color-danger))] aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-[rgb(var(--color-danger))]',
           focus,
           className
         )}
@@ -108,7 +108,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
       <select
         ref={ref}
         className={cn(
-          'min-h-11 w-full rounded-kova border border-border bg-background-light px-3.5 py-2 text-text-primary shadow-sm transition-colors hover:border-text-muted disabled:cursor-not-allowed disabled:bg-background-lighter disabled:text-text-muted aria-[invalid=true]:border-[rgb(var(--color-danger))]',
+          'min-h-11 w-full rounded-pinspace border border-border bg-background-light px-3.5 py-2 text-text-primary shadow-sm transition-colors hover:border-text-muted disabled:cursor-not-allowed disabled:bg-background-lighter disabled:text-text-muted aria-[invalid=true]:border-[rgb(var(--color-danger))]',
           focus,
           className
         )}
@@ -126,7 +126,7 @@ export const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(f
     <div
       ref={ref}
       className={cn(
-        'rounded-kova-lg border border-border bg-background-card p-5 shadow-[var(--shadow-soft)]',
+        'rounded-pinspace-lg border border-border bg-background-card p-5 shadow-[var(--shadow-soft)]',
         className
       )}
       {...props}
@@ -141,7 +141,7 @@ type BadgeProps = HTMLAttributes<HTMLSpanElement> & {
 export function Badge({ className, variant = 'neutral', ...props }: BadgeProps) {
   const variants = {
     neutral: 'bg-background-lighter text-text-secondary',
-    accent: 'bg-primary-muted text-kova-ink',
+    accent: 'bg-primary-muted text-pinspace-ink',
     success: 'bg-[rgb(var(--color-success)/0.12)] text-[rgb(var(--color-success))]',
     warning: 'bg-[rgb(var(--color-warning)/0.12)] text-[rgb(var(--color-warning))]',
     danger: 'bg-[rgb(var(--color-danger)/0.12)] text-[rgb(var(--color-danger))]',
@@ -199,7 +199,7 @@ export function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>
     <div
       aria-hidden="true"
       className={cn(
-        'animate-pulse rounded-kova bg-background-lighter motion-reduce:animate-none',
+        'animate-pulse rounded-pinspace bg-background-lighter motion-reduce:animate-none',
         className
       )}
       {...props}
@@ -218,7 +218,7 @@ export function EmptyState({ title, description, icon, action, className, ...pro
   return (
     <div
       className={cn(
-        'flex min-h-52 flex-col items-center justify-center rounded-kova-lg border border-dashed border-border bg-background-light p-8 text-center',
+        'flex min-h-52 flex-col items-center justify-center rounded-pinspace-lg border border-dashed border-border bg-background-light p-8 text-center',
         className
       )}
       {...props}
@@ -245,7 +245,7 @@ export function StatusState({ status, title, description, action, className, ...
       role={isAlert ? 'alert' : 'status'}
       aria-live={isAlert ? 'assertive' : 'polite'}
       className={cn(
-        'rounded-kova border border-border bg-background-light p-4',
+        'rounded-pinspace border border-border bg-background-light p-4',
         status === 'error' && 'border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger)/0.08)] text-text-primary',
         status === 'warning' && 'border-[rgb(var(--color-warning))] bg-[rgb(var(--color-warning)/0.08)] text-text-primary',
         status === 'success' && 'border-[rgb(var(--color-success))] bg-[rgb(var(--color-success)/0.08)] text-text-primary',

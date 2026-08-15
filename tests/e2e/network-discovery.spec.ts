@@ -16,7 +16,7 @@ const configuredSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const authenticatedSession = process.env.PLAYWRIGHT_SUPABASE_SESSION
 const browserBaseUrl = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:3000'
 
-test.describe('Kova discovery routes', () => {
+test.describe('PinSpace discovery routes', () => {
   test('authenticated network UI preserves responsive navigation and destinations', async ({ page, context }) => {
     test.skip(!configuredSupabaseUrl || !authenticatedSession, 'Requires the external Playwright authentication fixture.')
     const projectRef = new URL(configuredSupabaseUrl!).hostname.split('.')[0]

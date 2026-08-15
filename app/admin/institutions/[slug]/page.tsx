@@ -107,7 +107,7 @@ export default function InstitutionStatsPage() {
           status="error"
           title="Could not load institution"
           description={error}
-          action={<Link href="/admin" className="inline-flex min-h-11 items-center rounded-kova px-3 text-sm font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Back to admin</Link>}
+          action={<Link href="/admin" className="inline-flex min-h-11 items-center rounded-pinspace px-3 text-sm font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Back to admin</Link>}
         />
       </main>
     )
@@ -136,7 +136,7 @@ export default function InstitutionStatsPage() {
             href={`/i/${institution.slug}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-11 items-center gap-2 rounded-kova border border-kova-ink bg-primary px-4 py-2 text-sm font-semibold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex min-h-11 items-center gap-2 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 text-sm font-semibold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             Open explore <ExternalLink className="w-4 h-4" />
           </a>

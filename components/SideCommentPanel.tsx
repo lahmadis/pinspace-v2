@@ -128,7 +128,7 @@ export default function SideCommentPanel({ board, onClose }: SideCommentPanelPro
         {error && <StatusState status="error" title={error} action={<Button type="button" size="sm" onClick={() => { void fetchComments() }}>Try again</Button>} />}
         {!loading && !error && comments.length === 0 && <EmptyState title="No comments yet" description="Be the first to share your thoughts." />}
         {!loading && !error && comments.map((comment) => (
-          <article key={comment.id} className="flex gap-3 rounded-kova border border-border bg-background-lighter p-3 motion-reduce:transition-none">
+          <article key={comment.id} className="flex gap-3 rounded-pinspace border border-border bg-background-lighter p-3 motion-reduce:transition-none">
             <Avatar name={comment.authorName} size="sm" />
             <div className="min-w-0 flex-1">
               <div className="mb-1 flex items-baseline justify-between gap-2">
@@ -155,7 +155,7 @@ export default function SideCommentPanel({ board, onClose }: SideCommentPanelPro
             }
           }}
           placeholder="Share feedback…"
-          className="min-h-24 w-full resize-y rounded-kova border border-border bg-background-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:bg-background-lighter"
+          className="min-h-24 w-full resize-y rounded-pinspace border border-border bg-background-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:bg-background-lighter"
           rows={3}
           maxLength={2000}
           disabled={posting}

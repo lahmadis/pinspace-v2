@@ -17,7 +17,7 @@ export function PublicStatusScreen({
   action?: ReactNode
 }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-kova-forest px-4 py-10 text-text-primary">
+    <main className="flex min-h-screen items-center justify-center bg-pinspace-forest px-4 py-10 text-text-primary">
       <StatusState status={status} title={title} description={description} action={action} className="w-full max-w-md shadow-[var(--shadow-raised)]" />
     </main>
   )
@@ -37,18 +37,18 @@ export function PublicStudioHeader({
       <div className="flex min-w-0 items-center gap-2">
         <Link
           href="/"
-          aria-label="Kova home"
-          className="pointer-events-auto inline-flex min-h-11 shrink-0 items-center rounded-kova border border-kova-ink bg-primary px-4 py-2 font-black text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-light focus-visible:ring-offset-2 focus-visible:ring-offset-kova-forest"
+          aria-label="PinSpace home"
+          className="pointer-events-auto inline-flex min-h-11 shrink-0 items-center rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 font-black text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-light focus-visible:ring-offset-2 focus-visible:ring-offset-pinspace-forest"
         >
-          Kova
+          PinSpace
         </Link>
         {roomName && (
-          <p className="min-w-0 truncate rounded-kova border border-background-light/30 bg-kova-forest/85 px-3 py-2.5 text-sm font-semibold text-background-light shadow-[var(--shadow-soft)] backdrop-blur-md" title={roomName}>
+          <p className="min-w-0 truncate rounded-pinspace border border-background-light/30 bg-pinspace-forest/85 px-3 py-2.5 text-sm font-semibold text-background-light shadow-[var(--shadow-soft)] backdrop-blur-md" title={roomName}>
             {roomName}
           </p>
         )}
       </div>
-      <p className="flex w-full max-w-full self-start rounded-kova border border-background-light/30 bg-kova-forest/85 px-3 py-2.5 text-sm font-semibold text-background-light shadow-[var(--shadow-soft)] [overflow-wrap:anywhere] backdrop-blur-md sm:w-auto sm:max-w-[min(50vw,32rem)]">
+      <p className="flex w-full max-w-full self-start rounded-pinspace border border-background-light/30 bg-pinspace-forest/85 px-3 py-2.5 text-sm font-semibold text-background-light shadow-[var(--shadow-soft)] [overflow-wrap:anywhere] backdrop-blur-md sm:w-auto sm:max-w-[min(50vw,32rem)]">
         <span className="min-w-0 truncate" title={modeLabel}>{modeLabel}</span>
         <span aria-hidden="true" className="shrink-0"> · </span>
         <span className="shrink-0">{boardCount} board{boardCount === 1 ? '' : 's'}</span>
@@ -71,8 +71,8 @@ export function PublicStudioNavigator({
   if (boards.length === 0 && models.length === 0) return null
 
   return (
-    <details className="group pointer-events-auto fixed bottom-[max(7rem,calc(env(safe-area-inset-bottom)+7rem))] right-3 z-40 w-[min(22rem,calc(100vw-1.5rem))] rounded-kova border border-border bg-background-light/95 text-text-primary shadow-[var(--shadow-raised)] backdrop-blur-md sm:right-4">
-      <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-kova px-4 py-2.5 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2">
+    <details className="group pointer-events-auto fixed bottom-[max(7rem,calc(env(safe-area-inset-bottom)+7rem))] right-3 z-40 w-[min(22rem,calc(100vw-1.5rem))] rounded-pinspace border border-border bg-background-light/95 text-text-primary shadow-[var(--shadow-raised)] backdrop-blur-md sm:right-4">
+      <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-pinspace px-4 py-2.5 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2">
         Browse studio content
         <span aria-hidden="true" className="transition-transform motion-reduce:transition-none group-open:rotate-180">⌄</span>
       </summary>
@@ -87,7 +87,7 @@ export function PublicStudioNavigator({
                     type="button"
                     aria-label={`Open board ${board.title}`}
                     onClick={() => onOpenBoard(board.id)}
-                    className="min-h-11 w-full rounded-kova border border-border bg-background-card px-3 py-2 text-left text-sm font-semibold shadow-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+                    className="min-h-11 w-full rounded-pinspace border border-border bg-background-card px-3 py-2 text-left text-sm font-semibold shadow-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
                   >
                     <span className="block break-words">{board.title}</span>
                   </button>
@@ -106,7 +106,7 @@ export function PublicStudioNavigator({
                     type="button"
                     aria-label={`Open 3D model ${index + 1}`}
                     onClick={() => onOpenModel(model.url)}
-                    className="min-h-11 w-full rounded-kova border border-border bg-background-card px-3 py-2 text-left text-sm font-semibold shadow-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+                    className="min-h-11 w-full rounded-pinspace border border-border bg-background-card px-3 py-2 text-left text-sm font-semibold shadow-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
                   >
                     3D model {index + 1}
                   </button>
@@ -122,7 +122,7 @@ export function PublicStudioNavigator({
 
 export function PublicStudioInstructions({ children }: { children: ReactNode }) {
   return (
-    <aside className="pointer-events-none fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 mx-auto max-w-3xl rounded-kova border border-border bg-background-light/95 px-4 py-3 text-center text-xs font-medium text-text-secondary shadow-[var(--shadow-raised)] backdrop-blur-md sm:bottom-[max(1rem,env(safe-area-inset-bottom))] sm:text-sm">
+    <aside className="pointer-events-none fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 mx-auto max-w-3xl rounded-pinspace border border-border bg-background-light/95 px-4 py-3 text-center text-xs font-medium text-text-secondary shadow-[var(--shadow-raised)] backdrop-blur-md sm:bottom-[max(1rem,env(safe-area-inset-bottom))] sm:text-sm">
       {children}
     </aside>
   )
@@ -147,7 +147,7 @@ export function PublicModelDialog({ modelUrl, onClose, children }: { modelUrl: s
       description="Use pointer or touch to rotate and zoom. Keyboard users can open the model file or close this viewer."
       className="h-[min(84dvh,52rem)] max-w-5xl pb-[max(1.5rem,env(safe-area-inset-bottom))] [&>button.absolute]:h-11 [&>button.absolute]:w-11"
     >
-      <div className="h-[calc(100%-1rem)] min-h-64 overflow-hidden rounded-kova border border-border bg-kova-forest">
+      <div className="h-[calc(100%-1rem)] min-h-64 overflow-hidden rounded-pinspace border border-border bg-pinspace-forest">
         {children}
       </div>
       <div className="mt-3 flex flex-wrap justify-end gap-2">
@@ -156,7 +156,7 @@ export function PublicModelDialog({ modelUrl, onClose, children }: { modelUrl: s
             href={modelUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-11 items-center justify-center rounded-kova border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary shadow-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+            className="inline-flex min-h-11 items-center justify-center rounded-pinspace border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary shadow-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
           >
             Open model file
           </a>

@@ -176,13 +176,13 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
         {/* Success */}
         {loadState === 'ok' && (
           <>
-            <div className="mb-6 flex justify-center rounded-kova bg-background-lighter p-4 sm:p-6">
+            <div className="mb-6 flex justify-center rounded-pinspace bg-background-lighter p-4 sm:p-6">
               <QRCodeCanvas
                 value={shareUrl}
                 size={200}
                 level="H"
                 includeMargin={true}
-                className="max-w-full rounded-kova"
+                className="max-w-full rounded-pinspace"
               />
             </div>
 
@@ -191,7 +191,7 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
                 Shareable link
               </label>
               <div className="flex flex-col gap-2 sm:flex-row">
-                <output id="studio-share-url" className="min-h-11 min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-kova border border-border bg-background-lighter px-3 py-2 font-mono text-sm text-text-primary">
+                <output id="studio-share-url" className="min-h-11 min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-pinspace border border-border bg-background-lighter px-3 py-2 font-mono text-sm text-text-primary">
                   {shareUrl}
                 </output>
                 <Button
@@ -222,7 +222,7 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
               </div>
             </div>
 
-            <div className="rounded-kova border border-border bg-primary-muted p-4">
+            <div className="rounded-pinspace border border-border bg-primary-muted p-4">
               <p className="text-sm text-text-primary">
                 <strong>Anyone with this link</strong> can view your studio in 3D.
               </p>
@@ -262,10 +262,10 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
                 </div>
 
                 {createdUrl && (
-                  <div className="mb-3 rounded-kova border border-border bg-background-lighter p-3">
+                  <div className="mb-3 rounded-pinspace border border-border bg-background-lighter p-3">
                     <p className="mb-1.5 text-xs font-medium text-text-primary">Link created — copy it now. It will not be shown again.</p>
                     <div className="flex flex-col gap-2 sm:flex-row">
-                      <output className="min-w-0 flex-1 truncate rounded-kova border border-border bg-background-light px-2 py-2 font-mono text-xs text-text-primary">{createdUrl}</output>
+                      <output className="min-w-0 flex-1 truncate rounded-pinspace border border-border bg-background-light px-2 py-2 font-mono text-xs text-text-primary">{createdUrl}</output>
                       <Button
                         type="button"
                         size="sm"
@@ -283,7 +283,7 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
                     <p className="text-xs text-text-muted">No guest links yet.</p>
                   )}
                   {guestTokens.map((t) => (
-                    <div key={t.id} className="flex min-h-11 items-center justify-between gap-2 rounded-kova border border-border bg-background-lighter px-2.5 py-1.5">
+                    <div key={t.id} className="flex min-h-11 items-center justify-between gap-2 rounded-pinspace border border-border bg-background-lighter px-2.5 py-1.5">
                       <div className="min-w-0">
                         <p className={`truncate text-xs font-medium ${t.revoked ? 'text-text-muted line-through' : 'text-text-primary'}`}>{t.label}</p>
                       </div>
@@ -291,7 +291,7 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
                         <button
                           type="button"
                           onClick={() => deleteGuestLink(t.id)}
-                          className="min-h-11 flex-shrink-0 rounded-kova px-3 text-xs font-semibold text-[rgb(var(--color-danger))] hover:bg-[rgb(var(--color-danger)/0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          className="min-h-11 flex-shrink-0 rounded-pinspace px-3 text-xs font-semibold text-[rgb(var(--color-danger))] hover:bg-[rgb(var(--color-danger)/0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                           Delete
                         </button>
@@ -299,7 +299,7 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
                         <button
                           type="button"
                           onClick={() => revokeGuestLink(t.id)}
-                          className="min-h-11 flex-shrink-0 rounded-kova px-3 text-xs font-semibold text-[rgb(var(--color-danger))] hover:bg-[rgb(var(--color-danger)/0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          className="min-h-11 flex-shrink-0 rounded-pinspace px-3 text-xs font-semibold text-[rgb(var(--color-danger))] hover:bg-[rgb(var(--color-danger)/0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                           Revoke
                         </button>

@@ -45,7 +45,7 @@ function workspace() {
   }
 }
 
-describe('Kova join and institution handoffs', () => {
+describe('PinSpace join and institution handoffs', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     routeParams = { code: 'SECRET-CODE' }

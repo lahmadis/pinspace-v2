@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test'
 const isolatedBaseUrl = process.env.SECONDARY_BASE_URL
 const routeUrl = (route: string) => isolatedBaseUrl ? `${isolatedBaseUrl}${route}` : route
 
-test.describe('Kova secondary routes', () => {
+test.describe('PinSpace secondary routes', () => {
   for (const route of ['/terms', '/privacy']) {
     test(`${route} has readable legal landmarks without serious accessibility issues`, async ({ page }) => {
       await page.goto(routeUrl(route))
@@ -31,7 +31,7 @@ test.describe('Kova secondary routes', () => {
 
   test('demo route always announces demo identity', async ({ page }) => {
     await page.goto(routeUrl('/demo'))
-    await expect(page.getByRole('main', { name: 'Kova demo network' }).getByRole('status')).toContainText('Demo Mode')
+    await expect(page.getByRole('main', { name: 'PinSpace demo network' }).getByRole('status')).toContainText('Demo Mode')
     await expect(page.getByRole('button', { name: 'Exit demo mode' })).toBeVisible()
   })
 

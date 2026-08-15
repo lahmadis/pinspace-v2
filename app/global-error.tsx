@@ -17,7 +17,7 @@ export default function GlobalError({
   return (
     <html lang="en">
       <body
-        className="bg-kova-forest text-text-primary"
+        className="bg-pinspace-forest text-text-primary"
         style={{
           margin: 0,
           minHeight: '100dvh',
@@ -28,16 +28,16 @@ export default function GlobalError({
       >
         <main
           role="alert"
-          className="flex min-h-screen items-center justify-center bg-kova-forest p-6"
+          className="flex min-h-screen items-center justify-center bg-pinspace-forest p-6"
           style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', padding: '1.5rem' }}
         >
           <section
             aria-labelledby="global-error-title"
-            className="w-full max-w-lg rounded-kova-lg border border-border bg-background-light p-6 text-center shadow-[var(--shadow-raised)]"
+            className="w-full max-w-lg rounded-pinspace-lg border border-border bg-background-light p-6 text-center shadow-[var(--shadow-raised)]"
             style={{ width: '100%', maxWidth: '32rem', boxSizing: 'border-box', textAlign: 'center' }}
           >
             <p aria-hidden="true" className="font-mono text-sm font-bold uppercase tracking-[0.14em] text-text-secondary">
-              Kova
+              PinSpace
             </p>
             <h1 id="global-error-title" className="mt-2 text-2xl font-black">
               Something went wrong
@@ -48,7 +48,7 @@ export default function GlobalError({
             <button
               type="button"
               onClick={reset}
-              className="mt-6 inline-flex min-h-11 items-center justify-center rounded-kova border border-kova-ink bg-primary px-5 py-2 font-semibold text-kova-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+              className="mt-6 inline-flex min-h-11 items-center justify-center rounded-pinspace border border-pinspace-ink bg-primary px-5 py-2 font-semibold text-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
               style={{ minHeight: '44px', marginTop: '1.5rem', padding: '0.5rem 1.25rem', font: 'inherit', fontWeight: 700, cursor: 'pointer' }}
             >
               Try again

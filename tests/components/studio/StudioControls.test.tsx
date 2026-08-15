@@ -23,7 +23,7 @@ vi.mock('@/components/3d/WallConfigPreview', () => ({ WallConfigPreview: () => <
 
 type FloorWallConfig = ComponentProps<typeof FloorEditorOverlay>['wallConfig']
 
-describe('Kova studio controls', () => {
+describe('PinSpace studio controls', () => {
   beforeEach(() => {
     push.mockReset()
     toastError.mockReset()

@@ -22,7 +22,7 @@ export function AppShell({
   navigation,
   currentPath,
   footerNavigation = [],
-  brandLabel = 'Kova',
+  brandLabel = 'PinSpace',
   brandHref = '/',
   userControls,
   className,

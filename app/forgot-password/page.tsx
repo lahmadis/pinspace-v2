@@ -72,7 +72,7 @@ function ForgotPasswordInner() {
         <StatusState
           status="success"
           title="Reset link sent"
-          description="Open the latest email from Kova. The link can only be used once."
+          description="Open the latest email from PinSpace. The link can only be used once."
         />
       </AuthShell>
     )
@@ -100,7 +100,7 @@ function ForgotPasswordInner() {
             aria-describedby={error ? 'forgot-password-error' : 'forgot-password-help'}
           />
           <p id="forgot-password-help" className="mt-2 text-xs leading-5 text-text-muted">
-            Use the email connected to your Kova account.
+            Use the email connected to your PinSpace account.
           </p>
         </div>
         {error && <StatusState id="forgot-password-error" status="error" title={error} />}

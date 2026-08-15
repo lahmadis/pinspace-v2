@@ -128,7 +128,7 @@ export default function JoinWorkspacePage() {
           action={(
             <Link
               href="/dashboard"
-              className="inline-flex min-h-11 items-center justify-center rounded-kova border border-kova-ink bg-primary px-4 py-2 text-sm font-semibold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+              className="inline-flex min-h-11 items-center justify-center rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 text-sm font-semibold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
             >
               Go to dashboard
             </Link>
@@ -148,14 +148,14 @@ export default function JoinWorkspacePage() {
         </h1>
         <p className="mt-3 text-text-secondary">Collaborate in the shared studio and add your work after joining.</p>
 
-        <div className="my-6 rounded-kova border border-border bg-background-lighter p-4">
+        <div className="my-6 rounded-pinspace border border-border bg-background-lighter p-4">
           <p className="font-semibold text-text-primary">{workspace.memberCount} member{workspace.memberCount !== 1 ? 's' : ''}</p>
           <p className="mt-1 text-sm text-text-secondary">Membership is tied to your signed-in account.</p>
         </div>
 
         {user ? (
           <div className="space-y-4">
-            <p className="rounded-kova border border-border bg-primary-muted p-4 text-sm text-text-primary">
+            <p className="rounded-pinspace border border-border bg-primary-muted p-4 text-sm text-text-primary">
               Signed in as <strong>{profileFirstName || user.email?.split('@')[0] || 'User'}</strong>
             </p>
             {joinError && <StatusState status="error" title={joinError} className="p-3 text-sm" />}
@@ -169,7 +169,7 @@ export default function JoinWorkspacePage() {
             <StatusState status="info" title="Sign in before joining" description="We’ll bring you back to this invitation after sign in." />
             <Link
               href={workspace.institutionSlug ? `/sign-in?institution=${workspace.institutionSlug}&redirect=/join/${inviteCode}` : `/sign-in?redirect=/join/${inviteCode}`}
-              className="inline-flex min-h-12 w-full items-center justify-center rounded-kova border border-kova-ink bg-primary px-5 py-2.5 font-semibold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+              className="inline-flex min-h-12 w-full items-center justify-center rounded-pinspace border border-pinspace-ink bg-primary px-5 py-2.5 font-semibold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
             >
               Sign in to join
             </Link>

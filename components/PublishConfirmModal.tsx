@@ -83,7 +83,7 @@ export default function PublishConfirmModal({
         className="max-w-md pb-[max(1.5rem,env(safe-area-inset-bottom))] [&>button.absolute]:h-11 [&>button.absolute]:w-11"
       >
         <form onSubmit={handleConfirm} className="space-y-5">
-          <div className="rounded-kova border border-border bg-background-lighter p-4 text-sm text-text-secondary">
+          <div className="rounded-pinspace border border-border bg-background-lighter p-4 text-sm text-text-secondary">
             <p className="font-semibold text-text-primary">This will:</p>
             <ul className="mt-2 list-disc space-y-1 pl-5">
               <li>Remove the workspace from the public network</li>
@@ -173,7 +173,7 @@ export default function PublishConfirmModal({
           />
         </Field>
 
-        <p className="rounded-kova border border-border bg-primary-muted p-3 text-sm text-text-primary">
+        <p className="rounded-pinspace border border-border bg-primary-muted p-3 text-sm text-text-primary">
           Anyone can view this studio in the network. Only workspace members can edit or add boards.
         </p>
 

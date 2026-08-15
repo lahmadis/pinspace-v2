@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { kovaColors, kovaRadii } from '@/lib/design/tokens'
+import { pinspaceColors, pinspaceRadii } from '@/lib/design/tokens'
 
-describe('Kova design tokens', () => {
+describe('PinSpace design tokens', () => {
   it('exposes the approved signature palette', () => {
-    expect(kovaColors).toMatchObject({
+    expect(pinspaceColors).toMatchObject({
       yellow: '#FFC800',
       cream: '#FFF3CC',
       paper: '#FFFCF0',
@@ -14,6 +14,6 @@ describe('Kova design tokens', () => {
   })
 
   it('uses a consistent rounded geometry scale', () => {
-    expect(kovaRadii).toEqual({ sm: '10px', md: '14px', lg: '20px', pill: '999px' })
+    expect(pinspaceRadii).toEqual({ sm: '10px', md: '14px', lg: '20px', pill: '999px' })
   })
 })

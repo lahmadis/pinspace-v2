@@ -25,13 +25,13 @@ export function AuthShell({
       <div className="mx-auto flex min-h-[calc(100vh-2.5rem)] w-full max-w-6xl flex-col sm:min-h-[calc(100vh-4rem)]">
         <Link
           href="/"
-          className="inline-flex min-h-11 w-fit items-center rounded-kova px-2 font-mono text-sm font-bold uppercase tracking-[0.18em] text-primary-dark transition-colors hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="inline-flex min-h-11 w-fit items-center rounded-pinspace px-2 font-mono text-sm font-bold uppercase tracking-[0.18em] text-primary-dark transition-colors hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          Kova
+          PinSpace
         </Link>
 
         <div className="my-auto grid items-center gap-8 py-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(24rem,0.65fr)] lg:gap-16">
-          <section aria-label="About Kova" className="hidden max-w-xl lg:block">
+          <section aria-label="About PinSpace" className="hidden max-w-xl lg:block">
             <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-accent">{eyebrow}</p>
             <p className="mt-4 text-5xl font-bold leading-[0.98] text-text-primary">
               A shared home for studio thinking.
@@ -72,4 +72,4 @@ export function AuthLoading({ label }: { label: string }) {
 export const fieldLabelClass = 'mb-1.5 block text-sm font-semibold text-text-primary'
 
 export const textLinkClass =
-  'inline-flex min-h-11 items-center rounded-kova px-1 font-semibold text-accent underline-offset-4 transition-colors hover:text-accent-light hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+  'inline-flex min-h-11 items-center rounded-pinspace px-1 font-semibold text-accent underline-offset-4 transition-colors hover:text-accent-light hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'

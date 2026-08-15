@@ -101,7 +101,7 @@ export default function InstructorPicker({
     return (
       <div className="min-w-0">
         <span id={`${inputId}-label`} className="mb-1 block text-sm font-semibold text-text-primary">{label}</span>
-        <div className="flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-kova border border-accent bg-primary-muted px-3 py-2">
+        <div className="flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-pinspace border border-accent bg-primary-muted px-3 py-2">
           <div className="min-w-0">
             <p className="break-words text-sm font-semibold text-text-primary">{displayName}</p>
             {selected.fullName && selected.email && (
@@ -157,7 +157,7 @@ export default function InstructorPicker({
         placeholder="Search by name or email"
       />
       {open && (
-        <div id={listId} role="listbox" aria-label="Instructor search results" className="mt-2 max-h-56 overflow-y-auto rounded-kova border border-border bg-background-light p-1 shadow-[var(--shadow-soft)]">
+        <div id={listId} role="listbox" aria-label="Instructor search results" className="mt-2 max-h-56 overflow-y-auto rounded-pinspace border border-border bg-background-light p-1 shadow-[var(--shadow-soft)]">
           {searching ? (
             <p id={statusId} role="status" className="px-3 py-2 text-sm text-text-secondary">Searching…</p>
           ) : results.length === 0 ? (

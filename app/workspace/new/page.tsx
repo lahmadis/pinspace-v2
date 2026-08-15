@@ -163,7 +163,7 @@ function NewWorkspaceForm() {
             {error && <StatusState id="project-form-error" role="alert" status="error" title={error} />}
 
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <Link href="/dashboard" className="inline-flex min-h-11 items-center justify-center rounded-kova px-4 py-2 text-sm font-semibold text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Cancel</Link>
+              <Link href="/dashboard" className="inline-flex min-h-11 items-center justify-center rounded-pinspace px-4 py-2 text-sm font-semibold text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Cancel</Link>
               <Button type="submit" size="lg" loading={loading}>{loading ? 'Creating project…' : 'Create project'}</Button>
             </div>
           </form>

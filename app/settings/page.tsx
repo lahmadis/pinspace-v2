@@ -22,7 +22,7 @@ const SCOPE_KEY = 'pinspace-dashboard-scope'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
   return (
-    <section className="rounded-kova-lg border border-border bg-background-card p-5 shadow-[var(--shadow-soft)] sm:p-6">
+    <section className="rounded-pinspace-lg border border-border bg-background-card p-5 shadow-[var(--shadow-soft)] sm:p-6">
       {children}
     </section>
   )
@@ -54,7 +54,7 @@ function Toggle({
   disabled?: boolean
 }) {
   return (
-    <label className="flex min-h-11 cursor-pointer select-none items-start gap-3 rounded-kova p-1 focus-within:ring-2 focus-within:ring-accent">
+    <label className="flex min-h-11 cursor-pointer select-none items-start gap-3 rounded-pinspace p-1 focus-within:ring-2 focus-within:ring-accent">
       <div className="relative mt-0.5 shrink-0">
         <input
           type="checkbox"
@@ -374,7 +374,7 @@ export default function SettingsPage() {
                     </div>
                   )}
                   {avatarUploading && (
-                    <div className="absolute inset-0 rounded-full bg-kova-ink/40 flex items-center justify-center">
+                    <div className="absolute inset-0 rounded-full bg-pinspace-ink/40 flex items-center justify-center">
                       <div className="w-5 h-5 border-2 border-background-light/40 border-t-background-light rounded-full animate-spin" />
                     </div>
                   )}
@@ -384,7 +384,7 @@ export default function SettingsPage() {
                     type="button"
                     disabled={avatarUploading}
                     onClick={() => fileInputRef.current?.click()}
-                    className="min-h-11 px-3 py-2 text-sm font-medium border border-border rounded-kova focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent hover:bg-background transition-colors disabled:opacity-50"
+                    className="min-h-11 px-3 py-2 text-sm font-medium border border-border rounded-pinspace focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent hover:bg-background transition-colors disabled:opacity-50"
                   >
                     {avatarUploading ? 'Uploading…' : 'Change photo'}
                   </button>
@@ -429,7 +429,7 @@ export default function SettingsPage() {
                 type="button"
                 disabled={!nameChanged || savingProfile}
                 onClick={handleSaveProfile}
-                className="flex min-h-11 items-center gap-1.5 rounded-kova bg-accent px-4 py-2 text-sm font-medium text-background-light transition-colors hover:bg-accent-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                className="flex min-h-11 items-center gap-1.5 rounded-pinspace bg-accent px-4 py-2 text-sm font-medium text-background-light transition-colors hover:bg-accent-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
               >
                 <Save className="w-3.5 h-3.5" />
                 {savingProfile ? 'Saving…' : 'Save'}

@@ -81,14 +81,14 @@ export default function PortfolioPage() {
     <div className="min-h-screen overflow-x-hidden bg-background text-text-primary">
       <header className="sticky top-0 z-20 border-b border-border bg-background-light/95 backdrop-blur-md">
         <div className="mx-auto flex min-h-16 max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <Link href="/explore" className="inline-flex min-h-11 items-center rounded-kova px-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">← Explore</Link>
+          <Link href="/explore" className="inline-flex min-h-11 items-center rounded-pinspace px-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">← Explore</Link>
           <span className="font-mono text-xs uppercase tracking-[0.16em] text-text-secondary">Public portfolio</span>
         </div>
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
         <header className="mb-10 max-w-3xl">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-border bg-primary text-2xl font-bold text-kova-ink" aria-hidden="true">{displayName.charAt(0).toUpperCase()}</div>
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-border bg-primary text-2xl font-bold text-pinspace-ink" aria-hidden="true">{displayName.charAt(0).toUpperCase()}</div>
           <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Published work</p>
           <h1 className="mt-2 break-words text-3xl font-black tracking-tight sm:text-5xl">{displayName}</h1>
           <p className="mt-3 break-words text-sm text-text-secondary">
@@ -120,7 +120,7 @@ export default function PortfolioPage() {
                       type="button"
                       aria-label={`Open ${board.title}`}
                       onClick={() => setSelectedBoard(board)}
-                      className="group block w-full overflow-hidden rounded-kova-lg border border-border bg-background-light text-left shadow-[var(--shadow-soft)] transition-[transform,border-color] hover:-translate-y-0.5 hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transform-none"
+                      className="group block w-full overflow-hidden rounded-pinspace-lg border border-border bg-background-light text-left shadow-[var(--shadow-soft)] transition-[transform,border-color] hover:-translate-y-0.5 hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transform-none"
                     >
                       <span className="relative block w-full overflow-hidden bg-background-lighter">
                         <Image src={board.thumbnailUrl} alt="" width={600} height={board.aspectRatio ? Math.round(600 / board.aspectRatio) : 400} className="h-auto w-full object-cover motion-safe:transition-transform motion-safe:duration-300 group-hover:scale-[1.02]" unoptimized />
@@ -147,8 +147,8 @@ export default function PortfolioPage() {
       >
         {selectedBoard && (
           <>
-            <Image src={selectedBoard.fullImageUrl} alt={selectedBoard.title} width={1200} height={800} className="max-h-[65vh] h-auto w-full rounded-kova object-contain" unoptimized />
-            <Link href={`/studio/${selectedBoard.studioId}/view`} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-kova border border-kova-ink bg-primary px-4 py-2 text-sm font-semibold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+            <Image src={selectedBoard.fullImageUrl} alt={selectedBoard.title} width={1200} height={800} className="max-h-[65vh] h-auto w-full rounded-pinspace object-contain" unoptimized />
+            <Link href={`/studio/${selectedBoard.studioId}/view`} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 text-sm font-semibold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
               View studio <ExternalLink className="h-4 w-4" aria-hidden="true" />
             </Link>
           </>

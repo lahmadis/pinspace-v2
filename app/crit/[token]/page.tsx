@@ -32,7 +32,7 @@ import {
   PublicStudioNavigator,
 } from '@/components/public/PublicStudioShell'
 
-const KOVA_FOREST_SCENE_COLOR = ENGINE_PALETTE.forestScene
+const PINSPACE_FOREST_SCENE_COLOR = ENGINE_PALETTE.forestScene
 const MEDIA_KEY_LIGHT_COLOR = ENGINE_PALETTE.paper
 const MEDIA_GROUND_LIGHT_COLOR = ENGINE_PALETTE.groundLight
 const LIVE_CURSOR_COLOR = ENGINE_PALETTE.cursor
@@ -687,7 +687,7 @@ export default function CritPage() {
   }
 
   return (
-    <main className="relative h-[100dvh] w-full overflow-hidden bg-kova-forest">
+    <main className="relative h-[100dvh] w-full overflow-hidden bg-pinspace-forest">
       <PublicStudioHeader roomName={roomName} modeLabel={`Guest critic · ${guestName}`} boardCount={boards.length} />
       <PublicStudioNavigator
         boards={boards.map(({ id, title }) => ({ id, title }))}
@@ -706,7 +706,7 @@ export default function CritPage() {
           presenter, so any presenter is "someone else" — always show the banner. */}
       {presenter && (
         <div
-          className="fixed left-1/2 top-[calc(env(safe-area-inset-top)+7.5rem)] z-40 flex -translate-x-1/2 items-center gap-2 rounded-kova border border-border bg-background-light/95 p-2 text-text-primary shadow-[var(--shadow-raised)] backdrop-blur-md sm:top-[calc(env(safe-area-inset-top)+5rem)]"
+          className="fixed left-1/2 top-[calc(env(safe-area-inset-top)+7.5rem)] z-40 flex -translate-x-1/2 items-center gap-2 rounded-pinspace border border-border bg-background-light/95 p-2 text-text-primary shadow-[var(--shadow-raised)] backdrop-blur-md sm:top-[calc(env(safe-area-inset-top)+5rem)]"
           role="status"
         >
           <Presentation className="h-4 w-4 text-accent" aria-hidden="true" />
@@ -742,9 +742,9 @@ export default function CritPage() {
           premultipliedAlpha: false,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
-        style={{ background: KOVA_FOREST_SCENE_COLOR }}
+        style={{ background: PINSPACE_FOREST_SCENE_COLOR }}
       >
-        <color attach="background" args={[KOVA_FOREST_SCENE_COLOR]} />
+        <color attach="background" args={[PINSPACE_FOREST_SCENE_COLOR]} />
         <ambientLight intensity={0.5} />
         <directionalLight
           position={[15, 20, 10]}

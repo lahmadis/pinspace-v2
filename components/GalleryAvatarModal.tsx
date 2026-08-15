@@ -5,7 +5,7 @@ import { Button, Dialog, Select } from '@/components/ui'
 
 // Named 3D avatar material colors maintain readable contrast in the gallery scene.
 export const GALLERY_AVATAR_COLOR_OPTIONS = {
-  yellow: { name: 'Kova yellow', value: '#FFC800' },
+  yellow: { name: 'PinSpace yellow', value: '#FFC800' },
   green: { name: 'Deep green', value: '#14705C' },
   forest: { name: 'Forest', value: '#0A2F28' },
   ocean: { name: 'Ocean blue', value: '#176B87' },
@@ -61,17 +61,17 @@ export default function GalleryAvatarModal({ isOpen, onClose, onEnter, pending =
       className="max-w-2xl overflow-x-hidden"
     >
       <div className="grid gap-6 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-        <section aria-labelledby="avatar-colors-heading" className="rounded-kova-lg border border-border bg-background p-5">
-          <div className="mx-auto mb-5 flex aspect-square w-full max-w-48 items-center justify-center rounded-kova-lg border border-border bg-background-light">
+        <section aria-labelledby="avatar-colors-heading" className="rounded-pinspace-lg border border-border bg-background p-5">
+          <div className="mx-auto mb-5 flex aspect-square w-full max-w-48 items-center justify-center rounded-pinspace-lg border border-border bg-background-light">
             <div className="h-28 w-28 rounded-full motion-safe:transition-colors" style={avatarPreviewStyle} aria-hidden="true" />
           </div>
           <fieldset disabled={pending}>
             <legend id="avatar-colors-heading" className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-text-secondary">Avatar colour</legend>
             <div className="mt-3 grid grid-cols-3 gap-2">
               {AVATAR_COLORS.map((choice) => (
-                <label key={choice.value} className="cursor-pointer rounded-kova focus-within:outline-none focus-within:ring-2 focus-within:ring-accent">
+                <label key={choice.value} className="cursor-pointer rounded-pinspace focus-within:outline-none focus-within:ring-2 focus-within:ring-accent">
                   <input type="radio" name="avatar-color" value={choice.value} checked={color === choice.value} onChange={() => setColor(choice.value)} className="sr-only" />
-                  <span className="flex min-h-11 items-center justify-center rounded-kova border-2 px-2 text-center text-[11px] font-semibold" style={{ backgroundColor: choice.value, borderColor: color === choice.value ? 'rgb(var(--color-ink))' : 'transparent', color: choice.value === DEFAULT_GALLERY_AVATAR_COLOR ? 'rgb(var(--color-ink))' : 'white' }}>
+                  <span className="flex min-h-11 items-center justify-center rounded-pinspace border-2 px-2 text-center text-[11px] font-semibold" style={{ backgroundColor: choice.value, borderColor: color === choice.value ? 'rgb(var(--color-ink))' : 'transparent', color: choice.value === DEFAULT_GALLERY_AVATAR_COLOR ? 'rgb(var(--color-ink))' : 'white' }}>
                     {choice.name}
                   </span>
                 </label>

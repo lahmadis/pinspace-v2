@@ -28,11 +28,11 @@ export default function InstitutionCard({ institution }: InstitutionCardProps) {
   return (
     <Link
       href={`/explore?institution_slug=${slug}`}
-      className="group block h-full min-w-0 rounded-kova-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+      className="group block h-full min-w-0 rounded-pinspace-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
     >
       <Card className="flex h-full min-w-0 flex-col gap-4 transition-[transform,box-shadow] group-hover:-translate-y-0.5 group-hover:shadow-[var(--shadow-raised)]">
         <div className="flex min-w-0 items-start justify-between gap-3">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-kova border border-border bg-background-lighter">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-pinspace border border-border bg-background-lighter">
             {logo_url ? (
               <Image src={logo_url} alt="" width={48} height={48} className="h-full w-full object-contain p-1" />
             ) : isUniversity ? (

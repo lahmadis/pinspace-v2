@@ -47,7 +47,7 @@ export function AppNavigationLinks({
         aria-current={active ? 'page' : undefined}
         onClick={onNavigate}
         className={cn(
-          'flex min-h-11 items-center gap-3 rounded-kova border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background-light',
+          'flex min-h-11 items-center gap-3 rounded-pinspace border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background-light',
           active
             ? 'border-border bg-primary text-text-primary shadow-[var(--shadow-soft)]'
             : 'border-transparent text-text-secondary hover:border-border-light hover:bg-background-lighter hover:text-text-primary'
@@ -64,7 +64,7 @@ export function AppSidebar({
   navigation,
   currentPath,
   footerNavigation = [],
-  brandLabel = 'Kova',
+  brandLabel = 'PinSpace',
   brandHref = '/',
   userControls,
   className,
@@ -81,7 +81,7 @@ export function AppSidebar({
         <Link
           href={brandHref}
           data-desktop-navigation-focus
-          className="rounded-kova font-mono text-lg font-bold tracking-tight text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="rounded-pinspace font-mono text-lg font-bold tracking-tight text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           {brandLabel}
         </Link>

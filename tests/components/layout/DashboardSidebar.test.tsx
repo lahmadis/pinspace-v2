@@ -127,7 +127,7 @@ describe('DashboardSidebar', () => {
     const trigger = screen.getByRole('button', { name: 'Open navigation' })
     await user.click(trigger)
     let sheet = screen.getByRole('dialog', { name: 'Dashboard navigation' })
-    const homeLink = within(sheet).getByRole('link', { name: 'Kova home' })
+    const homeLink = within(sheet).getByRole('link', { name: 'PinSpace home' })
     const closeButton = within(sheet).getByRole('button', { name: 'Close sheet' })
     expect(homeLink).toHaveFocus()
 
@@ -196,7 +196,7 @@ describe('DashboardSidebar', () => {
         name: 'Dashboard navigation',
       })
       await waitFor(() =>
-        expect(within(desktopNavigation).getByRole('link', { name: 'Kova' })).toHaveFocus()
+        expect(within(desktopNavigation).getByRole('link', { name: 'PinSpace' })).toHaveFocus()
       )
     } finally {
       window.matchMedia = originalMatchMedia

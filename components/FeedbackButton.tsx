@@ -102,13 +102,13 @@ export default function FeedbackButton() {
                 id="feedback-message"
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
-                placeholder="What happened, or what would make Kova better?"
+                placeholder="What happened, or what would make PinSpace better?"
                 rows={5}
                 maxLength={FEEDBACK_MESSAGE_MAX_LENGTH}
                 disabled={submitting}
                 aria-invalid={Boolean(error)}
                 aria-describedby={error ? 'feedback-error feedback-count' : 'feedback-count'}
-                className="min-h-36 w-full resize-y rounded-kova border border-border bg-background-light px-4 py-3 text-text-primary placeholder:text-text-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                className="min-h-36 w-full resize-y rounded-pinspace border border-border bg-background-light px-4 py-3 text-text-primary placeholder:text-text-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
               />
               <p id="feedback-count" className="mt-1 text-right text-xs text-text-secondary">
                 {message.length.toLocaleString()} / {FEEDBACK_MESSAGE_MAX_LENGTH.toLocaleString()}

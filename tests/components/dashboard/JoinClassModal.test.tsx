@@ -46,7 +46,7 @@ describe('JoinClassModal', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<JoinClassModal onClose={vi.fn()} />)
 
-    await user.type(screen.getByRole('textbox', { name: 'Invite code or link' }), 'https://kova.test/join/ab%2012')
+    await user.type(screen.getByRole('textbox', { name: 'Invite code or link' }), 'https://pinspace.test/join/ab%2012')
     const submit = screen.getByRole('button', { name: 'Continue' })
     await user.click(submit)
     await user.click(submit)

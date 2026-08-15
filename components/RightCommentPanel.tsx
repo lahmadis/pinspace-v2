@@ -143,7 +143,7 @@ export default function RightCommentPanel({ board, onClose, isArchived = false, 
           {!loading && !error && comments.length === 0 && <EmptyState title="No comments yet" description="Start the conversation below." />}
 
           {!loading && !error && comments.map((comment) => (
-            <article key={comment.id} className="flex gap-3 rounded-kova border border-border bg-background-lighter p-3">
+            <article key={comment.id} className="flex gap-3 rounded-pinspace border border-border bg-background-lighter p-3">
               <Avatar name={comment.authorName} size="sm" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline justify-between mb-1">
@@ -174,7 +174,7 @@ export default function RightCommentPanel({ board, onClose, isArchived = false, 
                   }
                 }}
                 placeholder="Share feedback…"
-                className="mb-3 min-h-24 w-full resize-y rounded-kova border border-border bg-background-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:bg-background-lighter"
+                className="mb-3 min-h-24 w-full resize-y rounded-pinspace border border-border bg-background-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:bg-background-lighter"
                 rows={3}
                 maxLength={2000}
                 disabled={posting}
@@ -194,7 +194,7 @@ export default function RightCommentPanel({ board, onClose, isArchived = false, 
               <p className="mb-3 text-sm text-text-secondary">Sign in to leave a comment.</p>
               <a
                 href="/sign-in"
-                className="inline-flex min-h-11 items-center justify-center rounded-kova border border-kova-ink bg-primary px-6 py-2 text-sm font-semibold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="inline-flex min-h-11 items-center justify-center rounded-pinspace border border-pinspace-ink bg-primary px-6 py-2 text-sm font-semibold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 Sign in
               </a>

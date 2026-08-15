@@ -150,7 +150,7 @@ describe('AppShell', () => {
       expect(document.body.style.overflow).toBe('')
       const desktopNavigation = screen.getByLabelText('Application sidebar')
       await waitFor(() =>
-        expect(within(desktopNavigation).getByRole('link', { name: 'Kova' })).toHaveFocus()
+        expect(within(desktopNavigation).getByRole('link', { name: 'PinSpace' })).toHaveFocus()
       )
     } finally {
       window.matchMedia = originalMatchMedia

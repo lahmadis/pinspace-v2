@@ -18,7 +18,7 @@ async function mockEmptyShare(page: Page) {
   }))
 }
 
-test.describe('Kova public sharing', () => {
+test.describe('PinSpace public sharing', () => {
   for (const width of [360, 390, 768, 1024, 1440, 1920]) {
     test(`empty share remains usable at ${width}px`, async ({ page }) => {
       await mockEmptyShare(page)

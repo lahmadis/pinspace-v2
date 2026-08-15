@@ -99,11 +99,11 @@ export default function DepartmentPage() {
     <div className="min-h-screen overflow-x-hidden bg-background text-text-primary">
       <header className="border-b border-border bg-background-light">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-          <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm"><Link href="/explore" className="min-h-11 content-center rounded-kova px-2 font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Explore</Link><span aria-hidden="true">/</span><span className="break-words">{departmentName}</span></nav>
+          <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm"><Link href="/explore" className="min-h-11 content-center rounded-pinspace px-2 font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Explore</Link><span aria-hidden="true">/</span><span className="break-words">{departmentName}</span></nav>
           <p className="mt-5 font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Department discovery</p>
           <h1 className="mt-1 break-words text-3xl font-black sm:text-5xl">{departmentName}</h1>
           <p className="mt-2 text-text-secondary">Browse published studios by programme year or as one network.</p>
-          <Link href="/my-boards" className="mt-4 inline-flex min-h-11 items-center rounded-kova border border-border bg-background px-4 py-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">My boards</Link>
+          <Link href="/my-boards" className="mt-4 inline-flex min-h-11 items-center rounded-pinspace border border-border bg-background px-4 py-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">My boards</Link>
         </div>
       </header>
 
@@ -118,7 +118,7 @@ export default function DepartmentPage() {
             {viewMode === 'all' && <div className="w-full sm:w-48"><label htmlFor="programme-year" className="mb-1 block text-xs font-semibold">Programme year</label><Select id="programme-year" value={yearFilter} onChange={(event) => setYearFilter(event.target.value)}>{uniqueYears.map((year) => <option key={year}>{year}</option>)}</Select></div>}
           </div>
 
-          <section aria-label={`${departmentName} network`} className="min-h-[34rem] overflow-hidden rounded-kova-lg border border-border bg-kova-forest sm:min-h-[40rem]">
+          <section aria-label={`${departmentName} network`} className="min-h-[34rem] overflow-hidden rounded-pinspace-lg border border-border bg-pinspace-forest sm:min-h-[40rem]">
             {loadState === 'loading' ? <div className="flex min-h-[34rem] items-center justify-center p-4"><StatusState status="loading" title={`Loading ${departmentName} studios`} /></div>
               : loadState === 'error' ? <div className="flex min-h-[34rem] items-center justify-center p-4"><StatusState status="error" title="Could not load department studios" description="Try again without changing your filters." action={<Button type="button" onClick={() => void loadResults()}>Try again</Button>} className="w-full max-w-lg" /></div>
                 : nodes.length === 0 ? <div className="flex min-h-[34rem] items-center justify-center p-4"><EmptyState title="No studios match these filters" description="Choose another year or check back when studios are published." icon={<Network className="h-8 w-8" aria-hidden="true" />} className="w-full max-w-lg" /></div>

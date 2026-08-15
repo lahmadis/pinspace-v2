@@ -67,7 +67,7 @@ function SidebarContent({
           onNavigate()
         }}
         aria-current={active ? 'page' : undefined}
-        className={`flex min-h-11 w-full items-center gap-3 rounded-kova border px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+        className={`flex min-h-11 w-full items-center gap-3 rounded-pinspace border px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
           active
             ? 'border-border bg-primary text-text-primary shadow-[var(--shadow-soft)]'
             : 'border-transparent text-text-secondary hover:border-border-light hover:bg-background-lighter hover:text-text-primary'
@@ -79,7 +79,7 @@ function SidebarContent({
     )
   }
 
-  const linkClass = (active: boolean) => `flex min-h-11 items-center gap-3 rounded-kova border px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+  const linkClass = (active: boolean) => `flex min-h-11 items-center gap-3 rounded-pinspace border px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
     active
       ? 'border-border bg-primary text-text-primary shadow-[var(--shadow-soft)]'
       : 'border-transparent text-text-secondary hover:border-border-light hover:bg-background-lighter hover:text-text-primary'
@@ -145,7 +145,7 @@ function SidebarContent({
             onClick={onSignOut}
             title="Sign out"
             aria-label="Sign out"
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-kova text-text-secondary transition-colors hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-pinspace text-text-secondary transition-colors hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <LogOut className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -242,7 +242,7 @@ export function DashboardSidebar({
         ref={triggerRef}
         type="button"
         onClick={onToggle}
-        className={`fixed left-4 top-4 z-50 inline-flex h-11 min-w-11 items-center justify-center rounded-kova border border-border bg-background-light text-text-primary shadow-[var(--shadow-soft)] transition-opacity hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:hidden ${
+        className={`fixed left-4 top-4 z-50 inline-flex h-11 min-w-11 items-center justify-center rounded-pinspace border border-border bg-background-light text-text-primary shadow-[var(--shadow-soft)] transition-opacity hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:hidden ${
           isOpen ? 'pointer-events-none opacity-0' : 'opacity-100'
         }`}
         aria-label="Open navigation"
@@ -262,9 +262,9 @@ export function DashboardSidebar({
           <Link
             ref={desktopBrandRef}
             href="/"
-            className="rounded-kova font-mono text-xl font-bold tracking-tight text-text-primary transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="rounded-pinspace font-mono text-xl font-bold tracking-tight text-text-primary transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            Kova
+            PinSpace
           </Link>
         </div>
         <div className="flex min-h-0 flex-1 flex-col px-3 pb-3">
@@ -288,11 +288,11 @@ export function DashboardSidebar({
         <div className="flex min-h-[calc(100dvh-10rem)] flex-col">
           <Link
             href="/"
-            aria-label="Kova home"
+            aria-label="PinSpace home"
             onClick={closeMobileNavigation}
-            className="mb-2 w-fit rounded-kova font-mono text-lg font-bold tracking-tight text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="mb-2 w-fit rounded-pinspace font-mono text-lg font-bold tracking-tight text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            Kova
+            PinSpace
           </Link>
           <SidebarContent
             {...contentProps}

@@ -12,7 +12,7 @@ describe('SuperadminOrgSwitcher', () => {
     push.mockReset()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ orgs: [{ id: 'org/1', name: 'Kova School', slug: 'kova' }] }),
+      json: async () => ({ orgs: [{ id: 'org/1', name: 'PinSpace School', slug: 'pinspace' }] }),
     }))
   })
 

@@ -17,7 +17,7 @@ const presentationFiles = [
   'components/FeedbackButton.tsx',
 ]
 
-describe('Kova secondary-route source contracts', () => {
+describe('PinSpace secondary-route source contracts', () => {
   it('uses semantic presentation tokens without legacy theme utilities', async () => {
     for (const file of presentationFiles) {
       const source = await readFile(file, 'utf8')
@@ -72,7 +72,7 @@ describe('Kova secondary-route source contracts', () => {
     ])
 
     expect(model).toContain('eyebrow="Utility"')
-    expect(demo).toContain('aria-label="Kova demo network"')
+    expect(demo).toContain('aria-label="PinSpace demo network"')
     expect(debug).toContain('eyebrow="Restricted debug utility"')
     expect(banner).toContain("window.location.pathname.startsWith('/demo')")
   })

@@ -72,7 +72,7 @@ export function Tooltip({ content, children, className }: TooltipProps) {
           onMouseEnter={show}
           onMouseLeave={scheduleHide}
           className={cn(
-            'absolute bottom-full left-1/2 z-[110] mb-2 w-max max-w-64 -translate-x-1/2 rounded-[var(--radius-sm)] bg-kova-forest px-2.5 py-1.5 text-xs font-medium text-white shadow-[var(--shadow-soft)]',
+            'absolute bottom-full left-1/2 z-[110] mb-2 w-max max-w-64 -translate-x-1/2 rounded-[var(--radius-sm)] bg-pinspace-forest px-2.5 py-1.5 text-xs font-medium text-white shadow-[var(--shadow-soft)]',
             className
           )}
         >

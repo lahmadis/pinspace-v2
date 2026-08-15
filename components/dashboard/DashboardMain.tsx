@@ -49,7 +49,7 @@ function withInstitution(path: string, slug: string | null): string {
 }
 
 const interactiveLink =
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-kova border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary shadow-[var(--shadow-soft)] transition-colors hover:border-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+  'inline-flex min-h-11 items-center justify-center gap-2 rounded-pinspace border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary shadow-[var(--shadow-soft)] transition-colors hover:border-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
 interface ProjectCardProps {
   workspace: DashboardWorkspace
@@ -80,7 +80,7 @@ function ProjectCard({
         isArchived ? 'opacity-70' : 'hover:-translate-y-0.5 hover:shadow-[var(--shadow-raised)]'
       }`}
     >
-      <div className="relative flex h-32 items-center justify-center rounded-t-kova-lg bg-background-lighter">
+      <div className="relative flex h-32 items-center justify-center rounded-t-pinspace-lg bg-background-lighter">
         <Icon className="h-10 w-10 text-accent" aria-hidden="true" />
         <div className="absolute left-3 top-3 flex flex-wrap gap-2">
           {isArchived && (
@@ -138,7 +138,7 @@ function ProjectCard({
 
       <Link
         href={withInstitution(`/workspace/${workspace.id}`, institutionSlug)}
-        className="block rounded-b-kova-lg p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+        className="block rounded-b-pinspace-lg p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
       >
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0">
@@ -163,7 +163,7 @@ function ActionCard({ href, label, kind }: { href: string; label: string; kind: 
   return (
     <Link
       href={href}
-      className={`group flex min-h-48 flex-col items-center justify-center gap-3 rounded-kova-lg border p-5 text-center font-semibold shadow-[var(--shadow-soft)] transition-[transform,background-color,box-shadow] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+      className={`group flex min-h-48 flex-col items-center justify-center gap-3 rounded-pinspace-lg border p-5 text-center font-semibold shadow-[var(--shadow-soft)] transition-[transform,background-color,box-shadow] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
         kind === 'network'
           ? 'border-accent bg-accent text-background-light hover:bg-accent-light'
           : 'border-dashed border-border bg-background-light text-text-primary hover:border-accent hover:bg-background-lighter'
@@ -289,7 +289,7 @@ export function DashboardMain({
               </Button>
             )}
             {canCreate && (
-              <Link href={cfg.newHref} className={`${interactiveLink} border-kova-ink bg-primary hover:bg-primary-light`}>
+              <Link href={cfg.newHref} className={`${interactiveLink} border-pinspace-ink bg-primary hover:bg-primary-light`}>
                 <Plus className="h-4 w-4" aria-hidden="true" />
                 {cfg.newLabel}
               </Link>

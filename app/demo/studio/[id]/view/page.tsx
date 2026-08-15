@@ -92,7 +92,7 @@ export default function DemoStudioRoomPage() {
             type="button"
             onClick={() => router.push('/demo')}
             aria-label="Back to demo network"
-            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-kova transition-colors hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-pinspace transition-colors hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -107,19 +107,19 @@ export default function DemoStudioRoomPage() {
         <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:gap-3">
           <Link 
             href={addDemoParam('/', true)}
-            className="inline-flex min-h-11 flex-1 items-center justify-center rounded-kova border border-border bg-background-light/90 px-3 py-2 text-sm font-semibold text-text-primary shadow-lg backdrop-blur-sm transition-colors hover:bg-background-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none"
+            className="inline-flex min-h-11 flex-1 items-center justify-center rounded-pinspace border border-border bg-background-light/90 px-3 py-2 text-sm font-semibold text-text-primary shadow-lg backdrop-blur-sm transition-colors hover:bg-background-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none"
           >
             ← Back home
           </Link>
           <a
             href={`/demo/studio/${studioId}`}
-            className="inline-flex min-h-11 flex-1 items-center justify-center rounded-kova border border-border bg-background-lighter px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-background-light hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none sm:px-4"
+            className="inline-flex min-h-11 flex-1 items-center justify-center rounded-pinspace border border-border bg-background-lighter px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-background-light hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none sm:px-4"
           >
             Edit Mode
           </a>
           <button
             onClick={handleUpload}
-            className="min-h-11 flex-1 rounded-kova bg-primary px-3 py-2 text-sm font-semibold text-kova-ink transition-colors hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none sm:px-4"
+            className="min-h-11 flex-1 rounded-pinspace bg-primary px-3 py-2 text-sm font-semibold text-pinspace-ink transition-colors hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none sm:px-4"
           >
             Add Board (Demo)
           </button>

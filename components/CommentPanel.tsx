@@ -70,10 +70,10 @@ export default function CommentPanel({ boardId, boardTitle, onClose }: CommentPa
       className="max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-2rem)] max-w-2xl motion-reduce:transition-none [&>button.absolute]:h-11 [&>button.absolute]:w-11"
     >
       {board?.thumbnailUrl && (
-        <div className="mb-4 flex items-center gap-3 rounded-kova border border-border bg-background-lighter p-3">
+        <div className="mb-4 flex items-center gap-3 rounded-pinspace border border-border bg-background-lighter p-3">
           {/* Supabase-hosted thumbnail; native image preserves the existing unrestricted storage host behavior. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={board.thumbnailUrl} alt="" className="h-16 w-16 rounded-kova object-cover" />
+          <img src={board.thumbnailUrl} alt="" className="h-16 w-16 rounded-pinspace object-cover" />
           <p className="min-w-0 truncate font-semibold text-text-primary">{boardTitle}</p>
         </div>
       )}
@@ -83,7 +83,7 @@ export default function CommentPanel({ boardId, boardTitle, onClose }: CommentPa
         {error && <StatusState status="error" title={error} action={<Button type="button" size="sm" onClick={() => setRetryCount((count) => count + 1)}>Try again</Button>} />}
         {!loading && !error && comments.length === 0 && <EmptyState title="No comments yet" description="There is no feedback on this board yet." />}
         {!loading && !error && comments.map((comment) => (
-          <article key={comment.id} className="flex gap-3 rounded-kova border border-border bg-background-lighter p-4 motion-reduce:transition-none">
+          <article key={comment.id} className="flex gap-3 rounded-pinspace border border-border bg-background-lighter p-4 motion-reduce:transition-none">
             <Avatar name={comment.authorName} />
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">

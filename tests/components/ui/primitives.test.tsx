@@ -27,7 +27,7 @@ import {
   Tooltip,
 } from '@/components/ui'
 
-describe('Kova primitives', () => {
+describe('PinSpace primitives', () => {
   it('preserves native form semantics and accessible names', () => {
     render(
       <>

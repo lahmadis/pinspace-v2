@@ -106,14 +106,14 @@ export default function PublishCategoryModal({
           </Select>
         </div>
 
-        <div className="rounded-kova border border-border bg-background-lighter p-4 text-sm text-text-secondary">
+        <div className="rounded-pinspace border border-border bg-background-lighter p-4 text-sm text-text-secondary">
           <p className="font-semibold text-text-primary">Network path</p>
           <p className="mt-1 break-words">{department || 'Department'} → {year || 'Year'} → {workspaceName}</p>
         </div>
 
         {error && <StatusState id={errorId} status="error" title={error} className="p-3 text-sm" />}
 
-        <p className="rounded-kova border border-border bg-primary-muted p-3 text-sm text-text-primary">
+        <p className="rounded-pinspace border border-border bg-primary-muted p-3 text-sm text-text-primary">
           Visitors can view the studio after publication. Editing remains limited to members.
         </p>
 

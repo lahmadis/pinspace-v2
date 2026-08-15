@@ -30,7 +30,7 @@ export function StudioShell({
           <div
             role="group"
             aria-label="Studio controls"
-            className="pointer-events-auto flex max-w-full flex-wrap items-center justify-end gap-2 rounded-kova border border-background-light/25 bg-primary-dark/75 p-2 shadow-[var(--shadow-raised)] backdrop-blur-md"
+            className="pointer-events-auto flex max-w-full flex-wrap items-center justify-end gap-2 rounded-pinspace border border-background-light/25 bg-primary-dark/75 p-2 shadow-[var(--shadow-raised)] backdrop-blur-md"
           >
             {controls}
           </div>

@@ -10,7 +10,7 @@
 
 PinSpace is a mature live-pilot application with substantial safeguards around board persistence, room membership, wall-config concurrency, and realtime cleanup. It is not currently launch-verified. No P0 crash or active cross-tenant exposure has been reproduced yet, but three P1 issues are supported directly by source: privileged routes that trust a locally read session before service-role operations, a board-reorder SQL type mismatch that makes the feature fail for real board IDs, and undo/redo that changes the UI without persisting the restored position.
 
-The safest execution order is security identity hardening, board/data consistency, isolated Supabase verification, 3D/realtime diagnostics, and only then targeted Kova styling. The previously proposed full UI replacement is superseded by the master prompt's stabilization-first and no-rebuild guardrails.
+The safest execution order is security identity hardening, board/data consistency, isolated Supabase verification, 3D/realtime diagnostics, and only then targeted PinSpace styling. The previously proposed full UI replacement is superseded by the master prompt's stabilization-first and no-rebuild guardrails.
 
 ## A. Architecture summary
 
@@ -19,7 +19,7 @@ The safest execution order is security identity hardening, board/data consistenc
 - Next.js 14 App Router with React 18 and TypeScript.
 - Route groups cover public landing/authentication, dashboard/workspaces, discovery/network/gallery, studio/viewer, share/critique links, settings, and platform administration.
 - Client-heavy pages own most interaction state; `app/studio/[id]/page.tsx` coordinates room loading, Supabase channels, presenter/follower state, and the `StudioRoom` 3D surface.
-- Tailwind CSS provides styling. The Kova palette and Figtree/JetBrains Mono foundation now exists on the isolated redesign branch, but route migration is paused pending stabilization.
+- Tailwind CSS provides styling. The PinSpace palette and Figtree/JetBrains Mono foundation now exists on the isolated redesign branch, but route migration is paused pending stabilization.
 
 ### Authentication and authorization
 
@@ -141,7 +141,7 @@ Dependency installation reported 26 advisories, including one critical, but affe
 - Debug logging remains in PDF, gallery, wall-drop, board-state, and studio paths; several logs can be noisy in interaction-heavy flows.
 - Styling contains widespread legacy indigo/gray literals and inconsistent loading/error components.
 - Build lint output contains existing hook-dependency and raw-image warnings.
-- The fixed-layout Kova reference needs adaptation for common laptop widths rather than direct code reuse.
+- The fixed-layout PinSpace reference needs adaptation for common laptop widths rather than direct code reuse.
 
 ## Immediate execution order
 
@@ -150,7 +150,7 @@ Dependency installation reported 26 advisories, including one critical, but affe
 3. Diagnose undo persistence and implement the smallest queued persistence fix with rollback/error behavior.
 4. Configure the isolated Supabase test project and verify schema, RLS, storage, and role separation.
 5. Run focused 3D/realtime diagnostics before performance changes.
-6. Apply targeted Kova UI cleanup only after P0/P1 work is green.
+6. Apply targeted PinSpace UI cleanup only after P0/P1 work is green.
 
 ## Verification limitations
 

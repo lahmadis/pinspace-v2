@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 const SOURCE_EXTENSIONS = new Set(['.css', '.js', '.ts', '.tsx'])
 const TOKEN_DEFINITION_FILES = new Set(['app/globals.css', 'tailwind.config.js'])
-const KOVA_PALETTE = new Set(['#ffc800', '#fff3cc', '#fffcf0', '#14705c', '#0a2f28', '#0b0b0b'])
+const PINSPACE_PALETTE = new Set(['#ffc800', '#fff3cc', '#fffcf0', '#14705c', '#0a2f28', '#0b0b0b'])
 const LEGACY_HEX = new Set(['#4444ff', '#3333ee'])
 const OBSOLETE_UI_IMPORTS = [
   '@/components/Button',
@@ -15,7 +15,7 @@ const OBSOLETE_UI_IMPORTS = [
   '@/components/Modal',
   '@/components/LoadingSpinner',
 ]
-const ANY_ALLOW_PATTERN = /kova-ui-allow\s+([a-z-]+)/g
+const ANY_ALLOW_PATTERN = /pinspace-ui-allow\s+([a-z-]+)/g
 const APPROVED_ENGINE_PALETTES = new Map([
   ['components/3d/enginePalette.ts', new Set(['ENGINE_PALETTE'])],
   ['components/Gallery3D.tsx', new Set(['GALLERY_VISUAL_COLORS'])],
@@ -43,7 +43,7 @@ function invalidInlineAllowlists(source) {
     invalid.push({
       line,
       rule: 'invalid-allowlist',
-      message: 'Inline Kova UI allowlists are forbidden; use an exact reviewed named palette export.',
+      message: 'Inline PinSpace UI allowlists are forbidden; use an exact reviewed named palette export.',
       source: lineText(source, line),
     })
   }
@@ -165,7 +165,7 @@ export function auditSource(source, file) {
 
   const legacyUtility = /\b(?:bg|text|border|ring|outline|fill|stroke|from|to|via)-(?:indigo|purple|gray|slate)(?:-\d{2,3})?(?:\/\d{1,3})?\b/g
   for (const match of source.matchAll(legacyUtility)) {
-    add('legacy-theme-class', match.index, 'Replace legacy theme utility "' + match[0] + '" with a semantic Kova token.')
+    add('legacy-theme-class', match.index, 'Replace legacy theme utility "' + match[0] + '" with a semantic PinSpace token.')
   }
 
   const rawStatusUtility = /\b(?:bg|text|border|ring|outline|fill|stroke|from|to|via)-(?:red|amber|emerald)(?:-\d{2,3})(?:\/\d{1,3})?\b/g
@@ -177,7 +177,7 @@ export function auditSource(source, file) {
   const colorLiteral = /#[0-9a-fA-F]{3,8}\b/g
   for (const match of colorSource.matchAll(colorLiteral)) {
     if (LEGACY_HEX.has(match[0].toLowerCase())) {
-      add('legacy-hex', match.index, 'Legacy highlight color "' + match[0] + '" is not part of Kova.')
+      add('legacy-hex', match.index, 'Legacy highlight color "' + match[0] + '" is not part of PinSpace.')
     }
   }
 
@@ -189,17 +189,17 @@ export function auditSource(source, file) {
         continue
       } else if (isInRange(match.index, paletteRanges)) {
         continue
-      } else if (KOVA_PALETTE.has(value)) {
-        add('raw-kova-color', match.index, 'Use a semantic Kova token instead of raw palette value "' + match[0] + '".')
+      } else if (PINSPACE_PALETTE.has(value)) {
+        add('raw-pinspace-color', match.index, 'Use a semantic PinSpace token instead of raw palette value "' + match[0] + '".')
       } else {
         add('raw-color', match.index, 'Move raw color "' + match[0] + '" to a semantic token or a documented engine palette constant.')
       }
     }
 
-    const rawKovaRgb = /rgba?\(\s*(?:255[\s,]+200[\s,]+0|255[\s,]+243[\s,]+204|255[\s,]+252[\s,]+240|20[\s,]+112[\s,]+92|10[\s,]+47[\s,]+40|11[\s,]+11[\s,]+11)\b[^)]*\)/gi
-    for (const match of colorSource.matchAll(rawKovaRgb)) {
+    const rawPinSpaceRgb = /rgba?\(\s*(?:255[\s,]+200[\s,]+0|255[\s,]+243[\s,]+204|255[\s,]+252[\s,]+240|20[\s,]+112[\s,]+92|10[\s,]+47[\s,]+40|11[\s,]+11[\s,]+11)\b[^)]*\)/gi
+    for (const match of colorSource.matchAll(rawPinSpaceRgb)) {
       if (!isInRange(match.index, paletteRanges)) {
-        add('raw-kova-color', match.index, 'Use a semantic Kova token instead of raw palette value "' + match[0] + '".')
+        add('raw-pinspace-color', match.index, 'Use a semantic PinSpace token instead of raw palette value "' + match[0] + '".')
       }
     }
   }
@@ -284,7 +284,7 @@ export async function auditTree(root = process.cwd()) {
 async function main() {
   const findings = await auditTree()
   if (findings.length === 0) {
-    console.log('Kova UI audit passed (0 findings).')
+    console.log('PinSpace UI audit passed (0 findings).')
     return
   }
 
@@ -292,7 +292,7 @@ async function main() {
     console.error(finding.file + ':' + finding.line + ' [' + finding.rule + '] ' + finding.message)
     if (finding.source) console.error('  ' + finding.source)
   }
-  console.error('Kova UI audit failed with ' + findings.length + ' finding' + (findings.length === 1 ? '' : 's') + '.')
+  console.error('PinSpace UI audit failed with ' + findings.length + ' finding' + (findings.length === 1 ? '' : 's') + '.')
   process.exitCode = 1
 }
 

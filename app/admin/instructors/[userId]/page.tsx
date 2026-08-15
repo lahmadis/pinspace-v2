@@ -405,7 +405,7 @@ export default function AdminInstructorPage() {
                               onClick={() => toggleMembership(s)}
                               disabled={busyId === s.id || !membershipResolved}
                               title={!membershipResolved ? 'Membership state unknown — reload first' : undefined}
-                              className={`min-h-11 rounded-kova px-2.5 py-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
+                              className={`min-h-11 rounded-pinspace px-2.5 py-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
                                 s.adminIsMember
                                   ? 'border border-border text-text-primary hover:bg-background'
                                   : 'bg-accent text-background-light hover:bg-accent-light'

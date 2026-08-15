@@ -2,13 +2,13 @@
 
 ## Completed
 
-- [x] Created isolated global worktree on `codex/kova-system-ui`
+- [x] Created isolated global worktree on `codex/pinspace-system-ui`
 - [x] Installed locked dependencies and captured TypeScript/build baseline
 - [x] Inventoried application routes and user-visible states
 - [x] Mapped authentication, Supabase, rooms, boards, storage, realtime, 3D, and deployment architecture
 - [x] Produced initial P0/P1/P2/P3 launch-readiness report
 - [x] Produced initial security best-practices report
-- [x] Established Kova design tokens and basic test scaffolding before the stabilization master prompt superseded the rollout order
+- [x] Established PinSpace design tokens and basic test scaffolding before the stabilization master prompt superseded the rollout order
 - [x] Replaced unverified privileged-route sessions with the verified `requireAdmin()` boundary
 - [x] Prepared and contract-tested the text-ID board reorder migration
 - [x] Persisted undo/redo snapshots through the serialized board write queue
@@ -34,7 +34,7 @@
 
 ## In Progress
 
-- [ ] Stabilization Phase 4: migrate remaining routes and states to the Kova UI system
+- [ ] Stabilization Phase 4: migrate remaining routes and states to the PinSpace UI system
 
 ## Blocked
 
@@ -75,6 +75,6 @@
 
 - Configure an isolated Supabase project and apply/verify migrations 036–038.
 - Validate cross-institution RLS and storage behavior with representative roles.
-- Complete the Kova route-group migration and shared state treatment.
+- Complete the PinSpace route-group migration and shared state treatment.
 - Reduce the remaining non-blocking lint warnings while migrating each affected UI surface.
 - Run production-like 3D, texture-failure, reconnect, and presenter tests once the isolated backend is available.

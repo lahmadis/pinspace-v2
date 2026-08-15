@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test'
 
-const appUrl = (path: string) => `${process.env.KOVA_E2E_BASE_URL ?? ''}${path}`
+const appUrl = (path: string) => `${process.env.PINSPACE_E2E_BASE_URL ?? ''}${path}`
 
-test.describe('Kova exceptional states', () => {
+test.describe('PinSpace exceptional states', () => {
   test('announces a delayed loading state and generic request failure', async ({ page }) => {
-    await page.route('**/api/workspaces/by-invite/kova-state-test', async (route) => {
+    await page.route('**/api/workspaces/by-invite/pinspace-state-test', async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 300))
       await route.fulfill({
         status: 503,
@@ -13,7 +13,7 @@ test.describe('Kova exceptional states', () => {
       })
     })
 
-    await page.goto(appUrl('/join/kova-state-test'))
+    await page.goto(appUrl('/join/pinspace-state-test'))
     await expect(page.getByRole('status').filter({ hasText: 'Loading invitation' })).toContainText(
       'Loading invitation'
     )

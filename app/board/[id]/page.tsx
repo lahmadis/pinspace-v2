@@ -182,7 +182,7 @@ export default function BoardDetailPage() {
             </div>
 
             {showCommentForm && (
-              <form aria-label="Add a comment" onSubmit={handleSubmitComment} className="mb-6 space-y-4 rounded-kova border border-border bg-background-lighter p-4" noValidate>
+              <form aria-label="Add a comment" onSubmit={handleSubmitComment} className="mb-6 space-y-4 rounded-pinspace border border-border bg-background-lighter p-4" noValidate>
                 <div>
                   <label htmlFor="board-comment-name" className="mb-1.5 block text-sm font-semibold text-text-primary">Your name</label>
                   <Input id="board-comment-name" type="text" maxLength={80} autoComplete="name" value={commentForm.authorName} onChange={(event) => setCommentForm({ ...commentForm, authorName: event.target.value })} required />
@@ -201,7 +201,7 @@ export default function BoardDetailPage() {
                     value={commentForm.content}
                     onChange={(event) => setCommentForm({ ...commentForm, content: event.target.value })}
                     required
-                    className="w-full resize-y rounded-kova border border-border bg-background-light px-3.5 py-2 text-text-primary shadow-sm placeholder:text-text-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+                    className="w-full resize-y rounded-pinspace border border-border bg-background-light px-3.5 py-2 text-text-primary shadow-sm placeholder:text-text-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
                   />
                   <p className="mt-1 text-right font-mono text-xs text-text-muted">{commentForm.content.length}/2000</p>
                 </div>
@@ -222,7 +222,7 @@ export default function BoardDetailPage() {
             ) : (
               <ol className="space-y-3">
                 {comments.map((comment) => (
-                  <li key={comment.id} className="rounded-kova border border-border bg-background-lighter p-4">
+                  <li key={comment.id} className="rounded-pinspace border border-border bg-background-lighter p-4">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <p className="font-semibold text-text-primary">{comment.authorName}</p>
                       <time className="font-mono text-xs text-text-muted" dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleString()}</time>
@@ -247,7 +247,7 @@ export default function BoardDetailPage() {
             {board.description && <p className="mt-3 whitespace-pre-wrap break-words text-sm text-text-secondary">{board.description}</p>}
             {board.tags && board.tags.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2" aria-label="Tags">
-                {board.tags.map((tag) => <span key={tag} className="rounded-full bg-primary-muted px-3 py-1 text-xs font-semibold text-kova-ink">{tag}</span>)}
+                {board.tags.map((tag) => <span key={tag} className="rounded-full bg-primary-muted px-3 py-1 text-xs font-semibold text-pinspace-ink">{tag}</span>)}
               </div>
             )}
           </Card>

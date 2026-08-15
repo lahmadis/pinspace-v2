@@ -199,7 +199,7 @@ export default function AdminUsersPage() {
       actions={
           <button
             onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-            className="inline-flex min-h-11 items-center rounded-kova px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex min-h-11 items-center rounded-pinspace px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             Sign out
           </button>
@@ -259,7 +259,7 @@ export default function AdminUsersPage() {
                           <button
                             onClick={() => toggleRole(u)}
                             disabled={savingId === u.userId}
-                            className={`min-h-11 rounded-kova px-3 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
+                            className={`min-h-11 rounded-pinspace px-3 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
                               isInstr
                                 ? 'border border-border text-text-primary hover:bg-background'
                                 : 'bg-accent text-background-light hover:bg-accent-light'

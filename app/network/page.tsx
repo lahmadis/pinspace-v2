@@ -62,14 +62,14 @@ function PersonalNetworkInner() {
       loadState={authStatus === 'loading' ? 'loading' : loadState}
       loadingTitle="Loading your network" errorTitle="Could not load your network" errorDescription="Check your connection and try again."
       emptyTitle="No rooms yet" emptyDescription="Create your first room to see it mapped here."
-      emptyAction={<Link href="/dashboard" className="inline-flex min-h-11 items-center rounded-kova border border-kova-ink bg-primary px-4 py-2 font-semibold text-kova-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Go to dashboard</Link>}
+      emptyAction={<Link href="/dashboard" className="inline-flex min-h-11 items-center rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 font-semibold text-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Go to dashboard</Link>}
       onRetry={() => void load()} onNodeClick={(node) => router.push(`/network/${node.id}`)}
     />
   )
 }
 
 function LoadingNetwork() {
-  return <main className="flex min-h-screen items-center justify-center bg-kova-forest px-4"><StatusState status="loading" title="Loading your network" /></main>
+  return <main className="flex min-h-screen items-center justify-center bg-pinspace-forest px-4"><StatusState status="loading" title="Loading your network" /></main>
 }
 
 export default function PersonalNetworkPage() {

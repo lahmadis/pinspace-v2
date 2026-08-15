@@ -1,4 +1,4 @@
-# Kova Route and State Matrix
+# PinSpace Route and State Matrix
 
 **Final gate audit:** 2026-08-15
 
@@ -95,4 +95,4 @@ An automated or component-mocked pass does not promote its live backend journey 
 
 ## Release interpretation
 
-The source/component/no-env states are code-gate evidence, not a claim that production data behavior passed. All authenticated Supabase, cross-tenant RLS, storage, realtime and multi-user journeys remain **environment-blocked** until the launch prerequisites in `kova-release-checklist.md` are completed.
+The source/component/no-env states are code-gate evidence, not a claim that production data behavior passed. All authenticated Supabase, cross-tenant RLS, storage, realtime and multi-user journeys remain **environment-blocked** until the launch prerequisites in `pinspace-release-checklist.md` are completed.

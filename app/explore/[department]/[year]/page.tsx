@@ -51,8 +51,8 @@ export default function YearPage() {
 
   if (isFullScreen) {
     return (
-      <div className="min-h-screen overflow-hidden bg-kova-forest text-white">
-        <header className="fixed inset-x-0 top-0 z-40 flex min-h-20 flex-wrap items-center gap-3 border-b border-white/15 bg-kova-forest/95 px-4 py-3 backdrop-blur-md sm:px-6">
+      <div className="min-h-screen overflow-hidden bg-pinspace-forest text-white">
+        <header className="fixed inset-x-0 top-0 z-40 flex min-h-20 flex-wrap items-center gap-3 border-b border-white/15 bg-pinspace-forest/95 px-4 py-3 backdrop-blur-md sm:px-6">
           <Button type="button" variant="ghost" className="border-white/20 text-white hover:bg-white/10" onClick={() => setIsFullScreen(false)}><Minimize2 className="h-4 w-4" aria-hidden="true" />Exit full screen</Button>
           <div className="min-w-0 border-l border-white/20 pl-4"><h1 className="break-words text-xl font-bold">{departmentName} · {year.label}</h1><p className="text-xs text-white/70">{nodes.length} {nodes.length === 1 ? 'studio' : 'studios'}</p></div>
         </header>
@@ -65,11 +65,11 @@ export default function YearPage() {
     <div className="min-h-screen overflow-x-hidden bg-background text-text-primary">
       <header className="border-b border-border bg-background-light">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-          <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm"><Link href="/explore" className="min-h-11 content-center rounded-kova px-2 font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Explore</Link><span aria-hidden="true">/</span><Link href={`/explore/${params.department}`} className="min-h-11 content-center rounded-kova px-2 font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">{departmentName}</Link><span aria-hidden="true">/</span><span>{year.label}</span></nav>
+          <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm"><Link href="/explore" className="min-h-11 content-center rounded-pinspace px-2 font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Explore</Link><span aria-hidden="true">/</span><Link href={`/explore/${params.department}`} className="min-h-11 content-center rounded-pinspace px-2 font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">{departmentName}</Link><span aria-hidden="true">/</span><span>{year.label}</span></nav>
           <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div><p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Programme year</p><h1 className="mt-1 break-words text-3xl font-black sm:text-5xl">{departmentName} · {year.label}</h1><p className="mt-2 text-text-secondary">{nodes.length} {nodes.length === 1 ? 'published studio' : 'published studios'}</p></div>
             <div className="flex flex-wrap gap-3">
-              <Link href="/my-boards" className="inline-flex min-h-11 items-center rounded-kova border border-border bg-background px-4 py-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">My boards</Link>
+              <Link href="/my-boards" className="inline-flex min-h-11 items-center rounded-pinspace border border-border bg-background px-4 py-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">My boards</Link>
               <Button type="button" variant="secondary" onClick={() => setIsFullScreen(true)} disabled={loadState !== 'ok' || nodes.length === 0}><Maximize2 className="h-4 w-4" aria-hidden="true" />Full screen</Button>
             </div>
           </div>
@@ -77,7 +77,7 @@ export default function YearPage() {
       </header>
 
       <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <section aria-label={`${departmentName} ${year.label} studio network`} className="min-h-[34rem] overflow-hidden rounded-kova-lg border border-border bg-kova-forest sm:min-h-[40rem]">
+        <section aria-label={`${departmentName} ${year.label} studio network`} className="min-h-[34rem] overflow-hidden rounded-pinspace-lg border border-border bg-pinspace-forest sm:min-h-[40rem]">
           {loadState === 'loading' ? <div className="flex min-h-[34rem] items-center justify-center p-4"><StatusState status="loading" title="Loading studios" /></div>
             : loadState === 'error' ? <div className="flex min-h-[34rem] items-center justify-center p-4"><StatusState status="error" title="Could not load studios" description="Try the request again." action={<Button type="button" onClick={() => void loadStudios()}>Try again</Button>} className="w-full max-w-lg" /></div>
               : nodes.length === 0 ? <div className="flex min-h-[34rem] items-center justify-center p-4"><EmptyState title="No studios published yet" description={`There are no published ${year.label} ${departmentName} studios.`} icon={<Network className="h-8 w-8" aria-hidden="true" />} className="w-full max-w-lg" /></div>

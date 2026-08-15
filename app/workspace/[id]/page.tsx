@@ -56,7 +56,7 @@ const footerNavigation = [
   { href: '/settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
 ]
 
-const actionLink = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-kova border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary shadow-[var(--shadow-soft)] hover:border-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+const actionLink = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-pinspace border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary shadow-[var(--shadow-soft)] hover:border-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
 type NetworkMetadata = { department: string; year: string; instructor: string; academicYear: string }
 const departments = ['Aerospace Engineering', 'Architecture', 'Civil Engineering', 'Electrical Engineering', 'Industrial Design', 'Interior Design', 'Mechanical Engineering', 'Robotics Engineering']
@@ -194,9 +194,9 @@ function RoomCard({
         <Link
           href={`/studio/${room.id}`}
           aria-label={`Enter ${room.name}`}
-          className="flex min-h-48 min-w-0 flex-1 flex-col rounded-kova-lg p-5 pr-16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+          className="flex min-h-48 min-w-0 flex-1 flex-col rounded-pinspace-lg p-5 pr-16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
         >
-          <span className="mb-5 flex h-11 w-11 items-center justify-center rounded-kova bg-primary-muted text-accent">
+          <span className="mb-5 flex h-11 w-11 items-center justify-center rounded-pinspace bg-primary-muted text-accent">
             <DoorOpen className="h-5 w-5" aria-hidden="true" />
           </span>
           <div className="mt-auto min-w-0">
@@ -565,7 +565,7 @@ export default function WorkspaceRoomsPage() {
               </div>
               {!enrollOpen && <Button type="button" variant="secondary" onClick={() => { setEnrollOpen(true); setEnrollResult(null) }}>Add students</Button>}
             </div>
-            {enrollOpen && <div className="mt-4"><label htmlFor="student-emails" className="mb-1.5 block text-sm font-semibold text-text-primary">Student emails</label><textarea id="student-emails" rows={4} value={enrollText} disabled={enrollBusy} onChange={(event) => setEnrollText(event.target.value)} className="min-h-28 w-full rounded-kova border border-border bg-background-light px-3.5 py-2 text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" /><div className="mt-3 flex flex-wrap gap-2"><Button type="button" loading={enrollBusy} onClick={() => void handleEnroll()}>Add students</Button><Button type="button" variant="ghost" disabled={enrollBusy} onClick={() => { setEnrollOpen(false); setEnrollText('') }}>Cancel</Button></div></div>}
+            {enrollOpen && <div className="mt-4"><label htmlFor="student-emails" className="mb-1.5 block text-sm font-semibold text-text-primary">Student emails</label><textarea id="student-emails" rows={4} value={enrollText} disabled={enrollBusy} onChange={(event) => setEnrollText(event.target.value)} className="min-h-28 w-full rounded-pinspace border border-border bg-background-light px-3.5 py-2 text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" /><div className="mt-3 flex flex-wrap gap-2"><Button type="button" loading={enrollBusy} onClick={() => void handleEnroll()}>Add students</Button><Button type="button" variant="ghost" disabled={enrollBusy} onClick={() => { setEnrollOpen(false); setEnrollText('') }}>Cancel</Button></div></div>}
             {enrollResult && <StatusState status="info" title={`${enrollResult.enrolled.length} enrolled · ${enrollResult.alreadyMember.length} already joined · ${enrollResult.notFound.length} without accounts`} description={enrollResult.notFound.length ? enrollResult.notFound.join(', ') : undefined} className="mt-4" />}
           </Card>
         )}

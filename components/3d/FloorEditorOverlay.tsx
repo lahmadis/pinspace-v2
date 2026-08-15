@@ -1048,7 +1048,7 @@ export default function FloorEditorOverlay({
       onPointerLeave={handlePointerUp}
     >
       <div
-        className="flex max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-8rem)] flex-col overflow-hidden rounded-kova border border-border bg-background-light"
+        className="flex max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-8rem)] flex-col overflow-hidden rounded-pinspace border border-border bg-background-light"
       >
         {/* Header */}
         <div className="shrink-0 border-b border-border">
@@ -1059,7 +1059,7 @@ export default function FloorEditorOverlay({
                 <button
                   type="button"
                   onClick={handleAddTable}
-                  className="flex min-h-11 items-center gap-2 rounded-kova border border-kova-ink bg-primary px-4 py-2 text-sm font-semibold text-kova-ink hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="flex min-h-11 items-center gap-2 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 text-sm font-semibold text-pinspace-ink hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   <Plus className="w-4 h-4" />
                   Add table
@@ -1069,7 +1069,7 @@ export default function FloorEditorOverlay({
               <button
                 type="button"
                 onClick={() => onSaveAndExit()}
-                className="flex h-11 w-11 items-center justify-center rounded-kova text-text-secondary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="flex h-11 w-11 items-center justify-center rounded-pinspace text-text-secondary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 aria-label="Save and close floor editor"
               >
                 <X className="h-5 w-5" />
@@ -1082,7 +1082,7 @@ export default function FloorEditorOverlay({
               <button
                 type="button"
                 onClick={handleAddWall}
-                className="flex min-h-11 items-center gap-2 rounded-kova border border-kova-ink bg-primary px-4 py-2 text-sm font-semibold text-kova-ink hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="flex min-h-11 items-center gap-2 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 text-sm font-semibold text-pinspace-ink hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <Plus className="w-4 h-4" />
                 Add wall
@@ -1096,7 +1096,7 @@ export default function FloorEditorOverlay({
                   type="button"
                   onClick={handleRemoveWall}
                   disabled={selectedWallIndex == null || wallConfig.walls.length <= 1}
-                  className="flex min-h-11 items-center gap-2 rounded-kova border border-border bg-background-lighter px-4 py-2 text-sm font-semibold text-text-primary hover:bg-background disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="flex min-h-11 items-center gap-2 rounded-pinspace border border-border bg-background-lighter px-4 py-2 text-sm font-semibold text-text-primary hover:bg-background disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   title={selectedWallIndex == null ? 'Click a wall to select it first' : `Remove wall ${selectedWallIndex + 1}`}
                 >
                   <Trash2 className="w-4 h-4" />
@@ -1131,7 +1131,7 @@ export default function FloorEditorOverlay({
                             ;(e.target as HTMLInputElement).blur()
                           }
                         }}
-                        className="min-h-11 w-20 rounded-kova border border-border bg-background-light px-2 py-1 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className="min-h-11 w-20 rounded-pinspace border border-border bg-background-light px-2 py-1 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         aria-label={`Wall ${selectedWallIndex + 1} ${key} in feet`}
                       />
                       <span className="text-text-muted">ft</span>
@@ -1371,7 +1371,7 @@ export default function FloorEditorOverlay({
 
           {/* Table inspector */}
           {mode === 'tables' && selectedTableId && (
-            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-kova border border-border bg-background-lighter p-4">
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-pinspace border border-border bg-background-lighter p-4">
               <span className="text-sm font-medium text-text-primary">Selected table</span>
               <input
                 ref={fileInputRef}
@@ -1384,7 +1384,7 @@ export default function FloorEditorOverlay({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingTableId === selectedTableId}
-                className="flex min-h-11 items-center gap-2 rounded-kova border border-border bg-background-light px-3 py-2 text-sm font-medium text-text-primary hover:bg-background disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="flex min-h-11 items-center gap-2 rounded-pinspace border border-border bg-background-light px-3 py-2 text-sm font-medium text-text-primary hover:bg-background disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <Upload className="w-4 h-4" />
                 {uploadingTableId === selectedTableId
@@ -1394,14 +1394,14 @@ export default function FloorEditorOverlay({
               <button
                 type="button"
                 onClick={(event) => handleRotateTable(selectedTableId, event)}
-                className="min-h-11 rounded-kova border border-border bg-background-light px-3 py-2 text-sm font-medium text-text-primary hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-11 rounded-pinspace border border-border bg-background-light px-3 py-2 text-sm font-medium text-text-primary hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 Rotate 90°
               </button>
               <button
                 type="button"
                 onClick={() => { setTables((prev) => prev.filter((t) => t.id !== selectedTableId)); setSelectedTableId(null) }}
-                className="min-h-11 rounded-kova px-3 py-2 text-sm font-semibold text-[rgb(var(--color-danger))] hover:bg-[rgb(var(--color-danger)/0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-11 rounded-pinspace px-3 py-2 text-sm font-semibold text-[rgb(var(--color-danger))] hover:bg-[rgb(var(--color-danger)/0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 Remove table
               </button>

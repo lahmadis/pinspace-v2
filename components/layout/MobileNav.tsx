@@ -22,7 +22,7 @@ export function MobileNav({
   navigation,
   currentPath,
   footerNavigation = [],
-  brandLabel = 'Kova',
+  brandLabel = 'PinSpace',
   brandHref = '/',
   userControls,
 }: MobileNavProps) {
@@ -66,7 +66,7 @@ export function MobileNav({
       <div className="flex min-h-16 items-center justify-between gap-3 border-b border-border bg-background-light px-4 lg:hidden">
         <Link
           href={brandHref}
-          className="min-w-0 truncate rounded-kova font-mono text-lg font-bold tracking-tight text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="min-w-0 truncate rounded-pinspace font-mono text-lg font-bold tracking-tight text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           {brandLabel}
         </Link>
@@ -87,7 +87,7 @@ export function MobileNav({
         onOpenChange={setOpen}
         side="left"
         title="Navigation"
-        description="Move between Kova workspaces and account areas."
+        description="Move between PinSpace workspaces and account areas."
         className="max-w-[min(20rem,calc(100vw-2rem))]"
       >
         <nav aria-label="Mobile navigation" className="space-y-1">

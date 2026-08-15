@@ -1057,7 +1057,7 @@ export default function StudioPage() {
           style kept consistent with it. */}
       {!isDemo && someoneElsePresenting && (
         <div
-          className="fixed left-1/2 top-[calc(max(0.75rem,env(safe-area-inset-top))+3.25rem)] z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-kova border border-border/40 bg-primary-dark/80 px-3 py-2 text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md motion-reduce:transition-none"
+          className="fixed left-1/2 top-[calc(max(0.75rem,env(safe-area-inset-top))+3.25rem)] z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-pinspace border border-border/40 bg-primary-dark/80 px-3 py-2 text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md motion-reduce:transition-none"
           role="status"
         >
           <Presentation className="w-4 h-4 text-white" />
@@ -1066,7 +1066,7 @@ export default function StudioPage() {
               freely (also via Escape), or rejoin. */}
           <button
             onClick={() => setIsFollowing((v) => !v)}
-            className="ml-1 min-h-11 rounded-kova border border-background-light/30 bg-background-light/10 px-3 py-2 text-xs font-semibold text-background-light hover:bg-background-light/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="ml-1 min-h-11 rounded-pinspace border border-background-light/30 bg-background-light/10 px-3 py-2 text-xs font-semibold text-background-light hover:bg-background-light/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             {isFollowing ? 'Stop following' : `Follow ${friendlyName(presenter!.fullName)}`}
           </button>
@@ -1074,7 +1074,7 @@ export default function StudioPage() {
       )}
       {/* Archive banner */}
       {isArchived && (
-        <div role="status" className="fixed inset-x-0 bottom-0 z-50 bg-primary px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 text-center text-sm font-semibold text-kova-ink">
+        <div role="status" className="fixed inset-x-0 bottom-0 z-50 bg-primary px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 text-center text-sm font-semibold text-pinspace-ink">
           This workspace is archived. View only.
         </div>
       )}
@@ -1102,7 +1102,7 @@ export default function StudioPage() {
               {/* PinSpace Logo - links to home */}
               <button
                 onClick={() => router.push('/')}
-                className="min-h-11 rounded-kova border border-kova-ink bg-primary px-4 py-2 font-bold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-11 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 font-bold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 PinSpace
               </button>
@@ -1113,7 +1113,7 @@ export default function StudioPage() {
                   to a plain "← Dashboard" button while metadata is loading
                   or in demo mode (no workspace context). */}
               {workspaceName && workspaceId ? (
-                <div className="relative flex min-h-11 min-w-0 max-w-full items-center gap-2 rounded-kova border border-border/40 bg-primary-dark/80 px-3 py-2 text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md">
+                <div className="relative flex min-h-11 min-w-0 max-w-full items-center gap-2 rounded-pinspace border border-border/40 bg-primary-dark/80 px-3 py-2 text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md">
                   <button
                     onClick={() => router.push(`/workspace/${workspaceId}`)}
                     className="hover:underline"
@@ -1125,7 +1125,7 @@ export default function StudioPage() {
                   <button
                     onClick={() => setShowRoomSwitcher((v) => !v)}
                     disabled={allRooms.length <= 1}
-                    className="flex min-h-11 min-w-0 items-center gap-1 rounded-kova px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default"
+                    className="flex min-h-11 min-w-0 items-center gap-1 rounded-pinspace px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default"
                     aria-label="Switch room"
                     aria-expanded={showRoomSwitcher}
                   >
@@ -1137,7 +1137,7 @@ export default function StudioPage() {
 
                   {showRoomSwitcher && allRooms.length > 1 && (
                     <div
-                      className="absolute left-0 top-full z-50 mt-2 max-h-[min(60dvh,24rem)] w-[min(18rem,calc(100vw-1.5rem))] overflow-y-auto rounded-kova border border-border bg-background-light text-text-primary shadow-[var(--shadow-raised)]"
+                      className="absolute left-0 top-full z-50 mt-2 max-h-[min(60dvh,24rem)] w-[min(18rem,calc(100vw-1.5rem))] overflow-y-auto rounded-pinspace border border-border bg-background-light text-text-primary shadow-[var(--shadow-raised)]"
                       role="menu"
                       aria-label="Switch room"
                       onMouseLeave={() => setShowRoomSwitcher(false)}
@@ -1186,7 +1186,7 @@ export default function StudioPage() {
               ) : (
                 <button
                   onClick={() => router.push('/dashboard')}
-                  className="flex min-h-11 items-center gap-2 rounded-kova border border-border/40 bg-primary-dark/80 px-4 py-2 text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  className="flex min-h-11 items-center gap-2 rounded-pinspace border border-border/40 bg-primary-dark/80 px-4 py-2 text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   Dashboard
@@ -1207,7 +1207,7 @@ export default function StudioPage() {
                   always did. */}
               <button
                 onClick={() => { setShowStudioMenu(false); setShowShareModal(true) }}
-                className="flex min-h-11 items-center gap-2 rounded-kova border border-kova-ink bg-primary px-4 py-2 text-sm font-semibold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="flex min-h-11 items-center gap-2 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 text-sm font-semibold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <Share2 className="w-4 h-4" />
                 Share
@@ -1229,7 +1229,7 @@ export default function StudioPage() {
                     aria-label="Studio options"
                     aria-haspopup="menu"
                     aria-expanded={showStudioMenu}
-                    className="flex h-11 w-11 items-center justify-center rounded-kova border border-border/40 bg-primary-dark/80 text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-border/40 bg-primary-dark/80 text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     {showStudioMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                   </button>
@@ -1247,7 +1247,7 @@ export default function StudioPage() {
                         onClick={() => setShowStudioMenu(false)}
                       />
                       <div
-                        className="absolute right-0 top-full mt-2 max-h-[min(70dvh,26rem)] w-60 overflow-y-auto rounded-kova border border-border bg-background-light p-1.5 shadow-[var(--shadow-raised)]"
+                        className="absolute right-0 top-full mt-2 max-h-[min(70dvh,26rem)] w-60 overflow-y-auto rounded-pinspace border border-border bg-background-light p-1.5 shadow-[var(--shadow-raised)]"
                         role="menu"
                         aria-label="Studio options"
                       >
@@ -1328,7 +1328,7 @@ export default function StudioPage() {
                 aria-label={showStudioMenu ? 'Close studio menu' : 'Open studio menu'}
                 aria-haspopup="menu"
                 aria-expanded={showStudioMenu}
-                className="flex h-11 w-11 items-center justify-center rounded-kova border border-border/40 bg-primary-dark/80 text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-border/40 bg-primary-dark/80 text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 {showStudioMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
@@ -1344,7 +1344,7 @@ export default function StudioPage() {
                     onClick={() => setShowStudioMenu(false)}
                   />
                   <div
-                    className="absolute right-0 top-full mt-2 max-h-[min(70dvh,26rem)] w-[min(16rem,calc(100vw-1.5rem))] overflow-y-auto rounded-kova border border-border bg-background-light p-1.5 shadow-[var(--shadow-raised)]"
+                    className="absolute right-0 top-full mt-2 max-h-[min(70dvh,26rem)] w-[min(16rem,calc(100vw-1.5rem))] overflow-y-auto rounded-pinspace border border-border bg-background-light p-1.5 shadow-[var(--shadow-raised)]"
                     role="menu"
                     aria-label="Studio options"
                   >
@@ -1450,7 +1450,7 @@ export default function StudioPage() {
           />
           {boards.length === 0 && !isEditMode && (
             <div className="pointer-events-none absolute inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-20 flex justify-center">
-              <div role="status" className="max-w-md rounded-kova border border-border/40 bg-primary-dark/85 px-4 py-3 text-center text-sm text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md">
+              <div role="status" className="max-w-md rounded-pinspace border border-border/40 bg-primary-dark/85 px-4 py-3 text-center text-sm text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md">
                 <p className="font-semibold">No boards in this room yet</p>
                 <p className="mt-1 text-background-light/75">Open a wall to add the first board. The 3D room remains available for orientation.</p>
               </div>

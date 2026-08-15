@@ -1,8 +1,8 @@
-# Kova Big-Bang Release Checklist
+# PinSpace Big-Bang Release Checklist
 
 **Gate date:** 2026-08-15
 
-**Branch:** `codex/kova-system-ui`
+**Branch:** `codex/pinspace-system-ui`
 
 **Starting candidate:** `76a7071 fix: clear pre-release quality blockers`
 
@@ -24,14 +24,14 @@ This is deliberately not a false green: mocked, no-environment and signed-out ch
 | Locked install | `npm ci --strict-peer-deps` under Node 24; lock/package SHA-256 before and after | Pass; 856 packages installed, 857 audited; manifest and lock hashes unchanged |
 | Dependency audit | `npm audit --audit-level=low` | Pass: 0 known vulnerabilities |
 | React runtime | `npm ls react react-dom --all` | Pass: one deduplicated React/ReactDOM 19.2.8 runtime |
-| Kova policy | `npm run check:kova-ui` | Pass: 0 findings |
-| Unit/component/contracts | `npm test` | Pass after security/UI repairs: 50 files, 270 tests, 0 failed |
+| PinSpace policy | `npm run check:pinspace-ui` | Pass: 0 findings |
+| Unit/component/contracts | `npm test` | Pass after security/UI repairs: 51 files, 271 tests, 0 failed |
 | TypeScript | `npx tsc --noEmit --incremental false` | Pass, no output |
 | Lint | `npm run lint` (`eslint . --max-warnings=0`) | Pass, zero warnings |
 | Diff integrity | `git diff --check 12140c4..HEAD` | Pass |
 | Unsafe DOM | scan for `dangerouslySetInnerHTML`, direct HTML assignment, `document.write`, `eval`, `new Function`, string timers, wildcard `postMessage`, `srcDoc` and `javascript:` | No hits in application/config/script source |
 | Secrets | high-signal tracked-file/path scan, without printing secret values | No committed runtime secret found; only `.env.example` and documentation examples were identified |
-| Palette | raw-colour scan plus `check:kova-ui` allowlist enforcement | 88 literals are token definitions or approved 3D/engine palettes; no Kova policy finding |
+| Palette | raw-colour scan plus `check:pinspace-ui` allowlist enforcement | 88 literals are token definitions or approved 3D/engine palettes; no PinSpace policy finding |
 | Chromium E2E | `PLAYWRIGHT_PORT=43153 PLAYWRIGHT_REUSE_SERVER=0 npm run test:e2e -- --workers=3 --reporter=dot` | Pass: 297 passed, 3 environment-skipped, 0 failed (300 total, 2.6 min) |
 | Accessibility | isolated port 43154, `PLAYWRIGHT_REUSE_SERVER=0 npm run test:a11y` | 5/5 passed |
 | Visual | isolated port 43155, `PLAYWRIGHT_REUSE_SERVER=0 npm run test:visual` against committed Chromium baselines | 3/3 passed |
@@ -63,7 +63,7 @@ The first hardened 300-case Chromium attempt reported 10 failures caused by thre
 
 - Chromium exercises mobile (390 px device descriptor), tablet (768 px) and desktop projects; explicit route checks add 360, 1024, 1440 and 1920 px.
 - Public share and studio-viewer fallbacks pass every target width: 360, 390, 768, 1024, 1440 and 1920 px.
-- 200% zoom, reduced motion and keyboard/focus coverage are detailed in `kova-route-state-matrix.md`.
+- 200% zoom, reduced motion and keyboard/focus coverage are detailed in `pinspace-route-state-matrix.md`.
 - The only intentional E2E skips are the authenticated network case once per Chromium project. It requires both `NEXT_PUBLIC_SUPABASE_URL` and `PLAYWRIGHT_SUPABASE_SESSION`; neither exists in this environment.
 - Missing Firefox/WebKit is a real browser-matrix gap, not a pass. Installing browsers would require an approved network download; no workaround was used.
 - Repeated `MaxListenersExceededWarning` messages came from the Next 16 development server during high-volume navigation. They did not fail navigation or tests, but should be compared on a Vercel preview rather than treated as production evidence.
@@ -126,11 +126,11 @@ These are material engineering risks but not safe big-bang gate edits: changing 
 ## Rollback
 
 - The candidate is branch/commit based. Preserve the branch and deployed SHA so rollback is an atomic redeploy, not an ad-hoc file copy.
-- **Visual-only rollback target:** `eecc653` is the commit immediately before the Kova UI foundation begins at `f36eb39`; this retains the preceding secure-framework/trust-boundary work.
+- **Visual-only rollback target:** `eecc653` is the commit immediately before the PinSpace UI foundation begins at `f36eb39`; this retains the preceding secure-framework/trust-boundary work.
 - **Full audited-range rollback target:** `12140c4` precedes all 14 commits audited here.
 - The visual redesign has no schema dependency. No migration was applied during this gate.
 - If migrations 036–039 are later applied, a code rollback does not roll the database back. Treat them as forward-compatible launch prerequisites and use separately reviewed database rollback/forward-fix procedures if needed.
 
 ## Final verification
 
-The post-repair static/unit gates are green: Kova policy 0 findings; Vitest 50 files/270 tests; nonincremental TypeScript exit 0; ESLint zero warnings. The complete post-repair Chromium run is green at 297 passed, 3 documented environment skips and 0 failed; accessibility is 5/5 and visual is 3/3. Independent frontend and security re-reviews are clean with no remaining validated P0–P2. Production launch stays **NO-GO** until every external blocker above is resolved or explicitly accepted by the accountable owner.
+The post-repair static/unit gates are green: PinSpace policy 0 findings; Vitest 51 files/271 tests; nonincremental TypeScript exit 0; ESLint zero warnings. The complete post-repair Chromium run is green at 297 passed, 3 documented environment skips and 0 failed; accessibility is 5/5 and visual is 3/3. Independent frontend and security re-reviews are clean with no remaining validated P0–P2. Production launch stays **NO-GO** until every external blocker above is resolved or explicitly accepted by the accountable owner.

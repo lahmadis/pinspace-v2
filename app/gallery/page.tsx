@@ -21,13 +21,13 @@ function GalleryPageInner() {
   const searchParams = useSearchParams()
   const isDemo = searchParams?.get('demo') === 'true'
   return (
-    <div className="relative h-screen min-h-[36rem] w-full overflow-hidden bg-kova-forest">
+    <div className="relative h-screen min-h-[36rem] w-full overflow-hidden bg-pinspace-forest">
       <DemoBanner />
-      <header className="pointer-events-none absolute left-3 top-3 z-30 max-w-[calc(100%-1.5rem)] rounded-kova-lg border border-border bg-background-light/95 p-4 text-text-primary shadow-[var(--shadow-raised)] backdrop-blur-md sm:left-6 sm:top-6 sm:p-5">
+      <header className="pointer-events-none absolute left-3 top-3 z-30 max-w-[calc(100%-1.5rem)] rounded-pinspace-lg border border-border bg-background-light/95 p-4 text-text-primary shadow-[var(--shadow-raised)] backdrop-blur-md sm:left-6 sm:top-6 sm:p-5">
         <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Immersive discovery</p>
         <h1 className="mt-1 break-words text-3xl font-black sm:text-5xl">3D Gallery</h1>
         <p className="mt-1 max-w-sm text-xs text-text-secondary sm:text-sm">Explore published studios with keyboard, pointer, or touch controls.</p>
-        <Link href={addDemoParam('/', isDemo)} className="pointer-events-auto mt-3 inline-flex min-h-11 items-center rounded-kova border border-kova-ink bg-primary px-4 py-2 text-sm font-semibold text-kova-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">← Back home</Link>
+        <Link href={addDemoParam('/', isDemo)} className="pointer-events-auto mt-3 inline-flex min-h-11 items-center rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 text-sm font-semibold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">← Back home</Link>
       </header>
       <main className="h-full w-full" aria-label="Gallery experience">
         <Suspense fallback={<div className="flex h-full items-center justify-center p-4"><StatusState status="loading" title="Loading 3D gallery" /></div>}><GalleryContent /></Suspense>
@@ -37,5 +37,5 @@ function GalleryPageInner() {
 }
 
 export default function GalleryPage() {
-  return <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-kova-forest p-4"><StatusState status="loading" title="Loading 3D gallery" /></main>}><GalleryPageInner /></Suspense>
+  return <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-pinspace-forest p-4"><StatusState status="loading" title="Loading 3D gallery" /></main>}><GalleryPageInner /></Suspense>
 }

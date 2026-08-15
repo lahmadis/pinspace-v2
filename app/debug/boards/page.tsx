@@ -247,7 +247,7 @@ function DebugBoardsPageInner() {
                       {boards.map(board => (
                         <div
                           key={board.id}
-                          className="flex flex-col gap-4 rounded-kova border border-border bg-background p-4 lg:flex-row lg:items-center lg:justify-between"
+                          className="flex flex-col gap-4 rounded-pinspace border border-border bg-background p-4 lg:flex-row lg:items-center lg:justify-between"
                         >
                           <div className="flex-1">
                             <div className="font-medium text-text-primary">{board.title}</div>
@@ -268,10 +268,10 @@ function DebugBoardsPageInner() {
                                 key={targetWall}
                                 onClick={() => updateBoardWall(board.id, wallIndex, targetWall)}
                                 disabled={updating === board.id || wallIndex === targetWall}
-                                className={`min-h-11 min-w-11 rounded-kova px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                                className={`min-h-11 min-w-11 rounded-pinspace px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                                   wallIndex === targetWall
                                     ? 'bg-border text-text-secondary cursor-not-allowed'
-                                    : 'border border-kova-ink bg-primary text-kova-ink hover:bg-primary-light'
+                                    : 'border border-pinspace-ink bg-primary text-pinspace-ink hover:bg-primary-light'
                                 } disabled:opacity-50`}
                               >
                                 {targetWall}

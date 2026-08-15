@@ -51,7 +51,7 @@ export default function PinModeHeader({ boardTitle, onCancel }: PinModeHeaderPro
           <button
             type="button"
             onClick={onCancel}
-            className="min-h-11 rounded-kova border border-background-light/30 bg-background-light/10 px-4 py-2 text-sm font-semibold text-background-light hover:bg-background-light/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="min-h-11 rounded-pinspace border border-background-light/30 bg-background-light/10 px-4 py-2 text-sm font-semibold text-background-light hover:bg-background-light/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             Cancel
           </button>

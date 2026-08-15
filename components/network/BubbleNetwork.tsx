@@ -197,7 +197,7 @@ function Tooltip({ data, containerRect }: { data: TooltipData | null; containerR
         width: tooltipWidth,
       }}
     >
-      <div className="overflow-hidden rounded-kova-lg border border-white/20 bg-kova-forest/95 shadow-[var(--shadow-raised)] backdrop-blur-md">
+      <div className="overflow-hidden rounded-pinspace-lg border border-white/20 bg-pinspace-forest/95 shadow-[var(--shadow-raised)] backdrop-blur-md">
         {/* Header */}
         <div 
           className="border-b border-white/15 bg-white/5 px-4 py-3"
@@ -667,7 +667,7 @@ export default function BubbleNetwork({
   return (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden bg-kova-forest ${fullScreen ? 'fixed inset-0' : 'h-full w-full'}`}
+      className={`relative overflow-hidden bg-pinspace-forest ${fullScreen ? 'fixed inset-0' : 'h-full w-full'}`}
       style={{
         ...(fullScreen ? { top: headerHeight } : {}),
         height: fullScreen ? `calc(100vh - ${headerHeight}px)` : '100%',
@@ -880,7 +880,7 @@ export default function BubbleNetwork({
 
       <section
         aria-label="Network directory"
-        className="absolute left-3 top-3 z-20 max-h-52 w-[min(28rem,calc(100%-1.5rem))] overflow-y-auto rounded-kova-lg border border-white/20 bg-kova-forest/95 p-3 text-white shadow-[var(--shadow-soft)] backdrop-blur-md sm:left-4 sm:top-4"
+        className="absolute left-3 top-3 z-20 max-h-52 w-[min(28rem,calc(100%-1.5rem))] overflow-y-auto rounded-pinspace-lg border border-white/20 bg-pinspace-forest/95 p-3 text-white shadow-[var(--shadow-soft)] backdrop-blur-md sm:left-4 sm:top-4"
       >
         <div className="mb-2 flex items-baseline justify-between gap-3">
           <h2 className="text-sm font-bold">Network directory</h2>
@@ -898,7 +898,7 @@ export default function BubbleNetwork({
                   onFocus={() => onNodeHover?.(node)}
                   onPointerEnter={() => onNodeHover?.(node)}
                   aria-label={`Open ${node.name || node.label}`}
-                  className="min-h-11 w-full rounded-kova border border-white/20 bg-white/10 px-3 py-2 text-left hover:border-primary hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  className="min-h-11 w-full rounded-pinspace border border-white/20 bg-white/10 px-3 py-2 text-left hover:border-primary hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <span className="block break-words text-sm font-semibold">{node.name || node.label}</span>
                   <span className="mt-0.5 block break-words text-xs text-white/70">
@@ -914,7 +914,7 @@ export default function BubbleNetwork({
       {/* Zoom controls */}
       <div className="absolute bottom-4 right-4 z-20 flex flex-col gap-2">
         <button
-          className="flex h-11 w-11 items-center justify-center rounded-kova border border-white/25 bg-kova-forest/90 text-white backdrop-blur-sm transition-colors hover:border-primary hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-white/25 bg-pinspace-forest/90 text-white backdrop-blur-sm transition-colors hover:border-primary hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           aria-label="Zoom in"
           onClick={() => {
             if (svgRef.current && zoomRef.current) {
@@ -930,7 +930,7 @@ export default function BubbleNetwork({
           </svg>
         </button>
         <button
-          className="flex h-11 w-11 items-center justify-center rounded-kova border border-white/25 bg-kova-forest/90 text-white backdrop-blur-sm transition-colors hover:border-primary hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-white/25 bg-pinspace-forest/90 text-white backdrop-blur-sm transition-colors hover:border-primary hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           aria-label="Zoom out"
           onClick={() => {
             if (svgRef.current && zoomRef.current) {
@@ -946,7 +946,7 @@ export default function BubbleNetwork({
           </svg>
         </button>
         <button
-          className="flex h-11 w-11 items-center justify-center rounded-kova border border-white/25 bg-kova-forest/90 text-white backdrop-blur-sm transition-colors hover:border-primary hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-white/25 bg-pinspace-forest/90 text-white backdrop-blur-sm transition-colors hover:border-primary hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           aria-label="Reset network view"
           onClick={() => {
             if (svgRef.current && zoomRef.current) {
@@ -965,7 +965,7 @@ export default function BubbleNetwork({
       </div>
 
       {/* Legend */}
-      <div className="absolute bottom-4 left-4 z-20 hidden rounded-kova-lg border border-white/20 bg-kova-forest/90 p-4 backdrop-blur-md sm:block">
+      <div className="absolute bottom-4 left-4 z-20 hidden rounded-pinspace-lg border border-white/20 bg-pinspace-forest/90 p-4 backdrop-blur-md sm:block">
         <p className="mb-3 text-xs font-medium text-white/65">Connections</p>
         <div className="space-y-2 text-xs">
           <div className="flex items-center gap-3">

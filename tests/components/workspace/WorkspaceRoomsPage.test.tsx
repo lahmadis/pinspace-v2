@@ -107,7 +107,7 @@ describe('WorkspaceRoomsPage', () => {
   it('creates and copies a room share link through the existing owner-only contract', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ workspace: workspace() }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ shareUrl: 'https://kova.test/share/token-1' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shareUrl: 'https://pinspace.test/share/token-1' }) })
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
     const writeText = vi.fn().mockResolvedValue(undefined)
@@ -119,7 +119,7 @@ describe('WorkspaceRoomsPage', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Share room' })
     expect(fetchMock).toHaveBeenCalledWith('/api/rooms/room-1/share', { method: 'POST' })
     await user.click(within(dialog).getByRole('button', { name: 'Copy share link' }))
-    expect(writeText).toHaveBeenCalledWith('https://kova.test/share/token-1')
+    expect(writeText).toHaveBeenCalledWith('https://pinspace.test/share/token-1')
   })
 
   it('does not expose network settings without the instructor account capability', async () => {

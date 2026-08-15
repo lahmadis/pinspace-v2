@@ -21,7 +21,7 @@ const footerNavigation = [
 ]
 
 const actionLink =
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-kova border border-kova-ink bg-primary px-4 py-2 text-sm font-semibold text-text-primary shadow-[0_3px_0_rgb(var(--color-ink))] transition-[transform,background-color,box-shadow] hover:bg-primary-light active:translate-y-0.5 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+  'inline-flex min-h-11 items-center justify-center gap-2 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 text-sm font-semibold text-text-primary shadow-[0_3px_0_rgb(var(--color-ink))] transition-[transform,background-color,box-shadow] hover:bg-primary-light active:translate-y-0.5 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
 export default function MyBoardsPage() {
   const router = useRouter()
@@ -129,7 +129,7 @@ export default function MyBoardsPage() {
                 <Link
                   key={board.id}
                   href={`/board/${board.id}`}
-                  className="group rounded-kova-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="group rounded-pinspace-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   <Card className="h-full overflow-hidden p-0 transition-[transform,box-shadow] group-hover:-translate-y-0.5 group-hover:shadow-[var(--shadow-raised)]">
                     <div className="relative aspect-[16/10] overflow-hidden bg-background-lighter">

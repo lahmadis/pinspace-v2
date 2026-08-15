@@ -45,7 +45,7 @@ function initialFetch(overrides?: { boardResponse?: unknown; comments?: unknown[
   })
 }
 
-describe('Kova public board view', () => {
+describe('PinSpace public board view', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('announces loading and an unavailable board without exposing an identifier', async () => {

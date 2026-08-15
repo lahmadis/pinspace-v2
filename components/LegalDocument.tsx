@@ -14,15 +14,15 @@ export default function LegalDocument({ content }: LegalDocumentProps) {
         <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <Link
             href="/"
-            className="inline-flex min-h-11 items-center rounded-kova px-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex min-h-11 items-center rounded-pinspace px-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            ← Back to Kova
+            ← Back to PinSpace
           </Link>
           <nav aria-label="Legal pages" className="flex gap-1 text-sm">
-            <Link href="/terms" className="inline-flex min-h-11 items-center rounded-kova px-3 text-text-secondary transition-colors hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+            <Link href="/terms" className="inline-flex min-h-11 items-center rounded-pinspace px-3 text-text-secondary transition-colors hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
               Terms
             </Link>
-            <Link href="/privacy" className="inline-flex min-h-11 items-center rounded-kova px-3 text-text-secondary transition-colors hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+            <Link href="/privacy" className="inline-flex min-h-11 items-center rounded-pinspace px-3 text-text-secondary transition-colors hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
               Privacy
             </Link>
           </nav>

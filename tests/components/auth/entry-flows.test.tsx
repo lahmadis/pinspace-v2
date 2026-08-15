@@ -74,7 +74,7 @@ function authSubscription() {
   return { data: { subscription: { unsubscribe: vi.fn() } } }
 }
 
-describe('Kova entry flows', () => {
+describe('PinSpace entry flows', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     for (const key of Array.from(searchParams.keys())) searchParams.delete(key)
@@ -94,7 +94,7 @@ describe('Kova entry flows', () => {
     }))
   })
 
-  it('shows an announced landing loading state, then signed-out Kova navigation', async () => {
+  it('shows an announced landing loading state, then signed-out PinSpace navigation', async () => {
     let finishSession!: (value: unknown) => void
     auth.getSession.mockReturnValue(new Promise((resolve) => { finishSession = resolve }))
 
@@ -346,7 +346,7 @@ describe('Kova entry flows', () => {
     expect(screen.getByLabelText(/last name/i)).toHaveAttribute('required')
     expect(screen.getByLabelText(/^I am a/)).toHaveAttribute('required')
     expect(screen.getByLabelText('Age range')).toHaveAttribute('id', 'age-range')
-    expect(screen.getByLabelText('How did you hear about Kova?')).toHaveAttribute('id', 'how-heard')
+    expect(screen.getByLabelText('How did you hear about PinSpace?')).toHaveAttribute('id', 'how-heard')
 
     const user = userEvent.setup()
     await user.tab()

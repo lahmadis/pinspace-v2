@@ -35,7 +35,7 @@ module.exports = {
           DEFAULT: 'rgb(var(--color-border) / <alpha-value>)',
           light: 'rgb(var(--color-border-light) / <alpha-value>)',
         },
-        kova: {
+        pinspace: {
           yellow: '#FFC800',
           cream: '#FFF3CC',
           paper: '#FFFCF0',
@@ -49,8 +49,8 @@ module.exports = {
         mono: ['var(--font-jetbrains-mono)', 'ui-monospace', 'monospace'],
       },
       borderRadius: {
-        kova: 'var(--radius-md)',
-        'kova-lg': 'var(--radius-lg)',
+        pinspace: 'var(--radius-md)',
+        'pinspace-lg': 'var(--radius-lg)',
       },
       animation: {
         'float': 'float 3s ease-in-out infinite',

@@ -288,7 +288,7 @@ function SignInInner() {
     if (institutionSlug) forgotPasswordParams.set('institution', institutionSlug)
     const forgotPasswordHref = `/forgot-password${forgotPasswordParams.size ? `?${forgotPasswordParams}` : ''}`
     const genericSubtitle = isPassword
-      ? 'Welcome back. Sign in to Kova.'
+      ? 'Welcome back. Sign in to PinSpace.'
       : "We'll send a 6-digit sign-in code to your email."
     const subtitle = !institutionSlug
       ? genericSubtitle
@@ -428,7 +428,7 @@ function SignInInner() {
           </>
         }
       >
-        <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-kova bg-primary-muted text-primary-dark">
+        <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-pinspace bg-primary-muted text-primary-dark">
           <Mail aria-hidden="true" className="h-6 w-6" />
         </div>
         <form onSubmit={handleOtpVerify} className="space-y-4">
@@ -502,7 +502,7 @@ function SignInInner() {
               onClick={() => handlePickOrg(org)}
               className="h-auto w-full justify-start gap-3 border-border bg-background-light p-4 text-left shadow-none hover:border-accent"
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-kova bg-primary-muted text-sm font-bold text-primary-dark">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-pinspace bg-primary-muted text-sm font-bold text-primary-dark">
                 {org.name.charAt(0)}
               </span>
               <span className="min-w-0">

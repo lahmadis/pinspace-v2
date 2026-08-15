@@ -93,7 +93,7 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
           <p className="mt-2 text-sm text-text-secondary">Codes are not case-sensitive.</p>
         </div>
 
-        <div className="flex gap-3 rounded-kova border border-border bg-background-lighter p-4 text-sm text-text-secondary">
+        <div className="flex gap-3 rounded-pinspace border border-border bg-background-lighter p-4 text-sm text-text-secondary">
           <Lightbulb className="mt-0.5 h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
           <div>
             <p className="font-semibold text-text-primary">Where can I find it?</p>

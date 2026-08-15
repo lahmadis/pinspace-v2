@@ -73,7 +73,7 @@ export default function PresenceBar({
 
   return (
     <div
-      className="fixed left-1/2 top-[max(0.75rem,env(safe-area-inset-top))] z-40 flex max-w-[calc(100vw-7rem)] -translate-x-1/2 items-center gap-2 overflow-hidden rounded-kova border border-border/40 bg-primary-dark/80 px-3 py-2 shadow-[var(--shadow-raised)] backdrop-blur-md motion-reduce:transition-none"
+      className="fixed left-1/2 top-[max(0.75rem,env(safe-area-inset-top))] z-40 flex max-w-[calc(100vw-7rem)] -translate-x-1/2 items-center gap-2 overflow-hidden rounded-pinspace border border-border/40 bg-primary-dark/80 px-3 py-2 shadow-[var(--shadow-raised)] backdrop-blur-md motion-reduce:transition-none"
       role="status"
       aria-label={`${others.length} other ${others.length === 1 ? 'person' : 'people'} editing this room`}
     >
