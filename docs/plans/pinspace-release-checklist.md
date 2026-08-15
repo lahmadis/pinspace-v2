@@ -25,7 +25,7 @@ This is deliberately not a false green: mocked, no-environment and signed-out ch
 | Dependency audit | `npm audit --audit-level=low` | Pass: 0 known vulnerabilities |
 | React runtime | `npm ls react react-dom --all` | Pass: one deduplicated React/ReactDOM 19.2.8 runtime |
 | PinSpace policy | `npm run check:pinspace-ui` | Pass: 0 findings |
-| Unit/component/contracts | `npm test` | Pass after security/UI repairs: 51 files, 271 tests, 0 failed |
+| Unit/component/contracts | `npm test` | Pass after security/UI and deployment-safety repairs: 52 files, 272 tests, 0 failed |
 | TypeScript | `npx tsc --noEmit --incremental false` | Pass, no output |
 | Lint | `npm run lint` (`eslint . --max-warnings=0`) | Pass, zero warnings |
 | Diff integrity | `git diff --check 12140c4..HEAD` | Pass |
@@ -133,4 +133,4 @@ These are material engineering risks but not safe big-bang gate edits: changing 
 
 ## Final verification
 
-The post-repair static/unit gates are green: PinSpace policy 0 findings; Vitest 51 files/271 tests; nonincremental TypeScript exit 0; ESLint zero warnings. The complete post-repair Chromium run is green at 297 passed, 3 documented environment skips and 0 failed; accessibility is 5/5 and visual is 3/3. Independent frontend and security re-reviews are clean with no remaining validated P0–P2. Production launch stays **NO-GO** until every external blocker above is resolved or explicitly accepted by the accountable owner.
+The post-repair static/unit gates are green: PinSpace policy 0 findings; Vitest 52 files/272 tests; nonincremental TypeScript exit 0; ESLint zero warnings. The complete post-repair Chromium run is green at 297 passed, 3 documented environment skips and 0 failed; accessibility is 5/5 and visual is 3/3. Independent frontend and security re-reviews are clean with no remaining validated P0–P2. Production launch stays **NO-GO** until every external blocker above is resolved or explicitly accepted by the accountable owner.

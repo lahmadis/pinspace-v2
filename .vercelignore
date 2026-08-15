@@ -4,6 +4,7 @@ node_modules
 .next-dev
 .next-local
 .next-build
+.env*
 .cursor
 agent-transcripts
 terminals
