@@ -5,6 +5,8 @@ import { getSampleBoards } from '@/lib/sampleData'
 import { resolveMainRoomId } from '@/lib/rooms'
 import { validateLinkUrl } from '@/lib/linkUrl'
 import { isSuperadmin, isNetworkPublished } from '@/lib/auth/superadmin'
+import { isUuid } from '@/lib/validation/uuid'
+import { cleanDisplayName } from '@/lib/displayName'
 
 // No static caching — boards change frequently (uploads, position updates)
 export const dynamic = 'force-dynamic'
@@ -247,6 +249,48 @@ export async function GET(request: NextRequest) {
       boardsReturned: (boards || []).length,
     })
 
+    // Owner display names are resolved LIVE from user_profiles instead of being
+    // read back from the denormalized boards.owner_name snapshot. That column is
+    // written once at upload time, so it goes stale as soon as a student edits
+    // their display name, and legacy rows carry placeholder values ('User',
+    // 'Anonymous') from upload paths that could not resolve a name at all.
+    //
+    // One grouped read, not N+1. owner_id is TEXT while user_profiles.user_id is
+    // UUID, and pre-Supabase rows can hold non-UUID ids — passing one of those to
+    // .in() raises 22P02 and fails the whole request, so they are filtered out
+    // first (same guard as app/api/admin/instructors/route.ts).
+    const ownerNameById = new Map<string, string>()
+    const ownerIds = Array.from(
+      new Set(
+        (boards || [])
+          .map((b) => b.owner_id as string | null)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      )
+    ).filter(isUuid)
+
+    if (ownerIds.length > 0) {
+      const { data: ownerProfiles, error: ownerProfileError } = await adminDb
+        .from('user_profiles')
+        .select('user_id, full_name')
+        .in('user_id', ownerIds)
+      if (ownerProfileError) {
+        // Non-fatal: fall through to the stored snapshot rather than failing the
+        // whole board fetch over a label.
+        console.error('Failed to resolve board owner display names:', ownerProfileError)
+      }
+      for (const row of ownerProfiles || []) {
+        const name = cleanDisplayName(row.full_name)
+        if (name) ownerNameById.set(row.user_id as string, name)
+      }
+    }
+
+    /** Live profile name first, then the stored snapshots, placeholders removed. */
+    const resolveOwnerName = (board: Record<string, unknown>): string | undefined => {
+      const ownerId = typeof board.owner_id === 'string' ? board.owner_id : null
+      const live = ownerId ? ownerNameById.get(ownerId) : undefined
+      return live || cleanDisplayName(board.owner_name) || cleanDisplayName(board.student_name) || undefined
+    }
+
     // Transform database format to frontend format
     const transformedBoards = (boards || []).map((board) => ({
       id: board.id,
@@ -271,7 +315,7 @@ export async function GET(request: NextRequest) {
       } : undefined,
       position_rotation: board.position_rotation != null ? Number(board.position_rotation) : 0,
       ownerId: board.owner_id,
-      ownerName: board.owner_name,
+      ownerName: resolveOwnerName(board),
       ownerColor: board.owner_color,
       originalWidth: board.original_width,
       originalHeight: board.original_height,

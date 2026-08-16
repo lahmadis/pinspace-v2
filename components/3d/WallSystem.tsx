@@ -8,6 +8,7 @@ import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
 import { getWallTransformResolved, calculateFloorBounds, type WallTextItem } from '@/lib/wallLayout'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
+import { cleanDisplayName } from '@/lib/displayName'
 
 interface WallDimensions {
   height: number
@@ -110,13 +111,74 @@ const ROOM_PALETTE = {
 } as const
 
 /**
- * Owner name plate sizing, in inches (1 world unit = 1 inch). 3.5" cap height
- * subtends roughly 2 degrees at the ~96" default camera distance, which stays
- * legible from the far side of the room without crowding a 24" sheet.
+ * Owner name plate sizing, in inches (1 world unit = 1 inch). 4" cap height
+ * subtends roughly 2.4 degrees at the ~96" default camera distance, which reads
+ * clearly from the far side of the room without crowding a 24" sheet.
  */
-const NAME_PLATE_SIZE_IN = 3.5
+const NAME_PLATE_SIZE_IN = 4
 /** Gap between the board's top edge and the baseline of its name plate. */
-const NAME_PLATE_GAP_IN = 1.5
+const NAME_PLATE_GAP_IN = 1.75
+/** Vertical step when a plate has to move up to clear one already placed. */
+const NAME_PLATE_ROW_STEP_IN = NAME_PLATE_SIZE_IN * 1.35
+/**
+ * Troika renders no true 600 weight for the default face, so the plates are
+ * thickened with a same-colour outline instead. Purely optical — it does not
+ * change the glyph metrics used for collision spans below.
+ */
+const NAME_PLATE_OUTLINE_IN = NAME_PLATE_SIZE_IN * 0.045
+/** Mean glyph advance as a fraction of font size, for estimating plate width. */
+const NAME_PLATE_ADVANCE_RATIO = 0.55
+
+interface PlateLayoutInput {
+  key: string
+  centerX: number
+  baseY: number
+  label: string
+}
+
+/**
+ * Assign each name plate a row offset so overlapping plates stack upward rather
+ * than printing on top of each other.
+ *
+ * Two plates only conflict when their horizontal spans overlap AND they sit at
+ * a similar height, so boards at genuinely different heights keep their natural
+ * position. Processed left to right, which makes the result stable: the same
+ * board set always produces the same rows, so nothing jitters between frames.
+ */
+export function assignNamePlateRows(plates: PlateLayoutInput[]): Map<string, number> {
+  const rows = new Map<string, number>()
+  const placed: Array<{ minX: number; maxX: number; y: number }> = []
+  const ordered = [...plates].sort((a, b) => a.centerX - b.centerX || a.key.localeCompare(b.key))
+
+  for (const plate of ordered) {
+    const halfWidth = Math.max(
+      (plate.label.length * NAME_PLATE_SIZE_IN * NAME_PLATE_ADVANCE_RATIO) / 2,
+      NAME_PLATE_SIZE_IN,
+    )
+    const minX = plate.centerX - halfWidth
+    const maxX = plate.centerX + halfWidth
+
+    let row = 0
+    // Bounded so a pathological pile-up cannot spin; 12 rows is far past any
+    // realistic wall and still lands well inside the wall height.
+    while (row < 12) {
+      const y = plate.baseY + row * NAME_PLATE_ROW_STEP_IN
+      const clashes = placed.some(
+        (other) =>
+          minX < other.maxX &&
+          other.minX < maxX &&
+          Math.abs(y - other.y) < NAME_PLATE_ROW_STEP_IN * 0.9,
+      )
+      if (!clashes) break
+      row += 1
+    }
+
+    placed.push({ minX, maxX, y: plate.baseY + row * NAME_PLATE_ROW_STEP_IN })
+    rows.set(plate.key, row)
+  }
+
+  return rows
+}
 
 
 export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false }: WallSystemProps) {
@@ -155,7 +217,30 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
           if (editUIActive && editingWall === wallIndex) return false
           return true
         })
-        
+
+        // Resolve every plate for this wall up front so overlapping labels can be
+        // stacked against each other. Done per wall (not per board) because the
+        // row assignment needs the whole set to decide.
+        const plateKeyFor = (board: Board) => board.localId || board.id
+        const plateLabels = new Map<string, string>()
+        const plateInputs: PlateLayoutInput[] = []
+        for (const board of boardsOnWall) {
+          if (!board.position) continue
+          const label = cleanDisplayName(board.ownerName) || cleanDisplayName(board.studentName)
+          if (!label) continue
+          const { widthIn, heightIn } = getBoardSizeInches(board)
+          if (!widthIn || !heightIn || widthIn <= 0 || heightIn <= 0) continue
+          const key = plateKeyFor(board)
+          plateLabels.set(key, label)
+          plateInputs.push({
+            key,
+            centerX: ((board.position.x / 100) - 0.5) * transform.width,
+            baseY: ((board.position.y / 100) - 0.5) * transform.height + heightIn / 2 + NAME_PLATE_GAP_IN,
+            label,
+          })
+        }
+        const plateRows = assignNamePlateRows(plateInputs)
+
         return (
           <group 
             key={wallIndex}
@@ -296,10 +381,12 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
               const boardSide = board.position?.side || 'front'
               const finalBoardZ = boardSide === 'back' ? -(WALL_SURFACE_OFFSET + BOARD_OFFSET) : WALL_SURFACE_OFFSET + BOARD_OFFSET
 
-              // Owner name plate. `ownerName` is the display name the API
-              // resolves from the profile; `studentName` is the older field
-              // still carried by legacy rows, so it backs it up.
-              const ownerLabel = (board.ownerName || board.studentName || '').trim()
+              // Owner name plate. The API resolves `ownerName` live from
+              // user_profiles; `studentName` backs it up for legacy rows. Both
+              // are placeholder-filtered, so an unknown owner renders no plate
+              // rather than the word "Anonymous".
+              const plateKey = plateKeyFor(board)
+              const ownerLabel = plateLabels.get(plateKey) ?? ''
               // Same z convention as the wall labels below — wall half-depth
               // plus 0.25 — so the plate clears both the wall surface and the
               // board at ±3.2 without z-fighting either.
@@ -307,7 +394,11 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
               const plateZ = boardSide === 'back'
                 ? -(PLATE_SURFACE_OFFSET + 0.25)
                 : PLATE_SURFACE_OFFSET + 0.25
-              const plateY = boardY + boardHeight / 2 + NAME_PLATE_GAP_IN
+              const plateY =
+                boardY
+                + boardHeight / 2
+                + NAME_PLATE_GAP_IN
+                + (plateRows.get(plateKey) ?? 0) * NAME_PLATE_ROW_STEP_IN
 
               return (
                 // Key by localId (stable across temp→real id swap) when
@@ -334,6 +425,10 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                       rotation={boardSide === 'back' ? [0, Math.PI, 0] : [0, 0, 0]}
                       fontSize={NAME_PLATE_SIZE_IN}
                       color={ROOM_PALETTE.green}
+                      // Stands in for a 600 weight the default face does not
+                      // carry; see NAME_PLATE_OUTLINE_IN.
+                      outlineWidth={NAME_PLATE_OUTLINE_IN}
+                      outlineColor={ROOM_PALETTE.green}
                       anchorX="center"
                       // Bottom anchor grows the plate upward from the gap above
                       // the board, so a long name never creeps down over the sheet.
