@@ -768,6 +768,7 @@ export default function CritPage() {
 
       <Canvas
         shadows
+        dpr={[1, 2]}
         className="w-full h-full"
         gl={{
           shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap },

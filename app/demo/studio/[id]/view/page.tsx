@@ -127,6 +127,7 @@ export default function DemoStudioRoomPage() {
       <div className="w-full h-full pt-32">
         <Canvas
           shadows
+          dpr={[1, 2]}
           gl={{ antialias: true, alpha: false }}
           style={{ background: '#D8DEFF' }}
         >

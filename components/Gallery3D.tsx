@@ -1101,6 +1101,7 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
     <div className="relative w-full h-full">
       <Canvas
         shadows
+        dpr={[1, 2]}
         camera={{ position: [0, 60, 96], fov: 55 }} // 60" high, 96" away (8 feet) - scaled for 1 unit = 1 inch
         style={{ cursor: canvasCursor }}
         onContextMenu={(e) => e.preventDefault()}

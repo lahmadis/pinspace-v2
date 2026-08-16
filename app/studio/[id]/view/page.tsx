@@ -610,6 +610,7 @@ export default function StudioViewPage() {
       {/* 3D Canvas */}
       <Canvas
         shadows
+        dpr={[1, 2]}
         className="w-full h-full"
         gl={{
           shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap },

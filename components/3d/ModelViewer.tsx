@@ -232,6 +232,7 @@ export default function ModelViewer({ modelUrl }: ModelViewerProps) {
     <div className="w-full h-full">
       <Canvas
         shadows
+        dpr={[1, 2]}
         gl={{ antialias: true }}
         camera={{ position: [3, 2, 3], fov: 50 }}
         style={{ background: '#D8DEFF' }}

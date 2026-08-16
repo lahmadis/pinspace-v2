@@ -2349,9 +2349,10 @@ export default function StudioRoom(props: StudioRoomProps) {
       )}
 
       <div className="w-full h-screen">
-        <Canvas 
-          shadows 
-          gl={{ 
+        <Canvas
+          shadows
+          dpr={[1, 2]}
+          gl={{
             shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap },
             alpha: true,
             premultipliedAlpha: false
