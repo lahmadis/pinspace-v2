@@ -3,13 +3,6 @@
 const isDev = process.env.NODE_ENV === 'development'
 const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
 
-// TEMP diagnostic — always-on (NOT devLog-gated) tracing of placedBoards3D
-// rebuilds and the lightbox link read/write path. Remove once root-caused.
-const postrace = (...args: unknown[]) => {
-  // eslint-disable-next-line no-console
-  console.log('[POSTRACE]', new Date().toISOString(), ...args)
-}
-
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { supabase } from '@/lib/supabase/client'
@@ -1240,14 +1233,12 @@ export default function StudioRoom(props: StudioRoomProps) {
     const currentPlaced = placedBoards3DRef.current
     const newMap = new Map<string, { x: number; y: number; width?: number; height?: number }>()
     const wallBoards = localBoards.filter(b => b.position?.wallIndex === editingWall && (b.position?.side || 'front') === editingWallSide)
-    postrace('placedBoards3D REBUILD FIRED', `wall=${editingWall}/${editingWallSide}`, `wallBoards=${wallBoards.length}`, `boardPositions.size=${boardPositions.size}`)
     wallBoards.forEach(board => {
         const isTemp = board.id.startsWith('temp-')
         const pos = boardPositions.get(board.id)
         const existing = currentPlaced.get(board.id)
         const branch = pos ? 'USE_boardPositions' : existing ? 'KEEP_existing' : isTemp ? 'NEW_temp_center' : 'DROP'
         const used = pos ?? existing ?? (isTemp ? { x: 0, y: 0, width: 0.3, height: 0.3 } : null)
-        postrace('  rebuild board', board.id, `isTemp=${isTemp}`, `branch=${branch}`, `existing=${existing ? `(${existing.x.toFixed(3)},${existing.y.toFixed(3)})` : 'none'}`, `boardPos=${pos ? `(${pos.x.toFixed(3)},${pos.y.toFixed(3)})` : 'none'}`, `USED=${used ? `(${used.x.toFixed(3)},${used.y.toFixed(3)})[${(used.width ?? 0).toFixed(3)}x${(used.height ?? 0).toFixed(3)}]` : 'none'}`)
         if (pos) {
           // boardPositions is the single source of truth for the live edit
           // session — for temp boards too. The old code force-pinned temp x/y
@@ -1480,10 +1471,6 @@ export default function StudioRoom(props: StudioRoomProps) {
     setCompareBoardIds((prev) => (
       prev.length > 1 && prev.includes(board.id) ? prev : []
     ))
-    // [POSTRACE] what board object the lightbox reads on open — note whether
-    // the passed board and the current localBoards entry agree on linkUrl.
-    const fromArray = localBoards.find(b => b.id === board.id)
-    postrace('lightbox OPEN', board.id, `passedBoard.linkUrl=${JSON.stringify(board.linkUrl)}`, `localBoards[].linkUrl=${JSON.stringify(fromArray?.linkUrl)}`, `sameRef=${fromArray === board}`)
     setLightboxBoard(board)
   }
 
@@ -1796,7 +1783,6 @@ export default function StudioRoom(props: StudioRoomProps) {
         height: height ?? existing?.height ?? 0.2,
       }
 
-      postrace('handleBoardPositionChange (drag/resize write)', `${rawBoardId}${boardId !== rawBoardId ? ` (aliased -> ${boardId})` : ''}`, `isTemp=${rawBoardId.startsWith('temp-')}`, `existing=${existing ? `(${existing.x.toFixed(3)},${existing.y.toFixed(3)})` : 'none'} -> final(${finalPosition.x.toFixed(3)},${finalPosition.y.toFixed(3)})[${finalPosition.width.toFixed(3)}x${finalPosition.height.toFixed(3)}]`)
 
       // 2) update the Map, the ref, and the React state. FIX 2c: if a stale temp
       // key for this board is still present (e.g. the swap's carry hasn't run in
@@ -2465,7 +2451,6 @@ export default function StudioRoom(props: StudioRoomProps) {
         // Persisted server-side already; mirror into the local boards cache so
         // a later reopen reads the fresh link, and into the open snapshot so
         // navigation within the lightbox stays consistent this session.
-        postrace('onLinkSaved (StudioRoom)', boardId, `linkUrl=${JSON.stringify(linkUrl)}`)
         applyBoardLinkLocal(boardId, linkUrl)
         setLightboxBoard((prev) =>
           prev && prev.id === boardId ? { ...prev, linkUrl: linkUrl || undefined } : prev

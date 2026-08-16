@@ -21,13 +21,6 @@ type RealtimeBoardPayload = {
   old: Record<string, unknown>
 }
 
-// TEMP diagnostic — always-on tracing of the realtime boards channel, the
-// upstream writer that feeds props.boards -> useBoardState parent-sync.
-const postrace = (...args: unknown[]) => {
-  // eslint-disable-next-line no-console
-  console.log('[POSTRACE]', new Date().toISOString(), ...args)
-}
-
 const StudioRoom = dynamic(
   () => import(/* webpackChunkName: "StudioRoom" */ '@/components/3d/StudioRoom'),
   {
@@ -603,7 +596,6 @@ export default function StudioPage() {
               if (payload.eventType === 'DELETE') {
                 // DELETE stays inline — payload.old.id is final and sufficient.
                 const deletedId = (payload.old as { id?: string }).id
-                postrace('realtime DELETE -> parent setBoards FILTER', deletedId)
                 if (deletedId) setBoards((prev) => prev.filter((b) => b.id !== deletedId))
                 // Phase B.5.2: ping guest spectators (no postgres_changes for
                 // them) to refetch via their token path. Fire-and-forget.
