@@ -1,5 +1,6 @@
 'use client'
 
+import { Fragment } from 'react'
 import * as THREE from 'three'
 import { Text } from '@react-three/drei'
 import { Board } from '@/types'
@@ -93,9 +94,29 @@ const WALL_PALETTES: Record<'grey' | 'white', {
   topEdge: string
   bottomEdge: string
 }> = {
-  grey: { main: '#D8DEFF', sideEdge: '#B3C4FF', topEdge: '#A1B2FF', bottomEdge: '#E0E0DB' },
+  grey: { main: '#FFFCF0', sideEdge: '#EFE9D8', topEdge: '#E7E0CC', bottomEdge: '#DED6C0' },
   white: { main: '#FFFFFF', sideEdge: '#FAFAF9', topEdge: '#F7F7F5', bottomEdge: '#F3F3F0' },
 }
+
+/**
+ * Room scheme. Deliberately contains NO yellow: a saturated field behind a
+ * board fights the white sheet and black linework of an architecture drawing.
+ * Yellow is reserved for active state (selected student, current wall in the
+ * minimap) and must never reach a wall, the floor, or anything behind a board.
+ */
+const ROOM_PALETTE = {
+  floor: '#D8D3C6',
+  green: '#14705C',
+} as const
+
+/**
+ * Owner name plate sizing, in inches (1 world unit = 1 inch). 3.5" cap height
+ * subtends roughly 2 degrees at the ~96" default camera distance, which stays
+ * legible from the far side of the room without crowding a 24" sheet.
+ */
+const NAME_PLATE_SIZE_IN = 3.5
+/** Gap between the board's top edge and the baseline of its name plate. */
+const NAME_PLATE_GAP_IN = 1.5
 
 
 export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false }: WallSystemProps) {
@@ -115,8 +136,8 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
         castShadow
       >
         <boxGeometry args={[floorBounds.floorWidth, floorThickness, floorBounds.floorDepth]} />
-        <meshStandardMaterial 
-          color="#D8DEFF" // very light, white-leaning blue for floor
+        <meshStandardMaterial
+          color={ROOM_PALETTE.floor} // warm neutral floor; never tinted toward the accent
           roughness={0.9}
           metalness={0.0}
         />
@@ -275,22 +296,54 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
               const boardSide = board.position?.side || 'front'
               const finalBoardZ = boardSide === 'back' ? -(WALL_SURFACE_OFFSET + BOARD_OFFSET) : WALL_SURFACE_OFFSET + BOARD_OFFSET
 
+              // Owner name plate. `ownerName` is the display name the API
+              // resolves from the profile; `studentName` is the older field
+              // still carried by legacy rows, so it backs it up.
+              const ownerLabel = (board.ownerName || board.studentName || '').trim()
+              // Same z convention as the wall labels below — wall half-depth
+              // plus 0.25 — so the plate clears both the wall surface and the
+              // board at ±3.2 without z-fighting either.
+              const PLATE_SURFACE_OFFSET = 3
+              const plateZ = boardSide === 'back'
+                ? -(PLATE_SURFACE_OFFSET + 0.25)
+                : PLATE_SURFACE_OFFSET + 0.25
+              const plateY = boardY + boardHeight / 2 + NAME_PLATE_GAP_IN
+
               return (
-                <BoardThumbnail
-                  // Key by localId (stable across temp→real id swap) when
-                  // present so the post-edit render path doesn't remount the
-                  // thumbnail purely because a temp board's id changed. Falls
-                  // back to board.id for server-loaded boards.
-                  key={board.localId || board.id}
-                  board={board}
-                  position={[boardX, boardY, finalBoardZ]}
-                  width={boardWidth}
-                  height={boardHeight}
-                  onClick={onBoardClick}
-                  isHighlighted={highlightedBoardId === board.id}
-                  onHover={(hovered) => onBoardHover?.(hovered ? board.id : null)}
-                  suppressCountBadge={suppressCallouts}
-                />
+                // Key by localId (stable across temp→real id swap) when
+                // present so the post-edit render path doesn't remount the
+                // thumbnail purely because a temp board's id changed. Falls
+                // back to board.id for server-loaded boards. A Fragment adds
+                // no Object3D, so the scene graph is unchanged.
+                <Fragment key={board.localId || board.id}>
+                  <BoardThumbnail
+                    board={board}
+                    position={[boardX, boardY, finalBoardZ]}
+                    width={boardWidth}
+                    height={boardHeight}
+                    onClick={onBoardClick}
+                    isHighlighted={highlightedBoardId === board.id}
+                    onHover={(hovered) => onBoardHover?.(hovered ? board.id : null)}
+                    suppressCountBadge={suppressCallouts}
+                  />
+                  {ownerLabel && (
+                    <Text
+                      position={[boardX, plateY, plateZ]}
+                      // Back-side plates face into the back room so they read
+                      // correctly, matching the wall labels.
+                      rotation={boardSide === 'back' ? [0, Math.PI, 0] : [0, 0, 0]}
+                      fontSize={NAME_PLATE_SIZE_IN}
+                      color={ROOM_PALETTE.green}
+                      anchorX="center"
+                      // Bottom anchor grows the plate upward from the gap above
+                      // the board, so a long name never creeps down over the sheet.
+                      anchorY="bottom"
+                      maxWidth={Math.max(boardWidth, NAME_PLATE_SIZE_IN * 8)}
+                    >
+                      {ownerLabel}
+                    </Text>
+                  )}
+                </Fragment>
               )
             })}
 
@@ -320,12 +373,13 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                     // Back labels face into the back room so they read correctly.
                     rotation={isBack ? [0, Math.PI, 0] : [0, 0, 0]}
                     fontSize={t.fontSize}
-                    color="#111827"
+                    color={ROOM_PALETTE.green}
+                    letterSpacing={0.08}
                     anchorX="center"
                     anchorY="middle"
                     maxWidth={transform.width}
                   >
-                    {t.text || ' '}
+                    {(t.text || ' ').toUpperCase()}
                   </Text>
                 )
               })}
