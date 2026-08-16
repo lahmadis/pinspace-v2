@@ -14,6 +14,7 @@ import * as THREE from 'three'
 import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry } from './CameraController'
 import { RoomCameraRig, type RoomCameraMode } from './RoomCameraModes'
 import RosterPanel from '@/components/room/RosterPanel'
+import RoomMinimap from '@/components/room/RoomMinimap'
 import { deriveRoomStudents, type RoomStudent } from '@/lib/room/students'
 import { LaserPointer } from './LaserPointer'
 import { EditModeOverlay } from './EditModeOverlay'
@@ -812,6 +813,9 @@ export default function StudioRoom(props: StudioRoomProps) {
   // with its pitch clamped to a 16-58 degree band.
   const [cameraMode, setCameraMode] = useState<RoomCameraMode>('walk')
   const [facingWall, setFacingWall] = useState(0)
+  // Live camera orientation for the minimap cone. A ref, not state: it changes
+  // every frame during a drag and the minimap reads it from its own rAF loop.
+  const cameraPlanRef = useRef({ azimuth: 0, distance: 0 })
   const [walkRequest, setWalkRequest] = useState<{ wall: number | null; nonce: number }>({ wall: null, nonce: 0 })
 
   // Phase 4 roster. Derived from the boards already in state — no extra fetch.
@@ -2393,6 +2397,14 @@ export default function StudioRoom(props: StudioRoomProps) {
         />
       )}
 
+      {editingWall === null && (
+        <RoomMinimap
+          wallConfig={props.wallConfig}
+          facingWall={facingWall}
+          cameraPlanRef={cameraPlanRef}
+        />
+      )}
+
       {/* Camera mode toggle. Hidden in wall-edit mode, where the camera is
           driven into the wall and neither mode applies. */}
       {editingWall === null && (
@@ -2483,6 +2495,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             requestedWall={walkRequest.wall}
             requestNonce={walkRequest.nonce}
             onFacingWallChange={setFacingWall}
+            cameraPlanRef={cameraPlanRef}
           />
           <LaserPointer laserRef={props.laserRef} color={props.laserColor ?? '#22d3ee'} />
           <SceneContent

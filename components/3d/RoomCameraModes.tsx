@@ -90,6 +90,13 @@ interface RoomCameraRigProps {
   requestNonce: number
   /** Reports the wall currently faced, for the chevrons and (later) the minimap. */
   onFacingWallChange?: (wallIndex: number) => void
+  /**
+   * Live camera orientation for the minimap. Written to a ref every frame rather
+   * than pushed through state on purpose: the view cone updates continuously
+   * during a drag, and re-rendering React 60 times a second for it would be
+   * wasteful. The minimap reads this ref from its own rAF loop.
+   */
+  cameraPlanRef?: React.MutableRefObject<{ azimuth: number; distance: number }>
 }
 
 /**
@@ -107,6 +114,7 @@ export function RoomCameraRig({
   requestedWall,
   requestNonce,
   onFacingWallChange,
+  cameraPlanRef,
 }: RoomCameraRigProps) {
   // Target azimuth while a snap is running; null means "not snapping".
   const snapTargetRef = useRef<number | null>(null)
@@ -169,6 +177,11 @@ export function RoomCameraRig({
     } else {
       controls.minPolarAngle = OVERVIEW_POLAR_MIN
       controls.maxPolarAngle = OVERVIEW_POLAR_MAX
+    }
+
+    if (cameraPlanRef) {
+      cameraPlanRef.current.azimuth = controls.getAzimuthalAngle()
+      cameraPlanRef.current.distance = controls.getDistance()
     }
 
     if (onFacingWallChange && wallConfig.walls.length) {
