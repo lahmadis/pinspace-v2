@@ -17,7 +17,7 @@ export default function StudioViewError({
   }, [error])
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#B3B3FF]">
+    <div className="min-h-screen flex items-center justify-center bg-[#EDE9DE]">
       <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full mx-4 text-center">
         <div className="text-4xl mb-4">⚠️</div>
         <h2 className="text-xl font-bold text-gray-900 mb-2">Studio failed to load</h2>

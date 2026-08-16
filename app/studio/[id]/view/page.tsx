@@ -480,7 +480,7 @@ export default function StudioViewPage() {
 
   if (loading) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
           <p className="text-white/90 font-medium">Loading studio...</p>
@@ -491,7 +491,7 @@ export default function StudioViewPage() {
 
   if (error) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
         <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
           <div className="text-6xl mb-4">😕</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Oops!</h2>
@@ -508,7 +508,7 @@ export default function StudioViewPage() {
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#B3B3FF' }}>
+    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#EDE9DE' }}>
       <DemoBanner />
 
       {/* Animated gradient background effects (match studio room page) */}
@@ -618,10 +618,10 @@ export default function StudioViewPage() {
           premultipliedAlpha: false,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
-        style={{ background: '#D8DEFF' }}
+        style={{ background: '#EDE9DE' }}
       >
         {/* Background matches wall color */}
-        <color attach="background" args={['#D8DEFF']} />
+        <color attach="background" args={['#EDE9DE']} />
         
         {/* Lighting – match StudioRoom for consistent brightness and color */}
         {/* Ambient light - reduced for better shadow definition */}

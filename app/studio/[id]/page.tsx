@@ -4,6 +4,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
+import { Figtree, JetBrains_Mono } from 'next/font/google'
 import { Board } from '@/types'
 import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
@@ -21,12 +22,26 @@ type RealtimeBoardPayload = {
   old: Record<string, unknown>
 }
 
+// Room chrome type ramp. Figtree carries the UI; JetBrains Mono is reserved for
+// drawing-sheet metadata — breadcrumb, sheet numbers, wall labels — so those read
+// as annotation rather than interface.
+const figtree = Figtree({ subsets: ['latin'], weight: ['400', '500', '600', '700'], display: 'swap' })
+const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500'], display: 'swap' })
+
+/** Room chrome palette. Yellow is intentionally absent — it marks active state only. */
+const CHROME = {
+  ink: '#0B0B0B',
+  paper: '#FFFCF0',
+  green: '#14705C',
+  hairline: '#C9C3B4',
+} as const
+
 const StudioRoom = dynamic(
   () => import(/* webpackChunkName: "StudioRoom" */ '@/components/3d/StudioRoom'),
   {
     ssr: false,
     loading: () => (
-    <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
+    <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
           <p className="text-white/90 font-medium">Loading 3D Studio...</p>
@@ -1005,7 +1020,7 @@ export default function StudioPage() {
 
   if (isLoading) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
           <p className="text-white/90 font-medium">Loading Studio...</p>
@@ -1016,7 +1031,7 @@ export default function StudioPage() {
 
   if (boardsError) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
         <div className="text-center">
           <p className="text-white font-semibold text-lg mb-2">Failed to load boards</p>
           <p className="text-white/70 text-sm mb-6">Check your connection and try again.</p>
@@ -1077,13 +1092,11 @@ export default function StudioPage() {
       )}
 
       {wallConfig && (
-        <div className="relative w-full h-screen overflow-hidden" style={{ background: '#B3B3FF' }}>
-          {/* Animated gradient background effects */}
-          <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)' }}></div>
-            <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)', animationDelay: '1s' }}></div>
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(102, 102, 255, 0.1)' }}></div>
-          </div>
+        <div className={`${figtree.className} relative w-full h-screen overflow-hidden`} style={{ background: '#EDE9DE' }}>
+          {/* The three pulsing indigo blur orbs that used to sit here were the
+              remaining lavender in the room: they tinted the paper background
+              and competed with the white sheets on the walls. A developed
+              drawing surface wants a flat, neutral field behind it. */}
 
           {/* Top Left - Logo and breadcrumb. Hidden in wall edit mode. */}
           {!isEditMode && (
@@ -1094,7 +1107,8 @@ export default function StudioPage() {
               {/* PinSpace Logo - links to home */}
               <button
                 onClick={() => router.push('/')}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
+                style={{ background: CHROME.ink, color: CHROME.paper }}
+                className={`${figtree.className} px-5 py-2.5 rounded-xl shadow-lg transition-colors duration-200 font-semibold text-base hover:opacity-90`}
               >
                 PinSpace
               </button>
@@ -1105,7 +1119,10 @@ export default function StudioPage() {
                   to a plain "← Dashboard" button while metadata is loading
                   or in demo mode (no workspace context). */}
               {workspaceName && workspaceId ? (
-                <div className="px-3 py-2 bg-white/10 hover:bg-white/15 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-colors flex items-center gap-2 text-sm font-medium relative">
+                <div
+                  style={{ background: CHROME.ink, color: CHROME.paper, borderColor: CHROME.hairline }}
+                  className={`${jetbrainsMono.className} px-3 py-2 rounded-xl shadow-lg border transition-colors flex items-center gap-2 text-xs uppercase tracking-[0.14em] relative`}
+                >
                   <button
                     onClick={() => router.push(`/workspace/${workspaceId}`)}
                     className="hover:underline"
@@ -1196,7 +1213,8 @@ export default function StudioPage() {
                   always did. */}
               <button
                 onClick={() => { setShowStudioMenu(false); setShowShareModal(true) }}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300 font-medium text-sm flex items-center gap-2 backdrop-blur-sm border border-white/10"
+                style={{ background: CHROME.green, color: CHROME.paper }}
+                className={`${figtree.className} px-5 py-2.5 rounded-xl shadow-lg transition-opacity duration-200 font-semibold text-sm flex items-center gap-2 hover:opacity-90`}
               >
                 <Share2 className="w-4 h-4" />
                 Share
@@ -1218,7 +1236,8 @@ export default function StudioPage() {
                     aria-label="Studio options"
                     aria-haspopup="menu"
                     aria-expanded={showStudioMenu}
-                    className="p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                    style={{ background: CHROME.ink, color: CHROME.paper, borderColor: CHROME.hairline }}
+                    className="p-2.5 rounded-xl shadow-lg border transition-opacity duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/40"
                   >
                     {showStudioMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                   </button>

@@ -122,7 +122,7 @@ export default function DemoStudioRoomPage() {
           shadows
           dpr={[1, 2]}
           gl={{ antialias: true, alpha: false }}
-          style={{ background: '#B3B3FF' }}
+          style={{ background: '#EDE9DE' }}
         >
           <PerspectiveCamera makeDefault position={[0, 60, 120]} fov={35} />
           

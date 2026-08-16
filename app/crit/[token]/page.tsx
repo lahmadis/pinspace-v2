@@ -615,7 +615,7 @@ export default function CritPage() {
 
   if (loadState === 'loading') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-4 border-white/20 border-t-white mx-auto mb-4" />
           <p className="text-white/90 font-medium">Loading studio…</p>
@@ -626,7 +626,7 @@ export default function CritPage() {
 
   if (loadState === 'not-found') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
         <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
           <div className="text-6xl mb-4">🔗</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Link not found</h2>
@@ -638,7 +638,7 @@ export default function CritPage() {
 
   if (loadState === 'error') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
         <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
           <div className="text-6xl mb-4">😕</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Something went wrong</h2>
@@ -656,7 +656,7 @@ export default function CritPage() {
 
   if (loadState === 'name') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#B3B3FF' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
         <div className="w-full max-w-sm p-8 bg-white/95 rounded-2xl shadow-2xl">
           <h2 className="text-xl font-bold text-gray-900 mb-1">Joining as a guest critic</h2>
           <p className="text-sm text-gray-600 mb-5">
@@ -686,7 +686,7 @@ export default function CritPage() {
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#B3B3FF' }}>
+    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#EDE9DE' }}>
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)' }} />
         <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)', animationDelay: '1s' }} />
@@ -776,9 +776,9 @@ export default function CritPage() {
           premultipliedAlpha: false,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
-        style={{ background: '#D8DEFF' }}
+        style={{ background: '#EDE9DE' }}
       >
-        <color attach="background" args={['#D8DEFF']} />
+        <color attach="background" args={['#EDE9DE']} />
         <ambientLight intensity={0.5} />
         <directionalLight
           position={[15, 20, 10]}

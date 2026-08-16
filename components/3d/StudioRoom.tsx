@@ -303,7 +303,7 @@ function SceneContent({
   return (
     <>
       {/* Background matches wall color */}
-      <color attach="background" args={['#D8DEFF']} />
+      <color attach="background" args={['#EDE9DE']} />
       {/* Ambient light - reduced for better shadow definition */}
       <ambientLight intensity={0.5} />
       
@@ -2342,7 +2342,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             premultipliedAlpha: false
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } as any}
-          style={{ background: '#D8DEFF' }}
+          style={{ background: '#EDE9DE' }}
         >
           <CameraController
             orbitControlsRef={orbitControlsRef}
