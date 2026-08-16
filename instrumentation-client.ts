@@ -4,8 +4,13 @@
 
 import * as Sentry from "@sentry/nextjs";
 
+const isTelemetryEnabled = process.env.NODE_ENV === 'production'
+  && process.env.NEXT_PUBLIC_PINSPACE_DEPLOYMENT_TIER === 'production'
+  && process.env.NEXT_PUBLIC_PINSPACE_ENABLE_TELEMETRY === '1'
+
 Sentry.init({
   dsn: "https://29ca01a66a49336cc05e86773df0adfc@o4511348781613056.ingest.us.sentry.io/4511348789018624",
+  enabled: isTelemetryEnabled,
 
   // Add optional integrations for additional features
   integrations: [Sentry.replayIntegration()],
@@ -25,7 +30,7 @@ Sentry.init({
 
   // Enable sending user PII (Personally Identifiable Information)
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
-  sendDefaultPii: true,
+  sendDefaultPii: false,
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

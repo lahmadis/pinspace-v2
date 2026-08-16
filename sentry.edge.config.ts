@@ -5,8 +5,13 @@
 
 import * as Sentry from "@sentry/nextjs";
 
+const isTelemetryEnabled = process.env.NODE_ENV === 'production'
+  && process.env.PINSPACE_DEPLOYMENT_TIER === 'production'
+  && process.env.PINSPACE_ENABLE_TELEMETRY === '1'
+
 Sentry.init({
   dsn: "https://29ca01a66a49336cc05e86773df0adfc@o4511348781613056.ingest.us.sentry.io/4511348789018624",
+  enabled: isTelemetryEnabled,
 
   // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
   tracesSampleRate: 1,
@@ -16,5 +21,5 @@ Sentry.init({
 
   // Enable sending user PII (Personally Identifiable Information)
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
-  sendDefaultPii: true,
+  sendDefaultPii: false,
 });

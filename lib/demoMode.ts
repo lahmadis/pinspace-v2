@@ -10,19 +10,17 @@
  * Works on both client and server side
  */
 export function isDemoMode(searchParams?: URLSearchParams | string | null): boolean {
-  if (typeof window !== 'undefined') {
-    // Client-side: use window.location
-    const params = new URLSearchParams(window.location.search)
-    return params.get('demo') === 'true'
-  }
-  
-  // Server-side: use provided searchParams
   if (searchParams) {
     if (typeof searchParams === 'string') {
       const params = new URLSearchParams(searchParams)
       return params.get('demo') === 'true'
     }
     return searchParams.get('demo') === 'true'
+  }
+
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('demo') === 'true'
   }
   
   return false
@@ -32,17 +30,17 @@ export function isDemoMode(searchParams?: URLSearchParams | string | null): bool
  * Get the demo parameter value from search params
  */
 export function getDemoParam(searchParams?: URLSearchParams | string | null): string | null {
-  if (typeof window !== 'undefined') {
-    const params = new URLSearchParams(window.location.search)
-    return params.get('demo')
-  }
-  
   if (searchParams) {
     if (typeof searchParams === 'string') {
       const params = new URLSearchParams(searchParams)
       return params.get('demo')
     }
     return searchParams.get('demo')
+  }
+
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('demo')
   }
   
   return null
@@ -69,7 +67,6 @@ export function preserveDemoParam(): string {
   }
   return ''
 }
-
 
 
 

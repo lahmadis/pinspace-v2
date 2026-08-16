@@ -52,7 +52,30 @@ vi.mock('@/hooks/useAuthSession', () => ({
 }))
 
 vi.mock('@/components/GalleryAvatarModal', () => ({
-  default: () => null,
+  default: ({
+    isOpen,
+    onClose,
+    onEnter,
+  }: {
+    isOpen: boolean
+    onClose: () => void
+    onEnter: (values: { color: string; appearance: string; department: string; year: string }) => void
+  }) => isOpen ? (
+    <div role="dialog" aria-label="Create your gallery avatar">
+      <button type="button" onClick={onClose}>Close avatar setup</button>
+      <button
+        type="button"
+        onClick={() => onEnter({
+          color: 'yellow',
+          appearance: 'casual',
+          department: 'architecture',
+          year: 'year-1',
+        })}
+      >
+        Enter gallery
+      </button>
+    </div>
+  ) : null,
 }))
 
 vi.mock('@/components/AvatarMenu', () => ({
@@ -94,18 +117,24 @@ describe('PinSpace entry flows', () => {
     }))
   })
 
-  it('shows an announced landing loading state, then signed-out PinSpace navigation', async () => {
+  it('keeps the approved landing composition stable while checking a signed-out session', async () => {
     let finishSession!: (value: unknown) => void
     auth.getSession.mockReturnValue(new Promise((resolve) => { finishSession = resolve }))
 
     render(<Home />)
     expect(screen.getByRole('status')).toHaveTextContent('Checking your session')
-    expect(screen.queryByRole('link', { name: 'Start your space' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('pinspace.')
+    expect(screen.getByText('Explore studios in immersive 3D')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Enter the network' })).toBeEnabled()
 
     await act(async () => finishSession({ data: { session: null } }))
-    expect(await screen.findByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in')
-    expect(screen.getByRole('link', { name: /get started/i })).toHaveAttribute('href', '/sign-up')
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/studio work/i)
+    expect(await screen.findByRole('link', { name: 'Dashboard' })).toHaveAttribute(
+      'href',
+      '/sign-in?redirect=%2Fdashboard',
+    )
+    expect(screen.getByRole('link', { name: 'Sign in to PinSpace' })).toHaveAttribute('href', '/sign-in')
+    expect(screen.queryByText('From first pin to final review.')).not.toBeInTheDocument()
   })
 
   it('shows authenticated landing controls when a session exists', async () => {
@@ -114,9 +143,45 @@ describe('PinSpace entry flows', () => {
     })
 
     render(<Home />)
-    expect(await screen.findByRole('link', { name: 'Open dashboard' })).toHaveAttribute('href', '/dashboard')
-    expect(screen.getByRole('link', { name: 'Continue to dashboard' })).toHaveAttribute('href', '/dashboard')
+    expect(await screen.findByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/dashboard')
     expect(screen.getByRole('button', { name: /account maker@example.edu/i })).toBeInTheDocument()
+  })
+
+  it('preserves institution and demo context across landing actions', async () => {
+    const user = userEvent.setup()
+    searchParams.set('institution', 'north-school')
+    searchParams.set('demo', 'true')
+
+    render(<Home />)
+
+    const dashboard = await screen.findByRole('link', { name: 'Dashboard' })
+    expect(dashboard).toHaveAttribute(
+      'href',
+      '/sign-in?institution=north-school&redirect=%2Fdashboard',
+    )
+    expect(screen.getByRole('link', { name: 'Sign in to PinSpace' })).toHaveAttribute(
+      'href',
+      '/sign-in?institution=north-school',
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Enter the network' }))
+    expect(screen.getByRole('dialog', { name: 'Create your gallery avatar' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Enter gallery' }))
+    expect(push).toHaveBeenCalledWith(
+      '/gallery?color=yellow&appearance=casual&department=architecture&year=year-1&demo=true',
+    )
+  })
+
+  it('recovers to signed-out landing actions when the session check fails', async () => {
+    auth.getSession.mockRejectedValue(new Error('Session service unavailable'))
+
+    render(<Home />)
+
+    expect(await screen.findByRole('link', { name: 'Dashboard' })).toHaveAttribute(
+      'href',
+      '/sign-in?redirect=%2Fdashboard',
+    )
+    expect(screen.queryByRole('status', { name: /checking your session/i })).not.toBeInTheDocument()
   })
 
   it('preserves a safe redirect and institution context after password sign-in', async () => {

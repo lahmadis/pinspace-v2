@@ -21,7 +21,7 @@ export default function AvatarMenu({ email, onSignOut }: AvatarMenuProps) {
       <MenuTrigger
         aria-label={`Open account menu for ${displayEmail}`}
         title={displayEmail}
-        className="h-11 w-11 rounded-full border-border bg-accent p-0 font-bold text-background-light shadow-[var(--shadow-soft)] hover:bg-accent-light"
+        className="h-11 w-11 rounded-full border-0 bg-accent p-0 font-extrabold text-primary shadow-none hover:bg-pinspace-ink"
       >
         <span aria-hidden="true">{initial}</span>
       </MenuTrigger>
