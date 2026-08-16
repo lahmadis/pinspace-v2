@@ -78,6 +78,22 @@ describe('studio presentation contracts', () => {
     }
   })
 
+  it('shares comment loading, posting, identity, and presentation instead of cloning panels', () => {
+    const readOnlyPanel = read('components/CommentPanel.tsx')
+    expect(readOnlyPanel).toContain('CommentList')
+    expect(readOnlyPanel).not.toContain('function formatTimestamp')
+
+    for (const path of ['components/RightCommentPanel.tsx', 'components/SideCommentPanel.tsx']) {
+      const source = read(path)
+      expect(source, path).toContain('useBoardComments')
+      expect(source, path).toContain('useCommentIdentity')
+      expect(source, path).toContain('CommentList')
+      expect(source, path).toContain('CommentComposer')
+      expect(source, path).not.toContain('function formatTimestamp')
+      expect(source, path).not.toContain('<textarea')
+    }
+  })
+
   it('does not introduce unsafe HTML or change studio API endpoints', () => {
     const combined = ownedPresentationFiles.map(read).join('\n')
     expect(combined).not.toContain('dangerouslySetInnerHTML')

@@ -6,7 +6,21 @@ import PasswordInput from '@/components/ui/PasswordInput'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import { ShieldCheck, GraduationCap } from 'lucide-react'
 import { AdminShell } from '@/components/admin/AdminShell'
-import { Button, StatusState } from '@/components/ui'
+import {
+  Badge,
+  Button,
+  Card,
+  DataTable,
+  FormField,
+  Input,
+  Spinner,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableStateRow,
+} from '@/components/ui'
 
 type AccountRole = 'student' | 'instructor'
 
@@ -116,52 +130,49 @@ export default function AdminUsersPage() {
 
   if (!isLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-accent" />
+      <div className="flex min-h-screen items-center justify-center bg-background" role="status" aria-label="Loading administrator session">
+        <Spinner className="h-12 w-12 text-accent" aria-hidden="true" />
       </div>
     )
   }
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <div className="w-full max-w-md rounded-xl bg-background-light p-8 shadow-xl border border-border">
+      <div className="flex min-h-screen items-center justify-center bg-background p-6">
+        <Card className="w-full max-w-md p-8">
           <div className="text-center mb-6">
             <h1 className="text-2xl font-bold text-text-primary">PinSpace Admin</h1>
             <p className="text-sm text-text-secondary mt-1">Sign in with your admin email</p>
           </div>
           <form onSubmit={handleAdminSignIn} className="space-y-4">
-            <div>
-              <label htmlFor="admin-email" className="block text-sm font-medium text-text-primary mb-1">Email</label>
-              <input
-                id="admin-email"
-                type="email"
-                value={signInEmail}
-                onChange={(e) => setSignInEmail(e.target.value)}
-                placeholder="you@gmail.com"
-                className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
-                autoComplete="email"
-              />
-            </div>
-            <div>
-              <label htmlFor="admin-password" className="block text-sm font-medium text-text-primary mb-1">Password</label>
-              <PasswordInput
-                id="admin-password"
-                value={signInPassword}
-                onChange={setSignInPassword}
-                autoComplete="current-password"
-              />
-            </div>
-            {signInError && <p className="text-sm text-danger">{signInError}</p>}
-            <button
-              type="submit"
-              disabled={signingIn}
-              className="w-full py-2.5 bg-accent text-background-light rounded-lg hover:bg-accent-light disabled:opacity-50 font-medium"
-            >
-              {signingIn ? 'Signing in…' : 'Sign in'}
-            </button>
+            <FormField id="admin-email" label="Email">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  type="email"
+                  value={signInEmail}
+                  onChange={(event) => setSignInEmail(event.target.value)}
+                  placeholder="you@gmail.com"
+                  autoComplete="email"
+                />
+              )}
+            </FormField>
+            <FormField id="admin-password" label="Password">
+              {(controlProps) => (
+                <PasswordInput
+                  {...controlProps}
+                  value={signInPassword}
+                  onChange={setSignInPassword}
+                  autoComplete="current-password"
+                />
+              )}
+            </FormField>
+            {signInError && <p role="alert" className="text-sm text-danger">{signInError}</p>}
+            <Button type="submit" variant="secondary" className="w-full" loading={signingIn}>
+              Sign in
+            </Button>
           </form>
-        </div>
+        </Card>
       </div>
     )
   }
@@ -169,7 +180,7 @@ export default function AdminUsersPage() {
   if (isAdmin === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background" role="status" aria-label="Checking administrator access">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-transparent" />
+        <Spinner className="h-12 w-12 text-accent" aria-hidden="true" />
       </div>
     )
   }
@@ -177,16 +188,17 @@ export default function AdminUsersPage() {
   if (isAdmin === false) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <div className="w-full max-w-md rounded-xl bg-background-light p-8 shadow border border-border text-center">
+        <Card className="w-full max-w-md p-8 text-center">
           <h1 className="text-xl font-bold text-text-primary mb-2">Access denied</h1>
           <p className="text-text-secondary mb-6">This account is not in PINSPACE_ADMIN_EMAILS.</p>
-          <button
+          <Button
+            type="button"
+            variant="ghost"
             onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-            className="text-accent hover:underline"
           >
             Sign out
-          </button>
-        </div>
+          </Button>
+        </Card>
       </div>
     )
   }
@@ -197,89 +209,79 @@ export default function AdminUsersPage() {
       title="Users & roles"
       description="Promote users to instructor or return them to the student role."
       actions={
-          <button
+          <Button
+            type="button"
+            variant="ghost"
             onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-            className="inline-flex min-h-11 items-center rounded-pinspace px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             Sign out
-          </button>
+          </Button>
       }
     >
 
         {error && <p className="text-sm text-danger mb-4">{error}</p>}
 
-        <div className="bg-background-light rounded-xl border border-border shadow-sm overflow-hidden">
-          {loading ? (
-            <div className="p-8 text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-4 border-accent border-t-accent mx-auto" />
-            </div>
-          ) : loadError ? (
-            <StatusState
-              className="m-6"
-              status="error"
-              title={loadError}
-              description="The request failed; this is not an empty user list."
-              action={<Button type="button" variant="secondary" onClick={loadUsers}>Try again</Button>}
-            />
-          ) : users.length === 0 ? (
-            <div className="p-8 text-center text-text-secondary">No users yet.</div>
-          ) : (
-            <div className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" tabIndex={0} role="region" aria-label="Users and roles table">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-background border-b border-border text-left text-xs uppercase tracking-wide text-text-dim">
-                    <th className="px-4 py-3 font-medium">Email</th>
-                    <th className="px-4 py-3 font-medium">Name</th>
-                    <th className="px-4 py-3 font-medium">Organization</th>
-                    <th className="px-4 py-3 font-medium">Demographic</th>
-                    <th className="px-4 py-3 font-medium">Account role</th>
-                    <th className="px-4 py-3 font-medium text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((u) => {
+        <Card className="overflow-hidden p-0">
+          <DataTable label="Users and roles">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Email</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Organization</TableHead>
+                <TableHead>Demographic</TableHead>
+                <TableHead>Account role</TableHead>
+                <TableHead align="right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableStateRow colSpan={6} status="loading" title="Loading users" />
+              ) : loadError ? (
+                <TableStateRow
+                  colSpan={6}
+                  status="error"
+                  title={loadError}
+                  description="The request failed; this is not an empty user list."
+                  actionLabel="Try again"
+                  onAction={loadUsers}
+                />
+              ) : users.length === 0 ? (
+                <TableStateRow colSpan={6} status="empty" title="No users yet." />
+              ) : (
+                users.map((u) => {
                     const isInstr = u.accountRole === 'instructor'
                     return (
-                      <tr key={u.userId} className="border-b border-border last:border-0 hover:bg-primary-muted">
-                        <td className="px-4 py-3 text-text-primary">{u.email || '—'}</td>
-                        <td className="px-4 py-3 text-text-primary">{u.fullName || '—'}</td>
-                        <td className="px-4 py-3 text-text-secondary">{u.organization || '—'}</td>
-                        <td className="px-4 py-3 text-text-secondary capitalize">{u.role || '—'}</td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
-                              isInstr ? 'bg-primary-muted text-accent' : 'bg-background-lighter text-text-secondary'
-                            }`}
-                          >
+                      <TableRow key={u.userId}>
+                        <TableCell>{u.email || '—'}</TableCell>
+                        <TableCell>{u.fullName || '—'}</TableCell>
+                        <TableCell className="text-text-secondary">{u.organization || '—'}</TableCell>
+                        <TableCell className="capitalize text-text-secondary">{u.role || '—'}</TableCell>
+                        <TableCell>
+                          <Badge variant={isInstr ? 'accent' : 'neutral'} className="gap-1">
                             {isInstr ? <ShieldCheck className="w-3 h-3" /> : <GraduationCap className="w-3 h-3" />}
                             {u.accountRole}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button
+                          </Badge>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Button
+                            type="button"
                             onClick={() => toggleRole(u)}
-                            disabled={savingId === u.userId}
-                            className={`min-h-11 rounded-pinspace px-3 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
-                              isInstr
-                                ? 'border border-border text-text-primary hover:bg-background'
-                                : 'bg-accent text-background-light hover:bg-accent-light'
-                            }`}
+                            loading={savingId === u.userId}
+                            variant={isInstr ? 'ghost' : 'secondary'}
+                            size="sm"
                           >
-                            {savingId === u.userId
-                              ? 'Saving…'
-                              : isInstr
+                            {isInstr
                               ? 'Demote to student'
                               : 'Promote to instructor'}
-                          </button>
-                        </td>
-                      </tr>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
                     )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                })
+              )}
+            </TableBody>
+          </DataTable>
+        </Card>
 
         <p className="text-xs text-text-dim text-center mt-3">
           Only instructors can create classes and publish rooms to the network. The demographic column is informational

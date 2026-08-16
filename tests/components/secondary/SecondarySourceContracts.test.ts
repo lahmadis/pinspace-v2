@@ -143,4 +143,29 @@ describe('PinSpace secondary-route source contracts', () => {
       expect(source, file).toMatch(/aria-label="[^"]+ table"/)
     }
   })
+
+  it('uses the shared data-table and form primitives across administrative surfaces', async () => {
+    for (const file of [
+      'app/admin/page.tsx',
+      'app/admin/users/page.tsx',
+      'app/admin/institutions/[slug]/page.tsx',
+      'app/admin/instructors/[userId]/page.tsx',
+    ]) {
+      const source = await readFile(file, 'utf8')
+      expect(source, file).toContain('<DataTable')
+      expect(source, file).not.toContain('<table')
+      expect(source, file).not.toContain('overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent')
+    }
+
+    for (const file of [
+      'app/admin/page.tsx',
+      'app/admin/users/page.tsx',
+      'app/admin/instructors/[userId]/page.tsx',
+    ]) {
+      const source = await readFile(file, 'utf8')
+      expect(source, file).toContain('<FormField')
+      expect(source, file).toContain('<Input')
+      expect(source, file).toContain('<Button')
+    }
+  })
 })

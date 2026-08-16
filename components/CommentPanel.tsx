@@ -2,27 +2,14 @@
 
 import { useEffect, useState } from 'react'
 
-import { Avatar, Button, Dialog, EmptyState, StatusState } from '@/components/ui'
+import { Dialog } from '@/components/ui'
+import { CommentList } from '@/components/comments/CommentThread'
 import type { Board, Comment } from '@/types'
 
 interface CommentPanelProps {
   boardId: string
   boardTitle: string
   onClose: () => void
-}
-
-function formatTimestamp(timestamp: string): string {
-  const date = new Date(timestamp)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMs / 3600000)
-  const diffDays = Math.floor(diffMs / 86400000)
-  if (diffMins < 1) return 'Just now'
-  if (diffMins < 60) return `${diffMins} minute${diffMins === 1 ? '' : 's'} ago`
-  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`
-  if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })
 }
 
 export default function CommentPanel({ boardId, boardTitle, onClose }: CommentPanelProps) {
@@ -79,21 +66,13 @@ export default function CommentPanel({ boardId, boardTitle, onClose }: CommentPa
       )}
 
       <div className="space-y-3" aria-live="polite">
-        {loading && <StatusState status="loading" title="Loading comments" />}
-        {error && <StatusState status="error" title={error} action={<Button type="button" size="sm" onClick={() => setRetryCount((count) => count + 1)}>Try again</Button>} />}
-        {!loading && !error && comments.length === 0 && <EmptyState title="No comments yet" description="There is no feedback on this board yet." />}
-        {!loading && !error && comments.map((comment) => (
-          <article key={comment.id} className="flex gap-3 rounded-pinspace border border-border bg-background-lighter p-4 motion-reduce:transition-none">
-            <Avatar name={comment.authorName} />
-            <div className="min-w-0 flex-1">
-              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-                <span className="text-sm font-bold text-text-primary">{comment.authorName}</span>
-                <span className="text-xs text-text-secondary">{formatTimestamp(comment.createdAt)}</span>
-              </div>
-              <p className="whitespace-pre-wrap leading-relaxed text-text-primary">{comment.content}</p>
-            </div>
-          </article>
-        ))}
+        <CommentList
+          comments={comments}
+          loading={loading}
+          error={error ?? ''}
+          onRetry={() => setRetryCount((count) => count + 1)}
+          emptyDescription="There is no feedback on this board yet."
+        />
       </div>
 
       <p className="mt-4 border-t border-border pt-4 text-center text-xs text-text-secondary">
