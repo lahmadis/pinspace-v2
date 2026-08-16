@@ -163,6 +163,12 @@ export function auditSource(source, file) {
     findings.push(issue(source, normalizedFile, rule, offset, message))
   }
 
+  if (normalizedFile.endsWith('.tsx') && normalizedFile !== 'components/ui/DataTable.tsx') {
+    for (const match of source.matchAll(/<table\b/g)) {
+      add('raw-data-table', match.index, 'Use the shared DataTable primitives so table semantics, responsive scrolling, and state rows remain consistent.')
+    }
+  }
+
   const legacyUtility = /\b(?:bg|text|border|ring|outline|fill|stroke|from|to|via)-(?:indigo|purple|gray|slate)(?:-\d{2,3})?(?:\/\d{1,3})?\b/g
   for (const match of source.matchAll(legacyUtility)) {
     add('legacy-theme-class', match.index, 'Replace legacy theme utility "' + match[0] + '" with a semantic PinSpace token.')

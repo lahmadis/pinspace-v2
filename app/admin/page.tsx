@@ -25,7 +25,26 @@ import {
 import { toast } from '@/lib/toast'
 import CreateStudioForm from '@/components/admin/CreateStudioForm'
 import InstructorPicker, { type UserSearchResult } from '@/components/admin/InstructorPicker'
-import { Button, Dialog, StatusState } from '@/components/ui'
+import {
+  Badge,
+  Button,
+  Card,
+  DataTable,
+  Dialog,
+  DialogActions,
+  FormField,
+  Input,
+  Select,
+  Spinner,
+  StatusState,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableStateRow,
+  buttonStyles,
+} from '@/components/ui'
 import { AdminShell } from '@/components/admin/AdminShell'
 
 type WorkspaceRow = { id: string; name: string; type?: string; created_at?: string }
@@ -136,37 +155,34 @@ const SIGNUP_STATUS: Record<SignupStatus, { label: string; className: string }> 
 
 function RecentSignupsCard({ signups, loading }: { signups: RecentSignup[]; loading: boolean }) {
   return (
-    <div className="bg-background-light rounded-xl border border-border shadow-sm overflow-hidden mb-6">
+    <Card className="mb-6 overflow-hidden">
       <div className="px-6 py-3 border-b border-border bg-background flex items-center gap-2">
         <UserPlus className="w-4 h-4 text-accent" />
         <h2 className="text-sm font-semibold text-text-primary">Recent signups</h2>
         <span className="text-xs text-text-dim ml-1">newest accounts first</span>
       </div>
 
-      {loading ? (
-        <div className="p-8 text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-4 border-accent border-t-accent mx-auto" />
-        </div>
-      ) : signups.length === 0 ? (
-        <div className="p-8 text-center text-text-secondary">No signups yet.</div>
-      ) : (
-        <div className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" tabIndex={0} role="region" aria-label="Administrative data table">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-background border-b border-border text-left text-xs uppercase tracking-wide text-text-dim">
-                <th className="px-4 py-3 font-medium">User</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Organization</th>
-                <th className="px-4 py-3 font-medium">Signed up</th>
-                <th className="px-4 py-3 font-medium">Last seen</th>
-              </tr>
-            </thead>
-            <tbody>
-              {signups.map((s) => {
+      <DataTable label="Recent account signups">
+        <TableHeader>
+          <TableRow>
+            <TableHead>User</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Organization</TableHead>
+            <TableHead>Signed up</TableHead>
+            <TableHead>Last seen</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {loading ? (
+            <TableStateRow colSpan={5} status="loading" title="Loading recent signups" />
+          ) : signups.length === 0 ? (
+            <TableStateRow colSpan={5} status="empty" title="No signups yet." />
+          ) : (
+            signups.map((s) => {
                 const status = SIGNUP_STATUS[s.status] ?? SIGNUP_STATUS.unverified
                 return (
-                  <tr key={s.userId} className="border-b border-border last:border-0 hover:bg-primary-muted">
-                    <td className="px-4 py-3">
+                  <TableRow key={s.userId}>
+                    <TableCell>
                       {s.fullName ? (
                         <>
                           <p className="font-medium text-text-primary">{s.fullName}</p>
@@ -175,24 +191,24 @@ function RecentSignupsCard({ signups, loading }: { signups: RecentSignup[]; load
                       ) : (
                         <p className="font-medium text-text-primary">{s.email || '—'}</p>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell>
                       <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${status.className}`}>
                         {status.label}
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell>
                       {s.organization ? (
                         <span className="text-text-primary">{s.organization}</span>
                       ) : (
                         <span className="text-text-dim">Personal</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <p className="text-text-primary">{formatDate(s.createdAt)}</p>
                       <p className="text-xs text-text-dim mt-0.5">{timeAgo(s.createdAt)}</p>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {s.lastSignInAt ? (
                         <>
                           <p className="text-text-primary">{formatDate(s.lastSignInAt)}</p>
@@ -201,15 +217,14 @@ function RecentSignupsCard({ signups, loading }: { signups: RecentSignup[]; load
                       ) : (
                         <span className="text-text-dim">Never</span>
                       )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+              })
+          )}
+        </TableBody>
+      </DataTable>
+    </Card>
   )
 }
 
@@ -246,86 +261,79 @@ function InstructorsCard({
       )
 
   return (
-    <div className="bg-background-light rounded-xl border border-border shadow-sm overflow-hidden mb-6">
+    <Card className="mb-6 overflow-hidden">
       <div className="px-6 py-3 border-b border-border bg-background flex items-center gap-2">
         <UserPlus className="w-4 h-4 text-accent" />
         <h2 className="text-sm font-semibold text-text-primary">Instructors</h2>
         <span className="text-xs text-text-dim ml-1">owns a class, or has the instructor role</span>
         <div className="ml-auto relative">
           <Search className="w-3.5 h-3.5 text-text-dim absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
+          <Input
+            aria-label="Search instructors"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search instructors"
-            className="pl-8 pr-3 py-1.5 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent text-sm w-56"
+            className="h-9 w-56 pl-8"
           />
         </div>
       </div>
 
-      {loading ? (
-        <div className="p-8 text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-4 border-accent border-t-accent mx-auto" />
-        </div>
-      ) : failed ? (
-        <div className="p-8 text-center">
-          <p className="text-sm text-warning">Couldn’t load instructors.</p>
-          <p className="text-xs text-text-secondary mt-1">This is a failed request, not an empty list. Reload to try again.</p>
-        </div>
-      ) : instructors.length === 0 ? (
-        <div className="p-8 text-center text-text-secondary">No instructors yet.</div>
-      ) : filtered.length === 0 ? (
-        <div className="p-8 text-center text-text-secondary">No instructor matches “{query.trim()}”.</div>
-      ) : (
-        <div className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" tabIndex={0} role="region" aria-label="Administrative data table">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-background border-b border-border text-left text-xs uppercase tracking-wide text-text-dim">
-                <th className="px-4 py-3 font-medium">Instructor</th>
-                <th className="px-4 py-3 font-medium">Email</th>
-                <th className="px-4 py-3 font-medium">Organization</th>
-                <th className="px-4 py-3 font-medium text-right">Studios</th>
-                <th className="px-4 py-3 font-medium text-right"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((i) => (
-                <tr key={i.userId} className="border-b border-border last:border-0 hover:bg-primary-muted">
-                  <td className="px-4 py-3">
+      <DataTable label="Instructor accounts">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Instructor</TableHead>
+            <TableHead>Email</TableHead>
+            <TableHead>Organization</TableHead>
+            <TableHead align="right">Studios</TableHead>
+            <TableHead align="right"><span className="sr-only">Actions</span></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {loading ? (
+            <TableStateRow colSpan={5} status="loading" title="Loading instructors" />
+          ) : failed ? (
+            <TableStateRow colSpan={5} status="error" title="Couldn’t load instructors." description="This is a failed request, not an empty list. Reload to try again." />
+          ) : instructors.length === 0 ? (
+            <TableStateRow colSpan={5} status="empty" title="No instructors yet." />
+          ) : filtered.length === 0 ? (
+            <TableStateRow colSpan={5} status="empty" title={`No instructor matches “${query.trim()}”.`} />
+          ) : (
+            filtered.map((i) => (
+                <TableRow key={i.userId}>
+                  <TableCell>
                     <p className="font-medium text-text-primary">{i.fullName || '—'}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       {/* Owns a class but cannot create another: POST /api/workspaces
                           gates class creation on account_role. Admin-actionable
                           from /admin/users. */}
                       {i.accountRole !== 'instructor' && (
-                        <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-warning/15 text-warning">
+                        <Badge variant="warning">
                           No instructor role
-                        </span>
+                        </Badge>
                       )}
                       {!i.hasProfile && (
                         <span className="text-xs text-text-dim">Has not onboarded</span>
                       )}
                     </div>
-                  </td>
-                  <td className="px-4 py-3 text-text-secondary">{i.email || '—'}</td>
-                  <td className="px-4 py-3 text-text-secondary">{i.organization || '—'}</td>
-                  <td className="px-4 py-3 text-right text-text-primary tabular-nums">{i.classCount}</td>
-                  <td className="px-4 py-3 text-right">
+                  </TableCell>
+                  <TableCell className="text-text-secondary">{i.email || '—'}</TableCell>
+                  <TableCell className="text-text-secondary">{i.organization || '—'}</TableCell>
+                  <TableCell align="right" className="text-text-primary tabular-nums">{i.classCount}</TableCell>
+                  <TableCell align="right">
                     <Link
                       href={`/admin/instructors/${i.userId}`}
-                      className="inline-flex min-h-11 items-center gap-1 rounded-pinspace px-2 text-xs font-medium text-accent hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      className={buttonStyles({ variant: 'ghost', size: 'sm' })}
                     >
                       View
                       <ChevronRight className="w-3.5 h-3.5" />
                     </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+          )}
+        </TableBody>
+      </DataTable>
+    </Card>
   )
 }
 
@@ -444,7 +452,7 @@ function StudiosCard({
   }
 
   return (
-    <div className="bg-background-light rounded-xl border border-border shadow-sm overflow-hidden mb-6">
+    <Card className="mb-6 overflow-hidden">
       <div className="px-6 py-3 border-b border-border bg-background flex items-center gap-2">
         <GraduationCap className="w-4 h-4 text-accent" />
         <h2 className="text-sm font-semibold text-text-primary">Studios</h2>
@@ -454,76 +462,70 @@ function StudiosCard({
         </div>
       </div>
 
-      {loading ? (
-        <div className="p-8 text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-4 border-accent border-t-accent mx-auto" />
-        </div>
-      ) : studios.length === 0 ? (
-        <div className="p-8 text-center text-text-secondary">No studios yet.</div>
-      ) : (
-        <div className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" tabIndex={0} role="region" aria-label="Administrative data table">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-background border-b border-border text-left text-xs uppercase tracking-wide text-text-dim">
-                <th className="px-4 py-3 font-medium">Studio</th>
-                <th className="px-4 py-3 font-medium">Owner</th>
-                <th className="px-4 py-3 font-medium">Department</th>
-                <th className="px-4 py-3 font-medium">Year</th>
-                <th className="px-4 py-3 font-medium">Origin</th>
-                <th className="px-4 py-3 font-medium text-right">Access</th>
-              </tr>
-            </thead>
-            <tbody>
-              {studios.map((s) => (
-                <tr key={s.id} className="border-b border-border last:border-0 hover:bg-primary-muted">
-                  <td className="px-4 py-3">
+      <DataTable label="Studios">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Studio</TableHead>
+            <TableHead>Owner</TableHead>
+            <TableHead>Department</TableHead>
+            <TableHead>Year</TableHead>
+            <TableHead>Origin</TableHead>
+            <TableHead align="right">Access</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {loading ? (
+            <TableStateRow colSpan={6} status="loading" title="Loading studios" />
+          ) : studios.length === 0 ? (
+            <TableStateRow colSpan={6} status="empty" title="No studios yet." />
+          ) : (
+            studios.map((s) => (
+                <TableRow key={s.id}>
+                  <TableCell>
                     <p className="font-medium text-text-primary">{s.name}</p>
                     <p className="text-xs text-text-dim mt-0.5">
                       {s.type}
                       {s.isArchived && ' · archived'}
                     </p>
-                  </td>
-                  <td className="px-4 py-3 text-text-primary">
+                  </TableCell>
+                  <TableCell className="text-text-primary">
                     <p>{s.ownerName || '—'}</p>
-                    <button
+                    <Button
                       type="button"
                       onClick={() => setTransferring(s)}
-                      className="text-xs text-accent hover:text-accent hover:underline mt-0.5"
+                      variant="ghost"
+                      size="sm"
+                      className="mt-0.5 min-h-0 px-0 py-1 text-xs"
                     >
                       Transfer
-                    </button>
-                  </td>
-                  <td className="px-4 py-3 text-text-secondary">{s.department || '—'}</td>
-                  <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{s.academicYear || '—'}</td>
-                  <td className="px-4 py-3">
+                    </Button>
+                  </TableCell>
+                  <TableCell className="text-text-secondary">{s.department || '—'}</TableCell>
+                  <TableCell className="whitespace-nowrap text-text-secondary">{s.academicYear || '—'}</TableCell>
+                  <TableCell>
                     {s.provisionedByAdmin ? (
-                      <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-primary-muted text-accent">
-                        Provisioned
-                      </span>
+                      <Badge variant="accent">Provisioned</Badge>
                     ) : (
                       <span className="text-xs text-text-dim">Organic</span>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
+                  </TableCell>
+                  <TableCell align="right">
+                    <Button
                       type="button"
                       onClick={() => toggleMembership(s)}
                       disabled={busyId === s.id}
-                      className={`min-h-11 rounded-pinspace px-2.5 py-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
-                        s.adminIsMember
-                          ? 'border border-border text-text-primary hover:bg-background'
-                          : 'bg-accent text-background-light hover:bg-accent-light'
-                      }`}
+                      variant={s.adminIsMember ? 'secondary' : 'primary'}
+                      size="sm"
+                      loading={busyId === s.id}
                     >
-                      {busyId === s.id ? '…' : s.adminIsMember ? 'Leave' : 'Join'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                      {s.adminIsMember ? 'Leave' : 'Join'}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+          )}
+        </TableBody>
+      </DataTable>
 
       {transferring && (
         <TransferOwnerModal
@@ -532,7 +534,7 @@ function StudiosCard({
           onTransferred={onChanged}
         />
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -570,34 +572,35 @@ function DomainChipInput({
   return (
     <div>
       <div className="flex gap-2">
-        <input
+        <Input
           id={inputId}
-          type="text"
           disabled={disabled}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit() } }}
           placeholder="e.g. wit.edu"
-          className="flex-1 px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent text-sm"
+          className="flex-1"
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${inputId}-error` : undefined}
         />
-        <button
+        <Button
           type="button"
           onClick={commit}
           disabled={disabled}
-          className="min-h-11 px-3 py-2 bg-background-lighter hover:bg-background-lighter text-text-primary rounded-lg text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          variant="secondary"
         >
           Add
-        </button>
+        </Button>
       </div>
-      {error && <p className="text-xs text-danger mt-1">{error}</p>}
+      {error && <p id={`${inputId}-error`} role="alert" className="text-xs text-danger mt-1">{error}</p>}
       {domains.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-2">
           {domains.map((d) => (
             <span key={d} className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-muted text-accent rounded text-xs font-medium border border-accent">
               {d}
-              <button type="button" onClick={() => onRemove(d)} disabled={disabled} aria-label={`Remove ${d}`} className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50">
+              <Button type="button" onClick={() => onRemove(d)} disabled={disabled} aria-label={`Remove ${d}`} variant="ghost" size="sm" className="ml-0.5 min-w-11 px-2 text-accent">
                 <X className="w-3 h-3" />
-              </button>
+              </Button>
             </span>
           ))}
         </div>
@@ -689,14 +692,13 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
 
   return (
     <div>
-      <button
+      <Button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex min-h-11 items-center gap-2 rounded-pinspace px-4 py-2 bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent text-background-light rounded-lg hover:bg-accent-light transition-colors font-medium text-sm"
       >
         <Plus className="w-4 h-4" />
         New org
-      </button>
+      </Button>
 
       <Dialog
         open={open}
@@ -707,55 +709,41 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
         description="Create an institution or firm and define its verified email domains."
       >
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label htmlFor="create-org-type" className="block text-sm font-medium text-text-primary mb-1">Type</label>
-                <select
-                  id="create-org-type"
+              <FormField id="create-org-type" label="Type">
+                {(controlProps) => <Select
+                  {...controlProps}
                   value={form.type}
                   onChange={(e) => setForm((p) => ({ ...p, type: e.target.value as 'university' | 'firm' }))}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
                 >
                   <option value="university">University (school)</option>
                   <option value="firm">Firm</option>
-                </select>
-              </div>
-              <div>
-                <label htmlFor="create-org-name" className="block text-sm font-medium text-text-primary mb-1">Name</label>
-                <input
-                  id="create-org-name"
-                  type="text"
+                </Select>}
+              </FormField>
+              <FormField id="create-org-name" label="Name">
+                {(controlProps) => <Input
+                  {...controlProps}
                   value={form.name}
                   onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
                   onBlur={autoSlug}
                   placeholder="e.g. Wentworth Institute of Technology"
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label htmlFor="create-org-slug" className="block text-sm font-medium text-text-primary mb-1">Slug</label>
-                <input
-                  id="create-org-slug"
-                  type="text"
+                />}
+              </FormField>
+              <FormField id="create-org-slug" label="Slug" description={`Handoff link: /i/${form.slug || 'slug'}`}>
+                {(controlProps) => <Input
+                  {...controlProps}
                   value={form.slug}
                   onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value }))}
                   placeholder="e.g. wit"
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
-                />
-                <p className="text-xs text-text-secondary mt-1">Handoff link: /i/{form.slug || 'slug'}</p>
-              </div>
-              <div>
-                <label htmlFor="create-org-network-label" className="block text-sm font-medium text-text-primary mb-1">
-                  Network label <span className="font-normal text-text-dim">(optional)</span>
-                </label>
-                <input
-                  id="create-org-network-label"
-                  type="text"
+                />}
+              </FormField>
+              <FormField id="create-org-network-label" label="Network label" description="Optional">
+                {(controlProps) => <Input
+                  {...controlProps}
                   value={form.network_label}
                   onChange={(e) => setForm((p) => ({ ...p, network_label: e.target.value }))}
                   placeholder="e.g. WIT Design Network"
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
-                />
-              </div>
+                />}
+              </FormField>
               <div>
                 <label htmlFor="create-org-domain" className="block text-sm font-medium text-text-primary mb-1">
                   Allowed email domains
@@ -770,23 +758,24 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
                 />
                 <p className="text-xs text-text-secondary mt-1">Leave empty for no restriction.</p>
               </div>
-              {error && <p className="text-sm text-danger">{error}</p>}
-              <div className="flex gap-2 pt-1">
-                <button
+              {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+              <DialogActions>
+                <Button
                   type="button"
                   onClick={() => setDialogOpen(false)}
-                  className="min-h-11 flex-1 py-2 px-4 border border-border text-text-primary rounded-lg hover:bg-background font-medium text-sm"
+                  variant="secondary"
+                  className="flex-1"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
-                  disabled={loading}
-                  className="min-h-11 flex-1 py-2 px-4 bg-accent text-background-light rounded-lg hover:bg-accent-light disabled:opacity-50 font-medium text-sm"
+                  loading={loading}
+                  className="flex-1"
                 >
-                  {loading ? 'Creating…' : 'Create'}
-                </button>
-              </div>
+                  Create
+                </Button>
+              </DialogActions>
             </form>
       </Dialog>
     </div>
@@ -1047,53 +1036,41 @@ function EditOrgModal({
       description={`Update ${inst.name} without changing its existing access contract.`}
     >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="edit-org-type" className="block text-sm font-medium text-text-primary mb-1">Type</label>
-            <select
-              id="edit-org-type"
+          <FormField id="edit-org-type" label="Type">
+            {(controlProps) => <Select
+              {...controlProps}
               value={form.type}
               disabled={mutationPending}
               onChange={(e) => setForm((p) => ({ ...p, type: e.target.value as 'university' | 'firm' }))}
-              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
             >
               <option value="university">University (school)</option>
               <option value="firm">Firm</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="edit-org-name" className="block text-sm font-medium text-text-primary mb-1">Name</label>
-            <input
-              id="edit-org-name"
-              type="text"
+            </Select>}
+          </FormField>
+          <FormField id="edit-org-name" label="Name">
+            {(controlProps) => <Input
+              {...controlProps}
               value={form.name}
               disabled={mutationPending}
               onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label htmlFor="edit-org-slug" className="block text-sm font-medium text-text-primary mb-1">Slug</label>
-            <input
-              id="edit-org-slug"
-              type="text"
+            />}
+          </FormField>
+          <FormField id="edit-org-slug" label="Slug" description={`Handoff link: /i/${form.slug || 'slug'}`}>
+            {(controlProps) => <Input
+              {...controlProps}
               value={form.slug}
               disabled={mutationPending}
               onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value }))}
-              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
-            />
-            <p className="text-xs text-text-secondary mt-1">Handoff link: /i/{form.slug || 'slug'}</p>
-          </div>
-          <div>
-            <label htmlFor="edit-org-network-label" className="block text-sm font-medium text-text-primary mb-1">Network label <span className="font-normal text-text-dim">(optional)</span></label>
-            <input
-              id="edit-org-network-label"
-              type="text"
+            />}
+          </FormField>
+          <FormField id="edit-org-network-label" label="Network label" description="Optional">
+            {(controlProps) => <Input
+              {...controlProps}
               value={form.network_label}
               disabled={mutationPending}
               onChange={(e) => setForm((p) => ({ ...p, network_label: e.target.value }))}
-              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
-            />
-          </div>
+            />}
+          </FormField>
           <div>
             <label htmlFor="edit-org-domain" className="block text-sm font-medium text-text-primary mb-2">Allowed email domains</label>
             {domainsLoading ? (
@@ -1105,15 +1082,17 @@ function EditOrgModal({
                     {domains.map((d) => (
                       <span key={d.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-muted text-accent rounded text-xs font-medium border border-accent">
                         {d.domain}
-                        <button
+                        <Button
                           type="button"
                           onClick={() => handleDomainRemove(d.id, d.domain)}
                           disabled={mutationPending}
                           aria-label={`Remove ${d.domain}`}
-                          className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+                          variant="ghost"
+                          size="sm"
+                          className="ml-0.5 min-w-11 px-2 text-accent"
                         >
                           <X className="w-3 h-3" />
-                        </button>
+                        </Button>
                       </span>
                     ))}
                   </div>
@@ -1131,61 +1110,66 @@ function EditOrgModal({
               </>
             )}
           </div>
-          {error && <p className="text-sm text-danger">{error}</p>}
-          <div className="flex gap-2 pt-1">
-            <button
+          {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+          <DialogActions>
+            <Button
               type="button"
               onClick={() => { if (!mutationPending) onClose() }}
               disabled={mutationPending}
-              className="min-h-11 flex-1 py-2 px-4 border border-border text-text-primary rounded-lg hover:bg-background font-medium text-sm"
+              variant="secondary"
+              className="flex-1"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              disabled={mutationPending}
-              className="min-h-11 flex-1 py-2 px-4 bg-accent text-background-light rounded-lg hover:bg-accent-light disabled:opacity-50 font-medium text-sm"
+              loading={loading}
+              disabled={mutationPending && !loading}
+              className="flex-1"
             >
-              {loading ? 'Saving…' : 'Save changes'}
-            </button>
-          </div>
+              Save changes
+            </Button>
+          </DialogActions>
         </form>
 
         {/* Delete zone */}
         <div className="mt-5 pt-4 border-t border-border">
           {!confirmDelete ? (
-            <button
+            <Button
               ref={deleteTriggerRef}
               type="button"
               onClick={beginDeleteConfirmation}
               disabled={mutationPending}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-pinspace px-2 text-sm font-semibold text-danger hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
+              variant="danger"
             >
               <Trash2 className="w-4 h-4" />
               Delete org
-            </button>
+            </Button>
           ) : (
             <div className="space-y-2">
               <p className="text-sm text-danger font-medium">Delete <span className="font-bold">{inst.name}</span>? This cannot be undone.</p>
-              <div className="flex gap-2">
-                <button
+              <DialogActions>
+                <Button
                   ref={deleteCancelRef}
                   type="button"
                   onClick={cancelDeleteConfirmation}
                   disabled={mutationPending}
-                  className="min-h-11 flex-1 py-2 px-3 border border-border text-text-primary rounded-lg hover:bg-background text-sm"
+                  variant="secondary"
+                  className="flex-1"
                 >
                   Keep org
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   onClick={handleDelete}
-                  disabled={mutationPending}
-                  className="min-h-11 flex-1 py-2 px-3 bg-danger text-background-light rounded-lg hover:bg-danger disabled:opacity-50 text-sm font-medium"
+                  loading={deleting}
+                  disabled={mutationPending && !deleting}
+                  variant="danger"
+                  className="flex-1"
                 >
-                  {deleting ? 'Deleting…' : 'Yes, delete'}
-                </button>
-              </div>
+                  Yes, delete
+                </Button>
+              </DialogActions>
             </div>
           )}
         </div>
@@ -1300,7 +1284,7 @@ export default function AdminDashboardPage() {
   if (!isLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-accent" />
+        <Spinner label="Loading administrator session" className="h-12 w-12" />
       </div>
     )
   }
@@ -1308,24 +1292,22 @@ export default function AdminDashboardPage() {
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <div className="w-full max-w-md rounded-xl bg-background-light p-8 shadow-xl border border-border">
+        <Card className="w-full max-w-md p-8 shadow-xl">
           <div className="text-center mb-6">
             <h1 className="text-2xl font-bold text-text-primary">PinSpace Admin</h1>
             <p className="text-sm text-text-secondary mt-1">Sign in with your admin email</p>
           </div>
           <form onSubmit={handleAdminSignIn} className="space-y-4">
-            <div>
-              <label htmlFor="admin-email" className="block text-sm font-medium text-text-primary mb-1">Email</label>
-              <input
-                id="admin-email"
+            <FormField id="admin-email" label="Email">
+              {(controlProps) => <Input
+                {...controlProps}
                 type="email"
                 value={signInEmail}
                 onChange={(e) => setSignInEmail(e.target.value)}
                 placeholder="you@gmail.com"
-                className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
                 autoComplete="email"
-              />
-            </div>
+              />}
+            </FormField>
             <div>
               <label htmlFor="admin-password" className="block text-sm font-medium text-text-primary mb-1">Password</label>
               <PasswordInput
@@ -1335,16 +1317,16 @@ export default function AdminDashboardPage() {
                 autoComplete="current-password"
               />
             </div>
-            {signInError && <p className="text-sm text-danger">{signInError}</p>}
-            <button
+            {signInError && <p role="alert" className="text-sm text-danger">{signInError}</p>}
+            <Button
               type="submit"
-              disabled={signingIn}
-              className="w-full py-2.5 bg-accent text-background-light rounded-lg hover:bg-accent-light disabled:opacity-50 font-medium"
+              loading={signingIn}
+              className="w-full"
             >
-              {signingIn ? 'Signing in…' : 'Sign in'}
-            </button>
+              Sign in
+            </Button>
           </form>
-        </div>
+        </Card>
       </div>
     )
   }
@@ -1352,7 +1334,7 @@ export default function AdminDashboardPage() {
   if (isAdmin === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background" role="status" aria-label="Checking administrator access">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-transparent" />
+        <Spinner label="Checking administrator access" className="h-12 w-12" />
       </div>
     )
   }
@@ -1360,16 +1342,16 @@ export default function AdminDashboardPage() {
   if (isAdmin === false) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <div className="w-full max-w-md rounded-xl bg-background-light p-8 shadow border border-border text-center">
+        <Card className="w-full max-w-md p-8 text-center shadow">
           <h1 className="text-xl font-bold text-text-primary mb-2">Access denied</h1>
           <p className="text-text-secondary mb-6">This account is not in PINSPACE_ADMIN_EMAILS.</p>
-          <button
+          <Button
             onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-            className="text-accent hover:underline"
+            variant="ghost"
           >
             Sign out
-          </button>
-        </div>
+          </Button>
+        </Card>
       </div>
     )
   }
@@ -1381,13 +1363,13 @@ export default function AdminDashboardPage() {
         title="Admin overview"
         description="Manage organizations, users, instructors, and studios."
         actions={
-          <button
+          <Button
             type="button"
             onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-            className="inline-flex min-h-11 items-center rounded-pinspace px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            variant="ghost"
           >
             Sign out
-          </button>
+          </Button>
         }
       >
         <StatusState
@@ -1410,7 +1392,7 @@ export default function AdminDashboardPage() {
     icon: React.ReactNode,
     emptyMsg: string
   ) => (
-    <div className="bg-background-light rounded-xl border border-border shadow-sm overflow-hidden mb-6">
+    <Card className="mb-6 overflow-hidden">
       <div className="px-6 py-4 border-b border-border bg-background flex items-center justify-between">
         <div className="flex items-center gap-2">
           {icon}
@@ -1430,7 +1412,7 @@ export default function AdminDashboardPage() {
 
       {loading ? (
         <div className="p-8 text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-4 border-accent border-t-accent mx-auto" />
+          <Spinner label={`Loading ${title.toLowerCase()}`} />
         </div>
       ) : list.length === 0 ? (
         <div className="p-8 text-center text-text-secondary">
@@ -1444,7 +1426,7 @@ export default function AdminDashboardPage() {
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   )
 
   return (
@@ -1455,24 +1437,24 @@ export default function AdminDashboardPage() {
       actions={<>
             <Link
               href="/admin/users"
-              className="inline-flex min-h-11 items-center gap-2 rounded-pinspace border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className={buttonStyles({ variant: 'secondary' })}
             >
               <Users className="w-4 h-4" />
               Users &amp; roles
             </Link>
             <CreateOrgForm onCreated={loadData} />
-            <button
+            <Button
               onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-              className="inline-flex min-h-11 items-center rounded-pinspace px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              variant="ghost"
             >
               Sign out
-            </button>
+            </Button>
           </>}
     >
 
         {/* Global student stats */}
         {stats && (
-          <div className="bg-background-light rounded-xl border border-border shadow-sm overflow-hidden mb-6">
+          <Card className="mb-6 overflow-hidden">
             <div className="px-6 py-3 border-b border-border bg-background flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-accent" />
               <h2 className="text-sm font-semibold text-text-primary">Global stats</h2>
@@ -1484,7 +1466,7 @@ export default function AdminDashboardPage() {
               <StatBlock title="By age range" data={stats.by_age_range} />
               <StatBlock title="How they heard" data={stats.by_how_heard} />
             </div>
-          </div>
+          </Card>
         )}
 
         {/* Studios — pilot provisioning */}

@@ -21,6 +21,7 @@ describe('PinSpace UI source audit', () => {
     ['custom-control-a11y', '<div role="button" onClick={save}>Save</div>'],
     ['fixed-viewport', '<main className="w-[1440px] h-[900px]" />'],
     ['obsolete-ui-import', "import Button from '@/components/Button'"],
+    ['raw-data-table', '<table><tbody><tr><td>Account</td></tr></tbody></table>'],
   ])('flags %s violations', (rule, source) => {
     expect(rules(source)).toContain(rule)
   })
@@ -33,6 +34,10 @@ describe('PinSpace UI source audit', () => {
     `
 
     expect(auditSource(source, 'components/Fixture.tsx')).toEqual([])
+  })
+
+  it('allows the native table implementation only inside the shared DataTable primitive', () => {
+    expect(rules('<table aria-label="People" />', 'components/ui/DataTable.tsx')).not.toContain('raw-data-table')
   })
 
   it('allows PinSpace palette literals only in token definition files', () => {

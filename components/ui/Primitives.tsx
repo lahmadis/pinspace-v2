@@ -1,12 +1,16 @@
 'use client'
 
 import {
-  forwardRef,
+  type AnchorHTMLAttributes,
   type ButtonHTMLAttributes,
+  forwardRef,
   type HTMLAttributes,
   type InputHTMLAttributes,
+  type LabelHTMLAttributes,
   type ReactNode,
   type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+  useId,
 } from 'react'
 
 import { cn } from './utils'
@@ -19,32 +23,39 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   loading?: boolean
 }
 
+type ButtonStyleProps = Pick<ButtonProps, 'variant' | 'size'> & { className?: string }
+
+const buttonVariants = {
+  primary: 'border-pinspace-ink bg-primary text-pinspace-ink hover:bg-primary-light',
+  secondary: 'border-accent bg-accent text-white hover:bg-accent-light',
+  ghost: 'border-transparent bg-transparent text-text-primary hover:bg-background-lighter',
+  danger: 'border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger))] text-white hover:bg-[rgb(var(--color-danger)/0.9)]',
+}
+
+const buttonSizes = {
+  sm: 'min-h-9 px-3 py-1.5 text-sm',
+  md: 'min-h-11 px-4 py-2 text-sm',
+  lg: 'min-h-12 px-5 py-2.5 text-base',
+}
+
+export function buttonStyles({ variant = 'primary', size = 'md', className }: ButtonStyleProps = {}) {
+  return cn(
+    'inline-flex items-center justify-center gap-2 rounded-pinspace border font-semibold shadow-[0_3px_0_rgb(var(--color-ink))] transition-[transform,background-color,box-shadow] duration-150 active:translate-y-0.5 active:shadow-none disabled:cursor-not-allowed disabled:opacity-55',
+    focus,
+    buttonVariants[variant],
+    buttonSizes[size],
+    className,
+  )
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   { className, variant = 'primary', size = 'md', loading = false, disabled, children, ...props },
   ref
 ) {
-  const variants = {
-    primary: 'border-pinspace-ink bg-primary text-pinspace-ink hover:bg-primary-light',
-    secondary: 'border-accent bg-accent text-white hover:bg-accent-light',
-    ghost: 'border-transparent bg-transparent text-text-primary hover:bg-background-lighter',
-    danger: 'border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger))] text-white hover:bg-[rgb(var(--color-danger)/0.9)]',
-  }
-  const sizes = {
-    sm: 'min-h-9 px-3 py-1.5 text-sm',
-    md: 'min-h-11 px-4 py-2 text-sm',
-    lg: 'min-h-12 px-5 py-2.5 text-base',
-  }
-
   return (
     <button
       ref={ref}
-      className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-pinspace border font-semibold shadow-[0_3px_0_rgb(var(--color-ink))] transition-[transform,background-color,box-shadow] duration-150 active:translate-y-0.5 active:shadow-none disabled:cursor-not-allowed disabled:opacity-55',
-        focus,
-        variants[variant],
-        sizes[size],
-        className
-      )}
+      className={buttonStyles({ variant, size, className })}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       {...props}
@@ -58,6 +69,15 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       {children}
     </button>
   )
+})
+
+type ButtonLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & ButtonStyleProps
+
+export const ButtonLink = forwardRef<HTMLAnchorElement, ButtonLinkProps>(function ButtonLink(
+  { className, variant = 'primary', size = 'md', ...props },
+  ref,
+) {
+  return <a ref={ref} className={buttonStyles({ variant, size, className })} {...props} />
 })
 
 type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -118,6 +138,125 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   }
 )
 
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
+  function Textarea({ className, ...props }, ref) {
+    return (
+      <textarea
+        ref={ref}
+        className={cn(
+          'min-h-28 w-full resize-y rounded-pinspace border border-border bg-background-light px-3.5 py-2 text-text-primary placeholder:text-text-dim shadow-sm transition-colors hover:border-text-muted disabled:cursor-not-allowed disabled:bg-background-lighter disabled:text-text-muted aria-[invalid=true]:border-[rgb(var(--color-danger))] aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-[rgb(var(--color-danger))]',
+          focus,
+          className,
+        )}
+        {...props}
+      />
+    )
+  },
+)
+
+export const Checkbox = forwardRef<HTMLInputElement, Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>>(
+  function Checkbox({ className, ...props }, ref) {
+    return (
+      <input
+        ref={ref}
+        type="checkbox"
+        className={cn(
+          'h-5 w-5 shrink-0 rounded border-border bg-background-light text-accent accent-[rgb(var(--color-accent))] disabled:cursor-not-allowed disabled:opacity-55',
+          focus,
+          className,
+        )}
+        {...props}
+      />
+    )
+  },
+)
+
+type SwitchProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onChange'> & {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+}
+
+export const Switch = forwardRef<HTMLButtonElement, SwitchProps>(function Switch(
+  { checked, onCheckedChange, className, disabled, type = 'button', ...props },
+  ref,
+) {
+  return (
+    <button
+      ref={ref}
+      type={type}
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onCheckedChange(!checked)}
+      className={cn(
+        'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border border-border transition-colors disabled:cursor-not-allowed disabled:opacity-55',
+        checked ? 'bg-accent' : 'bg-background-lighter',
+        focus,
+        className,
+      )}
+      {...props}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          'h-5 w-5 rounded-full bg-background-light shadow-sm transition-transform',
+          checked ? 'translate-x-6' : 'translate-x-1',
+        )}
+      />
+    </button>
+  )
+})
+
+type FormControlProps = {
+  id: string
+  'aria-describedby'?: string
+  'aria-invalid'?: true
+}
+
+type FormFieldProps = Omit<HTMLAttributes<HTMLDivElement>, 'children'> & {
+  id?: string
+  label: ReactNode
+  description?: ReactNode
+  error?: ReactNode
+  required?: boolean
+  children: (props: FormControlProps) => ReactNode
+  labelProps?: Omit<LabelHTMLAttributes<HTMLLabelElement>, 'htmlFor'>
+}
+
+export function FormField({
+  id,
+  label,
+  description,
+  error,
+  required,
+  children,
+  labelProps,
+  className,
+  ...props
+}: FormFieldProps) {
+  const generatedId = useId()
+  const controlId = id ?? generatedId
+  const descriptionId = description ? `${controlId}-description` : undefined
+  const errorId = error ? `${controlId}-error` : undefined
+  const describedBy = [descriptionId, errorId].filter(Boolean).join(' ') || undefined
+
+  return (
+    <div className={cn('space-y-1.5', className)} {...props}>
+      <label {...labelProps} htmlFor={controlId} className={cn('block text-sm font-semibold text-text-primary', labelProps?.className)}>
+        {label}
+        {required && <span aria-hidden="true" className="ml-1 text-danger">*</span>}
+      </label>
+      {children({
+        id: controlId,
+        'aria-describedby': describedBy,
+        'aria-invalid': error ? true : undefined,
+      })}
+      {description && <p id={descriptionId} className="text-sm text-text-secondary">{description}</p>}
+      {error && <p id={errorId} role="alert" className="text-sm font-medium text-danger">{error}</p>}
+    </div>
+  )
+}
+
 export const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(function Card(
   { className, ...props },
   ref
@@ -133,6 +272,53 @@ export const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(f
     />
   )
 })
+
+export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('space-y-1.5', className)} {...props} />
+}
+
+export function CardTitle({ className, ...props }: HTMLAttributes<HTMLHeadingElement>) {
+  return <h3 className={cn('text-lg font-bold text-text-primary', className)} {...props} />
+}
+
+export function CardDescription({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {
+  return <p className={cn('text-sm text-text-secondary', className)} {...props} />
+}
+
+export function CardContent({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('mt-5', className)} {...props} />
+}
+
+export function CardFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('mt-5 border-t border-border pt-4', className)} {...props} />
+}
+
+export function DialogActions({ className, 'aria-label': ariaLabel = 'Dialog actions', ...props }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className={cn('flex flex-col-reverse gap-3 sm:flex-row sm:justify-end', className)}
+      {...props}
+    />
+  )
+}
+
+type SpinnerProps = HTMLAttributes<HTMLSpanElement> & { label?: string }
+
+export function Spinner({ className, label = 'Loading', ...props }: SpinnerProps) {
+  return (
+    <span
+      role={props['aria-hidden'] ? undefined : 'status'}
+      aria-label={props['aria-hidden'] ? undefined : label}
+      className={cn(
+        'inline-block h-5 w-5 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
 
 type BadgeProps = HTMLAttributes<HTMLSpanElement> & {
   variant?: 'neutral' | 'accent' | 'success' | 'warning' | 'danger'

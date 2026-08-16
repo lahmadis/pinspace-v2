@@ -6,7 +6,20 @@ import Link from 'next/link'
 import { ExternalLink, Users, LayoutGrid, Image as ImageIcon } from 'lucide-react'
 import { useAuthSession } from '@/hooks/useAuthSession'
 import { AdminShell } from '@/components/admin/AdminShell'
-import { StatusState } from '@/components/ui'
+import {
+  Badge,
+  ButtonLink,
+  Card,
+  DataTable,
+  Spinner,
+  StatusState,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableStateRow,
+} from '@/components/ui'
 
 type UserRole = 'faculty' | 'student' | 'professional'
 
@@ -82,8 +95,8 @@ export default function InstitutionStatsPage() {
 
   if (!isLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-accent" />
+      <div className="flex min-h-screen items-center justify-center bg-background" role="status" aria-label="Loading administrator session">
+        <Spinner className="h-12 w-12 text-accent" aria-hidden="true" />
       </div>
     )
   }
@@ -115,9 +128,9 @@ export default function InstitutionStatsPage() {
 
   if (loading || !stats) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex min-h-screen items-center justify-center bg-background" role="status">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-accent mx-auto mb-4" />
+          <Spinner className="mb-4 h-12 w-12 text-accent" aria-hidden="true" />
           <p className="text-text-secondary">Loading…</p>
         </div>
       </div>
@@ -132,117 +145,102 @@ export default function InstitutionStatsPage() {
       title={institution.name}
       description={`${institution.slug}${institution.network_label ? ` · ${institution.network_label}` : ''}`}
       actions={
-          <a
+          <ButtonLink
             href={`/i/${institution.slug}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-11 items-center gap-2 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 text-sm font-semibold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             Open explore <ExternalLink className="w-4 h-4" />
-          </a>
+          </ButtonLink>
       }
     >
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-8">
-          <div className="bg-background-light rounded-xl border border-border shadow-sm p-5">
+          <Card>
             <div className="flex items-center gap-2 text-text-secondary mb-1">
               <Users className="w-5 h-5" />
               <span className="text-sm font-medium">Total users</span>
             </div>
             <p className="text-2xl font-bold text-text-primary">{summary.total_users}</p>
-          </div>
-          <div className="bg-background-light rounded-xl border border-border shadow-sm p-5">
+          </Card>
+          <Card>
             <div className="flex items-center gap-2 text-text-secondary mb-1">
               <span className="text-sm font-medium">Faculty</span>
             </div>
             <p className="text-2xl font-bold text-accent">{summary.faculty_count}</p>
-          </div>
-          <div className="bg-background-light rounded-xl border border-border shadow-sm p-5">
+          </Card>
+          <Card>
             <div className="flex items-center gap-2 text-text-secondary mb-1">
               <span className="text-sm font-medium">Students</span>
             </div>
             <p className="text-2xl font-bold text-text-primary">{summary.student_count}</p>
-          </div>
+          </Card>
           {(summary.professional_count ?? 0) > 0 && (
-            <div className="bg-background-light rounded-xl border border-border shadow-sm p-5">
+            <Card>
               <div className="flex items-center gap-2 text-text-secondary mb-1">
                 <span className="text-sm font-medium">Professionals</span>
               </div>
               <p className="text-2xl font-bold text-warning">{summary.professional_count}</p>
-            </div>
+            </Card>
           )}
-          <div className="bg-background-light rounded-xl border border-border shadow-sm p-5">
+          <Card>
             <div className="flex items-center gap-2 text-text-secondary mb-1">
               <LayoutGrid className="w-5 h-5" />
               <span className="text-sm font-medium">Studios</span>
             </div>
             <p className="text-2xl font-bold text-text-primary">{summary.studio_count}</p>
-          </div>
-          <div className="bg-background-light rounded-xl border border-border shadow-sm p-5">
+          </Card>
+          <Card>
             <div className="flex items-center gap-2 text-text-secondary mb-1">
               <ImageIcon className="w-5 h-5" />
               <span className="text-sm font-medium">Boards</span>
             </div>
             <p className="text-2xl font-bold text-text-primary">{summary.board_count}</p>
-          </div>
+          </Card>
         </div>
 
-        <div className="bg-background-light rounded-xl border border-border shadow-sm overflow-hidden mb-8">
+        <Card className="mb-8 overflow-hidden p-0">
           <div className="px-6 py-4 border-b border-border bg-background">
             <h2 className="text-lg font-semibold text-text-primary">Student stats</h2>
             <p className="text-sm text-text-secondary">Name, email, and role (Student, Professor, or Professional working at a firm)</p>
           </div>
-          <div className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" tabIndex={0} role="region" aria-label="Institution users table">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border bg-background/50">
-                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-6 py-3">Name</th>
-                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-6 py-3">Email</th>
-                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-6 py-3">Role</th>
-                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-6 py-3">Major</th>
-                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-6 py-3">Year</th>
-                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-6 py-3">Age range</th>
-                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-6 py-3">Joined</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
+          <DataTable label="Institution users">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Major</TableHead>
+                  <TableHead>Year</TableHead>
+                  <TableHead>Age range</TableHead>
+                  <TableHead>Joined</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {users.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-8 text-center text-text-secondary">
-                      No users yet for this institution
-                    </td>
-                  </tr>
+                  <TableStateRow colSpan={7} status="empty" title="No users yet for this institution" />
                 ) : (
                   users.map((u) => (
-                    <tr key={u.id} className="hover:bg-background/50">
-                      <td className="px-6 py-3 font-medium text-text-primary">{u.full_name}</td>
-                      <td className="px-6 py-3 text-sm text-text-secondary">{u.email}</td>
-                      <td className="px-6 py-3">
-                        <span
-                          className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${
-                            u.role === 'faculty'
-                              ? 'bg-primary-muted text-accent'
-                              : u.role === 'professional'
-                                ? 'bg-warning/15 text-warning'
-                                : 'bg-background-lighter text-text-primary'
-                          }`}
-                        >
+                    <TableRow key={u.id}>
+                      <TableCell className="font-medium">{u.full_name}</TableCell>
+                      <TableCell className="text-text-secondary">{u.email}</TableCell>
+                      <TableCell>
+                        <Badge variant={u.role === 'faculty' ? 'accent' : u.role === 'professional' ? 'warning' : 'neutral'}>
                           {roleDisplayLabel(u.role)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-3 text-sm text-text-secondary">{u.major || '—'}</td>
-                      <td className="px-6 py-3 text-sm text-text-secondary">{u.year || '—'}</td>
-                      <td className="px-6 py-3 text-sm text-text-secondary">{u.age_range || '—'}</td>
-                      <td className="px-6 py-3 text-sm text-text-secondary">
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-text-secondary">{u.major || '—'}</TableCell>
+                      <TableCell className="text-text-secondary">{u.year || '—'}</TableCell>
+                      <TableCell className="text-text-secondary">{u.age_range || '—'}</TableCell>
+                      <TableCell className="text-text-secondary">
                         {u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              </TableBody>
+          </DataTable>
+        </Card>
 
         <div className="bg-background-light rounded-xl border border-border shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-border bg-background">
