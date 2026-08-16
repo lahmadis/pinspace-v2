@@ -1280,8 +1280,11 @@ export default function StudioRoom(props: StudioRoomProps) {
 
   /**
    * Walls whose board full-image textures have been pre-warmed in this session.
-   * Keyed `${wallIndex}-${side}`. Lives for the StudioRoom mount lifetime — no
-   * eviction, because the underlying useBoardTexture cache is also session-long.
+   * Keyed `${wallIndex}-${side}`. Lives for the StudioRoom mount lifetime and is
+   * never cleared. Note the underlying useBoardTexture cache DOES evict idle
+   * textures (LRU over refCount-0 entries), so a wall marked pre-warmed here may
+   * since have had its textures reclaimed; the worst case is the brief skeleton
+   * this pre-warm exists to avoid, i.e. the same cost as a cold wall.
    */
   const prefetchedWallsRef = useRef<Set<string>>(new Set())
 

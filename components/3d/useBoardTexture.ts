@@ -19,8 +19,67 @@ import * as THREE from 'three'
  */
 
 // Module-level caches shared across every hook instance in the app.
-const resolvedCache = new Map<string, THREE.Texture>()
+//
+// Entries are reference counted. A texture is disposed ONLY when its refCount
+// is 0: disposing one that is still on screen renders that board black, which
+// is a worse failure than holding the memory. Bare `loadTexture` calls (the
+// upload pre-warm in hooks/useBoardUpload.ts and the wall-hover pre-warm in
+// StudioRoom) deliberately leave entries at refCount 0 — nothing is displaying
+// them yet, so they are exactly what eviction should reclaim first.
+interface CacheEntry {
+  texture: THREE.Texture
+  /** Mounted consumers currently displaying this texture. Never evict when > 0. */
+  refCount: number
+  /** Monotonic tick used for least-recently-used ordering. */
+  lastUsed: number
+}
+
+const resolvedCache = new Map<string, CacheEntry>()
 const inFlightCache = new Map<string, Promise<THREE.Texture>>()
+
+/**
+ * How many refCount-0 entries survive before the oldest are disposed. Entries
+ * with refCount > 0 are neither counted nor evicted, so this bounds the IDLE
+ * retained set rather than the total. A room's on-screen boards therefore never
+ * compete with this budget.
+ */
+const MAX_IDLE_ENTRIES = 30
+
+let lruTick = 0
+
+/**
+ * Dispose least-recently-used idle entries until at most MAX_IDLE_ENTRIES
+ * remain. Matches the disposal style already used in PDFTexture and
+ * TableWithModel: call `.dispose()` on the THREE object, then drop the handle.
+ */
+function evictIdleEntries(): void {
+  const idle: Array<[string, CacheEntry]> = []
+  for (const pair of resolvedCache) {
+    if (pair[1].refCount <= 0) idle.push(pair)
+  }
+  if (idle.length <= MAX_IDLE_ENTRIES) return
+
+  idle.sort((a, b) => a[1].lastUsed - b[1].lastUsed)
+  for (const [url, entry] of idle.slice(0, idle.length - MAX_IDLE_ENTRIES)) {
+    // Re-assert the invariant at the point of disposal rather than trusting the
+    // scan above. This is the single place a board texture is ever freed.
+    if (entry.refCount > 0) continue
+    entry.texture.dispose()
+    resolvedCache.delete(url)
+  }
+}
+
+/**
+ * Drop one consumer's claim. At zero the entry becomes evictable, so this is
+ * the other place eviction can be triggered.
+ */
+function releaseTexture(url: string): void {
+  const entry = resolvedCache.get(url)
+  if (!entry) return
+  entry.refCount = Math.max(0, entry.refCount - 1)
+  entry.lastUsed = ++lruTick
+  if (entry.refCount === 0) evictIdleEntries()
+}
 
 /** Used when the GPU's real limit can't be read (SSR, no WebGL, no extension). */
 const ANISOTROPY_FALLBACK = 2
@@ -106,9 +165,13 @@ function configureTexture(tex: THREE.Texture): THREE.Texture {
  * resolved — no skeleton flash, no swap delay.
  */
 export function loadTexture(url: string): Promise<THREE.Texture> {
-  // Already resolved — return synchronously via Promise.resolve.
+  // Already resolved — return synchronously via Promise.resolve. Touch the LRU
+  // so a hit moves the entry away from the eviction end of the queue.
   const cached = resolvedCache.get(url)
-  if (cached) return Promise.resolve(cached)
+  if (cached) {
+    cached.lastUsed = ++lruTick
+    return Promise.resolve(cached.texture)
+  }
   // Already loading — share the same promise so we don't double-fetch.
   const inFlight = inFlightCache.get(url)
   if (inFlight) return inFlight
@@ -120,8 +183,14 @@ export function loadTexture(url: string): Promise<THREE.Texture> {
       url,
       (tex) => {
         configureTexture(tex)
-        resolvedCache.set(url, tex)
+        // refCount 0: a bare loadTexture is a pre-warm with no mounted owner.
+        // useBoardTexture takes its reference immediately after this resolves,
+        // which is what lifts the entry out of eviction range. The entry is
+        // inserted with the newest lastUsed, so the evict pass below can never
+        // choose it — it is by construction the most-recently-used idle entry.
+        resolvedCache.set(url, { texture: tex, refCount: 0, lastUsed: ++lruTick })
         inFlightCache.delete(url)
+        evictIdleEntries()
         resolve(tex)
       },
       undefined,
@@ -141,7 +210,10 @@ export function useBoardTexture(url: string | null | undefined): {
 } {
   // Synchronously seed from the resolved cache so a remount returns the texture on the first render —
   // no skeleton flash when the user toggles between 3D and 2D edit views for an already-loaded board.
-  const initialCached = url ? resolvedCache.get(url) ?? null : null
+  // This is a READ ONLY. The reference is taken in the effect below so that every
+  // increment has exactly one matching decrement in that effect's own cleanup;
+  // taking it here would leak a count on every re-render.
+  const initialCached = url ? resolvedCache.get(url)?.texture ?? null : null
   const [texture, setTexture] = useState<THREE.Texture | null>(initialCached)
 
   useEffect(() => {
@@ -149,27 +221,55 @@ export function useBoardTexture(url: string | null | undefined): {
       setTexture(null)
       return
     }
+
+    let cancelled = false
+    // The single url this effect has taken a reference on, captured in the
+    // closure so the cleanup can never release a different key than the one it
+    // acquired. StrictMode double-invokes effects as mount → cleanup → mount,
+    // which runs acquire → release → acquire and nets out to exactly one
+    // reference; a url change is handled the same way by the dep array.
+    let acquiredUrl: string | null = null
+
+    const adopt = (tex: THREE.Texture) => {
+      const entry = resolvedCache.get(url)
+      if (entry) {
+        entry.refCount += 1
+        entry.lastUsed = ++lruTick
+      } else {
+        // Defensive: only reachable if the entry vanished between resolving and
+        // adopting. Eviction is synchronous and always spares the newest entry,
+        // so this should not occur — but re-registering the texture we already
+        // hold is strictly better than rendering a disposed (black) board.
+        tex.needsUpdate = true
+        resolvedCache.set(url, { texture: tex, refCount: 1, lastUsed: ++lruTick })
+      }
+      acquiredUrl = url
+      setTexture(tex)
+    }
+
     // Cache hit: commit immediately, no network. Catches the remount case described above.
     const cached = resolvedCache.get(url)
     if (cached) {
-      setTexture(cached)
-      return
+      adopt(cached.texture)
+    } else {
+      // Cache miss: load (or join the in-flight promise) but keep the previous texture
+      // visible in the meantime so URL swaps don't flash.
+      loadTexture(url)
+        .then((tex) => {
+          if (cancelled) return
+          adopt(tex)
+        })
+        .catch((err) => {
+          if (cancelled) return
+          console.warn('Board texture load failed:', url, err)
+        })
     }
 
-    // Cache miss: load (or join the in-flight promise) but keep the previous texture
-    // visible in the meantime so URL swaps don't flash.
-    let cancelled = false
-    loadTexture(url)
-      .then((tex) => {
-        if (cancelled) return
-        setTexture(tex)
-      })
-      .catch((err) => {
-        if (cancelled) return
-        console.warn('Board texture load failed:', url, err)
-      })
     return () => {
       cancelled = true
+      // Null whenever adopt never ran (unmounted before the load resolved), so
+      // there is nothing to release and the count stays balanced.
+      if (acquiredUrl) releaseTexture(acquiredUrl)
     }
   }, [url])
 
