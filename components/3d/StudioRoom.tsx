@@ -2463,8 +2463,9 @@ export default function StudioRoom(props: StudioRoomProps) {
 
       {/* Camera mode toggle. Hidden in wall-edit mode, where the camera is
           driven into the wall and neither mode applies. */}
-      {editingWall === null && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 p-1 rounded-full shadow-lg"
+      {editingWall === null && roomView === 'room' && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3">
+        <div className="flex items-center gap-1 p-1 rounded-full shadow-lg"
              style={{ background: ROOM_CHROME.ink, border: `1px solid ${ROOM_CHROME.hairline}` }}>
           {(['walk', 'overview'] as const).map((mode) => {
             const isActive = cameraMode === mode
@@ -2484,6 +2485,13 @@ export default function StudioRoom(props: StudioRoomProps) {
               </button>
             )
           })}
+        </div>
+        <span
+          className="hidden lg:inline text-[10px] uppercase tracking-[0.16em] whitespace-nowrap"
+          style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: ROOM_CHROME.ink, opacity: 0.55 }}
+        >
+          Drag to orbit · Click a name to face their wall
+        </span>
         </div>
       )}
 
