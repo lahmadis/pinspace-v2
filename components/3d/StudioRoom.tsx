@@ -12,6 +12,7 @@ import WallSystem from './WallSystem'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry } from './CameraController'
+import { RoomCameraRig, type RoomCameraMode } from './RoomCameraModes'
 import { LaserPointer } from './LaserPointer'
 import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
@@ -31,6 +32,17 @@ import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import { toast } from '@/lib/toast'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
 
+
+/**
+ * Room chrome palette. Yellow appears ONLY on active state — here, the selected
+ * camera mode — and never on a wall, the floor, or behind a board.
+ */
+const ROOM_CHROME = {
+  ink: '#0B0B0B',
+  paper: '#FFFCF0',
+  yellow: '#FFC800',
+  hairline: '#C9C3B4',
+} as const
 
 interface WallDimensions {
   height: number
@@ -790,6 +802,22 @@ export default function StudioRoom(props: StudioRoomProps) {
 
     checkMembership()
   }, [user, props.workspaceId])
+  // Phase 3 camera modes. Walk is the default: level pitch, turn-only drag that
+  // snaps square-on to a wall on release. Overview restores the familiar orbit
+  // with its pitch clamped to a 16-58 degree band.
+  const [cameraMode, setCameraMode] = useState<RoomCameraMode>('walk')
+  const [facingWall, setFacingWall] = useState(0)
+  const [walkRequest, setWalkRequest] = useState<{ wall: number | null; nonce: number }>({ wall: null, nonce: 0 })
+
+  const stepWall = useCallback((direction: 1 | -1) => {
+    const count = props.wallConfig?.walls?.length ?? 0
+    if (count === 0) return
+    setWalkRequest((prev) => ({
+      wall: ((facingWall + direction) % count + count) % count,
+      nonce: prev.nonce + 1,
+    }))
+  }, [facingWall, props.wallConfig])
+
   const [editingWall, setEditingWall] = useState<number | null>(null)
   const [editingWallDimensions, setEditingWallDimensions] = useState<WallDimensions | null>(null)
   const [editingWallPosition, setEditingWallPosition] = useState<THREE.Vector3 | null>(null)
@@ -2332,6 +2360,52 @@ export default function StudioRoom(props: StudioRoomProps) {
         </div>
       )}
 
+      {/* Camera mode toggle. Hidden in wall-edit mode, where the camera is
+          driven into the wall and neither mode applies. */}
+      {editingWall === null && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 p-1 rounded-full shadow-lg"
+             style={{ background: ROOM_CHROME.ink, border: `1px solid ${ROOM_CHROME.hairline}` }}>
+          {(['walk', 'overview'] as const).map((mode) => {
+            const isActive = cameraMode === mode
+            return (
+              <button
+                key={mode}
+                onClick={() => setCameraMode(mode)}
+                aria-pressed={isActive}
+                className="px-4 py-1.5 rounded-full text-[11px] uppercase tracking-[0.16em] transition-colors"
+                style={{
+                  background: isActive ? ROOM_CHROME.yellow : 'transparent',
+                  color: isActive ? ROOM_CHROME.ink : ROOM_CHROME.paper,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                }}
+              >
+                {mode}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Walk-mode wall stepping. Edge chevrons rather than a control cluster so
+          they read as "the next bay is that way". */}
+      {editingWall === null && cameraMode === 'walk' && (props.wallConfig?.walls?.length ?? 0) > 1 && (
+        <>
+          {([['left', -1], ['right', 1]] as const).map(([side, dir]) => (
+            <button
+              key={side}
+              onClick={() => stepWall(dir)}
+              aria-label={side === 'left' ? 'Previous wall' : 'Next wall'}
+              className={`fixed top-1/2 -translate-y-1/2 ${side === 'left' ? 'left-4' : 'right-4'} z-40 w-11 h-16 rounded-xl shadow-lg flex items-center justify-center transition-opacity hover:opacity-90`}
+              style={{ background: ROOM_CHROME.ink, color: ROOM_CHROME.paper, border: `1px solid ${ROOM_CHROME.hairline}` }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d={side === 'left' ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6'} />
+              </svg>
+            </button>
+          ))}
+        </>
+      )}
+
       <div className="w-full h-screen">
         <Canvas
           shadows
@@ -2365,6 +2439,17 @@ export default function StudioRoom(props: StudioRoomProps) {
             liveChannelRef={props.liveChannelRef}
             isPresenter={!!props.isPresenter}
             editingWall={editingWall}
+          />
+          <RoomCameraRig
+            mode={cameraMode}
+            wallConfig={props.wallConfig}
+            orbitControlsRef={orbitControlsRef}
+            // Inert during wall editing and while following a presenter: both
+            // already own the camera, and two writers would fight per frame.
+            active={editingWall === null && !props.isFollowing}
+            requestedWall={walkRequest.wall}
+            requestNonce={walkRequest.nonce}
+            onFacingWallChange={setFacingWall}
           />
           <LaserPointer laserRef={props.laserRef} color={props.laserColor ?? '#22d3ee'} />
           <SceneContent
