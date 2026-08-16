@@ -15,6 +15,10 @@ import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, t
 import { RoomCameraRig, type RoomCameraMode } from './RoomCameraModes'
 import RosterPanel from '@/components/room/RosterPanel'
 import RoomMinimap from '@/components/room/RoomMinimap'
+import UnfoldedView from '@/components/room/UnfoldedView'
+import PlanView from '@/components/room/PlanView'
+import RevisionStrip, { type RoomView } from '@/components/room/RevisionStrip'
+import { buildRevisionNodes } from '@/lib/room/revisions'
 import { deriveRoomStudents, type RoomStudent } from '@/lib/room/students'
 import { LaserPointer } from './LaserPointer'
 import { EditModeOverlay } from './EditModeOverlay'
@@ -46,6 +50,12 @@ const ROOM_CHROME = {
   yellow: '#FFC800',
   hairline: '#C9C3B4',
 } as const
+
+/**
+ * Vertical space the view switcher and revision strip occupy at the bottom of
+ * the viewport. The 2D views inset by this so the strip is never covered.
+ */
+const REVISION_STRIP_CLEARANCE = 116
 
 interface WallDimensions {
   height: number
@@ -820,6 +830,16 @@ export default function StudioRoom(props: StudioRoomProps) {
 
   // Phase 4 roster. Derived from the boards already in state — no extra fetch.
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
+
+  // Phase 8: which of the three room views is showing. Room keeps the Canvas
+  // mounted; Unfolded and Plan overlay it so returning is instant and the WebGL
+  // context is never torn down and rebuilt.
+  const [roomView, setRoomView] = useState<RoomView>('room')
+
+  // Milestones are computed once per mount. Date.now() in render would make the
+  // component impure; a mount-time snapshot is stable and accurate enough for a
+  // strip whose granularity is days.
+  const revision = useMemo(() => buildRevisionNodes(new Date()), [])
 
   const handleSelectStudent = useCallback((student: RoomStudent) => {
     setSelectedStudentId((prev) => (prev === student.id ? null : student.id))
@@ -2397,11 +2417,47 @@ export default function StudioRoom(props: StudioRoomProps) {
         />
       )}
 
-      {editingWall === null && (
+      {editingWall === null && roomView === 'room' && (
         <RoomMinimap
           wallConfig={props.wallConfig}
           facingWall={facingWall}
           cameraPlanRef={cameraPlanRef}
+        />
+      )}
+
+      {/* Unfolded and Plan overlay the still-mounted Canvas rather than
+          replacing it, so switching back to Room does not rebuild the WebGL
+          context or reload every board texture. */}
+      {editingWall === null && roomView === 'unfolded' && (
+        <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
+          <UnfoldedView
+            boards={localBoards}
+            wallConfig={props.wallConfig}
+            students={roomStudents}
+            selectedStudentId={selectedStudentId}
+            onSelectStudent={handleSelectStudent}
+            onBoardClick={handleLightboxOpen}
+          />
+        </div>
+      )}
+
+      {editingWall === null && roomView === 'plan' && (
+        <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
+          <PlanView
+            wallConfig={props.wallConfig}
+            students={roomStudents}
+            selectedStudentId={selectedStudentId}
+            onSelectStudent={handleSelectStudent}
+          />
+        </div>
+      )}
+
+      {editingWall === null && (
+        <RevisionStrip
+          view={roomView}
+          onViewChange={setRoomView}
+          nodes={revision.nodes}
+          semester={revision.semester}
         />
       )}
 
