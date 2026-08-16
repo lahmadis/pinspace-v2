@@ -76,6 +76,12 @@ interface WallSystemProps {
    * Nothing else about the boards changes.
    */
   suppressCallouts?: boolean
+  /**
+   * Board ids belonging to the student selected in the roster. Their bay gets a
+   * yellow outline — an EDGE, drawn proud of the wall. Yellow never fills a wall
+   * or sits behind a sheet; it only ever marks active state.
+   */
+  highlightedBoardIds?: ReadonlySet<string>
 }
 
 // Wall surface + edge-shadow palette per color. The 'grey' values are
@@ -100,14 +106,16 @@ const WALL_PALETTES: Record<'grey' | 'white', {
 }
 
 /**
- * Room scheme. Deliberately contains NO yellow: a saturated field behind a
- * board fights the white sheet and black linework of an architecture drawing.
- * Yellow is reserved for active state (selected student, current wall in the
- * minimap) and must never reach a wall, the floor, or anything behind a board.
+ * Room scheme. A saturated field behind a board fights the white sheet and black
+ * linework of an architecture drawing, so `yellow` here is used for exactly one
+ * thing: the selected student's bay OUTLINE, drawn as lineSegments proud of the
+ * wall. It is never a surface colour — not a wall, not the floor, and never the
+ * field behind a sheet.
  */
 const ROOM_PALETTE = {
   floor: '#D8D3C6',
   green: '#14705C',
+  yellow: '#FFC800',
 } as const
 
 /**
@@ -128,6 +136,8 @@ const NAME_PLATE_ROW_STEP_IN = NAME_PLATE_SIZE_IN * 1.35
 const NAME_PLATE_OUTLINE_IN = NAME_PLATE_SIZE_IN * 0.045
 /** Mean glyph advance as a fraction of font size, for estimating plate width. */
 const NAME_PLATE_ADVANCE_RATIO = 0.55
+/** Breathing room between a selected bay's boards and its outline, in inches. */
+const BAY_FRAME_PADDING_IN = 3
 
 interface PlateLayoutInput {
   key: string
@@ -181,7 +191,7 @@ export function assignNamePlateRows(plates: PlateLayoutInput[]): Map<string, num
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false, highlightedBoardIds }: WallSystemProps) {
 
   const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
@@ -240,6 +250,42 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
           })
         }
         const plateRows = assignNamePlateRows(plateInputs)
+
+        // Selected student's bay: the bounding box of their boards on THIS wall
+        // side, drawn as a yellow outline set proud of the surface. Computed per
+        // side so a student with work on both faces gets a frame on each.
+        const bayFrames: Array<{
+          key: string; cx: number; cy: number; w: number; h: number; side: 'front' | 'back'
+        }> = []
+        if (highlightedBoardIds && highlightedBoardIds.size > 0) {
+          for (const side of ['front', 'back'] as const) {
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+            let found = false
+            for (const board of boardsOnWall) {
+              if (!board.position || !highlightedBoardIds.has(board.id)) continue
+              if ((board.position.side || 'front') !== side) continue
+              const { widthIn, heightIn } = getBoardSizeInches(board)
+              if (!widthIn || !heightIn || widthIn <= 0 || heightIn <= 0) continue
+              const cx = ((board.position.x / 100) - 0.5) * transform.width
+              const cy = ((board.position.y / 100) - 0.5) * transform.height
+              minX = Math.min(minX, cx - widthIn / 2)
+              maxX = Math.max(maxX, cx + widthIn / 2)
+              minY = Math.min(minY, cy - heightIn / 2)
+              maxY = Math.max(maxY, cy + heightIn / 2)
+              found = true
+            }
+            if (!found) continue
+            const pad = BAY_FRAME_PADDING_IN
+            bayFrames.push({
+              key: `${wallIndex}-${side}`,
+              cx: (minX + maxX) / 2,
+              cy: (minY + maxY) / 2,
+              w: (maxX - minX) + pad * 2,
+              h: (maxY - minY) + pad * 2,
+              side,
+            })
+          }
+        }
 
         return (
           <group 
@@ -441,6 +487,23 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                 </Fragment>
               )
             })}
+
+            {/* Selected student's bay outline. lineSegments, not a filled plane,
+                so nothing yellow ever sits behind a sheet. */}
+            {bayFrames.map((frame) => (
+              <lineSegments
+                key={frame.key}
+                position={[
+                  frame.cx,
+                  frame.cy,
+                  frame.side === 'back' ? -(3 + 0.3) : 3 + 0.3,
+                ]}
+                rotation={frame.side === 'back' ? [0, Math.PI, 0] : [0, 0, 0]}
+              >
+                <edgesGeometry args={[new THREE.PlaneGeometry(frame.w, frame.h)]} />
+                <lineBasicMaterial color={ROOM_PALETTE.yellow} />
+              </lineSegments>
+            ))}
 
             {/* Free-floating wall text labels (blob-persisted). Positioned by
                 the SAME normalized→world convention as boards. Hidden on the

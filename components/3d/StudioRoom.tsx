@@ -13,6 +13,8 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry } from './CameraController'
 import { RoomCameraRig, type RoomCameraMode } from './RoomCameraModes'
+import RosterPanel from '@/components/room/RosterPanel'
+import { deriveRoomStudents, type RoomStudent } from '@/lib/room/students'
 import { LaserPointer } from './LaserPointer'
 import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
@@ -214,6 +216,7 @@ function SceneContent({
   onDeselect,
   isWorkspaceMember,
   localBoards,
+  highlightedBoardIds,
   hoveredBoardId,
   onBoardHover,
   onBoardClick,
@@ -256,6 +259,7 @@ function SceneContent({
   onDeselect?: () => void
   isWorkspaceMember?: boolean
   localBoards: Board[]
+  highlightedBoardIds?: ReadonlySet<string>
   hoveredBoardId?: string | null
   onBoardHover?: (boardId: string | null) => void
   onBoardClick?: (board: Board) => void
@@ -351,6 +355,7 @@ function SceneContent({
       
       <WallSystem
         boards={localBoards}
+        highlightedBoardIds={highlightedBoardIds}
         // Hide the callout-count badges while a 2D panel covers the room — they
         // are z-60 DOM overlays and the panels are z-50, so they'd bleed onto it.
         suppressCallouts={suppressCallouts}
@@ -808,6 +813,17 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [cameraMode, setCameraMode] = useState<RoomCameraMode>('walk')
   const [facingWall, setFacingWall] = useState(0)
   const [walkRequest, setWalkRequest] = useState<{ wall: number | null; nonce: number }>({ wall: null, nonce: 0 })
+
+  // Phase 4 roster. Derived from the boards already in state — no extra fetch.
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
+
+  const handleSelectStudent = useCallback((student: RoomStudent) => {
+    setSelectedStudentId((prev) => (prev === student.id ? null : student.id))
+    // Snapping is a Walk-mode motion; selecting a student implies wanting to
+    // stand in front of their work, so switch modes rather than no-op.
+    setCameraMode('walk')
+    setWalkRequest((prev) => ({ wall: student.wallIndex, nonce: prev.nonce + 1 }))
+  }, [])
 
   const stepWall = useCallback((direction: 1 | -1) => {
     const count = props.wallConfig?.walls?.length ?? 0
@@ -1505,6 +1521,15 @@ export default function StudioRoom(props: StudioRoomProps) {
   // and the sidebar in server order. Both the arrows below and the counter
   // inside the modal must read THIS array or they'd disagree.
   const lightboxBoards = useMemo(() => orderBoardsForLightbox(localBoards), [localBoards])
+
+  // Roster rows and the selected student's board ids, both derived from the
+  // boards already in state so the panel costs no extra fetch.
+  const roomStudents = useMemo(() => deriveRoomStudents(localBoards), [localBoards])
+  const highlightedBoardIds = useMemo(() => {
+    if (!selectedStudentId) return undefined
+    const student = roomStudents.find((s) => s.id === selectedStudentId)
+    return student ? new Set(student.boardIds) : undefined
+  }, [selectedStudentId, roomStudents])
 
   /**
    * Persist a new slideshow position, then let the existing refetch path
@@ -2360,6 +2385,14 @@ export default function StudioRoom(props: StudioRoomProps) {
         </div>
       )}
 
+      {editingWall === null && (
+        <RosterPanel
+          students={roomStudents}
+          selectedStudentId={selectedStudentId}
+          onSelect={handleSelectStudent}
+        />
+      )}
+
       {/* Camera mode toggle. Hidden in wall-edit mode, where the camera is
           driven into the wall and neither mode applies. */}
       {editingWall === null && (
@@ -2462,6 +2495,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             // props.floorEditorOpen, which is undefined in uncontrolled use.
             suppressCallouts={lightboxBoard !== null || floorEditorOpen}
             localBoards={localBoards}
+            highlightedBoardIds={highlightedBoardIds}
             onWallDoubleClick={handleWallDoubleClick}
             onWallHover={handleWallHover}
             editingWall={editingWall}
