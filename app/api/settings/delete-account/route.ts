@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
+import { NOTIFY_EMAIL } from '@/lib/notifyEmail'
 
 /**
  * POST /api/settings/delete-account
  *
  * Soft-delete: sets deleted_at = now(). Full cascading hard-delete is deferred post-pilot.
- * Sends a notification email to slahmadi04@gmail.com via Resend so Sarah can manually
- * handle data cleanup. Requires RESEND_API_KEY env var; skips silently if absent.
+ * Sends a notification email via Resend to the operational notification address
+ * (PINSPACE_NOTIFY_EMAIL) so an operator can manually handle data cleanup.
+ * Requires RESEND_API_KEY env var; skips silently if absent.
  */
 export async function POST() {
   try {
@@ -28,7 +30,7 @@ export async function POST() {
       return NextResponse.json({ error: 'Failed to delete account' }, { status: 500 })
     }
 
-    // Notify Sarah so she can manually run cleanup
+    // Notify the operational address so cleanup can be run manually
     const resendKey = process.env.RESEND_API_KEY
     if (resendKey) {
       try {
@@ -40,7 +42,7 @@ export async function POST() {
           },
           body: JSON.stringify({
             from: 'PinSpace <noreply@mail.pinspace3d.com>',
-            to: ['slahmadi04@gmail.com'],
+            to: [NOTIFY_EMAIL],
             subject: `[PinSpace] Account deletion request — ${userEmail}`,
             html: `<p>User <strong>${userEmail}</strong> (id: ${session.user.id}) requested account deletion.</p><p>Their <code>user_profiles.deleted_at</code> is now set. Please manually clean up associated workspaces and boards when ready.</p>`,
           }),

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
+import { NOTIFY_EMAIL } from '@/lib/notifyEmail'
 
 /**
  * POST /api/feedback
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
           },
           body: JSON.stringify({
             from: 'PinSpace <noreply@mail.pinspace3d.com>',
-            to: ['slahmadi04@gmail.com'],
+            to: [NOTIFY_EMAIL],
             subject: `PinSpace feedback — ${preview}`,
             html,
           }),
