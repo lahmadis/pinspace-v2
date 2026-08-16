@@ -428,10 +428,6 @@ export function useBoardState(
         side,
     })
 
-    {
-      const before = boardPositionsRef.current.get(boardId)
-    }
-
     pushUndo()
 
     // Capture prior local state for rollback if the API save fails.
@@ -1083,7 +1079,6 @@ export function useBoardState(
    */
   const applyBoardLinkLocal = useCallback((boardId: string, linkUrl: string | null) => {
     const next = linkUrl || undefined
-    const beforeInArray = boardsRef.current.find(b => b.id === boardId)?.linkUrl
     boardsRef.current = boardsRef.current.map(b =>
       b.id === boardId && b.linkUrl !== next ? { ...b, linkUrl: next } : b
     )

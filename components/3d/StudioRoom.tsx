@@ -1237,8 +1237,6 @@ export default function StudioRoom(props: StudioRoomProps) {
         const isTemp = board.id.startsWith('temp-')
         const pos = boardPositions.get(board.id)
         const existing = currentPlaced.get(board.id)
-        const branch = pos ? 'USE_boardPositions' : existing ? 'KEEP_existing' : isTemp ? 'NEW_temp_center' : 'DROP'
-        const used = pos ?? existing ?? (isTemp ? { x: 0, y: 0, width: 0.3, height: 0.3 } : null)
         if (pos) {
           // boardPositions is the single source of truth for the live edit
           // session — for temp boards too. The old code force-pinned temp x/y
