@@ -16,7 +16,6 @@ export {
   IconButton,
   Input,
   Select,
-  Skeleton,
   Spinner,
   StatusState,
   Switch,
@@ -38,3 +37,9 @@ export { Tab, TabList, TabPanel, Tabs } from './Tabs'
 export { Tab as TabsTrigger, TabPanel as TabsContent } from './Tabs'
 export { Tooltip } from './Tooltip'
 export { default as PasswordInput } from './PasswordInput'
+export { Skeleton } from './Skeleton'
+export { TableSkeletonRows } from './TableSkeletonRows'
+export { CardSkeleton, MetricsSkeletonGrid } from './CardSkeleton'
+export { TablePagination } from './TablePagination'
+export { SegmentedControl } from './SegmentedControl'
+
