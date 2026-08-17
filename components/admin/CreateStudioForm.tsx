@@ -7,6 +7,8 @@ import { Button, Dialog, Input, Select, StatusState } from '@/components/ui'
 import { academicYearOptions } from '@/lib/academicYear'
 import { DEPARTMENTS, YEAR_LEVELS } from '@/lib/constants/departments'
 import { toast } from '@/lib/toast'
+import { createStudioSchema } from '@/lib/validations/admin'
+import { createAdminStudioApi } from '@/lib/api/admin'
 
 import InstructorPicker, { type UserSearchResult } from './InstructorPicker'
 
@@ -59,40 +61,33 @@ export default function CreateStudioForm({
     event.preventDefault()
     if (loading) return
     setError('')
-    if (!name.trim()) {
-      setError('Studio name is required')
+
+    const parseResult = createStudioSchema.safeParse({
+      name,
+      instructorUserId: effectiveInstructor?.userId,
+      department,
+      yearLevel,
+      academicYear,
+    })
+
+    if (!parseResult.success) {
+      setError(parseResult.error.issues[0]?.message || 'Invalid form input')
       return
     }
-    if (!effectiveInstructor) {
-      setError('Pick an instructor')
-      return
-    }
+
     setLoading(true)
     try {
-      const response = await fetch('/api/admin/studios', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          instructorUserId: effectiveInstructor.userId,
-          department,
-          yearLevel,
-          academicYear,
-        }),
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        setError(data.error || 'Failed to create studio')
-        return
-      }
+      const data = await createAdminStudioApi(parseResult.data)
       if (data.metadataApplied === false) {
         toast.error('Studio created, but department/year did not save. Set them from the studio.')
+      } else {
+        toast.success('Studio created successfully')
       }
       reset()
       setOpen(false)
       onCreated()
-    } catch {
-      setError('Request failed')
+    } catch (err: any) {
+      setError(err.message || 'Request failed')
     } finally {
       setLoading(false)
     }
@@ -100,7 +95,7 @@ export default function CreateStudioForm({
 
   return (
     <div>
-      <Button type="button" size="sm" className="min-h-11" onClick={() => setOpen(true)}>
+      <Button type="button" className="min-h-11 h-11 px-4 font-semibold inline-flex items-center gap-2" onClick={() => setOpen(true)}>
         <Plus className="h-4 w-4" aria-hidden="true" />
         {triggerLabel}
       </Button>
