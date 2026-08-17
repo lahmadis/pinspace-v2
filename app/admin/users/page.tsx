@@ -1,46 +1,24 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import PasswordInput from '@/components/ui/PasswordInput'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
-import { ShieldCheck, GraduationCap } from 'lucide-react'
+import PasswordInput from '@/components/ui/PasswordInput'
 import { AdminShell } from '@/components/admin/AdminShell'
-import {
-  Badge,
-  Button,
-  Card,
-  DataTable,
-  FormField,
-  Input,
-  Spinner,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  TableStateRow,
-} from '@/components/ui'
-
-type AccountRole = 'student' | 'instructor'
-
-interface AdminUser {
-  userId: string
-  email: string | null
-  fullName: string | null
-  organization: string | null
-  role: string | null // demographic
-  accountRole: AccountRole
-}
+import { UserMetricsStrip } from '@/components/admin/users/UserMetricsStrip'
+import { UsersTable } from '@/components/admin/users/UsersTable'
+import { getAdminMeApi, getAdminUsersApi } from '@/lib/api/admin'
+import type { AdminUser } from '@/types/admin'
+import { Button, Card, FormField, Input } from '@/components/ui'
 
 export default function AdminUsersPage() {
+  const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
   const [users, setUsers] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(true)
-  const [savingId, setSavingId] = useState<string | null>(null)
-  const [error, setError] = useState('')
   const [loadError, setLoadError] = useState('')
 
   // Admin sign-in (mirrors /admin)
@@ -61,36 +39,42 @@ export default function AdminUsersPage() {
     return () => subscription.unsubscribe()
   }, [])
 
-  useEffect(() => {
-    if (!isLoaded || !user?.id) return
-    fetch('/api/admin/me', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((data: { isAdmin?: boolean }) => setIsAdmin(Boolean(data?.isAdmin)))
-      .catch(() => setIsAdmin(false))
-  }, [isLoaded, user?.id])
+  const checkAdmin = useCallback(async () => {
+    try {
+      const data = await getAdminMeApi()
+      if (!data.isAdmin) {
+        setIsAdmin(false)
+        return false
+      }
+      setIsAdmin(true)
+      return true
+    } catch {
+      setIsAdmin(false)
+      return false
+    }
+  }, [])
 
-  const loadUsers = () => {
-    if (!isAdmin) return
+  const loadData = useCallback(async () => {
     setLoading(true)
     setLoadError('')
-    fetch('/api/admin/users', { cache: 'no-store' })
-      .then((r) => {
-        if (!r.ok) throw new Error('Failed to load users')
-        return r.json()
-      })
-      .then((data: { users?: AdminUser[] }) => setUsers(Array.isArray(data.users) ? data.users : []))
-      .catch(() => {
-        setUsers([])
-        setLoadError('Failed to load users')
-      })
-      .finally(() => setLoading(false))
-  }
+    try {
+      const data = await getAdminUsersApi()
+      setUsers(Array.isArray(data.users) ? data.users : [])
+    } catch {
+      setUsers([])
+      setLoadError('Failed to load users')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    // The request lifecycle intentionally owns loading and error state.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadUsers()
-  }, [isAdmin]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (isLoaded && user?.id) {
+      checkAdmin().then((ok) => {
+        if (ok) loadData()
+      })
+    }
+  }, [isLoaded, user?.id, checkAdmin, loadData])
 
   const handleAdminSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -105,34 +89,16 @@ export default function AdminUsersPage() {
     if (err) setSignInError(err.message || 'Sign in failed')
   }
 
-  const toggleRole = async (u: AdminUser) => {
-    const next: AccountRole = u.accountRole === 'instructor' ? 'student' : 'instructor'
-    setSavingId(u.userId)
-    setError('')
-    try {
-      const res = await fetch('/api/admin/users', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: u.userId, accountRole: next }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setError(data.error || 'Failed to update role')
-        return
-      }
-      setUsers((prev) => prev.map((x) => (x.userId === u.userId ? { ...x, accountRole: next } : x)))
-    } catch {
-      setError('Request failed')
-    } finally {
-      setSavingId(null)
-    }
-  }
-
   if (!isLoaded) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background" role="status" aria-label="Loading administrator session">
-        <Spinner className="h-12 w-12 text-accent" aria-hidden="true" />
-      </div>
+      <AdminShell
+        currentPath="/admin/users"
+        title="Users & roles"
+        description="Promote users to instructor or return them to the student role."
+      >
+        <UserMetricsStrip users={[]} loading={true} />
+        <UsersTable users={[]} loading={true} loadError="" onChanged={() => {}} />
+      </AdminShell>
     )
   }
 
@@ -179,9 +145,14 @@ export default function AdminUsersPage() {
 
   if (isAdmin === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background" role="status" aria-label="Checking administrator access">
-        <Spinner className="h-12 w-12 text-accent" aria-hidden="true" />
-      </div>
+      <AdminShell
+        currentPath="/admin/users"
+        title="Users & roles"
+        description="Promote users to instructor or return them to the student role."
+      >
+        <UserMetricsStrip users={[]} loading={true} />
+        <UsersTable users={[]} loading={true} loadError="" onChanged={() => {}} />
+      </AdminShell>
     )
   }
 
@@ -209,84 +180,21 @@ export default function AdminUsersPage() {
       title="Users & roles"
       description="Promote users to instructor or return them to the student role."
       actions={
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-          >
-            Sign out
-          </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
+        >
+          Sign out
+        </Button>
       }
     >
-
-        {error && <p className="text-sm text-danger mb-4">{error}</p>}
-
-        <Card className="overflow-hidden p-0">
-          <DataTable label="Users and roles">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Email</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Organization</TableHead>
-                <TableHead>Demographic</TableHead>
-                <TableHead>Account role</TableHead>
-                <TableHead align="right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableStateRow colSpan={6} status="loading" title="Loading users" />
-              ) : loadError ? (
-                <TableStateRow
-                  colSpan={6}
-                  status="error"
-                  title={loadError}
-                  description="The request failed; this is not an empty user list."
-                  actionLabel="Try again"
-                  onAction={loadUsers}
-                />
-              ) : users.length === 0 ? (
-                <TableStateRow colSpan={6} status="empty" title="No users yet." />
-              ) : (
-                users.map((u) => {
-                    const isInstr = u.accountRole === 'instructor'
-                    return (
-                      <TableRow key={u.userId}>
-                        <TableCell>{u.email || '—'}</TableCell>
-                        <TableCell>{u.fullName || '—'}</TableCell>
-                        <TableCell className="text-text-secondary">{u.organization || '—'}</TableCell>
-                        <TableCell className="capitalize text-text-secondary">{u.role || '—'}</TableCell>
-                        <TableCell>
-                          <Badge variant={isInstr ? 'accent' : 'neutral'} className="gap-1">
-                            {isInstr ? <ShieldCheck className="w-3 h-3" /> : <GraduationCap className="w-3 h-3" />}
-                            {u.accountRole}
-                          </Badge>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Button
-                            type="button"
-                            onClick={() => toggleRole(u)}
-                            loading={savingId === u.userId}
-                            variant={isInstr ? 'ghost' : 'secondary'}
-                            size="sm"
-                          >
-                            {isInstr
-                              ? 'Demote to student'
-                              : 'Promote to instructor'}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    )
-                })
-              )}
-            </TableBody>
-          </DataTable>
-        </Card>
-
-        <p className="text-xs text-text-dim text-center mt-3">
-          Only instructors can create classes and publish rooms to the network. The demographic column is informational
-          (from onboarding) and does not grant access.
-        </p>
+      <UserMetricsStrip users={users} loading={loading} />
+      <UsersTable users={users} loading={loading} loadError={loadError} onChanged={loadData} />
+      <p className="text-xs text-text-dim text-center mt-3">
+        Only instructors can create classes and publish rooms to the network. The demographic column is informational
+        (from onboarding) and does not grant access.
+      </p>
     </AdminShell>
   )
 }
