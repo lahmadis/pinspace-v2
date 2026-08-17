@@ -1,5 +1,6 @@
 .git
 node_modules
+documentation
 .next
 .next-dev
 .next-local

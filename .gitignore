@@ -12,6 +12,7 @@
 /.next-local/
 /.next-build/
 /out/
+documentation
 
 # production
 /build
