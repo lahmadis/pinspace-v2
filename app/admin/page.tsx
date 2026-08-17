@@ -1,1508 +1,234 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/set-state-in-effect */
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { supabase } from '@/lib/supabase/client'
-import PasswordInput from '@/components/ui/PasswordInput'
-import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
-  Building2,
-  ExternalLink,
   BarChart3,
-  Briefcase,
+  Building2,
   ChevronRight,
-  ChevronDown,
-  Users,
-  LayoutGrid,
-  Plus,
-  X,
-  Pencil,
-  Trash2,
-  UserPlus,
   GraduationCap,
-  Search,
+  UserCheck,
+  UserPlus,
+  Users,
 } from 'lucide-react'
-import { toast } from '@/lib/toast'
-import CreateStudioForm from '@/components/admin/CreateStudioForm'
-import InstructorPicker, { type UserSearchResult } from '@/components/admin/InstructorPicker'
-import {
-  Badge,
-  Button,
-  Card,
-  DataTable,
-  Dialog,
-  DialogActions,
-  FormField,
-  Input,
-  Select,
-  Spinner,
-  StatusState,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  TableStateRow,
-  buttonStyles,
-} from '@/components/ui'
+import { Card, MetricsSkeletonGrid, SegmentedControl } from '@/components/ui'
 import { AdminShell } from '@/components/admin/AdminShell'
+import { CreateOrgModal } from '@/components/admin/institutions/CreateOrgModal'
+import CreateStudioForm from '@/components/admin/CreateStudioForm'
+import {
+  getAdminMeApi,
+  getAdminOverviewApi,
+  getAdminStatsApi,
+  getAdminStudiosApi,
+  getRecentSignupsApi,
+} from '@/lib/api/admin'
+import type { AdminStats, AdminStudio, InstitutionWithCount, RecentSignup } from '@/types/admin'
+import { AreaTrendChart } from '@/components/admin/analytics/AreaTrendChart'
+import { AcademicYearDonutChart } from '@/components/admin/analytics/AcademicYearDonutChart'
+import { MajorBarChart } from '@/components/admin/analytics/MajorBarChart'
+import { AcquisitionBarChart } from '@/components/admin/analytics/AcquisitionBarChart'
+import { HealthGaugesCard } from '@/components/admin/analytics/HealthGaugesCard'
 
-type WorkspaceRow = { id: string; name: string; type?: string; created_at?: string }
-
-type AdminStudio = {
-  id: string
-  name: string
-  type: string
-  ownerId: string
-  ownerName: string | null
-  department: string | null
-  academicYear: string | null
-  instructorLabel: string | null
-  createdAt: string
-  provisionedByAdmin: boolean
-  isArchived: boolean
-  adminIsMember: boolean
-}
-
-type AdminInstructor = {
-  userId: string
-  fullName: string | null
-  email: string | null
-  organization: string | null
-  accountRole: 'instructor' | 'student'
-  classCount: number
-  hasProfile: boolean
-}
-
-type SignupStatus = 'active' | 'no_profile' | 'unverified'
-
-type RecentSignup = {
-  userId: string
-  email: string | null
-  fullName: string | null
-  organization: string | null
-  createdAt: string
-  lastSignInAt: string | null
-  status: SignupStatus
-}
-
-type InstitutionWithCount = {
-  id: string
-  name: string
-  slug: string
-  network_label?: string | null
-  type?: 'university' | 'firm' | null
-  workspace_count: number
-  user_count: number
-  workspaces: WorkspaceRow[]
-  domains: string[]
-}
-
-const DOMAIN_RE = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/
-
-function StatBlock({ title, data }: { title: string; data: Record<string, number> }) {
-  const entries = Object.entries(data).sort(([, a], [, b]) => b - a)
-  if (entries.length === 0) {
-    return (
+function StatCard({ label, value, hint, icon: Icon }: { label: string; value: number | string; hint?: string; icon: any }) {
+  return (
+    <Card className="p-5 flex items-start justify-between">
       <div>
-        <h3 className="text-sm font-medium text-text-primary mb-2">{title}</h3>
-        <p className="text-sm text-text-secondary">No data yet</p>
+        <p className="text-xs font-semibold text-text-dim uppercase tracking-wider">{label}</p>
+        <p className="text-2xl font-bold text-text-primary tabular-nums mt-1">{value}</p>
+        {hint && <p className="text-xs text-text-secondary mt-1">{hint}</p>}
       </div>
-    )
-  }
-  return (
-    <div>
-      <h3 className="text-sm font-medium text-text-primary mb-2">{title}</h3>
-      <ul className="space-y-1">
-        {entries.map(([key, count]) => (
-          <li key={key} className="flex justify-between text-sm">
-            <span className="text-text-secondary truncate max-w-[140px]">{key}</span>
-            <span className="font-medium text-text-primary">{count}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-const MINUTE = 60_000
-const HOUR = 60 * MINUTE
-const DAY = 24 * HOUR
-
-/** "Mar 14, 2026" */
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-/** "2 days ago" */
-function timeAgo(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime()
-  if (diff < MINUTE) return 'just now'
-  const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'} ago`
-  if (diff < HOUR) return plural(Math.floor(diff / MINUTE), 'minute')
-  if (diff < DAY) return plural(Math.floor(diff / HOUR), 'hour')
-  const days = Math.floor(diff / DAY)
-  if (days < 30) return plural(days, 'day')
-  if (days < 365) return plural(Math.floor(days / 30), 'month')
-  return plural(Math.floor(days / 365), 'year')
-}
-
-const SIGNUP_STATUS: Record<SignupStatus, { label: string; className: string }> = {
-  active: { label: 'Active', className: 'bg-success/15 text-success' },
-  no_profile: { label: 'No profile', className: 'bg-warning/15 text-warning' },
-  unverified: { label: 'Unverified', className: 'bg-background-lighter text-text-secondary' },
-}
-
-function RecentSignupsCard({ signups, loading }: { signups: RecentSignup[]; loading: boolean }) {
-  return (
-    <Card className="mb-6 overflow-hidden">
-      <div className="px-6 py-3 border-b border-border bg-background flex items-center gap-2">
-        <UserPlus className="w-4 h-4 text-accent" />
-        <h2 className="text-sm font-semibold text-text-primary">Recent signups</h2>
-        <span className="text-xs text-text-dim ml-1">newest accounts first</span>
+      <div className="p-2.5 bg-primary-muted rounded-lg text-accent">
+        <Icon className="w-5 h-5" />
       </div>
-
-      <DataTable label="Recent account signups">
-        <TableHeader>
-          <TableRow>
-            <TableHead>User</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Organization</TableHead>
-            <TableHead>Signed up</TableHead>
-            <TableHead>Last seen</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {loading ? (
-            <TableStateRow colSpan={5} status="loading" title="Loading recent signups" />
-          ) : signups.length === 0 ? (
-            <TableStateRow colSpan={5} status="empty" title="No signups yet." />
-          ) : (
-            signups.map((s) => {
-                const status = SIGNUP_STATUS[s.status] ?? SIGNUP_STATUS.unverified
-                return (
-                  <TableRow key={s.userId}>
-                    <TableCell>
-                      {s.fullName ? (
-                        <>
-                          <p className="font-medium text-text-primary">{s.fullName}</p>
-                          <p className="text-xs text-text-dim mt-0.5">{s.email || '—'}</p>
-                        </>
-                      ) : (
-                        <p className="font-medium text-text-primary">{s.email || '—'}</p>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${status.className}`}>
-                        {status.label}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {s.organization ? (
-                        <span className="text-text-primary">{s.organization}</span>
-                      ) : (
-                        <span className="text-text-dim">Personal</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <p className="text-text-primary">{formatDate(s.createdAt)}</p>
-                      <p className="text-xs text-text-dim mt-0.5">{timeAgo(s.createdAt)}</p>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {s.lastSignInAt ? (
-                        <>
-                          <p className="text-text-primary">{formatDate(s.lastSignInAt)}</p>
-                          <p className="text-xs text-text-dim mt-0.5">{timeAgo(s.lastSignInAt)}</p>
-                        </>
-                      ) : (
-                        <span className="text-text-dim">Never</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                )
-              })
-          )}
-        </TableBody>
-      </DataTable>
     </Card>
   )
 }
 
-/**
- * Everyone who teaches, or could — a filtered admin-side VIEW over accounts and
- * the class studios they own. Not impersonation: nothing here creates, borrows
- * or swaps a session, and clicking through renders an admin report about a
- * person, never that person's own view of the app.
- *
- * Search is client-side over an already-loaded list. The population is small by
- * construction (people who own a class or carry the instructor role), so there
- * is no debounced round trip to justify — unlike InstructorPicker, which
- * searches every account on the platform.
- */
-function InstructorsCard({
-  instructors,
-  loading,
-  failed,
-}: {
-  instructors: AdminInstructor[]
-  loading: boolean
-  /** The fetch broke. Distinct from an empty list, and must not read as one. */
-  failed: boolean
-}) {
-  const [query, setQuery] = useState('')
 
-  const q = query.trim().toLowerCase()
-  const filtered = q.length === 0
-    ? instructors
-    : instructors.filter((i) =>
-        (i.fullName ?? '').toLowerCase().includes(q) ||
-        (i.email ?? '').toLowerCase().includes(q) ||
-        (i.organization ?? '').toLowerCase().includes(q)
-      )
+const SUB_ROUTES = [
+  { label: 'Studios & Classrooms', href: '/admin/studios', description: 'Provision pilot studios, transfer owners & manage members.', icon: GraduationCap },
+  { label: 'Instructor Directory', href: '/admin/instructors', description: 'Roster of accounts that teach or own class rooms.', icon: UserCheck },
+  { label: 'Users & Account Roles', href: '/admin/users', description: 'Promote or demote student and instructor roles.', icon: Users },
+  { label: 'Institutions & Firms', href: '/admin/institutions', description: 'Schools, design firms, and verified email domains.', icon: Building2 },
+  { label: 'Account Signups', href: '/admin/signups', description: 'Live account registration feed and activity.', icon: UserPlus },
+]
 
-  return (
-    <Card className="mb-6 overflow-hidden">
-      <div className="px-6 py-3 border-b border-border bg-background flex items-center gap-2">
-        <UserPlus className="w-4 h-4 text-accent" />
-        <h2 className="text-sm font-semibold text-text-primary">Instructors</h2>
-        <span className="text-xs text-text-dim ml-1">owns a class, or has the instructor role</span>
-        <div className="ml-auto relative">
-          <Search className="w-3.5 h-3.5 text-text-dim absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <Input
-            aria-label="Search instructors"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search instructors"
-            className="h-9 w-56 pl-8"
-          />
-        </div>
-      </div>
-
-      <DataTable label="Instructor accounts">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Instructor</TableHead>
-            <TableHead>Email</TableHead>
-            <TableHead>Organization</TableHead>
-            <TableHead align="right">Studios</TableHead>
-            <TableHead align="right"><span className="sr-only">Actions</span></TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {loading ? (
-            <TableStateRow colSpan={5} status="loading" title="Loading instructors" />
-          ) : failed ? (
-            <TableStateRow colSpan={5} status="error" title="Couldn’t load instructors." description="This is a failed request, not an empty list. Reload to try again." />
-          ) : instructors.length === 0 ? (
-            <TableStateRow colSpan={5} status="empty" title="No instructors yet." />
-          ) : filtered.length === 0 ? (
-            <TableStateRow colSpan={5} status="empty" title={`No instructor matches “${query.trim()}”.`} />
-          ) : (
-            filtered.map((i) => (
-                <TableRow key={i.userId}>
-                  <TableCell>
-                    <p className="font-medium text-text-primary">{i.fullName || '—'}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      {/* Owns a class but cannot create another: POST /api/workspaces
-                          gates class creation on account_role. Admin-actionable
-                          from /admin/users. */}
-                      {i.accountRole !== 'instructor' && (
-                        <Badge variant="warning">
-                          No instructor role
-                        </Badge>
-                      )}
-                      {!i.hasProfile && (
-                        <span className="text-xs text-text-dim">Has not onboarded</span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-text-secondary">{i.email || '—'}</TableCell>
-                  <TableCell className="text-text-secondary">{i.organization || '—'}</TableCell>
-                  <TableCell align="right" className="text-text-primary tabular-nums">{i.classCount}</TableCell>
-                  <TableCell align="right">
-                    <Link
-                      href={`/admin/instructors/${i.userId}`}
-                      className={buttonStyles({ variant: 'ghost', size: 'sm' })}
-                    >
-                      View
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              ))
-          )}
-        </TableBody>
-      </DataTable>
-    </Card>
-  )
-}
-
-function TransferOwnerModal({
-  studio,
-  onClose,
-  onTransferred,
-}: {
-  studio: AdminStudio
-  onClose: () => void
-  onTransferred: () => void
-}) {
-  const [target, setTarget] = useState<UserSearchResult | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (loading) return
-    setError('')
-    if (!target) { setError('Pick the new owner'); return }
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/admin/studios/${studio.id}/owner`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ownerId: target.userId }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) { setError(data.error || 'Failed to transfer studio'); return }
-      // Ownership moved even when the membership step didn't — the route says so
-      // explicitly. Surface that rather than reporting a clean success, since the
-      // new owner would be missing from every member-gated query until it's fixed.
-      if (data.membershipEnsured === false) {
-        toast.error('Ownership transferred, but adding them as instructor failed. Check the studio members.')
-      }
-      onClose()
-      onTransferred()
-    } catch {
-      setError('Request failed')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <Dialog
-      open
-      onOpenChange={(next) => { if (!next && !loading) onClose() }}
-      closeOnOutsideClick={!loading}
-      hideCloseButton={loading}
-      title="Transfer ownership?"
-      description="Confirm the new owner and review exactly which permissions change."
-    >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="px-3 py-2 bg-background border border-border rounded-lg">
-            <p className="text-sm font-medium text-text-primary">{studio.name}</p>
-            <p className="text-xs text-text-secondary mt-0.5">
-              Currently owned by {studio.ownerName || 'an unresolved account'}
-            </p>
-          </div>
-          <div>
-            <InstructorPicker
-              label="New owner"
-              selected={target}
-              onSelect={setTarget}
-              emptyHint="No account matches. They must sign up before a studio can be transferred to them."
-            />
-            <p className="text-xs text-text-secondary mt-1">
-              They become the owner and are added as an instructor. The previous owner keeps
-              instructor access — their boards stay in this studio — but loses publish, archive,
-              delete and enrol.
-            </p>
-          </div>
-          {error && <StatusState status="error" title={error} />}
-          <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
-            <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Cancel transfer</Button>
-            <Button type="submit" loading={loading} aria-label={loading ? 'Transferring ownership' : 'Confirm ownership transfer'}>
-              {loading ? 'Transferring…' : 'Transfer'}
-            </Button>
-          </div>
-        </form>
-    </Dialog>
-  )
-}
-
-function StudiosCard({
-  studios,
-  loading,
-  onChanged,
-}: {
-  studios: AdminStudio[]
-  loading: boolean
-  onChanged: () => void
-}) {
-  const [busyId, setBusyId] = useState<string | null>(null)
-  const [transferring, setTransferring] = useState<AdminStudio | null>(null)
-
-  const toggleMembership = async (studio: AdminStudio) => {
-    setBusyId(studio.id)
-    try {
-      const res = await fetch(`/api/admin/studios/${studio.id}/membership`, {
-        method: studio.adminIsMember ? 'DELETE' : 'POST',
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        toast.error(data.error || 'Failed to update membership')
-        return
-      }
-      onChanged()
-    } catch {
-      toast.error('Request failed')
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  return (
-    <Card className="mb-6 overflow-hidden">
-      <div className="px-6 py-3 border-b border-border bg-background flex items-center gap-2">
-        <GraduationCap className="w-4 h-4 text-accent" />
-        <h2 className="text-sm font-semibold text-text-primary">Studios</h2>
-        <span className="text-xs text-text-dim ml-1">newest first</span>
-        <div className="ml-auto">
-          <CreateStudioForm onCreated={onChanged} />
-        </div>
-      </div>
-
-      <DataTable label="Studios">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Studio</TableHead>
-            <TableHead>Owner</TableHead>
-            <TableHead>Department</TableHead>
-            <TableHead>Year</TableHead>
-            <TableHead>Origin</TableHead>
-            <TableHead align="right">Access</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {loading ? (
-            <TableStateRow colSpan={6} status="loading" title="Loading studios" />
-          ) : studios.length === 0 ? (
-            <TableStateRow colSpan={6} status="empty" title="No studios yet." />
-          ) : (
-            studios.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell>
-                    <p className="font-medium text-text-primary">{s.name}</p>
-                    <p className="text-xs text-text-dim mt-0.5">
-                      {s.type}
-                      {s.isArchived && ' · archived'}
-                    </p>
-                  </TableCell>
-                  <TableCell className="text-text-primary">
-                    <p>{s.ownerName || '—'}</p>
-                    <Button
-                      type="button"
-                      onClick={() => setTransferring(s)}
-                      variant="ghost"
-                      size="sm"
-                      className="mt-0.5 min-h-0 px-0 py-1 text-xs"
-                    >
-                      Transfer
-                    </Button>
-                  </TableCell>
-                  <TableCell className="text-text-secondary">{s.department || '—'}</TableCell>
-                  <TableCell className="whitespace-nowrap text-text-secondary">{s.academicYear || '—'}</TableCell>
-                  <TableCell>
-                    {s.provisionedByAdmin ? (
-                      <Badge variant="accent">Provisioned</Badge>
-                    ) : (
-                      <span className="text-xs text-text-dim">Organic</span>
-                    )}
-                  </TableCell>
-                  <TableCell align="right">
-                    <Button
-                      type="button"
-                      onClick={() => toggleMembership(s)}
-                      disabled={busyId === s.id}
-                      variant={s.adminIsMember ? 'secondary' : 'primary'}
-                      size="sm"
-                      loading={busyId === s.id}
-                    >
-                      {s.adminIsMember ? 'Leave' : 'Join'}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-          )}
-        </TableBody>
-      </DataTable>
-
-      {transferring && (
-        <TransferOwnerModal
-          studio={transferring}
-          onClose={() => setTransferring(null)}
-          onTransferred={onChanged}
-        />
-      )}
-    </Card>
-  )
-}
-
-function DomainChipInput({
-  inputId,
-  domains,
-  onAdd,
-  onRemove,
-  error,
-  onErrorClear,
-  disabled = false,
-}: {
-  inputId: string
-  domains: string[]
-  onAdd: (d: string) => void
-  onRemove: (d: string) => void
-  error: string
-  onErrorClear: () => void
-  disabled?: boolean
-}) {
-  const [input, setInput] = useState('')
-
-  const commit = () => {
-    const d = input.trim().toLowerCase().replace(/^https?:\/\//i, '')
-    onErrorClear()
-    if (!d) return
-    if (!DOMAIN_RE.test(d)) {
-      onAdd('\x00INVALID:' + d)
-      return
-    }
-    onAdd(d)
-    setInput('')
-  }
-
-  return (
-    <div>
-      <div className="flex gap-2">
-        <Input
-          id={inputId}
-          disabled={disabled}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit() } }}
-          placeholder="e.g. wit.edu"
-          className="flex-1"
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? `${inputId}-error` : undefined}
-        />
-        <Button
-          type="button"
-          onClick={commit}
-          disabled={disabled}
-          variant="secondary"
-        >
-          Add
-        </Button>
-      </div>
-      {error && <p id={`${inputId}-error`} role="alert" className="text-xs text-danger mt-1">{error}</p>}
-      {domains.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {domains.map((d) => (
-            <span key={d} className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-muted text-accent rounded text-xs font-medium border border-accent">
-              {d}
-              <Button type="button" onClick={() => onRemove(d)} disabled={disabled} aria-label={`Remove ${d}`} variant="ghost" size="sm" className="ml-0.5 min-w-11 px-2 text-accent">
-                <X className="w-3 h-3" />
-              </Button>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [form, setForm] = useState({
-    name: '',
-    slug: '',
-    type: 'university' as 'university' | 'firm',
-    network_label: '',
-  })
-  const [domains, setDomains] = useState<string[]>([])
-  const [domainError, setDomainError] = useState('')
-
-  const autoSlug = () => {
-    if (form.slug) return
-    setForm((p) => ({
-      ...p,
-      slug: p.name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-    }))
-  }
-
-  const handleDomainAdd = (d: string) => {
-    if (d.startsWith('\x00INVALID:')) {
-      setDomainError('Invalid format — use e.g. wit.edu')
-      return
-    }
-    if (domains.includes(d)) {
-      setDomainError('Already added')
-      return
-    }
-    setDomains((prev) => [...prev, d])
-  }
-
-  const reset = () => {
-    setForm({ name: '', slug: '', type: 'university', network_label: '' })
-    setDomains([])
-    setDomainError('')
-    setError('')
-  }
-
-  const setDialogOpen = (next: boolean) => {
-    if (!next && loading) return
-    if (!next) reset()
-    setOpen(next)
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    if (!form.name.trim() || !form.slug.trim()) {
-      setError('Name and slug are required')
-      return
-    }
-    setLoading(true)
-    try {
-      const res = await fetch('/api/institutions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: form.name.trim(),
-          slug: form.slug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-          type: form.type,
-          network_label: form.network_label.trim() || undefined,
-          domains,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error || 'Failed to create')
-        return
-      }
-      reset()
-      setOpen(false)
-      onCreated()
-    } catch {
-      setError('Request failed')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div>
-      <Button
-        type="button"
-        onClick={() => setOpen(true)}
-      >
-        <Plus className="w-4 h-4" />
-        New org
-      </Button>
-
-      <Dialog
-        open={open}
-        onOpenChange={setDialogOpen}
-        closeOnOutsideClick={!loading}
-        hideCloseButton={loading}
-        title="Create organization"
-        description="Create an institution or firm and define its verified email domains."
-      >
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <FormField id="create-org-type" label="Type">
-                {(controlProps) => <Select
-                  {...controlProps}
-                  value={form.type}
-                  onChange={(e) => setForm((p) => ({ ...p, type: e.target.value as 'university' | 'firm' }))}
-                >
-                  <option value="university">University (school)</option>
-                  <option value="firm">Firm</option>
-                </Select>}
-              </FormField>
-              <FormField id="create-org-name" label="Name">
-                {(controlProps) => <Input
-                  {...controlProps}
-                  value={form.name}
-                  onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                  onBlur={autoSlug}
-                  placeholder="e.g. Wentworth Institute of Technology"
-                />}
-              </FormField>
-              <FormField id="create-org-slug" label="Slug" description={`Handoff link: /i/${form.slug || 'slug'}`}>
-                {(controlProps) => <Input
-                  {...controlProps}
-                  value={form.slug}
-                  onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value }))}
-                  placeholder="e.g. wit"
-                />}
-              </FormField>
-              <FormField id="create-org-network-label" label="Network label" description="Optional">
-                {(controlProps) => <Input
-                  {...controlProps}
-                  value={form.network_label}
-                  onChange={(e) => setForm((p) => ({ ...p, network_label: e.target.value }))}
-                  placeholder="e.g. WIT Design Network"
-                />}
-              </FormField>
-              <div>
-                <label htmlFor="create-org-domain" className="block text-sm font-medium text-text-primary mb-1">
-                  Allowed email domains
-                </label>
-                <DomainChipInput
-                  inputId="create-org-domain"
-                  domains={domains}
-                  onAdd={handleDomainAdd}
-                  onRemove={(d) => setDomains((prev) => prev.filter((x) => x !== d))}
-                  error={domainError}
-                  onErrorClear={() => setDomainError('')}
-                />
-                <p className="text-xs text-text-secondary mt-1">Leave empty for no restriction.</p>
-              </div>
-              {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-              <DialogActions>
-                <Button
-                  type="button"
-                  onClick={() => setDialogOpen(false)}
-                  variant="secondary"
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  loading={loading}
-                  className="flex-1"
-                >
-                  Create
-                </Button>
-              </DialogActions>
-            </form>
-      </Dialog>
-    </div>
-  )
-}
-
-function OrgRow({ inst, onEdit }: { inst: InstitutionWithCount; onEdit: (inst: InstitutionWithCount) => void }) {
-  const [expanded, setExpanded] = useState(false)
-
-  return (
-    <li className="border-b border-border last:border-0">
-      <div className="flex flex-col items-stretch gap-3 px-4 py-4 transition-colors hover:bg-primary-muted sm:flex-row sm:items-center sm:gap-4 sm:px-6">
-        {/* Expand toggle */}
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-pinspace text-text-dim hover:bg-background-lighter hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          title={expanded ? 'Collapse' : 'Show studios'}
-        >
-          {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4 text-text-dim" />}
-        </button>
-
-        {/* Name + meta */}
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-text-primary truncate">{inst.name}</p>
-          <p className="text-xs text-text-dim mt-0.5">
-            /i/{inst.slug}
-            {inst.domains?.length ? ` · ${inst.domains.join(', ')}` : ' · no domain restriction'}
-          </p>
-        </div>
-
-        {/* Counts */}
-        <div className="flex shrink-0 flex-wrap items-center gap-4">
-          <span className="flex items-center gap-1 text-sm text-text-secondary whitespace-nowrap" title="Users">
-            <Users className="w-4 h-4 text-text-dim" />
-            {inst.user_count}
-          </span>
-          <span className="flex items-center gap-1 text-sm text-text-secondary whitespace-nowrap" title="Studio rooms">
-            <LayoutGrid className="w-4 h-4 text-text-dim" />
-            {inst.workspace_count}
-          </span>
-        </div>
-
-        {/* Actions */}
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <Link
-            href={`/admin/institutions/${inst.slug}`}
-            className="inline-flex min-h-11 items-center rounded-pinspace px-3 py-2 text-xs font-medium text-accent hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            Full stats
-          </Link>
-          <button
-            type="button"
-            onClick={() => onEdit(inst)}
-            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace text-text-dim hover:bg-background-lighter hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            title="Edit"
-            aria-label={`Edit ${inst.name}`}
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
-          <a
-            href={`/i/${inst.slug}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace text-text-dim hover:bg-background-lighter hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            title="Open explore"
-            aria-label={`Open ${inst.name} explore page`}
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        </div>
-      </div>
-
-      {/* Expanded studio list */}
-      {expanded && (
-        <div className="px-6 pb-4 ml-10">
-          {inst.workspaces.length === 0 ? (
-            <p className="text-sm text-text-dim italic">No studio rooms yet</p>
-          ) : (
-            <ul className="space-y-1.5">
-              {inst.workspaces.map((ws) => (
-                <li key={ws.id} className="flex items-center justify-between text-sm text-text-secondary py-1 border-b border-border last:border-0">
-                  <span className="font-medium text-text-primary">{ws.name || 'Unnamed'}</span>
-                  <span className="text-xs text-text-dim">
-                    {ws.type || 'class'} · {ws.created_at ? new Date(ws.created_at).toLocaleDateString() : ''}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-    </li>
-  )
-}
-
-function EditOrgModal({
-  inst,
-  onClose,
-  onSaved,
-}: {
-  inst: InstitutionWithCount
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [form, setForm] = useState({
-    name: inst.name,
-    slug: inst.slug,
-    type: (inst.type === 'firm' ? 'firm' : 'university') as 'university' | 'firm',
-    network_label: inst.network_label ?? '',
-  })
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const deleteCancelRef = useRef<HTMLButtonElement>(null)
-  const deleteTriggerRef = useRef<HTMLButtonElement>(null)
-
-  // Domain management — fetched live on open
-  const [domains, setDomains] = useState<{ id: string; domain: string }[]>([])
-  const [domainsLoading, setDomainsLoading] = useState(true)
-  const [domainError, setDomainError] = useState('')
-  const [domainAdding, setDomainAdding] = useState(false)
-  const [domainRemoving, setDomainRemoving] = useState<string | null>(null)
-  const mutationPending = loading || deleting || domainAdding || domainRemoving !== null
-
-  useEffect(() => {
-    fetch(`/api/admin/institutions/${encodeURIComponent(inst.slug)}/domains`, { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((data: { domains?: { id: string; domain: string }[] }) => {
-        setDomains(Array.isArray(data.domains) ? data.domains : [])
-      })
-      .catch(() => {})
-      .finally(() => setDomainsLoading(false))
-  }, [inst.slug])
-
-  const handleDomainAdd = async (d: string) => {
-    if (mutationPending) return
-    if (d.startsWith('\x00INVALID:')) {
-      setDomainError('Invalid format — use e.g. wit.edu')
-      return
-    }
-    setDomainError('')
-    setDomainAdding(true)
-    try {
-      const res = await fetch(`/api/admin/institutions/${encodeURIComponent(inst.slug)}/domains`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain: d }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setDomainError(data.error || 'Failed to add domain')
-        return
-      }
-      setDomains((prev) => [...prev, data.domain])
-    } catch {
-      setDomainError('Request failed')
-    } finally {
-      setDomainAdding(false)
-    }
-  }
-
-  const handleDomainRemove = async (domainId: string, domainStr: string) => {
-    if (mutationPending) return
-    setDomainError('')
-    setDomainRemoving(domainId)
-    try {
-      const res = await fetch(
-        `/api/admin/institutions/${encodeURIComponent(inst.slug)}/domains/${encodeURIComponent(domainStr)}`,
-        { method: 'DELETE' }
-      )
-      if (!res.ok) {
-        const data = await res.json()
-        setDomainError(data.error || 'Failed to remove domain')
-        return
-      }
-      setDomains((prev) => prev.filter((d) => d.id !== domainId))
-    } catch {
-      setDomainError('Request failed')
-    } finally {
-      setDomainRemoving(null)
-    }
-  }
-
-  const handleDelete = async () => {
-    if (mutationPending) return
-    setDeleting(true)
-    try {
-      const res = await fetch(`/api/admin/institutions/${encodeURIComponent(inst.slug)}`, { method: 'DELETE' })
-      if (!res.ok) {
-        const data = await res.json()
-        setError(data.error || 'Failed to delete')
-        setDeleting(false)
-        setConfirmDelete(false)
-        return
-      }
-      onClose()
-      onSaved()
-    } catch {
-      setError('Request failed')
-      setDeleting(false)
-      setConfirmDelete(false)
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (mutationPending) return
-    setError('')
-    if (!form.name.trim() || !form.slug.trim()) {
-      setError('Name and slug are required')
-      return
-    }
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/admin/institutions/${encodeURIComponent(inst.slug)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: form.name.trim(),
-          slug: form.slug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-          type: form.type,
-          network_label: form.network_label.trim() || undefined,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error || 'Failed to update')
-        return
-      }
-      onClose()
-      onSaved()
-    } catch {
-      setError('Request failed')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const beginDeleteConfirmation = () => {
-    setConfirmDelete(true)
-    window.setTimeout(() => deleteCancelRef.current?.focus(), 0)
-  }
-
-  const cancelDeleteConfirmation = () => {
-    setConfirmDelete(false)
-    window.setTimeout(() => deleteTriggerRef.current?.focus(), 0)
-  }
-
-  return (
-    <Dialog
-      open
-      onOpenChange={(next) => { if (!next && !mutationPending) onClose() }}
-      closeOnOutsideClick={!mutationPending}
-      hideCloseButton={mutationPending}
-      title="Edit organization"
-      description={`Update ${inst.name} without changing its existing access contract.`}
-    >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <FormField id="edit-org-type" label="Type">
-            {(controlProps) => <Select
-              {...controlProps}
-              value={form.type}
-              disabled={mutationPending}
-              onChange={(e) => setForm((p) => ({ ...p, type: e.target.value as 'university' | 'firm' }))}
-            >
-              <option value="university">University (school)</option>
-              <option value="firm">Firm</option>
-            </Select>}
-          </FormField>
-          <FormField id="edit-org-name" label="Name">
-            {(controlProps) => <Input
-              {...controlProps}
-              value={form.name}
-              disabled={mutationPending}
-              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-            />}
-          </FormField>
-          <FormField id="edit-org-slug" label="Slug" description={`Handoff link: /i/${form.slug || 'slug'}`}>
-            {(controlProps) => <Input
-              {...controlProps}
-              value={form.slug}
-              disabled={mutationPending}
-              onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value }))}
-            />}
-          </FormField>
-          <FormField id="edit-org-network-label" label="Network label" description="Optional">
-            {(controlProps) => <Input
-              {...controlProps}
-              value={form.network_label}
-              disabled={mutationPending}
-              onChange={(e) => setForm((p) => ({ ...p, network_label: e.target.value }))}
-            />}
-          </FormField>
-          <div>
-            <label htmlFor="edit-org-domain" className="block text-sm font-medium text-text-primary mb-2">Allowed email domains</label>
-            {domainsLoading ? (
-              <p className="text-xs text-text-dim">Loading…</p>
-            ) : (
-              <>
-                {domains.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {domains.map((d) => (
-                      <span key={d.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-muted text-accent rounded text-xs font-medium border border-accent">
-                        {d.domain}
-                        <Button
-                          type="button"
-                          onClick={() => handleDomainRemove(d.id, d.domain)}
-                          disabled={mutationPending}
-                          aria-label={`Remove ${d.domain}`}
-                          variant="ghost"
-                          size="sm"
-                          className="ml-0.5 min-w-11 px-2 text-accent"
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <DomainChipInput
-                  inputId="edit-org-domain"
-                  domains={[]}
-                  onAdd={handleDomainAdd}
-                  onRemove={() => {}}
-                  error={domainError}
-                  onErrorClear={() => setDomainError('')}
-                  disabled={mutationPending}
-                />
-                {domainAdding && <p className="text-xs text-text-dim mt-1">Adding…</p>}
-              </>
-            )}
-          </div>
-          {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-          <DialogActions>
-            <Button
-              type="button"
-              onClick={() => { if (!mutationPending) onClose() }}
-              disabled={mutationPending}
-              variant="secondary"
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              loading={loading}
-              disabled={mutationPending && !loading}
-              className="flex-1"
-            >
-              Save changes
-            </Button>
-          </DialogActions>
-        </form>
-
-        {/* Delete zone */}
-        <div className="mt-5 pt-4 border-t border-border">
-          {!confirmDelete ? (
-            <Button
-              ref={deleteTriggerRef}
-              type="button"
-              onClick={beginDeleteConfirmation}
-              disabled={mutationPending}
-              variant="danger"
-            >
-              <Trash2 className="w-4 h-4" />
-              Delete org
-            </Button>
-          ) : (
-            <div className="space-y-2">
-              <p className="text-sm text-danger font-medium">Delete <span className="font-bold">{inst.name}</span>? This cannot be undone.</p>
-              <DialogActions>
-                <Button
-                  ref={deleteCancelRef}
-                  type="button"
-                  onClick={cancelDeleteConfirmation}
-                  disabled={mutationPending}
-                  variant="secondary"
-                  className="flex-1"
-                >
-                  Keep org
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleDelete}
-                  loading={deleting}
-                  disabled={mutationPending && !deleting}
-                  variant="danger"
-                  className="flex-1"
-                >
-                  Yes, delete
-                </Button>
-              </DialogActions>
-            </div>
-          )}
-        </div>
-    </Dialog>
-  )
-}
-
-export default function AdminDashboardPage() {
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoaded, setIsLoaded] = useState(false)
+export default function AdminOverviewPage() {
+  const router = useRouter()
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
-  const [institutions, setInstitutions] = useState<InstitutionWithCount[]>([])
   const [loading, setLoading] = useState(true)
-  const [signInEmail, setSignInEmail] = useState('')
-  const [signInPassword, setSignInPassword] = useState('')
-  const [signInError, setSignInError] = useState('')
-  const [signingIn, setSigningIn] = useState(false)
-  const [editingInst, setEditingInst] = useState<InstitutionWithCount | null>(null)
-  const [recentSignups, setRecentSignups] = useState<RecentSignup[]>([])
+  const [institutions, setInstitutions] = useState<InstitutionWithCount[]>([])
+  const [stats, setStats] = useState<AdminStats | null>(null)
   const [studios, setStudios] = useState<AdminStudio[]>([])
-  const [instructors, setInstructors] = useState<AdminInstructor[]>([])
-  const [instructorsFailed, setInstructorsFailed] = useState(false)
-  const [dataError, setDataError] = useState('')
-  const [stats, setStats] = useState<{
-    total: number
-    by_year: Record<string, number>
-    by_major: Record<string, number>
-    by_age_range: Record<string, number>
-    by_how_heard: Record<string, number>
-  } | null>(null)
+  const [signups, setSignups] = useState<RecentSignup[]>([])
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
-      setUser(session?.user ?? null)
-      setIsLoaded(true)
-    })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      setUser(session?.user ?? null)
-      setIsLoaded(true)
-    })
-    return () => subscription.unsubscribe()
+  const checkAdmin = useCallback(async () => {
+    try {
+      const me = await getAdminMeApi()
+      if (!me.isAdmin) {
+        router.replace('/dashboard')
+        return false
+      }
+      setIsAdmin(true)
+      return true
+    } catch {
+      router.replace('/dashboard')
+      return false
+    }
+  }, [router])
+
+  const loadAll = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [overviewData, statsData, studiosData, signupsData] = await Promise.all([
+        getAdminOverviewApi().catch(() => ({ institutions: [] })),
+        getAdminStatsApi().catch(() => null),
+        getAdminStudiosApi().catch(() => ({ studios: [] })),
+        getRecentSignupsApi().catch(() => ({ signups: [] })),
+      ])
+
+      setInstitutions(overviewData.institutions || [])
+      setStats(statsData)
+      setStudios(studiosData.studios || [])
+      setSignups(signupsData.signups || [])
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  const handleAdminSignIn = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSignInError('')
-    if (!signInEmail.trim() || !signInPassword) {
-      setSignInError('Email and password required')
-      return
-    }
-    setSigningIn(true)
-    const { error } = await supabase.auth.signInWithPassword({ email: signInEmail.trim(), password: signInPassword })
-    setSigningIn(false)
-    if (error) {
-      setSignInError(error.message || 'Sign in failed')
-    }
-  }
-
   useEffect(() => {
-    if (!isLoaded || !user?.id) return
-    fetch('/api/admin/me', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((data: { isAdmin?: boolean }) => setIsAdmin(Boolean(data?.isAdmin)))
-      .catch(() => setIsAdmin(false))
-  }, [isLoaded, user?.id])
-
-  const loadData = () => {
-    if (!isAdmin) return
-    setLoading(true)
-    setDataError('')
-    const fetchRequired = (url: string) => fetch(url, { cache: 'no-store' }).then((response) => {
-      if (!response.ok) throw new Error('Failed to load administrative data')
-      return response.json()
+    checkAdmin().then((ok) => {
+      if (ok) loadAll()
     })
-    Promise.all([
-      fetchRequired('/api/admin/overview'),
-      fetchRequired('/api/admin/stats'),
-      fetchRequired('/api/admin/recent-signups'),
-      fetchRequired('/api/admin/studios'),
-      // `failed` rather than an empty list: "the request broke" and "there are
-      // no instructors" render as very different things, and the card must not
-      // report the first as the second.
-      fetch('/api/admin/instructors', { cache: 'no-store' })
-        .then((r) => (r.ok ? r.json() : { instructors: [], failed: true }))
-        .catch(() => ({ instructors: [], failed: true })),
-    ])
-      .then(([overviewData, statsData, signupsData, studiosData, instructorsData]) => {
-        setInstitutions(Array.isArray(overviewData?.institutions) ? overviewData.institutions : [])
-        setStats(statsData)
-        setRecentSignups(Array.isArray(signupsData?.signups) ? signupsData.signups : [])
-        setStudios(Array.isArray(studiosData?.studios) ? studiosData.studios : [])
-        setInstructors(Array.isArray(instructorsData?.instructors) ? instructorsData.instructors : [])
-        setInstructorsFailed(instructorsData?.failed === true)
-      })
-      .catch(() => {
-        setDataError('Failed to load administrative data')
-        setInstitutions([])
-        setRecentSignups([])
-        setStudios([])
-        setInstructors([])
-        setInstructorsFailed(true)
-      })
-      .finally(() => setLoading(false))
-  }
+  }, [checkAdmin, loadAll])
 
-  useEffect(() => {
-    // The request lifecycle intentionally owns the loading state for this admin view.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadData()
-  }, [isAdmin]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [range, setRange] = useState<'7D' | '30D' | '90D' | 'YTD' | 'ALL'>('30D')
 
-  if (!isLoaded) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Spinner label="Loading administrator session" className="h-12 w-12" />
-      </div>
-    )
-  }
+  const totalUsers = stats?.total || 0
+  const schoolsCount = institutions.filter((i) => (i.type ?? 'university') === 'university').length
 
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <Card className="w-full max-w-md p-8 shadow-xl">
-          <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-text-primary">PinSpace Admin</h1>
-            <p className="text-sm text-text-secondary mt-1">Sign in with your admin email</p>
-          </div>
-          <form onSubmit={handleAdminSignIn} className="space-y-4">
-            <FormField id="admin-email" label="Email">
-              {(controlProps) => <Input
-                {...controlProps}
-                type="email"
-                value={signInEmail}
-                onChange={(e) => setSignInEmail(e.target.value)}
-                placeholder="you@gmail.com"
-                autoComplete="email"
-              />}
-            </FormField>
-            <div>
-              <label htmlFor="admin-password" className="block text-sm font-medium text-text-primary mb-1">Password</label>
-              <PasswordInput
-                id="admin-password"
-                value={signInPassword}
-                onChange={setSignInPassword}
-                autoComplete="current-password"
-              />
-            </div>
-            {signInError && <p role="alert" className="text-sm text-danger">{signInError}</p>}
-            <Button
-              type="submit"
-              loading={signingIn}
-              className="w-full"
-            >
-              Sign in
-            </Button>
-          </form>
-        </Card>
-      </div>
-    )
-  }
+  // Filter signups dynamically based on selected range
+  const now = new Date()
+  const days = range === '7D' ? 7 : range === '30D' ? 30 : range === '90D' ? 90 : range === 'YTD' ? 180 : 365
+  const cutoffDate = new Date(now)
+  cutoffDate.setDate(cutoffDate.getDate() - days)
 
-  if (isAdmin === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background" role="status" aria-label="Checking administrator access">
-        <Spinner label="Checking administrator access" className="h-12 w-12" />
-      </div>
-    )
-  }
+  const rangeSignups = signups.filter((s) => {
+    if (!s.createdAt) return true
+    return new Date(s.createdAt) >= cutoffDate
+  })
 
-  if (isAdmin === false) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <Card className="w-full max-w-md p-8 text-center shadow">
-          <h1 className="text-xl font-bold text-text-primary mb-2">Access denied</h1>
-          <p className="text-text-secondary mb-6">This account is not in PINSPACE_ADMIN_EMAILS.</p>
-          <Button
-            onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-            variant="ghost"
-          >
-            Sign out
-          </Button>
-        </Card>
-      </div>
-    )
-  }
-
-  if (dataError) {
-    return (
-      <AdminShell
-        currentPath="/admin"
-        title="Admin overview"
-        description="Manage organizations, users, instructors, and studios."
-        actions={
-          <Button
-            type="button"
-            onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-            variant="ghost"
-          >
-            Sign out
-          </Button>
-        }
-      >
-        <StatusState
-          status="error"
-          title={dataError}
-          description="The request failed; no empty administrative state is being inferred."
-          action={<Button type="button" variant="secondary" onClick={loadData}>Try again</Button>}
-        />
-      </AdminShell>
-    )
-  }
-
-  const institutionsList = institutions.filter((i) => (i.type || 'university') === 'university')
-  const firmsList = institutions.filter((i) => i.type === 'firm')
-
-  const renderOrgSection = (
-    list: InstitutionWithCount[],
-    title: string,
-    description: string,
-    icon: React.ReactNode,
-    emptyMsg: string
-  ) => (
-    <Card className="mb-6 overflow-hidden">
-      <div className="px-6 py-4 border-b border-border bg-background flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {icon}
-          <div>
-            <h2 className="text-base font-semibold text-text-primary">{title}</h2>
-            <p className="text-xs text-text-secondary">{description}</p>
-          </div>
-        </div>
-        {/* Column headers */}
-        {list.length > 0 && (
-          <div className="hidden sm:flex items-center gap-5 mr-32 text-xs text-text-dim font-medium uppercase tracking-wide">
-            <span className="flex items-center gap-1"><Users className="w-3 h-3" /> Users</span>
-            <span className="flex items-center gap-1"><LayoutGrid className="w-3 h-3" /> Studios</span>
-          </div>
-        )}
-      </div>
-
-      {loading ? (
-        <div className="p-8 text-center">
-          <Spinner label={`Loading ${title.toLowerCase()}`} />
-        </div>
-      ) : list.length === 0 ? (
-        <div className="p-8 text-center text-text-secondary">
-          <p className="font-medium text-text-primary">{emptyMsg}</p>
-          <p className="mt-1 text-sm">Create one with the button above.</p>
-        </div>
-      ) : (
-        <ul>
-          {list.map((inst) => (
-            <OrgRow key={inst.id} inst={inst} onEdit={setEditingInst} />
-          ))}
-        </ul>
-      )}
-    </Card>
-  )
+  const verifiedSignups = rangeSignups.filter((s) => s.status !== 'unverified').length
+  const memberStudios = studios.filter((s) => s.adminIsMember || s.provisionedByAdmin).length
 
   return (
     <AdminShell
       currentPath="/admin"
-      title="Admin overview"
-      description="Manage organizations, users, instructors, and studios."
-      actions={<>
-            <Link
-              href="/admin/users"
-              className={buttonStyles({ variant: 'secondary' })}
-            >
-              <Users className="w-4 h-4" />
-              Users &amp; roles
-            </Link>
-            <CreateOrgForm onCreated={loadData} />
-            <Button
-              onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-              variant="ghost"
-            >
-              Sign out
-            </Button>
-          </>}
+      title="Executive Overview"
+      description="PinSpace platform telemetry, operational metrics, and quick actions."
+      actions={
+        <div className="flex items-center gap-2">
+          <CreateOrgModal onCreated={loadAll} />
+          <CreateStudioForm onCreated={loadAll} />
+        </div>
+      }
     >
-
-        {/* Global student stats */}
-        {stats && (
-          <Card className="mb-6 overflow-hidden">
-            <div className="px-6 py-3 border-b border-border bg-background flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-accent" />
-              <h2 className="text-sm font-semibold text-text-primary">Global stats</h2>
-              <span className="text-xs text-text-dim ml-1">{stats.total} profiles</span>
-            </div>
-            <div className="p-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              <StatBlock title="By year" data={stats.by_year} />
-              <StatBlock title="By major" data={stats.by_major} />
-              <StatBlock title="By age range" data={stats.by_age_range} />
-              <StatBlock title="How they heard" data={stats.by_how_heard} />
-            </div>
-          </Card>
+      {/* 4 Summary Stat Cards */}
+      <div className="mb-8">
+        {loading ? (
+          <MetricsSkeletonGrid count={4} />
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard label="Total Users" value={totalUsers} hint="Registered platform accounts" icon={Users} />
+            <StatCard label="Institutions & Firms" value={institutions.length} hint={`${schoolsCount} schools`} icon={Building2} />
+            <StatCard label="Class Studios" value={studios.length} hint="Active studio rooms" icon={GraduationCap} />
+            <StatCard label="Recent Signups" value={signups.length} hint="Latest account activity" icon={UserPlus} />
+          </div>
         )}
+      </div>
 
-        {/* Studios — pilot provisioning */}
-        <InstructorsCard instructors={instructors} loading={loading} failed={instructorsFailed} />
+      {/* Universal Time Range Selector Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 bg-background-lighter/60 border border-border p-3.5 rounded-xl">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-accent" />
+          <span className="text-xs font-bold text-text-primary uppercase tracking-wider">Universal Range Filter</span>
+          <span className="text-xs text-text-secondary">({rangeSignups.length} signups in window)</span>
+        </div>
 
-        <StudiosCard studios={studios} loading={loading} onChanged={loadData} />
-
-        {/* Recent signups */}
-        <RecentSignupsCard signups={recentSignups} loading={loading} />
-
-        {/* Orgs */}
-        {renderOrgSection(
-          institutionsList,
-          'Institutions',
-          'Schools and universities — click a row to expand studio rooms.',
-          <Building2 className="w-4 h-4 text-accent" />,
-          'No institutions yet.'
-        )}
-        {renderOrgSection(
-          firmsList,
-          'Firms',
-          'Architecture and design firms.',
-          <Briefcase className="w-4 h-4 text-warning" />,
-          'No firms yet.'
-        )}
-
-        <p className="text-xs text-text-dim text-center mt-2">
-          User counts reflect profiles with <code>institution_id</code> set. Studio counts are workspaces linked to this org.
-        </p>
-      {editingInst && (
-        <EditOrgModal
-          inst={editingInst}
-          onClose={() => setEditingInst(null)}
-          onSaved={() => { setEditingInst(null); loadData() }}
+        <SegmentedControl
+          value={range}
+          onChange={(v) => setRange(v as any)}
+          options={[
+            { value: '7D', label: '7D' },
+            { value: '30D', label: '30D' },
+            { value: '90D', label: '90D' },
+            { value: 'YTD', label: 'YTD' },
+            { value: 'ALL', label: 'ALL' },
+          ]}
         />
-      )}
+      </div>
+
+      {/* Real Dynamic Platform Health Telemetry Gauges */}
+      <HealthGaugesCard
+        totalUsers={totalUsers}
+        profileCount={stats?.total || 0}
+        totalSignups={rangeSignups.length || signups.length}
+        activeSignups={verifiedSignups}
+        totalStudios={studios.length}
+        memberStudios={memberStudios}
+        loading={loading}
+      />
+
+      {/* Area Trend Growth Chart */}
+      <div className="mb-8">
+        <AreaTrendChart signups={rangeSignups.length > 0 ? rangeSignups : signups} loading={loading} selectedRange={range} />
+      </div>
+
+      {/* Real Dynamic Demographic Breakdown Grid */}
+      <div className="mb-8">
+        <div className="flex items-center gap-2 mb-4">
+          <BarChart3 className="w-4 h-4 text-accent" />
+          <h2 className="text-sm font-bold text-text-primary uppercase tracking-wider">Demographic Telemetry</h2>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <AcademicYearDonutChart byYear={stats?.by_year} total={totalUsers} loading={loading} />
+          <MajorBarChart byMajor={stats?.by_major} total={totalUsers} loading={loading} />
+          <AcquisitionBarChart byHowHeard={stats?.by_how_heard} byAgeRange={stats?.by_age_range} total={totalUsers} loading={loading} />
+        </div>
+      </div>
+
+      {/* Sub-Route Navigation Shortcut Cards */}
+      <div>
+        <h2 className="text-sm font-bold text-text-primary uppercase tracking-wider mb-3">Admin Control Plane</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {SUB_ROUTES.map((route) => {
+            const Icon = route.icon
+            return (
+              <Link key={route.href} href={route.href} className="group">
+                <Card className="p-4 h-full transition-all group-hover:border-accent group-hover:bg-primary-muted/40 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="p-2 bg-primary-muted rounded text-accent">
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-text-dim group-hover:text-accent transition-colors" />
+                    </div>
+                    <p className="font-semibold text-sm text-text-primary group-hover:text-accent transition-colors">
+                      {route.label}
+                    </p>
+                    <p className="text-xs text-text-secondary mt-1">{route.description}</p>
+                  </div>
+                </Card>
+              </Link>
+            )
+          })}
+        </div>
+      </div>
     </AdminShell>
   )
 }
