@@ -73,7 +73,7 @@ export function AppSidebar({
     <aside
       aria-label="Application sidebar"
       className={cn(
-        'hidden h-dvh w-64 shrink-0 flex-col border-r border-border bg-background-light lg:flex',
+        'hidden sticky top-0 h-dvh w-64 shrink-0 flex-col border-r border-border bg-background-light lg:flex',
         className
       )}
     >
