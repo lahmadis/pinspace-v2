@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { Board } from '@/types'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
-import { ROOM, MONO_STACK } from '@/lib/room/palette'
+import { ROOM, MONO_STACK, SANS_STACK } from '@/lib/room/palette'
 import type { RoomStudent } from '@/lib/room/students'
 import { cleanDisplayName } from '@/lib/displayName'
 
@@ -152,7 +152,7 @@ export default function UnfoldedView({
                 {/* Wall tag, mono, sitting on the floor line. */}
                 <span
                   className="absolute left-0 text-[10px] uppercase tracking-[0.18em]"
-                  style={{ fontFamily: MONO_STACK, color: ROOM.green, bottom: -TITLE_BLOCK_H + 6 }}
+                  style={{ fontFamily: MONO_STACK, color: ROOM.ink2, bottom: -TITLE_BLOCK_H + 6 }}
                 >
                   Wall {String(panel.wallIndex + 1).padStart(2, '0')} · {panel.wIn / 12}′ × {panel.hIn / 12}′
                 </span>
@@ -172,10 +172,11 @@ export default function UnfoldedView({
                         left: group.minX * PX_PER_IN,
                         width: Math.max((group.maxX - group.minX) * PX_PER_IN, 60),
                         top: -PLATE_BAND_H,
-                        color: ROOM.green,
+                        color: ROOM.ink,
+                        fontFamily: SANS_STACK,
                         fontWeight: 700,
                         fontSize: 13,
-                        borderBottom: isSelected ? `3px solid ${ROOM.yellow}` : '3px solid transparent',
+                        borderBottom: isSelected ? `3px solid ${ROOM.amber}` : '3px solid transparent',
                       }}
                     >
                       {group.student.name}
@@ -207,7 +208,7 @@ export default function UnfoldedView({
                         className="block w-full"
                         style={{
                           height: h,
-                          outline: isSelected ? `2px solid ${ROOM.yellow}` : `1px solid ${ROOM.hairline}`,
+                          outline: isSelected ? `2px solid ${ROOM.amber}` : `1px solid ${ROOM.hairline}`,
                           outlineOffset: isSelected ? 2 : 0,
                           background: '#FFFFFF',
                         }}
@@ -237,7 +238,7 @@ export default function UnfoldedView({
                         </span>
                         <span
                           className="px-1 py-0.5 text-[9px] tabular-nums"
-                          style={{ color: ROOM.green, borderLeft: `1px solid ${ROOM.hairline}` }}
+                          style={{ color: ROOM.ink2, borderLeft: `1px solid ${ROOM.hairline}` }}
                         >
                           {isBack ? 'B' : 'A'}-{String(panel.boards.indexOf(board) + 1).padStart(2, '0')}
                         </span>
