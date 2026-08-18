@@ -17,6 +17,7 @@ import { useImageViewport } from '@/components/useImageViewport'
 import type { TraceStreamEntry } from '@/components/3d/CameraController'
 import { toast } from '@/lib/toast'
 import { Download, ExternalLink } from 'lucide-react'
+import { SingleCommentCard } from '@/components/comments/SingleCommentCard'
 
 // Canvas scene colors keep concurrent trace authors distinct on light and dark media.
 export const MEDIA_ANNOTATION_PALETTE = {
@@ -1913,14 +1914,15 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       aria-modal="true"
       aria-label={resolvedTitle}
       tabIndex={-1}
-      className={`fixed inset-0 bg-pinspace-forest/90 z-50 transition-opacity duration-300 motion-reduce:transition-none focus:outline-none ${
+      className={`fixed inset-0 bg-pinspace-forest/90 z-50 transition-opacity duration-300 motion-reduce:transition-none focus:outline-none flex flex-col ${
         isVisible ? 'opacity-100' : 'opacity-0'
       }`}
       onClick={handleBackdropClick}
     >
       {/* Top Header Bar (hidden in present mode) */}
       {!isPresentMode && (
-      <div className="absolute top-[calc(env(safe-area-inset-top)+0.75rem)] left-3 right-3 rounded-pinspace-lg bg-pinspace-forest/90 backdrop-blur-xl border border-background-light/20 shadow-[var(--shadow-raised)] flex items-center justify-between gap-3 overflow-x-auto px-3 sm:px-5 py-2.5 z-20">
+      <div className="flex-shrink-0 px-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-2 z-30">
+        <div className="w-full rounded-pinspace-lg bg-pinspace-forest/90 backdrop-blur-xl border border-background-light/20 shadow-[var(--shadow-raised)] flex items-center justify-between gap-3 overflow-x-auto px-3 sm:px-5 py-2.5">
         {/* Title block — title + author · sheet size (title-block feel) */}
         <div className="hidden flex-1 min-w-0 sm:block">
           {compareBoards.length > 1 ? (
@@ -2381,6 +2383,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           </div>
         )}
       </div>
+      </div>
       )}
 
       {/* Present mode: no top bar; prev/next on sides + exit in corner */}
@@ -2427,7 +2430,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       )}
 
       {/* Main Content */}
-      <div className={`h-full flex ${isPresentMode ? 'pt-0' : 'pt-20'}`}>
+      <div className="flex-1 min-h-0 flex relative overflow-hidden">
         {/* Left Side - Image/PDF Display (full area in present mode) */}
         <div 
           className={`flex-1 flex items-center justify-center ${isPresentMode ? 'absolute inset-0 p-4' : 'p-8 lg:p-12'}`}
@@ -2513,70 +2516,134 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 </div>
               </div>
             ) : (
-              <div
-                ref={viewport.containerRef}
-                className="relative w-full h-full flex items-center justify-center overflow-hidden"
-                style={{ touchAction: 'none' }}
-                onPointerDown={viewport.onPointerDown}
-                onPointerMove={(e) => { viewport.onPointerMove(e); handlePresenterCursorMove(e) }}
-                onPointerUp={viewport.onPointerUp}
-                onPointerCancel={viewport.onPointerCancel}
-                onPointerLeave={handlePresenterCursorLeave}
-                onDoubleClick={viewport.onDoubleClick}
-                onClick={(e) => {
-                  // Click on empty letterbox space closes (preserves the prior
-                  // click-outside-image behavior); clicks on the image are
-                  // stopped on the <img> below so they never reach here.
-                  if (e.target === e.currentTarget) {
-                    e.stopPropagation()
-                    handleClose()
-                  }
-                }}
-              >
-                <img
-                  ref={viewport.imgRef}
-                  src={imageUrl}
-                  alt={board.title}
-                  draggable={false}
-                  onLoad={viewport.onImageLoad}
-                  className={`max-w-full max-h-full object-contain select-none ${isPresentMode ? 'rounded-none shadow-none w-full h-full' : 'rounded-lg shadow-2xl'}`}
-                  style={{
-                    // Compose pan (screen px) + zoom + the existing rotate() so
-                    // rotation is preserved exactly (dead data at 0 today).
-                    transform: `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.scale}) rotate(${board.position?.rotation ?? 0}rad)`,
-                    transformOrigin: 'center center',
-                    transition: viewport.isInteracting ? 'none' : 'transform 0.15s ease',
-                    cursor: viewport.scale > 1 ? (viewport.isInteracting ? 'grabbing' : 'grab') : 'default',
-                    willChange: 'transform',
+              <div className="w-full h-full flex flex-col relative overflow-hidden">
+                <div
+                  ref={viewport.containerRef}
+                  className="flex-1 min-h-0 relative w-full h-full flex items-center justify-center overflow-hidden"
+                  style={{ touchAction: 'none' }}
+                  onPointerDown={viewport.onPointerDown}
+                  onPointerMove={(e) => { viewport.onPointerMove(e); handlePresenterCursorMove(e) }}
+                  onPointerUp={viewport.onPointerUp}
+                  onPointerCancel={viewport.onPointerCancel}
+                  onPointerLeave={handlePresenterCursorLeave}
+                  onDoubleClick={viewport.onDoubleClick}
+                  onClick={(e) => {
+                    // Click on empty letterbox space closes (preserves the prior
+                    // click-outside-image behavior); clicks on the image are
+                    // stopped on the <img> below so they never reach here.
+                    if (e.target === e.currentTarget) {
+                      e.stopPropagation()
+                      handleClose()
+                    }
                   }}
-                  onClick={(e) => e.stopPropagation()}
-                />
-
-                {/* Phase B.3.2: presenter cursor dot (followers only). Positioned
-                    imperatively each frame in the smooth-apply loop; pointer-events
-                    none so it never intercepts clicks. */}
-                {viewportDriven && (
-                  <div
-                    ref={lbCursorDotRef}
-                    className="absolute z-20 rounded-full pointer-events-none"
+                >
+                  <img
+                    ref={viewport.imgRef}
+                    src={imageUrl}
+                    alt={board.title}
+                    draggable={false}
+                    onLoad={viewport.onImageLoad}
+                    className={`max-w-full max-h-full object-contain select-none ${isPresentMode ? 'rounded-none shadow-none w-full h-full' : 'rounded-none shadow-2xl'}`}
                     style={{
-                      display: 'none',
-                      width: 12,
-                      height: 12,
-                      background: cursorColor,
-                      transform: 'translate(-50%, -50%)',
-                      boxShadow: MEDIA_CURSOR_HALO,
+                      // Compose pan (screen px) + zoom + the existing rotate() so
+                      // rotation is preserved exactly (dead data at 0 today).
+                      transform: `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.scale}) rotate(${board.position?.rotation ?? 0}rad)`,
+                      transformOrigin: 'center center',
+                      transition: viewport.isInteracting ? 'none' : 'transform 0.15s ease',
+                      cursor: viewport.scale > 1 ? (viewport.isInteracting ? 'grabbing' : 'grab') : 'default',
+                      willChange: 'transform',
                     }}
+                    onClick={(e) => e.stopPropagation()}
                   />
-                )}
 
-                {/* Tool dock — floating bottom-center over the image. Holds the
-                    callout/trace tools (moved out of the header, handlers/gates
-                    unchanged) plus zoom controls that surface the EXISTING
-                    viewport hook. Hidden in present mode (same gate as header).
-                    pointer-events isolated so it never starts a pan/zoom. */}
+                  {/* Phase B.3.2: presenter cursor dot (followers only). Positioned
+                      imperatively each frame in the smooth-apply loop; pointer-events
+                      none so it never intercepts clicks. */}
+                  {viewportDriven && (
+                    <div
+                      ref={lbCursorDotRef}
+                      className="absolute z-20 rounded-full pointer-events-none"
+                      style={{
+                        display: 'none',
+                        width: 12,
+                        height: 12,
+                        background: cursorColor,
+                        transform: 'translate(-50%, -50%)',
+                        boxShadow: MEDIA_CURSOR_HALO,
+                      }}
+                    />
+                  )}
+
+                  {/* ---- Anchored callout overlay (single-image, non-present) ----
+                      Gated on calloutsAccessible so public/unauthenticated viewers
+                      get no pins, capture layer, composer, or control strip.
+                      Also gated on !hideCallouts so read-only view mode shows none of
+                      the callout/trace overlay (pins, header, composer, trace canvas). */}
+                  {!isPresentMode && !hideCallouts && calloutsEnabled && calloutsAccessible && (
+                    <>
+                      {/* Trace canvas — renders every visible author's strokes.
+                          While tracing it captures pointer events (suppressing pan
+                          + double-click zoom) so the user can draw; otherwise it's
+                          pass-through and sits beneath the pins. */}
+                      <canvas
+                        ref={traceCanvasRef}
+                        className={`absolute inset-0 w-full h-full ${traceMode ? 'z-30 cursor-crosshair pointer-events-auto' : 'z-[5] pointer-events-none'}`}
+                        onPointerDown={handleTracePointerDown}
+                        onPointerMove={handleTracePointerMove}
+                        onPointerUp={handleTracePointerUp}
+                        onPointerCancel={handleTracePointerUp}
+                        onDoubleClick={(e) => { if (traceMode) e.stopPropagation() }}
+                      />
+
+                      {/* Pins — pass-through layer except on the pins themselves.
+                          Positions are re-derived from the viewport mapping every
+                          render, so pins track zoom/pan; pin size is fixed px so
+                          they don't scale with the image. */}
+                      <div className="absolute inset-0 z-10 pointer-events-none">
+                        {visibleRoots.map((root) => {
+                          if (root.anchorX == null || root.anchorY == null) return null
+                          const pt = viewport.imageFractionToContainerPoint(root.anchorX, root.anchorY)
+                          if (!pt) return null
+                          const n = calloutNumber.get(root.id)
+                          const isActive = activeThreadRootId === root.id
+                          return (
+                            <button
+                              key={root.id}
+                              type="button"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => { e.stopPropagation(); setActiveThreadRootId(root.id) }}
+                              className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 min-w-11 min-h-11 rounded-full border-2 text-[11px] font-bold flex items-center justify-center shadow-md transition-transform motion-reduce:transition-none hover:scale-110 motion-reduce:hover:scale-100 ${
+                                root.resolved
+                                  ? 'bg-pinspace-forest/70 border-background-light/70 text-background-light opacity-60'
+                                  : 'bg-accent border-background-light text-text-primary'
+                              } ${isActive ? 'ring-2 ring-white scale-110' : ''}`}
+                              style={{ left: `${pt.x}px`, top: `${pt.y}px` }}
+                              title={root.resolved ? 'Resolved callout' : 'Open callout thread'}
+                            >
+                              {n}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      {/* Placement capture layer */}
+                      {calloutMode && (
+                        <div
+                          className="absolute inset-0 z-20 cursor-crosshair"
+                          onClick={handleCalloutPlace}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                        />
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Tool dock — rendered in dedicated bottom bar below image viewport container.
+                    Holds callout/trace tools + zoom controls.
+                    Hidden in present mode. */}
                 {!isPresentMode && (
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
+                  <div className="flex-shrink-0 py-2.5 px-4 flex items-center justify-center z-40 pointer-events-none">
                     <div
                       className="pointer-events-auto flex items-center gap-1 px-2 py-1.5 rounded-full bg-pinspace-forest/90 backdrop-blur-md border border-background-light/20 shadow-[var(--shadow-raised)]"
                       onClick={(e) => e.stopPropagation()}
@@ -2683,252 +2750,6 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                     </div>
                   </div>
                 )}
-
-                {/* ---- Anchored callout overlay (single-image, non-present) ----
-                    Gated on calloutsAccessible so public/unauthenticated viewers
-                    get no pins, capture layer, composer, or control strip.
-                    Also gated on !hideCallouts so read-only view mode shows none of
-                    the callout/trace overlay (pins, header, composer, trace canvas). */}
-                {!isPresentMode && !hideCallouts && calloutsEnabled && calloutsAccessible && (
-                  <>
-                    {/* Trace canvas — renders every visible author's strokes.
-                        While tracing it captures pointer events (suppressing pan
-                        + double-click zoom) so the user can draw; otherwise it's
-                        pass-through and sits beneath the pins. */}
-                    <canvas
-                      ref={traceCanvasRef}
-                      className={`absolute inset-0 w-full h-full ${traceMode ? 'z-30 cursor-crosshair pointer-events-auto' : 'z-[5] pointer-events-none'}`}
-                      onPointerDown={handleTracePointerDown}
-                      onPointerMove={handleTracePointerMove}
-                      onPointerUp={handleTracePointerUp}
-                      onPointerCancel={handleTracePointerUp}
-                      onDoubleClick={(e) => { if (traceMode) e.stopPropagation() }}
-                    />
-
-                    {/* Pins — pass-through layer except on the pins themselves.
-                        Positions are re-derived from the viewport mapping every
-                        render, so pins track zoom/pan; pin size is fixed px so
-                        they don't scale with the image. */}
-                    <div className="absolute inset-0 z-10 pointer-events-none">
-                      {visibleRoots.map((root) => {
-                        if (root.anchorX == null || root.anchorY == null) return null
-                        const pt = viewport.imageFractionToContainerPoint(root.anchorX, root.anchorY)
-                        if (!pt) return null
-                        const n = calloutNumber.get(root.id)
-                        const isActive = activeThreadRootId === root.id
-                        return (
-                          <button
-                            key={root.id}
-                            type="button"
-                            onPointerDown={(e) => e.stopPropagation()}
-                            onClick={(e) => { e.stopPropagation(); setActiveThreadRootId(root.id) }}
-                            className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 min-w-11 min-h-11 rounded-full border-2 text-[11px] font-bold flex items-center justify-center shadow-md transition-transform motion-reduce:transition-none hover:scale-110 motion-reduce:hover:scale-100 ${
-                              root.resolved
-                                ? 'bg-pinspace-forest/70 border-background-light/70 text-background-light opacity-60'
-                                : 'bg-accent border-background-light text-text-primary'
-                            } ${isActive ? 'ring-2 ring-white scale-110' : ''}`}
-                            style={{ left: `${pt.x}px`, top: `${pt.y}px` }}
-                            title={root.resolved ? 'Resolved callout' : 'Open callout thread'}
-                          >
-                            {n}
-                          </button>
-                        )
-                      })}
-                    </div>
-
-                    {/* Placement capture layer — intercepts the next click and
-                        suppresses drag-to-pan / double-click zoom while active. */}
-                    {calloutMode && (
-                      <div
-                        className="absolute inset-0 z-20 cursor-crosshair"
-                        onClick={handleCalloutPlace}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onDoubleClick={(e) => e.stopPropagation()}
-                      />
-                    )}
-
-                    {/* Inline composer anchored at the chosen point */}
-                    {composer && (() => {
-                      const pt = viewport.imageFractionToContainerPoint(composer.fx, composer.fy)
-                      if (!pt) return null
-                      return (
-                        <div
-                          className="absolute z-30 pointer-events-auto"
-                          style={{ left: `${pt.x}px`, top: `${pt.y}px`, transform: 'translate(-50%, 12px)' }}
-                          onClick={(e) => e.stopPropagation()}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onDoubleClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="w-64 bg-background-light rounded-pinspace shadow-[var(--shadow-raised)] border border-border p-3">
-                            <textarea
-                              value={composerText}
-                              onChange={(e) => setComposerText(e.target.value)}
-                              onKeyDown={(e) => {
-                                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); handleSubmitCallout() }
-                              }}
-                              autoFocus
-                              rows={3}
-                              placeholder="Add a callout…"
-                              disabled={composerPosting}
-                              aria-label="Callout"
-                              maxLength={2000}
-                              aria-busy={composerPosting}
-                              className="w-full px-2.5 py-2 text-xs border border-border rounded-pinspace focus:outline-none focus:ring-2 focus:ring-primary resize-none bg-background-light text-text-primary placeholder:text-text-muted"
-                            />
-                            <div className="flex items-center justify-end gap-2 mt-2">
-                              <button
-                                onClick={() => { setComposer(null); setComposerText('') }}
-                                disabled={composerPosting}
-                                className="min-h-11 px-3 text-[11px] font-semibold rounded-pinspace bg-background-lighter text-text-secondary hover:bg-background-card disabled:opacity-50"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                onClick={handleSubmitCallout}
-                                disabled={!composerText.trim() || composerPosting}
-                                aria-busy={composerPosting}
-                                className="min-h-11 px-3 text-[11px] font-semibold rounded-pinspace bg-primary text-text-primary hover:bg-primary-light disabled:opacity-40"
-                              >
-                                {composerPosting ? 'Adding…' : 'Add callout'}
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })()}
-
-                    {/* Control strip — count + show-resolved filter + errors */}
-                    {(rootCallouts.length > 0 || calloutError) && (
-                      <div
-                        className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-auto flex items-center gap-2"
-                        onClick={(e) => e.stopPropagation()}
-                        onPointerDown={(e) => e.stopPropagation()}
-                      >
-                        {rootCallouts.length > 0 && (
-                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-pinspace-forest/80 backdrop-blur-md border border-background-light/20 text-background-light text-[11px] font-medium">
-                            <span>{rootCallouts.length} callout{rootCallouts.length === 1 ? '' : 's'}</span>
-                            <button
-                              type="button"
-                              onClick={() => setShowResolved((v) => !v)}
-                              className="flex min-h-11 items-center gap-1.5 text-[11px] text-background-light/90 hover:text-background-light"
-                              title="Toggle resolved callouts"
-                            >
-                              <span className={`w-3 h-3 rounded-sm border flex items-center justify-center text-[8px] leading-none ${showResolved ? 'bg-accent border-accent text-text-primary' : 'border-background-light/40 text-transparent'}`}>✓</span>
-                              Show resolved
-                            </button>
-                          </div>
-                        )}
-                        {calloutError && (
-                          <div role="alert" className="px-3 py-1.5 rounded-full bg-pinspace-ink text-background-light text-[11px] font-medium">{calloutError}</div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Trace layers control — toggle each author's layer on/off */}
-                    {(() => {
-                      const layers: Array<{ key: string; name: string; color: string }> = []
-                      const myKey = isGuest ? (guestTokenId ?? 'guest') : (user?.id ?? 'me')
-                      if (myStrokes.length > 0) layers.push({ key: myKey, name: `${authorName} (you)`, color: traceColor })
-                      for (const t of boardTraces) {
-                        const isMine = isGuest
-                          ? (t.guestTokenId != null && t.guestTokenId === guestTokenId)
-                          : (!!user?.id && t.authorId === user.id)
-                        if (isMine) continue
-                        layers.push({ key: t.authorId ?? t.guestTokenId ?? t.id, name: t.authorName, color: t.authorColor ?? DEFAULT_TRACE_AUTHOR_COLOR })
-                      }
-                      if (layers.length === 0) return null
-                      return (
-                        <div
-                          className="absolute top-3 right-3 z-40 pointer-events-auto w-44 rounded-pinspace bg-pinspace-forest/90 backdrop-blur-md border border-background-light/20 p-2"
-                          onClick={(e) => e.stopPropagation()}
-                          onPointerDown={(e) => e.stopPropagation()}
-                        >
-                          <div className="text-[10px] uppercase tracking-wide text-white/60 px-1 pb-1">Trace layers</div>
-                          <div className="space-y-0.5 max-h-40 overflow-y-auto">
-                            {layers.map((l) => {
-                              const hidden = hiddenTraceAuthors.has(l.key)
-                              return (
-                                <button
-                                  key={l.key}
-                                  onClick={() => setHiddenTraceAuthors((prev) => {
-                                    const n = new Set(prev)
-                                    if (n.has(l.key)) n.delete(l.key); else n.add(l.key)
-                                    return n
-                                  })}
-                                  className="w-full min-h-11 flex items-center gap-2 px-1.5 rounded hover:bg-background-light/10 text-left"
-                                  title={hidden ? 'Show layer' : 'Hide layer'}
-                                >
-                                  <span className="w-3 h-3 rounded-full flex-shrink-0 border border-white/30" style={{ backgroundColor: l.color, opacity: hidden ? 0.25 : 1 }} />
-                                  <span className={`text-[11px] truncate flex-1 ${hidden ? 'text-white/40 line-through' : 'text-white/90'}`}>{l.name}</span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )
-                    })()}
-
-                    {/* Trace tool strip — colors, widths, undo, clear.
-                        Stacked directly ABOVE the tool dock (bottom-20) so the two
-                        never overlap and neither collides with the ESC hint. */}
-                    {traceMode && (
-                      <div
-                        className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-full bg-pinspace-forest/90 backdrop-blur-md border border-background-light/20"
-                        onClick={(e) => e.stopPropagation()}
-                        onPointerDown={(e) => e.stopPropagation()}
-                      >
-                        {TRACE_COLORS.map((c) => (
-                          <button
-                            key={c}
-                            onClick={() => setTraceColor(c)}
-                            className={`min-w-11 min-h-11 rounded-full border-2 transition-transform motion-reduce:transition-none hover:scale-110 motion-reduce:hover:scale-100 ${traceColor === c ? 'border-background-light' : 'border-transparent'}`}
-                            style={{ backgroundColor: c }}
-                            title="Ink color"
-                            aria-label={`Ink color ${c}`}
-                          />
-                        ))}
-                        <span className="w-px h-5 bg-white/20" />
-                        {TRACE_WIDTHS.map((w) => (
-                          <button
-                            key={w.value}
-                            onClick={() => setTraceWidth(w.value)}
-                            className={`min-h-11 px-3 rounded text-[10px] font-medium ${traceWidth === w.value ? 'bg-background-light/25 text-background-light' : 'text-background-light/70 hover:text-background-light'}`}
-                            title={`${w.label} brush`}
-                          >
-                            {w.label}
-                          </button>
-                        ))}
-                        <span className="w-px h-5 bg-white/20" />
-                        <button
-                          onClick={handleTraceUndo}
-                          disabled={myStrokes.length === 0}
-                          className="min-h-11 px-3 rounded text-[10px] font-medium text-background-light/80 hover:text-background-light disabled:opacity-40"
-                          title="Undo last stroke"
-                        >
-                          Undo
-                        </button>
-                        {pendingClearTrace ? (
-                          <button
-                            onClick={handleTraceClear}
-                            className="min-h-11 px-3 rounded text-[10px] font-semibold bg-pinspace-ink text-background-light hover:bg-text-secondary"
-                            title="Confirm — clear your whole trace"
-                          >
-                            Confirm clear
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => { setPendingClearTrace(true); window.setTimeout(() => setPendingClearTrace(false), 4000) }}
-                            disabled={myStrokes.length === 0}
-                            className="min-h-11 px-3 rounded text-[10px] font-medium text-background-light/80 hover:text-background-light disabled:opacity-40"
-                            title="Clear my trace"
-                          >
-                            Clear
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
               </div>
             )
           ) : (
@@ -2986,108 +2807,21 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             )}
 
             {!loading && !error && comments.length > 0 && comments.map((comment) => (
-              <div 
+              <SingleCommentCard
                 key={comment.id}
-                className="flex gap-3 p-3 rounded-pinspace bg-background-lighter border border-border-light hover:border-border hover:bg-background-light transition-colors motion-reduce:transition-none"
-              >
-                {/* Avatar */}
-                <div className={`flex-shrink-0 w-8 h-8 rounded-full ${getAvatarColor(comment.authorName)} flex items-center justify-center text-white font-bold text-xs shadow-sm`}>
-                  {getInitials(comment.authorName)}
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline justify-between gap-2 mb-1">
-                    <span className="font-semibold text-text-primary text-xs">
-                      {comment.authorName}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-text-muted whitespace-nowrap">
-                        {formatTimestamp(comment.createdAt)}
-                      </span>
-                      {canManageComment(comment) && (
-                        <>
-                          <button
-                            onClick={() => handleStartEdit(comment)}
-                            disabled={deletingCommentId === comment.id || savingCommentId === comment.id}
-                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace text-primary-dark hover:bg-primary-muted disabled:opacity-50"
-                            aria-label="Edit comment"
-                            title="Edit"
-                          >
-                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.5H9V13z" />
-                            </svg>
-                          </button>
-                          {pendingDeleteCommentId === comment.id ? (
-                            <button
-                              onClick={() => handleDeleteComment(comment.id)}
-                              disabled={deletingCommentId === comment.id || savingCommentId === comment.id}
-                              className="inline-flex min-h-11 items-center justify-center rounded-pinspace px-3 text-[10px] font-semibold bg-pinspace-ink text-background-light hover:bg-text-secondary disabled:opacity-50"
-                              aria-label="Confirm delete comment"
-                              title="Confirm delete"
-                            >
-                              {deletingCommentId === comment.id ? (
-                                <div className="h-3.5 w-3.5 rounded-full border-2 border-background-light/30 border-t-background-light animate-spin motion-reduce:animate-none" />
-                              ) : (
-                                'Confirm delete'
-                              )}
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleDeleteComment(comment.id)}
-                              disabled={deletingCommentId === comment.id || savingCommentId === comment.id}
-                              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace text-text-primary hover:bg-background-lighter disabled:opacity-50"
-                              aria-label={deletingCommentId === comment.id ? 'Deleting comment' : 'Delete comment'}
-                              title="Delete"
-                            >
-                              {deletingCommentId === comment.id ? (
-                                <div className="h-3.5 w-3.5 rounded-full border-2 border-border border-t-text-primary animate-spin motion-reduce:animate-none" />
-                              ) : (
-                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7v12m6-12v12M10 4h4a1 1 0 011 1v2H9V5a1 1 0 011-1zM5 7h14l-1 13a2 2 0 01-2 2H8a2 2 0 01-2-2L5 7z" />
-                                </svg>
-                              )}
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  {editingCommentId === comment.id ? (
-                    <div className="space-y-2">
-                      <textarea
-                        value={editingContent}
-                        onChange={(e) => setEditingContent(e.target.value)}
-                        aria-label="Edit comment"
-                        maxLength={2000}
-                        className="w-full px-2.5 py-2 text-xs border border-border rounded-pinspace focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none bg-background-light text-text-primary"
-                        rows={3}
-                        disabled={savingCommentId === comment.id}
-                      />
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleSaveEdit(comment.id)}
-                          disabled={!editingContent.trim() || savingCommentId === comment.id}
-                          className="min-h-11 px-3 bg-primary text-text-primary rounded-pinspace hover:bg-primary-light disabled:opacity-40 text-[11px] font-semibold"
-                        >
-                          {savingCommentId === comment.id ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                          onClick={handleCancelEdit}
-                          disabled={savingCommentId === comment.id}
-                          className="min-h-11 px-3 bg-background-lighter text-text-secondary rounded-pinspace hover:bg-background-card text-[11px] font-semibold"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-text-primary leading-relaxed whitespace-pre-wrap">
-                      {comment.content}
-                    </p>
-                  )}
-                </div>
-              </div>
+                comment={comment}
+                canManage={canManageComment(comment)}
+                onSaveEdit={async (commentId, newContent) => {
+                  setEditingCommentId(commentId)
+                  setEditingContent(newContent)
+                  await handleSaveEdit(commentId)
+                }}
+                onDelete={async (commentId) => {
+                  await handleDeleteComment(commentId)
+                }}
+                isDeleting={deletingCommentId === comment.id}
+                isSaving={savingCommentId === comment.id}
+              />
             ))}
           </div>
 
