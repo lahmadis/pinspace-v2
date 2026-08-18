@@ -51,6 +51,35 @@ function transformRow(c: BoardCommentRow) {
   }
 }
 
+async function enrichCommentsWithProfileNames(
+  db: ReturnType<typeof supabaseServiceRole>,
+  comments: BoardCommentRow[]
+) {
+  const authorIds = Array.from(
+    new Set(comments.map((c) => c.author_id).filter((id): id is string => Boolean(id)))
+  )
+  const profileMap = new Map<string, string>()
+  if (authorIds.length > 0) {
+    const { data: profiles } = await db
+      .from('user_profiles')
+      .select('user_id, full_name')
+      .in('user_id', authorIds)
+    for (const p of profiles || []) {
+      if (p.full_name?.trim()) {
+        profileMap.set(p.user_id, p.full_name.trim())
+      }
+    }
+  }
+
+  return comments.map((c) => {
+    const row = transformRow(c)
+    if (c.author_id && profileMap.has(c.author_id)) {
+      row.authorName = profileMap.get(c.author_id)!
+    }
+    return row
+  })
+}
+
 // GET /api/boards/[id]/board-comments — all anchored comments for the board, created_at asc.
 export async function GET(
   request: NextRequest,
@@ -84,8 +113,9 @@ export async function GET(
         console.error('Error fetching board comments (guest):', gErr)
         return NextResponse.json({ error: 'Failed to fetch board comments' }, { status: 500 })
       }
+      const enriched = await enrichCommentsWithProfileNames(guestDb, (gComments || []) as BoardCommentRow[])
       return NextResponse.json({
-        comments: (gComments || []).map((c) => transformRow(c as BoardCommentRow)),
+        comments: enriched,
       })
     }
 
@@ -166,8 +196,9 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to fetch board comments' }, { status: 500 })
     }
 
+    const enriched = await enrichCommentsWithProfileNames(serviceSupabase, (comments || []) as BoardCommentRow[])
     return NextResponse.json({
-      comments: (comments || []).map((c) => transformRow(c as BoardCommentRow)),
+      comments: enriched,
     })
   } catch (error) {
     console.error('Error fetching board comments:', error)
