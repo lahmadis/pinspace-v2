@@ -21,7 +21,7 @@ export function PageHeader({
     <header className="border-b border-border bg-background-light py-5" {...props}>
       <div
         className={cn(
-          'mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between',
+          'mx-auto w-full max-w-[96rem] px-4 sm:px-6 lg:px-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between',
           className
         )}
       >
