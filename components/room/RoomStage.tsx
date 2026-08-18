@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Board } from '@/types'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
-import { ROOM, MONO_STACK } from '@/lib/room/palette'
+import { ROOM, MONO_STACK, SANS_STACK } from '@/lib/room/palette'
 import type { RoomStudent } from '@/lib/room/students'
 import RoomBoard from './RoomBoard'
 import { bayIndexForBoard, projectRoom, type RoomBay, type RoomShell } from '@/lib/room/roomShell'
@@ -196,7 +196,7 @@ export default function RoomStage({
           style={{
             width: floorSpan,
             height: floorSpan,
-            background: `radial-gradient(ellipse at 50% 50%, ${ROOM.floor} 0%, #C6C0B1 78%, #B8B2A3 100%)`,
+            background: `radial-gradient(ellipse at 50% 50%, ${ROOM.floor} 0%, #DAD4C6 55%, #CFC8B8 100%)`,
             transform: `translateY(${proj.eyePx}px) rotateX(90deg) translate(-50%, -50%)`,
             backfaceVisibility: 'hidden',
           }}
@@ -258,7 +258,10 @@ export default function RoomStage({
                     fontFamily: MONO_STACK,
                     fontSize: 11,
                     letterSpacing: '0.18em',
-                    color: occupied ? ROOM.green : ROOM.hairline,
+                    // No distinct "occupied" color: amber means active/selected
+                    // and nothing else. Presence is signalled by the trailing
+                    // dot appended to the label text below, not by color.
+                    color: ROOM.ink2,
                   }}
                 >
                   {bay.label}
@@ -295,17 +298,18 @@ export default function RoomStage({
                       style={{
                         fontFamily: MONO_STACK,
                         fontSize: 10,
-                        color: plate.selected ? ROOM.yellow : ROOM.hairline,
+                        color: plate.selected ? ROOM.ink : ROOM.hairline,
                       }}
                     >
                       {plate.index}
                     </span>
                     <span
                       style={{
+                        fontFamily: SANS_STACK,
                         fontSize: 13,
                         fontWeight: 600,
                         color: ROOM.ink,
-                        borderBottom: plate.selected ? `2px solid ${ROOM.yellow}` : '2px solid transparent',
+                        borderBottom: plate.selected ? `2px solid ${ROOM.amber}` : '2px solid transparent',
                       }}
                     >
                       {plate.label}
@@ -334,7 +338,7 @@ export default function RoomStage({
               <div
                 className="absolute inset-0 pointer-events-none"
                 style={{
-                  background: '#0B0B0B',
+                  background: ROOM.ink,
                   opacity: isFacing ? 0 : 0.14,
                   transition: 'opacity 500ms ease',
                 }}

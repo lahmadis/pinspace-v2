@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { ROOM, MONO_STACK } from '@/lib/room/palette'
+import { ROOM, MONO_STACK, SANS_STACK } from '@/lib/room/palette'
 import { wallSegments, planBounds, type WallConfigLike } from '@/lib/room/planGeometry'
 import type { RoomStudent } from '@/lib/room/students'
 
@@ -125,7 +125,7 @@ export default function PlanView({ wallConfig, students, selectedStudentId, onSe
                 y={(y1 + y2) / 2 - 12}
                 textAnchor="middle"
                 style={{ fontFamily: MONO_STACK, fontSize: 13, letterSpacing: '0.16em' }}
-                fill={ROOM.green}
+                fill={ROOM.ink2}
               >
                 W{String(seg.index + 1).padStart(2, '0')}
               </text>
@@ -147,7 +147,7 @@ export default function PlanView({ wallConfig, students, selectedStudentId, onSe
                   y={y - 15}
                   width={196}
                   height={22}
-                  fill={ROOM.yellow}
+                  fill={ROOM.amber}
                   opacity={0.28}
                   rx={3}
                 />
@@ -156,8 +156,8 @@ export default function PlanView({ wallConfig, students, selectedStudentId, onSe
                 x={x}
                 y={y}
                 textAnchor={anchor}
-                style={{ fontSize: 15, fontWeight: 700 }}
-                fill={isSelected ? ROOM.ink : ROOM.green}
+                style={{ fontFamily: SANS_STACK, fontSize: 15, fontWeight: 700 }}
+                fill={ROOM.ink}
               >
                 {student.name}
               </text>

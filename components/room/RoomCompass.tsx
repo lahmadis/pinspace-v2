@@ -72,7 +72,7 @@ export default function RoomCompass({
         <rect width={SIZE} height={SIZE} fill={ROOM.wall} />
 
         <g style={{ transformOrigin: `${cx}px ${cy}px`, transform: `rotate(${headingDeg}deg)`, transition: animate ? 'transform 760ms cubic-bezier(0.22,0.61,0.36,1)' : 'none' }}>
-          <polygon points={wedge} fill={ROOM.yellow} opacity={0.22} />
+          <polygon points={wedge} fill={ROOM.amber} opacity={0.22} />
         </g>
 
         {segments.map((seg) => {
@@ -82,7 +82,7 @@ export default function RoomCompass({
             <g key={seg.bayIndex}>
               <line
                 x1={seg.ax} y1={seg.ay} x2={seg.bx} y2={seg.by}
-                stroke={isFacing ? ROOM.yellow : occupied ? ROOM.ink : ROOM.hairline}
+                stroke={isFacing ? ROOM.amber : occupied ? ROOM.ink : ROOM.hairline}
                 strokeWidth={isFacing ? 4 : occupied ? 3 : 2}
                 strokeLinecap="round"
               />
