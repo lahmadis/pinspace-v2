@@ -24,7 +24,7 @@ export default function PinModeHeader({ boardTitle, onCancel }: PinModeHeaderPro
       role="status"
       className="fixed inset-x-0 top-0 z-50 max-h-[45dvh] overflow-y-auto border-b border-border/40 bg-primary-dark/90 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md motion-reduce:transition-none"
     >
-      <div className="mx-auto flex max-w-7xl flex-col gap-3 px-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <div className="mx-auto flex max-w-[96rem] flex-col gap-3 px-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           {/* Pin Icon */}
           <div className="flex items-center gap-2">
