@@ -11,6 +11,8 @@ import {
   ButtonLink,
   Card,
   DataTable,
+  MetricsSkeletonGrid,
+  Skeleton,
   Spinner,
   StatusState,
   TableBody,
@@ -18,6 +20,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableSkeletonRows,
   TableStateRow,
 } from '@/components/ui'
 
@@ -93,11 +96,44 @@ export default function InstitutionStatsPage() {
       .finally(() => setLoading(false))
   }, [isAdmin, slug])
 
-  if (!isLoaded) {
+  if (!isLoaded || loading || !stats) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background" role="status" aria-label="Loading administrator session">
-        <Spinner className="h-12 w-12 text-accent" aria-hidden="true" />
-      </div>
+      <AdminShell
+        currentPath="/admin/institutions"
+        title="Institution telemetry"
+        description="Review metrics, accounts, and studios provisioned under this institution."
+      >
+        <div className="space-y-6" role="status" aria-label="Loading institution stats">
+          <span className="sr-only">Loading institution stats</span>
+          <MetricsSkeletonGrid count={4} />
+
+          <Card className="p-6">
+            <div className="space-y-3">
+              <Skeleton className="h-6 w-64 rounded-md" />
+              <Skeleton className="h-4 w-96 rounded-md" />
+            </div>
+          </Card>
+
+          <Card className="overflow-hidden">
+            <div className="px-6 py-4 border-b border-border bg-background-light/40">
+              <Skeleton className="h-5 w-48 rounded-md" />
+            </div>
+            <DataTable label="Loading members">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>User</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Major</TableHead>
+                  <TableHead>Year</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableSkeletonRows rows={4} cols={4} colWidths={['w-48', 'w-24', 'w-32', 'w-20']} />
+              </TableBody>
+            </DataTable>
+          </Card>
+        </div>
+      </AdminShell>
     )
   }
 
@@ -126,16 +162,7 @@ export default function InstitutionStatsPage() {
     )
   }
 
-  if (loading || !stats) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background" role="status">
-        <div className="text-center">
-          <Spinner className="mb-4 h-12 w-12 text-accent" aria-hidden="true" />
-          <p className="text-text-secondary">Loading…</p>
-        </div>
-      </div>
-    )
-  }
+
 
   const { institution, summary, users, studios } = stats
 
