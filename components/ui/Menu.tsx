@@ -60,9 +60,11 @@ export function Menu({ children, className, ...props }: HTMLAttributes<HTMLDivEl
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [open])
 
+  const hasPosition = className?.includes('absolute') || className?.includes('fixed') || className?.includes('sticky')
+
   return (
     <MenuContext.Provider value={{ open, setOpen, triggerRef, contentRef, contentId, focusEdge, setTrigger, setContent, openAt }}>
-      <div className={cn('relative inline-block', className)} {...props}>{children}</div>
+      <div className={cn(!hasPosition && 'relative', 'inline-block', className)} {...props}>{children}</div>
     </MenuContext.Provider>
   )
 }
