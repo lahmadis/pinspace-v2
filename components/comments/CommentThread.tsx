@@ -12,6 +12,8 @@ import {
 } from '@/components/ui'
 import type { Comment } from '@/types'
 
+import { SingleCommentCard } from './SingleCommentCard'
+
 export function formatCommentTimestamp(timestamp: string): string {
   const date = new Date(timestamp)
   const elapsed = Date.now() - date.getTime()
@@ -55,20 +57,13 @@ export function CommentList({
     return <EmptyState title="No comments yet" description={emptyDescription} />
   }
 
-  return comments.map((comment) => (
-    <article key={comment.id} className="flex gap-3 rounded-pinspace border border-border bg-background-lighter p-3 motion-reduce:transition-none">
-      <Avatar name={comment.authorName} size="sm" />
-      <div className="min-w-0 flex-1">
-        <div className="mb-1 flex items-baseline justify-between gap-2">
-          <span className="text-sm font-semibold text-text-primary">{comment.authorName}</span>
-          <time dateTime={comment.createdAt} className="whitespace-nowrap text-xs text-text-secondary">
-            {formatCommentTimestamp(comment.createdAt)}
-          </time>
-        </div>
-        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-text-primary">{comment.content}</p>
-      </div>
-    </article>
-  ))
+  return (
+    <div className="space-y-3">
+      {comments.map((comment) => (
+        <SingleCommentCard key={comment.id} comment={comment} />
+      ))}
+    </div>
+  )
 }
 
 type CommentComposerProps = {
