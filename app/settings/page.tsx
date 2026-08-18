@@ -9,7 +9,7 @@ import { useProfile } from '@/lib/ProfileContext'
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
 import type { Scope } from '@/components/dashboard/DashboardSidebar'
 import { PageHeader } from '@/components/layout/PageHeader'
-import { Button, Dialog, Input, StatusState } from '@/components/ui'
+import { Button, Dialog, Input, Skeleton, StatusState } from '@/components/ui'
 import { toast } from '@/lib/toast'
 import {
   Camera, Bell, Building2, Monitor, Lock, HardDrive,
@@ -312,8 +312,37 @@ export default function SettingsPage() {
 
   if (!isLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent/20 border-t-accent" />
+      <div className="flex h-screen overflow-hidden bg-background-light">
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          <PageHeader
+            eyebrow="Account"
+            title="Settings"
+            description="Manage your profile, notifications, organization, and account security."
+            className="shrink-0 pl-14 md:pl-6"
+          />
+          <div className="flex-1 overflow-y-auto p-6 bg-background">
+            <div className="max-w-2xl mx-auto space-y-5" role="status" aria-label="Loading settings">
+              <span className="sr-only">Loading settings</span>
+              <section className="rounded-pinspace-lg border border-border bg-background-card p-6 space-y-4">
+                <div className="flex items-center gap-4">
+                  <Skeleton className="w-16 h-16 rounded-full shrink-0" />
+                  <div className="space-y-2 flex-1">
+                    <Skeleton className="h-5 w-40 rounded-md" />
+                    <Skeleton className="h-4 w-60 rounded-md" />
+                  </div>
+                </div>
+                <div className="space-y-3 pt-2">
+                  <Skeleton className="h-10 w-full rounded-md" />
+                  <Skeleton className="h-10 w-full rounded-md" />
+                </div>
+              </section>
+              <section className="rounded-pinspace-lg border border-border bg-background-card p-6 space-y-4">
+                <Skeleton className="h-6 w-36 rounded-md" />
+                <Skeleton className="h-10 w-full rounded-md" />
+              </section>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
