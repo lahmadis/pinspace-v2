@@ -7,6 +7,7 @@ import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { PDFTextureMaterial } from './PDFTexture'
 import { useBoardTexture } from './useBoardTexture'
+import { useBoardCompositeTexture } from './useBoardCompositeTexture'
 import { useDisposableGeometry } from './useDisposableGeometry'
 import VideoBadge from './VideoBadge'
 import { ENGINE_PALETTE } from './enginePalette'
@@ -19,6 +20,7 @@ interface BoardThumbnailProps {
   onClick?: (board: Board) => void
   isHighlighted?: boolean
   onHover?: (hovered: boolean) => void // Callback when board hover state changes
+  refreshNonce?: number
   /**
    * Hide the callout-count badge. The badge is an <Html> DOM overlay living
    * OUTSIDE the canvas at z-index 60; the panels that cover the room (the
@@ -82,7 +84,7 @@ function BoardImageMaterial({
   )
 }
 
-export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted, onHover, suppressCountBadge }: BoardThumbnailProps) {
+export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted, onHover, refreshNonce = 0, suppressCountBadge }: BoardThumbnailProps) {
   const [hovered, setHovered] = useState(false)
   const meshRef = useRef<THREE.Mesh>(null)
   const uploaderName =
@@ -107,10 +109,12 @@ export default function BoardThumbnail({ board, position, width, height, onClick
     imageUrl.startsWith('blob:')
   )) && !isPDF
 
-  // Imperative texture loading — never remounts the mesh on URL change, so the
-  // previous texture stays on screen until the new one resolves (no gray flash
-  // on optimistic → thumbnail → full transitions).
-  const { texture, isInitialLoad } = useBoardTexture(hasValidImage ? imageUrl : null)
+  // Composite texture loading — blends base board image with trace lines overlay
+  const { texture, isInitialLoad } = useBoardCompositeTexture(
+    board.id,
+    hasValidImage ? imageUrl : null,
+    refreshNonce
+  )
 
   // Subtle animation on hover — skip when already at target to avoid per-frame writes on every board
   useFrame(() => {
