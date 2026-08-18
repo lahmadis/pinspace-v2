@@ -64,7 +64,7 @@ export default function YearPage() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-background text-text-primary">
       <header className="border-b border-border bg-background-light">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+        <div className="mx-auto max-w-[96rem] px-4 py-6 sm:px-6">
           <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm"><Link href="/explore" className="min-h-11 content-center rounded-pinspace px-2 font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Explore</Link><span aria-hidden="true">/</span><Link href={`/explore/${params.department}`} className="min-h-11 content-center rounded-pinspace px-2 font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">{departmentName}</Link><span aria-hidden="true">/</span><span>{year.label}</span></nav>
           <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div><p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Programme year</p><h1 className="mt-1 break-words text-3xl font-black sm:text-5xl">{departmentName} · {year.label}</h1><p className="mt-2 text-text-secondary">{nodes.length} {nodes.length === 1 ? 'published studio' : 'published studios'}</p></div>
@@ -76,7 +76,7 @@ export default function YearPage() {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <main className="mx-auto grid max-w-[96rem] gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <section aria-label={`${departmentName} ${year.label} studio network`} className="min-h-[34rem] overflow-hidden rounded-pinspace-lg border border-border bg-pinspace-forest sm:min-h-[40rem]">
           {loadState === 'loading' ? <div className="flex min-h-[34rem] items-center justify-center p-4"><StatusState status="loading" title="Loading studios" /></div>
             : loadState === 'error' ? <div className="flex min-h-[34rem] items-center justify-center p-4"><StatusState status="error" title="Could not load studios" description="Try the request again." action={<Button type="button" onClick={() => void loadStudios()}>Try again</Button>} className="w-full max-w-lg" /></div>
