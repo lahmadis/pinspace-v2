@@ -22,7 +22,7 @@ export default function CritModeHeader({
       role="status"
       className="fixed inset-x-0 top-0 z-50 max-h-[45dvh] overflow-y-auto border-b border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger)/0.95)] pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-white shadow-[var(--shadow-raised)] backdrop-blur-md motion-reduce:transition-none"
     >
-      <div className="mx-auto flex max-w-7xl flex-col gap-3 px-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <div className="mx-auto flex max-w-[96rem] flex-col gap-3 px-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           {/* Live Indicator */}
           <div className="flex items-center gap-2">
