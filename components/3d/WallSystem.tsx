@@ -62,6 +62,7 @@ interface WallSystemProps {
    * accents change — the floor and background are untouched.
    */
   wallColor?: 'grey' | 'white'
+  refreshNonce?: number
   /**
    * Hide the boards' callout-count badges while a 2D panel is open over this
    * room — currently the lightbox and the floor-plan editor.
@@ -99,7 +100,7 @@ const WALL_PALETTES: Record<'grey' | 'white', {
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', refreshNonce = 0, suppressCallouts = false }: WallSystemProps) {
 
   const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
@@ -290,6 +291,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                   onClick={onBoardClick}
                   isHighlighted={highlightedBoardId === board.id}
                   onHover={(hovered) => onBoardHover?.(hovered ? board.id : null)}
+                  refreshNonce={refreshNonce}
                   suppressCountBadge={suppressCallouts}
                 />
               )
