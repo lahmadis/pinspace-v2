@@ -32,7 +32,7 @@ export function AdminShell({ currentPath, title, description, actions, children 
       contentClassName="bg-background"
     >
       <PageHeader eyebrow="Administration" title={title} description={description} actions={actions} />
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">{children}</div>
+      <div className="mx-auto w-full max-w-[96rem] px-4 py-6 sm:px-6 lg:px-8">{children}</div>
     </AppShell>
   )
 }
