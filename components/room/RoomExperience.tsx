@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react'
 import type { Board, FloorTable } from '@/types'
-import { ROOM, MONO_STACK } from '@/lib/room/palette'
+import { ROOM } from '@/lib/room/palette'
 import type { RoomStudent } from '@/lib/room/students'
 import { buildRoomShell, type RoomBay, type RoomShellConfig } from '@/lib/room/roomShell'
 import { useRoomNavigation } from './useRoomNavigation'

@@ -37,14 +37,13 @@ export default function RoomCompass({
   occupiedBays,
   animate = true,
 }: RoomCompassProps) {
-  const { segments, scale, cone } = useMemo(() => {
+  const { segments, cone } = useMemo(() => {
     const plan = roomPlan(shell)
     const s = (SIZE - PAD * 2) / (plan.radiusIn * 2)
     // Plan +Y runs away from the viewer; SVG +Y runs down. Negating puts
     // "ahead" at the top of the compass, the way a floor plan is read.
     const toSvg = (x: number, y: number): [number, number] => [SIZE / 2 + x * s, SIZE / 2 - y * s]
     return {
-      scale: s,
       segments: plan.segments.map((seg) => {
         const [ax, ay] = toSvg(seg.x1, seg.y1)
         const [bx, by] = toSvg(seg.x2, seg.y2)
