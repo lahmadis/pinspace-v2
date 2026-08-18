@@ -35,11 +35,16 @@ const StudioRoom = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex h-full w-full items-center justify-center bg-primary-dark p-4">
-        <StatusState status="loading" title="Loading 3D studio" description="Preparing the room canvas and controls." />
+      <div className="flex h-full w-full items-center justify-center bg-pinspace-forest p-4 text-background-light">
+        <div className="flex flex-col items-center justify-center p-6 rounded-xl bg-pinspace-forest/90 border border-background-light/20 shadow-xl text-center">
+          <div className="h-10 w-10 mb-3 rounded-full border-2 border-background-light/30 border-t-pinspace-amber animate-spin" />
+          <h4 className="text-sm font-semibold text-background-light mb-1">Loading 3D Canvas...</h4>
+          <p className="text-xs text-pinspace-cream/80">Preparing 3D room objects and shaders.</p>
+        </div>
       </div>
-  ),
-})
+    ),
+  }
+)
 
 const DEFAULT_CONFIG = DEFAULT_WALL_CONFIG
 
@@ -1025,11 +1030,54 @@ export default function StudioPage() {
 
   if (isLoading) {
     return (
-      <StudioShell label="Studio loading">
-        <div className="flex h-full w-full items-center justify-center p-4">
-          <StatusState status="loading" title="Loading studio" description="Connecting to the room and preparing its boards." />
+      <div className="fixed inset-0 flex flex-col bg-pinspace-forest text-background-light overflow-hidden z-50">
+        {/* Studio Header Bar Skeleton */}
+        <div className="flex-shrink-0 px-4 py-3 bg-pinspace-forest/90 border-b border-background-light/10 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-24 rounded-pinspace bg-background-light/10 animate-pulse" />
+            <div className="h-4 w-32 rounded bg-background-light/15 animate-pulse" />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-full bg-background-light/10 animate-pulse" />
+            <div className="h-8 w-8 rounded-full bg-background-light/10 animate-pulse" />
+            <div className="h-8 w-20 rounded-pinspace bg-background-light/20 animate-pulse" />
+          </div>
         </div>
-      </StudioShell>
+
+        {/* Main Viewport Shimmer Canvas */}
+        <div className="flex-1 min-h-0 relative flex items-center justify-center p-6 bg-gradient-to-b from-pinspace-forest via-[#113830] to-[#0A2620]">
+          {/* Subtle Room Wall Outline Skeleton */}
+          <div className="absolute inset-8 rounded-xl border border-background-light/10 bg-background-light/5 backdrop-blur-sm pointer-events-none" />
+
+          {/* Center High-Contrast Loading Badge & Shimmer Card */}
+          <div className="relative z-10 flex flex-col items-center justify-center p-8 rounded-2xl bg-pinspace-forest/90 border border-background-light/20 shadow-2xl backdrop-blur-xl text-center max-w-sm w-full mx-4">
+            <div className="relative mb-4 flex items-center justify-center">
+              <div className="h-12 w-12 rounded-full border-3 border-background-light/20 border-t-pinspace-amber animate-spin" />
+              <span className="absolute text-xl select-none">🏛️</span>
+            </div>
+
+            {/* High-Contrast Visible White/Cream Title & Subtitle */}
+            <h3 className="text-base font-bold text-background-light mb-1.5 tracking-wide">
+              Loading 3D Studio...
+            </h3>
+            <p className="text-xs font-medium text-pinspace-cream/80 max-w-xs leading-relaxed">
+              Connecting to room layout, walls, and board items.
+            </p>
+
+            {/* Shimmer Progress Indicator Bar */}
+            <div className="mt-5 w-full h-1.5 rounded-full bg-background-light/10 overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-pinspace-amber via-accent to-pinspace-cream w-3/4 rounded-full animate-pulse" />
+            </div>
+          </div>
+
+          {/* Floating Bottom Toolbar Skeleton */}
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2 rounded-full bg-pinspace-forest/80 border border-background-light/15 shadow-lg backdrop-blur-md">
+            <div className="h-7 w-16 rounded-full bg-background-light/15 animate-pulse" />
+            <div className="h-7 w-20 rounded-full bg-background-light/15 animate-pulse" />
+            <div className="h-7 w-7 rounded-full bg-background-light/15 animate-pulse" />
+          </div>
+        </div>
+      </div>
     )
   }
 
