@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { ExternalLink, Images } from 'lucide-react'
-import { Button, Dialog, EmptyState, Select, StatusState } from '@/components/ui'
+import { Button, Card, Dialog, EmptyState, Select, Skeleton, StatusState } from '@/components/ui'
 
 type PortfolioBoard = {
   id: string
@@ -62,7 +62,38 @@ export default function PortfolioPage() {
   useEffect(() => { void loadProfile() }, [loadProfile])
 
   if (loadState === 'loading') {
-    return <main className="flex min-h-screen items-center justify-center bg-background px-4"><StatusState status="loading" title="Loading portfolio" description="Gathering published boards." /></main>
+    return (
+      <div className="min-h-screen overflow-x-hidden bg-background text-text-primary">
+        <header className="sticky top-0 z-20 border-b border-border bg-background-light/95 backdrop-blur-md">
+          <div className="mx-auto flex min-h-16 max-w-[96rem] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+            <Link href="/explore" className="inline-flex min-h-11 items-center rounded-pinspace px-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">← Explore</Link>
+            <span className="font-mono text-xs uppercase tracking-[0.16em] text-text-secondary">Public portfolio</span>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-[96rem] px-4 py-8 sm:px-6 sm:py-12" role="status" aria-label="Loading portfolio">
+          <span className="sr-only">Loading portfolio</span>
+          <header className="mb-10 max-w-3xl space-y-3">
+            <Skeleton className="h-16 w-16 rounded-full" />
+            <Skeleton className="h-4 w-28 rounded-md" />
+            <Skeleton className="h-10 w-64 rounded-md" />
+            <Skeleton className="h-4 w-48 rounded-md" />
+          </header>
+
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {[0, 1, 2, 3, 4, 5].map((idx) => (
+              <Card key={idx} className="overflow-hidden p-0">
+                <Skeleton className="aspect-[4/3] w-full rounded-none" />
+                <div className="p-4 space-y-2">
+                  <Skeleton className="h-5 w-3/4 rounded-md" />
+                  <Skeleton className="h-4 w-1/2 rounded-md" />
+                </div>
+              </Card>
+            ))}
+          </div>
+        </main>
+      </div>
+    )
   }
 
   if (loadState === 'error') {
@@ -80,13 +111,13 @@ export default function PortfolioPage() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-background text-text-primary">
       <header className="sticky top-0 z-20 border-b border-border bg-background-light/95 backdrop-blur-md">
-        <div className="mx-auto flex min-h-16 max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex min-h-16 max-w-[96rem] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <Link href="/explore" className="inline-flex min-h-11 items-center rounded-pinspace px-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">← Explore</Link>
           <span className="font-mono text-xs uppercase tracking-[0.16em] text-text-secondary">Public portfolio</span>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
+      <main className="mx-auto max-w-[96rem] px-4 py-8 sm:px-6 sm:py-12">
         <header className="mb-10 max-w-3xl">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-border bg-primary text-2xl font-bold text-pinspace-ink" aria-hidden="true">{displayName.charAt(0).toUpperCase()}</div>
           <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Published work</p>
