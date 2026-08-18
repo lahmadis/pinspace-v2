@@ -98,7 +98,7 @@ export default function DepartmentPage() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-background text-text-primary">
       <header className="border-b border-border bg-background-light">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+        <div className="mx-auto max-w-[96rem] px-4 py-6 sm:px-6">
           <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm"><Link href="/explore" className="min-h-11 content-center rounded-pinspace px-2 font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Explore</Link><span aria-hidden="true">/</span><span className="break-words">{departmentName}</span></nav>
           <p className="mt-5 font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Department discovery</p>
           <h1 className="mt-1 break-words text-3xl font-black sm:text-5xl">{departmentName}</h1>
@@ -107,7 +107,7 @@ export default function DepartmentPage() {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <main className="mx-auto grid max-w-[96rem] gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="min-w-0">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             <div className="flex flex-wrap gap-2" role="group" aria-label="Department view">
