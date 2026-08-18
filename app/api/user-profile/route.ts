@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase/server'
+import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { validateName } from '@/lib/validation/safeName'
 
 /** GET /api/user-profile – get current user's profile. Returns null if none. */
@@ -93,6 +93,15 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error('Error saving user profile:', error)
       return NextResponse.json({ error: 'Failed to save profile' }, { status: 500 })
+    }
+
+    // Sync author_name in comments & board_comments tables if full_name changed
+    if (fullName) {
+      const admin = supabaseServiceRole()
+      Promise.all([
+        admin.from('comments').update({ author_name: fullName }).eq('author_id', session.user.id),
+        admin.from('board_comments').update({ author_name: fullName }).eq('author_id', session.user.id),
+      ]).catch((err) => console.error('Error syncing author_name on comment tables:', err))
     }
 
     return NextResponse.json(data)
