@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 
-import { Button, Card, EmptyState, Input, StatusState } from '@/components/ui'
+import { Button, Card, EmptyState, Input, Skeleton, StatusState } from '@/components/ui'
 import { toast } from '@/lib/toast'
 import type { Board, Comment } from '@/types'
 
@@ -99,8 +99,37 @@ export default function BoardDetailPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-background px-4">
-        <StatusState status="loading" title="Loading board" description="Preparing the board and its feedback." className="w-full max-w-md" />
+      <main className="min-h-screen bg-background pb-[max(3rem,env(safe-area-inset-bottom))]" role="status" aria-label="Loading board">
+        <span className="sr-only">Loading board</span>
+        <header className="border-b border-border bg-background-light/95 backdrop-blur-sm">
+          <div className="mx-auto flex max-w-[96rem] flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <Skeleton className="h-10 w-10 rounded-md shrink-0" />
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-24 rounded-md" />
+                <Skeleton className="h-6 w-48 rounded-md" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-10 w-24 rounded-md" />
+              <Skeleton className="h-10 w-24 rounded-md" />
+            </div>
+          </div>
+        </header>
+
+        <div className="mx-auto grid max-w-[96rem] gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)] lg:gap-8 lg:py-10">
+          <div className="min-w-0 space-y-6">
+            <Card className="overflow-hidden p-0">
+              <Skeleton className="aspect-[16/10] w-full rounded-none" />
+            </Card>
+          </div>
+          <div className="space-y-4">
+            <Card className="p-5 space-y-3">
+              <Skeleton className="h-5 w-32 rounded-md" />
+              <Skeleton className="h-16 w-full rounded-md" />
+            </Card>
+          </div>
+        </div>
       </main>
     )
   }
@@ -139,7 +168,7 @@ export default function BoardDetailPage() {
   return (
     <main className="min-h-screen bg-background pb-[max(3rem,env(safe-area-inset-bottom))]">
       <header className="border-b border-border bg-background-light/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mx-auto flex max-w-[96rem] flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <Button type="button" variant="ghost" onClick={() => router.back()} className="min-h-11 shrink-0 px-3" aria-label="Back">
               <span aria-hidden="true">←</span>
@@ -158,7 +187,7 @@ export default function BoardDetailPage() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)] lg:gap-8 lg:py-10">
+      <div className="mx-auto grid max-w-[96rem] gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)] lg:gap-8 lg:py-10">
         <div className="min-w-0 space-y-6">
           <Card className="overflow-hidden p-0">
             <div className="relative aspect-[16/10] bg-background-lighter">
