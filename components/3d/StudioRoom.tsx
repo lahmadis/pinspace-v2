@@ -189,6 +189,8 @@ function SceneContent({
   studioId,
   boards: _boards,
   wallConfig,
+  commentNonce,
+  critDirty,
   othersEditingWalls,
   onBoardUpdate: _onBoardUpdate,
   onWallDoubleClick,
@@ -371,6 +373,7 @@ function SceneContent({
         onBoardHover={onBoardHover}
         onFloorClick={onFloorClick}
         wallColor={wallColor}
+        refreshNonce={(commentNonce || 0) + (critDirty?.seq || 0)}
       />
 
       {/* Tables with optional 3D models on floor - click table to open model in viewer */}
