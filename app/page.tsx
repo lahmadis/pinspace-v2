@@ -91,7 +91,7 @@ function HomeInner() {
       <main className="relative flex min-h-dvh w-full items-center justify-center overflow-hidden bg-primary px-4 py-24 text-center sm:px-8">
         <div className="absolute right-4 top-4 z-10 sm:right-8 sm:top-7">
           {loading ? (
-            <div aria-hidden="true" className="h-11 w-11 rounded-full bg-accent" />
+            <div aria-hidden="true" className="h-11 w-20 rounded-full bg-accent/60 animate-pulse" />
           ) : user ? (
             <AvatarMenu
               email={user.email || user.user_metadata?.email}
@@ -104,9 +104,9 @@ function HomeInner() {
             <Link
               href={signInHref}
               aria-label="Sign in to PinSpace"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-accent text-base font-extrabold text-primary transition-colors hover:bg-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pinspace-ink focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
+              className="inline-flex min-h-11 items-center justify-center rounded-full bg-accent px-6 py-2 text-sm font-extrabold text-primary transition-colors hover:bg-pinspace-ink hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pinspace-ink focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
             >
-              <span aria-hidden="true">S</span>
+              Sign In
             </Link>
           )}
         </div>
@@ -130,23 +130,32 @@ function HomeInner() {
                 disabled
                 className="inline-flex min-h-16 items-center justify-center rounded-full border-0 bg-background-light px-10 py-5 text-[19px] font-extrabold text-pinspace-ink opacity-65"
               >
-                Dashboard
+                Loading…
               </button>
+            ) : user ? (
+              <>
+                <Link
+                  href={dashboardHref}
+                  className="inline-flex min-h-16 items-center justify-center rounded-full border-0 bg-background-light px-10 py-5 text-[19px] font-extrabold text-pinspace-ink transition-colors hover:bg-pinspace-ink hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pinspace-ink focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
+                >
+                  Dashboard
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setShowGalleryModal(true)}
+                  className="inline-flex min-h-16 items-center justify-center rounded-full border-0 bg-accent px-10 py-5 text-[19px] font-extrabold text-primary transition-colors hover:bg-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pinspace-ink focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
+                >
+                  Enter the network <span aria-hidden="true" className="ml-1">→</span>
+                </button>
+              </>
             ) : (
               <Link
-                href={dashboardHref}
-                className="inline-flex min-h-16 items-center justify-center rounded-full border-0 bg-background-light px-10 py-5 text-[19px] font-extrabold text-pinspace-ink transition-colors hover:bg-pinspace-ink hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pinspace-ink focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
+                href={signInHref}
+                className="inline-flex min-h-16 items-center justify-center rounded-full border-0 bg-accent px-10 py-5 text-[19px] font-extrabold text-primary transition-colors hover:bg-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pinspace-ink focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
               >
-                Dashboard
+                Sign in to Get Started <span aria-hidden="true" className="ml-1">→</span>
               </Link>
             )}
-            <button
-              type="button"
-              onClick={() => setShowGalleryModal(true)}
-              className="inline-flex min-h-16 items-center justify-center rounded-full border-0 bg-accent px-10 py-5 text-[19px] font-extrabold text-primary transition-colors hover:bg-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pinspace-ink focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
-            >
-              Enter the network <span aria-hidden="true" className="ml-1">→</span>
-            </button>
           </div>
         </div>
       </main>
