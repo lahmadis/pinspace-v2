@@ -12,20 +12,18 @@ import WallSystem from './WallSystem'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry } from './CameraController'
-import { RoomCameraRig, type RoomCameraMode } from './RoomCameraModes'
 import RosterPanel from '@/components/room/RosterPanel'
-import RoomMinimap from '@/components/room/RoomMinimap'
+import RoomExperience from '@/components/room/RoomExperience'
 import UnfoldedView from '@/components/room/UnfoldedView'
 import PlanView from '@/components/room/PlanView'
 import RevisionStrip, { type RoomView } from '@/components/room/RevisionStrip'
 import { buildRevisionNodes } from '@/lib/room/revisions'
 import { deriveRoomStudents, type RoomStudent } from '@/lib/room/students'
-import { LaserPointer } from './LaserPointer'
 import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
 import { DraggableText } from './DraggableText'
 import { WallDropZone } from '@/components/3d/WallDropZone'
-import type { WallTextItem } from '@/lib/wallLayout'
+import { getWallTransformResolved, type WallTextItem } from '@/lib/wallLayout'
 import type { WallConfigWriter } from '@/lib/wallConfigWriter'
 import RightCommentPanel from '@/components/RightCommentPanel'
 import LightboxModal from '@/components/LightboxModal'
@@ -39,17 +37,6 @@ import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import { toast } from '@/lib/toast'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
 
-
-/**
- * Room chrome palette. Yellow appears ONLY on active state — here, the selected
- * camera mode — and never on a wall, the floor, or behind a board.
- */
-const ROOM_CHROME = {
-  ink: '#0B0B0B',
-  paper: '#FFFCF0',
-  yellow: '#FFC800',
-  hairline: '#C9C3B4',
-} as const
 
 /**
  * Vertical space the view switcher and revision strip occupy at the bottom of
@@ -181,6 +168,12 @@ interface StudioRoomProps {
    * Phase B.3.1: presenter cursor. laserRef = latest received cursor world
    * position for followers to render; laserColor = the presenter's deterministic
    * dot color. (Broadcast is always-on while presenting — no activation flag.)
+   *
+   * laserRef is currently dormant: the parent page still pumps live "laser"
+   * broadcast packets into it every frame, but nothing in this file renders it
+   * any more — the dot depended on WebGL raycasting against wall meshes, which
+   * only exist in wall-edit mode now. Deferred pending a DOM re-implementation
+   * (see the room-rewrite plan), not an oversight.
    */
   laserRef?: React.MutableRefObject<LaserState | null>
   laserColor?: string
@@ -627,119 +620,12 @@ function SceneContent({
   )
 }
 
-/**
- * Phase B.2: presenter camera broadcaster. Rendered inside <Canvas> as a sibling
- * of CameraController. When the local user is the presenter AND not in edit mode,
- * it sends the camera pose + OrbitControls target (~10Hz) over the live broadcast
- * channel. Pure side-effect in useFrame — no state, no logging. self:false on the
- * channel means the presenter never receives (or follows) its own packets.
- */
-function PresenterCamBroadcast({
-  liveChannelRef,
-  isPresenter,
-  editingWall,
-  orbitControlsRef,
-}: {
-  liveChannelRef?: React.MutableRefObject<ReturnType<typeof supabase.channel> | null>
-  isPresenter: boolean
-  editingWall: number | null
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  orbitControlsRef: React.RefObject<any>
-}) {
-  const { camera } = useThree()
-  const sinceLastSend = useRef(0)
-  useFrame((_state, delta) => {
-    if (!isPresenter || editingWall !== null) return
-    const channel = liveChannelRef?.current
-    if (!channel) return
-    sinceLastSend.current += delta
-    if (sinceLastSend.current < 0.1) return
-    sinceLastSend.current = 0
-    const controls = orbitControlsRef.current?.get
-      ? orbitControlsRef.current.get()
-      : orbitControlsRef.current
-    const target = controls?.target
-    const r = (n: number) => Math.round(n * 1000) / 1000
-    channel.send({
-      type: 'broadcast',
-      event: 'cam',
-      payload: {
-        p: [r(camera.position.x), r(camera.position.y), r(camera.position.z)],
-        t: target ? [r(target.x), r(target.y), r(target.z)] : [0, 0, 0],
-      },
-    })
-  })
-  return null
-}
-
-/**
- * Phase B.3.1: presenter cursor broadcaster (replaces the B.3 hold-L laser).
- * Lives inside <Canvas>. While presenting and NOT in edit mode, it passively
- * raycasts the live pointer against the scene and broadcasts the world hit point
- * over the "laser" event at ≤15Hz (throttled). It does NOT gate on any key and
- * does NOT suppress the presenter's own orbit/clicks — it is pure observation.
- * Sends a single { off:true } when the pointer leaves the canvas (incl. when the
- * presenter opens the lightbox, whose DOM overlay steals the pointer — so the 3D
- * dot is never shown over the lightbox) or when presenting stops. Read-only
- * raycast against existing meshes; no state, no logging. (The dot mesh sets
- * raycast=null so it's skipped.)
- */
-function PresenterCursorBroadcast({
-  liveChannelRef,
-  isPresenter,
-  editingWall,
-}: {
-  liveChannelRef?: React.MutableRefObject<ReturnType<typeof supabase.channel> | null>
-  isPresenter: boolean
-  editingWall: number | null
-}) {
-  const { camera, scene, raycaster, pointer, gl } = useThree()
-  const sinceLastSend = useRef(0)
-  const wasActive = useRef(false)
-  const pointerOverRef = useRef(false)
-  // Track whether the pointer is over the canvas so we can stop broadcasting (and
-  // emit one {off}) the moment it leaves — e.g. onto the lightbox/toolbar overlay.
-  useEffect(() => {
-    const el = gl.domElement
-    const onEnter = () => { pointerOverRef.current = true }
-    const onLeave = () => { pointerOverRef.current = false }
-    el.addEventListener('pointerenter', onEnter)
-    el.addEventListener('pointerleave', onLeave)
-    return () => {
-      el.removeEventListener('pointerenter', onEnter)
-      el.removeEventListener('pointerleave', onLeave)
-    }
-  }, [gl])
-  useFrame((_state, delta) => {
-    const channel = liveChannelRef?.current
-    const active = isPresenter && editingWall === null && pointerOverRef.current
-    if (active && channel) {
-      sinceLastSend.current += delta
-      if (sinceLastSend.current >= 1 / 15) {
-        sinceLastSend.current = 0
-        raycaster.setFromCamera(pointer, camera)
-        const hit = raycaster.intersectObjects(scene.children, true)[0]
-        if (hit) {
-          const r = (n: number) => Math.round(n * 1000) / 1000
-          channel.send({
-            type: 'broadcast',
-            event: 'laser',
-            payload: { p: [r(hit.point.x), r(hit.point.y), r(hit.point.z)] },
-          })
-        }
-      }
-    }
-    if (!active && wasActive.current && channel) {
-      channel.send({ type: 'broadcast', event: 'laser', payload: { off: true } })
-    }
-    wasActive.current = active
-  })
-  return null
-}
-
-// Phase B.4: LaserPointer (the presenter cursor dot) moved to
-// components/3d/LaserPointer.tsx so the guest /crit page renders an identical dot
-// without importing this heavy module. Behavior unchanged; imported at the top.
+// PresenterCamBroadcast / PresenterCursorBroadcast (camera-pose + raycast-cursor
+// broadcast for the old orbiting room view) and the LaserPointer dot they fed
+// were removed with the fixed-camera room rewrite — both only ever ran while
+// `editingWall === null`, which the Canvas below no longer mounts for. See
+// docs/audit-3d-room.md and the room-rewrite plan for the presenter-follow
+// follow-up (broadcasting `facingBay` instead of a live camera pose).
 
 export default function StudioRoom(props: StudioRoomProps) {
   const [user, setUser] = useState<User | null>(null)
@@ -818,22 +704,17 @@ export default function StudioRoom(props: StudioRoomProps) {
 
     checkMembership()
   }, [user, props.workspaceId])
-  // Phase 3 camera modes. Walk is the default: level pitch, turn-only drag that
-  // snaps square-on to a wall on release. Overview restores the familiar orbit
-  // with its pitch clamped to a 16-58 degree band.
-  const [cameraMode, setCameraMode] = useState<RoomCameraMode>('walk')
-  const [facingWall, setFacingWall] = useState(0)
-  // Live camera orientation for the minimap cone. A ref, not state: it changes
-  // every frame during a drag and the minimap reads it from its own rAF loop.
-  const cameraPlanRef = useRef({ azimuth: 0, distance: 0 })
+  // Which wall the Roster / Unfolded / Plan tabs have asked the fixed-camera
+  // room to face. RoomExperience owns the actual turn animation; this is just
+  // the request — bump nonce to re-fire on the same wall.
   const [walkRequest, setWalkRequest] = useState<{ wall: number | null; nonce: number }>({ wall: null, nonce: 0 })
 
   // Phase 4 roster. Derived from the boards already in state — no extra fetch.
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
 
-  // Phase 8: which of the three room views is showing. Room keeps the Canvas
-  // mounted; Unfolded and Plan overlay it so returning is instant and the WebGL
-  // context is never torn down and rebuilt.
+  // Phase 8: which of the three room views is showing. Room is the fixed-camera
+  // CSS shell (no Canvas); Unfolded and Plan are pure DOM too, so switching
+  // between all three is instant and never touches WebGL.
   const [roomView, setRoomView] = useState<RoomView>('room')
 
   // Milestones are computed once per mount. Date.now() in render would make the
@@ -843,20 +724,9 @@ export default function StudioRoom(props: StudioRoomProps) {
 
   const handleSelectStudent = useCallback((student: RoomStudent) => {
     setSelectedStudentId((prev) => (prev === student.id ? null : student.id))
-    // Snapping is a Walk-mode motion; selecting a student implies wanting to
-    // stand in front of their work, so switch modes rather than no-op.
-    setCameraMode('walk')
+    // Selecting a student implies wanting to stand in front of their work.
     setWalkRequest((prev) => ({ wall: student.wallIndex, nonce: prev.nonce + 1 }))
   }, [])
-
-  const stepWall = useCallback((direction: 1 | -1) => {
-    const count = props.wallConfig?.walls?.length ?? 0
-    if (count === 0) return
-    setWalkRequest((prev) => ({
-      wall: ((facingWall + direction) % count + count) % count,
-      nonce: prev.nonce + 1,
-    }))
-  }, [facingWall, props.wallConfig])
 
   const [editingWall, setEditingWall] = useState<number | null>(null)
   const [editingWallDimensions, setEditingWallDimensions] = useState<WallDimensions | null>(null)
@@ -1436,6 +1306,26 @@ export default function StudioRoom(props: StudioRoomProps) {
     setPlacedBoards3D(newMap)
   }
 
+  /**
+   * Entry point from the fixed-camera room (double-click the facing wall).
+   * Replaces WallSystem's mesh onDoubleClick, which computed the same
+   * position/rotation from the wall it was rendering — here there's no mesh,
+   * so it's derived directly from the same getWallTransformResolved the old
+   * mesh used, then handed to the unchanged handleWallDoubleClick, which still
+   * drives the (still-Three.js) wall-edit Canvas below.
+   */
+  const handleEnterWallEdit = useCallback((wallIndex: number, side: 'front' | 'back') => {
+    const wall = props.wallConfig?.walls?.[wallIndex]
+    if (!wall) return
+    const transform = getWallTransformResolved(props.wallConfig, wallIndex)
+    const position = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
+    const rotation = side === 'front' ? transform.rotationY : transform.rotationY + Math.PI
+    handleWallDoubleClick(wallIndex, wall, position, rotation, side)
+    // handleWallDoubleClick is a plain (non-memoized) function redefined every
+    // render, so this callback is too — it's only ever read on click, not on a
+    // hot path, so that's cheap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.wallConfig])
 
   const handleCameraTransitionComplete = () => {
     if (editingWall !== null) {
@@ -2418,16 +2308,23 @@ export default function StudioRoom(props: StudioRoomProps) {
       )}
 
       {editingWall === null && roomView === 'room' && (
-        <RoomMinimap
+        <RoomExperience
           wallConfig={props.wallConfig}
-          facingWall={facingWall}
-          cameraPlanRef={cameraPlanRef}
+          boards={localBoards}
+          tables={tables}
+          wallColor={props.wallColor}
+          students={roomStudents}
+          selectedStudentId={selectedStudentId}
+          onBoardOpen={handleLightboxOpen}
+          onTableModelClick={handleTableModelClick}
+          onEditWall={props.canEditWalls && !props.isArchived ? handleEnterWallEdit : undefined}
+          suppressCallouts={lightboxBoard !== null || floorEditorOpen}
+          othersEditingWalls={props.othersEditingWalls}
+          requestWallIndex={walkRequest.wall}
+          requestNonce={walkRequest.nonce}
         />
       )}
 
-      {/* Unfolded and Plan overlay the still-mounted Canvas rather than
-          replacing it, so switching back to Room does not rebuild the WebGL
-          context or reload every board texture. */}
       {editingWall === null && roomView === 'unfolded' && (
         <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
           <UnfoldedView
@@ -2461,60 +2358,11 @@ export default function StudioRoom(props: StudioRoomProps) {
         />
       )}
 
-      {/* Camera mode toggle. Hidden in wall-edit mode, where the camera is
-          driven into the wall and neither mode applies. */}
-      {editingWall === null && roomView === 'room' && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3">
-        <div className="flex items-center gap-1 p-1 rounded-full shadow-lg"
-             style={{ background: ROOM_CHROME.ink, border: `1px solid ${ROOM_CHROME.hairline}` }}>
-          {(['walk', 'overview'] as const).map((mode) => {
-            const isActive = cameraMode === mode
-            return (
-              <button
-                key={mode}
-                onClick={() => setCameraMode(mode)}
-                aria-pressed={isActive}
-                className="px-4 py-1.5 rounded-full text-[11px] uppercase tracking-[0.16em] transition-colors"
-                style={{
-                  background: isActive ? ROOM_CHROME.yellow : 'transparent',
-                  color: isActive ? ROOM_CHROME.ink : ROOM_CHROME.paper,
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                }}
-              >
-                {mode}
-              </button>
-            )
-          })}
-        </div>
-        <span
-          className="hidden lg:inline text-[10px] uppercase tracking-[0.16em] whitespace-nowrap"
-          style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: ROOM_CHROME.ink, opacity: 0.55 }}
-        >
-          Drag to orbit · Click a name to face their wall
-        </span>
-        </div>
-      )}
-
-      {/* Walk-mode wall stepping. Edge chevrons rather than a control cluster so
-          they read as "the next bay is that way". */}
-      {editingWall === null && cameraMode === 'walk' && (props.wallConfig?.walls?.length ?? 0) > 1 && (
-        <>
-          {([['left', -1], ['right', 1]] as const).map(([side, dir]) => (
-            <button
-              key={side}
-              onClick={() => stepWall(dir)}
-              aria-label={side === 'left' ? 'Previous wall' : 'Next wall'}
-              className={`fixed top-1/2 -translate-y-1/2 ${side === 'left' ? 'left-4' : 'right-4'} z-40 w-11 h-16 rounded-xl shadow-lg flex items-center justify-center transition-opacity hover:opacity-90`}
-              style={{ background: ROOM_CHROME.ink, color: ROOM_CHROME.paper, border: `1px solid ${ROOM_CHROME.hairline}` }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d={side === 'left' ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6'} />
-              </svg>
-            </button>
-          ))}
-        </>
-      )}
-
+      {/* The Three.js Canvas now exists only for wall-edit mode — the fixed-
+          camera Room view above (and Unfolded/Plan) are pure DOM/CSS. Entry is
+          RoomExperience's onEditWall (double-click the facing wall), which
+          routes through handleEnterWallEdit → the unchanged handleWallDoubleClick. */}
+      {editingWall !== null && (
       <div className="w-full h-screen">
         <Canvas
           shadows
@@ -2538,30 +2386,6 @@ export default function StudioRoom(props: StudioRoomProps) {
             isFollowing={props.isFollowing}
             followPoseRef={props.followPoseRef}
           />
-          <PresenterCamBroadcast
-            liveChannelRef={props.liveChannelRef}
-            isPresenter={!!props.isPresenter}
-            editingWall={editingWall}
-            orbitControlsRef={orbitControlsRef}
-          />
-          <PresenterCursorBroadcast
-            liveChannelRef={props.liveChannelRef}
-            isPresenter={!!props.isPresenter}
-            editingWall={editingWall}
-          />
-          <RoomCameraRig
-            mode={cameraMode}
-            wallConfig={props.wallConfig}
-            orbitControlsRef={orbitControlsRef}
-            // Inert during wall editing and while following a presenter: both
-            // already own the camera, and two writers would fight per frame.
-            active={editingWall === null && !props.isFollowing}
-            requestedWall={walkRequest.wall}
-            requestNonce={walkRequest.nonce}
-            onFacingWallChange={setFacingWall}
-            cameraPlanRef={cameraPlanRef}
-          />
-          <LaserPointer laserRef={props.laserRef} color={props.laserColor ?? '#22d3ee'} />
           <SceneContent
             {...props}
             orbitControlsRef={orbitControlsRef}
@@ -2609,6 +2433,7 @@ export default function StudioRoom(props: StudioRoomProps) {
           />
         </Canvas>
       </div>
+      )}
 
       {/* Right Comment Panel */}
       <RightCommentPanel
