@@ -120,11 +120,29 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
     }
 
+    // Relational lookup for author profile display names
+    const authorIds = Array.from(
+      new Set((comments || []).map((c) => c.author_id).filter((id): id is string => Boolean(id)))
+    )
+
+    const profileMap = new Map<string, string>()
+    if (authorIds.length > 0) {
+      const { data: profiles } = await serviceSupabase
+        .from('user_profiles')
+        .select('user_id, full_name')
+        .in('user_id', authorIds)
+      for (const p of profiles || []) {
+        if (p.full_name?.trim()) {
+          profileMap.set(p.user_id, p.full_name.trim())
+        }
+      }
+    }
+
     const transformedComments = (comments || []).map((c) => ({
       id: c.id,
       boardId: c.board_id,
       authorId: c.author_id,
-      authorName: c.author_name,
+      authorName: (c.author_id ? profileMap.get(c.author_id) : null) || c.author_name,
       content: c.text,
       createdAt: c.created_at,
     }))
@@ -242,6 +260,14 @@ export async function POST(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    // Resolve profile name for logged-in user
+    const { data: userProfile } = await admin
+      .from('user_profiles')
+      .select('full_name')
+      .eq('user_id', userId)
+      .maybeSingle()
+    const resolvedName = userProfile?.full_name?.trim() || authorName || user.email?.split('@')[0] || 'Anonymous'
+
     // Insert comment with service role after explicit authorization.
     const commentId = `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     const { data: newComment, error: insertError } = await admin
@@ -250,7 +276,7 @@ export async function POST(
         id: commentId,
         board_id: boardId,
         author_id: userId,
-        author_name: authorName || 'Anonymous',
+        author_name: resolvedName,
         text: content.trim(),
       })
       .select()
