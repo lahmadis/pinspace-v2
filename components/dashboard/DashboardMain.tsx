@@ -92,48 +92,50 @@ function ProjectCard({
           {isOwner && !isArchived && <Badge variant="accent">Owner</Badge>}
         </div>
 
-        <Menu className="absolute right-2 top-2">
-          <MenuTrigger
-            aria-label={`Actions for ${projectName}`}
-            className="min-h-11 min-w-11 border-border bg-background-light/95 p-0 text-text-secondary shadow-[var(--shadow-soft)] hover:text-text-primary"
-          >
-            <MoreVertical className="h-5 w-5" aria-hidden="true" />
-          </MenuTrigger>
-          <MenuContent aria-label={`Actions for ${projectName}`}>
-            {isOwner && (
-              <Link
-                role="menuitem"
-                tabIndex={-1}
-                href={withInstitution(`/workspace/${workspace.id}/settings`, institutionSlug)}
-                className="flex min-h-10 items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-sm text-text-primary hover:bg-background-lighter focus:bg-primary-muted focus:outline-none"
-              >
-                <Settings className="h-4 w-4" aria-hidden="true" />
-                Settings
-              </Link>
-            )}
-            <MenuItem onSelect={() => onRename(workspace.id, workspace.name || '')}>
-              <Pencil className="mr-2 h-4 w-4" aria-hidden="true" />
-              Rename
-            </MenuItem>
-            {isOwner ? (
-              <MenuItem
-                onSelect={() => onDelete(workspace.id, workspace.name || '')}
-                className="text-[rgb(var(--color-danger))] focus:bg-[rgb(var(--color-danger)/0.1)]"
-              >
-                <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
-                Delete
+        <div className="absolute right-3 top-3 z-10">
+          <Menu>
+            <MenuTrigger
+              aria-label={`Actions for ${projectName}`}
+              className="flex h-9 w-9 min-h-0 min-w-0 items-center justify-center rounded-full border border-border/70 bg-background-light/90 p-0 text-text-secondary shadow-sm backdrop-blur-sm transition-all hover:bg-background-light hover:text-text-primary hover:shadow hover:scale-105"
+            >
+              <MoreVertical className="h-4 w-4" aria-hidden="true" />
+            </MenuTrigger>
+            <MenuContent aria-label={`Actions for ${projectName}`}>
+              {isOwner && (
+                <Link
+                  role="menuitem"
+                  tabIndex={-1}
+                  href={withInstitution(`/workspace/${workspace.id}/settings`, institutionSlug)}
+                  className="flex min-h-10 items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-sm text-text-primary hover:bg-background-lighter focus:bg-primary-muted focus:outline-none"
+                >
+                  <Settings className="h-4 w-4" aria-hidden="true" />
+                  Settings
+                </Link>
+              )}
+              <MenuItem onSelect={() => onRename(workspace.id, workspace.name || '')}>
+                <Pencil className="mr-2 h-4 w-4" aria-hidden="true" />
+                Rename
               </MenuItem>
-            ) : (
-              <MenuItem
-                onSelect={() => onLeave(workspace.id, workspace.name || '')}
-                className="text-[rgb(var(--color-danger))] focus:bg-[rgb(var(--color-danger)/0.1)]"
-              >
-                <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
-                Leave project
-              </MenuItem>
-            )}
-          </MenuContent>
-        </Menu>
+              {isOwner ? (
+                <MenuItem
+                  onSelect={() => onDelete(workspace.id, workspace.name || '')}
+                  className="text-[rgb(var(--color-danger))] focus:bg-[rgb(var(--color-danger)/0.1)]"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Delete
+                </MenuItem>
+              ) : (
+                <MenuItem
+                  onSelect={() => onLeave(workspace.id, workspace.name || '')}
+                  className="text-[rgb(var(--color-danger))] focus:bg-[rgb(var(--color-danger)/0.1)]"
+                >
+                  <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Leave project
+                </MenuItem>
+              )}
+            </MenuContent>
+          </Menu>
+        </div>
       </div>
 
       <Link
