@@ -18,12 +18,14 @@ import {
   DataTable,
   FormField,
   Input,
+  Skeleton,
   Spinner,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  TableSkeletonRows,
   TableStateRow,
 } from '@/components/ui'
 
@@ -179,58 +181,53 @@ export default function AdminInstructorPage() {
     }
   }
 
-  if (!isLoaded) {
+  if (!isLoaded || isAdmin === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background" role="status" aria-label="Loading administrator session">
-        <Spinner className="h-12 w-12 text-accent" aria-hidden="true" />
-      </div>
-    )
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <Card className="w-full max-w-md p-8">
-          <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-text-primary">PinSpace Admin</h1>
-            <p className="text-sm text-text-secondary mt-1">Sign in with your admin email</p>
+      <AdminShell
+        currentPath={`/admin/instructors/${params.userId}`}
+        title="Instructor details"
+        description="Review identity, studio ownership, and your administrative access."
+      >
+        <div className="space-y-6" role="status" aria-label="Loading instructor profile">
+          <span className="sr-only">Loading instructor profile</span>
+          <div className="rounded-xl border border-border bg-background-light p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-3 min-w-0 flex-1">
+                <Skeleton className="h-8 w-64 rounded-md" />
+                <div className="flex items-center gap-4">
+                  <Skeleton className="h-4 w-44 rounded-md" />
+                  <Skeleton className="h-4 w-36 rounded-md" />
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <Skeleton className="h-5 w-24 rounded-full" />
+                  <Skeleton className="h-5 w-28 rounded-full" />
+                </div>
+              </div>
+              <Skeleton className="h-10 w-32 rounded-lg" />
+            </div>
           </div>
-          <form onSubmit={handleAdminSignIn} className="space-y-4">
-            <FormField id="admin-email" label="Email">
-              {(controlProps) => (
-                <Input
-                  {...controlProps}
-                  type="email"
-                  value={signInEmail}
-                  onChange={(event) => setSignInEmail(event.target.value)}
-                  placeholder="you@gmail.com"
-                  autoComplete="email"
-                />
-              )}
-            </FormField>
-            <FormField id="admin-password" label="Password">
-              {(controlProps) => (
-                <PasswordInput
-                  {...controlProps}
-                  value={signInPassword}
-                  onChange={setSignInPassword}
-                  autoComplete="current-password"
-                />
-              )}
-            </FormField>
-            {signInError && <p role="alert" className="text-sm text-danger">{signInError}</p>}
-            <Button type="submit" variant="secondary" className="w-full" loading={signingIn}>Sign in</Button>
-          </form>
-        </Card>
-      </div>
-    )
-  }
 
-  if (isAdmin === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background" role="status" aria-label="Checking administrator access">
-        <Spinner className="h-12 w-12 text-accent" aria-hidden="true" />
-      </div>
+          <Card className="overflow-hidden">
+            <div className="px-6 py-4 border-b border-border bg-background-light/40 flex items-center justify-between">
+              <Skeleton className="h-5 w-48 rounded-md" />
+            </div>
+            <DataTable label="Class studios loading">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Studio</TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>Term</TableHead>
+                  <TableHead>Members</TableHead>
+                  <TableHead>Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableSkeletonRows rows={4} cols={5} colWidths={['w-48', 'w-28', 'w-24', 'w-16', 'w-28']} />
+              </TableBody>
+            </DataTable>
+          </Card>
+        </div>
+      </AdminShell>
     )
   }
 
@@ -282,8 +279,46 @@ export default function AdminInstructorPage() {
         </Link>
 
         {loading ? (
-          <div className="p-12 text-center" role="status" aria-label="Loading instructor">
-            <Spinner className="h-10 w-10 text-accent" aria-hidden="true" />
+          <div className="space-y-6" role="status" aria-label="Loading instructor profile">
+            <span className="sr-only">Loading instructor profile</span>
+            {/* Identity Card Skeleton */}
+            <div className="rounded-xl border border-border bg-background-light p-6 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-3 min-w-0 flex-1">
+                  <Skeleton className="h-8 w-64 rounded-md" />
+                  <div className="flex items-center gap-4">
+                    <Skeleton className="h-4 w-44 rounded-md" />
+                    <Skeleton className="h-4 w-36 rounded-md" />
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <Skeleton className="h-5 w-24 rounded-full" />
+                    <Skeleton className="h-5 w-28 rounded-full" />
+                  </div>
+                </div>
+                <Skeleton className="h-10 w-32 rounded-lg" />
+              </div>
+            </div>
+
+            {/* Class Studios Table Skeleton */}
+            <Card className="overflow-hidden">
+              <div className="px-6 py-4 border-b border-border bg-background-light/40 flex items-center justify-between">
+                <Skeleton className="h-5 w-48 rounded-md" />
+              </div>
+              <DataTable label="Class studios loading">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Studio</TableHead>
+                    <TableHead>Department</TableHead>
+                    <TableHead>Term</TableHead>
+                    <TableHead>Members</TableHead>
+                    <TableHead>Created</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableSkeletonRows rows={4} cols={5} colWidths={['w-48', 'w-28', 'w-24', 'w-16', 'w-28']} />
+                </TableBody>
+              </DataTable>
+            </Card>
           </div>
         ) : loadError || !instructor ? (
           <div className="bg-background-light rounded-xl border border-border shadow-sm p-8 text-center">
