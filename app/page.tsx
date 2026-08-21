@@ -1,169 +1,15 @@
 'use client'
 
 import { Suspense, useState, useEffect } from 'react'
+import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Figtree } from 'next/font/google'
 import { supabase } from '@/lib/supabase/client'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import GalleryAvatarModal, { AvatarFormValues } from '@/components/GalleryAvatarModal'
 import DemoBanner from '@/components/DemoBanner'
 import { isDemoMode } from '@/lib/demoMode'
 import AvatarMenu from '@/components/AvatarMenu'
-
-const figtree = Figtree({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800', '900'],
-  display: 'swap',
-})
-
-// Scoped to this page only — every selector is nested under .ps-landing so no
-// global palette or Tailwind token is touched. Colors are intentionally literal
-// here rather than tailwind.config.js entries.
-const LANDING_CSS = `
-.ps-landing {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  min-height: 100dvh;
-  width: 100%;
-  padding: 20px;
-  background-color: #FFC800;
-  color: #0B0B0B;
-  text-align: center;
-  overflow-x: hidden;
-}
-
-.ps-landing ::selection { background-color: #14705C; color: #FFC800; }
-.ps-landing::selection { background-color: #14705C; color: #FFC800; }
-
-/* 172px at desktop; 17vw keeps "pinspace." inside a 375px viewport with room
-   to spare even while the fallback face (wider than Figtree) is still showing. */
-.ps-landing-wordmark {
-  margin: 0;
-  font-weight: 900;
-  font-size: clamp(3.25rem, 17vw, 172px);
-  line-height: 0.85;
-  letter-spacing: -0.055em;
-  color: #0B0B0B;
-}
-
-.ps-landing-dot { color: #14705C; }
-
-.ps-landing-tagline {
-  margin: 34px 0 0;
-  font-weight: 600;
-  font-size: clamp(1.125rem, 4.5vw, 30px);
-  line-height: 1.2;
-  color: #0B0B0B;
-}
-
-.ps-landing-actions {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 56px;
-}
-
-.ps-landing-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 20px 40px;
-  border: none;
-  border-radius: 999px;
-  font-family: inherit;
-  font-weight: 800;
-  font-size: 19px;
-  line-height: 1;
-  text-decoration: none;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background-color 160ms ease, color 160ms ease;
-}
-
-.ps-landing-btn:focus-visible { outline: 3px solid #0B0B0B; outline-offset: 3px; }
-
-.ps-landing-btn-light { background-color: #FFFCF0; color: #0B0B0B; }
-.ps-landing-btn-light:hover { background-color: #0B0B0B; color: #FFC800; }
-
-.ps-landing-btn-green { background-color: #14705C; color: #FFC800; }
-.ps-landing-btn-green:hover { background-color: #0B0B0B; }
-
-.ps-landing-btn-arrow { flex: none; }
-
-.ps-landing-corner {
-  position: absolute;
-  top: 28px;
-  right: 32px;
-  z-index: 20;
-}
-
-/* Restyles the shared AvatarMenu trigger for this page without editing that
-   component, so its menu, click-outside and sign-out wiring stay untouched. */
-.ps-landing-corner button[aria-haspopup='menu'] {
-  width: 42px;
-  height: 42px;
-  background-color: #14705C;
-  color: #FFC800;
-  font-weight: 800;
-  font-size: 16px;
-  box-shadow: none;
-}
-
-.ps-landing-corner button[aria-haspopup='menu']:hover { background-color: #0B0B0B; }
-
-.ps-landing-spinner {
-  width: 42px;
-  height: 42px;
-  border-radius: 999px;
-  border: 3px solid rgba(11, 11, 11, 0.18);
-  border-top-color: #0B0B0B;
-  animation: ps-landing-spin 0.8s linear infinite;
-}
-
-@keyframes ps-landing-spin { to { transform: rotate(360deg); } }
-
-@media (max-width: 640px) {
-  .ps-landing-actions {
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-    max-width: 22rem;
-  }
-  .ps-landing-corner { top: 20px; right: 20px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ps-landing-spinner { animation-duration: 2.4s; }
-  .ps-landing-btn { transition: none; }
-}
-`
-
-function ArrowRight() {
-  return (
-    <svg
-      className="ps-landing-btn-arrow"
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M5 12h14" />
-      <path d="m12 5 7 7-7 7" />
-    </svg>
-  )
-}
 
 function HomeInner() {
   const router = useRouter()
@@ -214,72 +60,163 @@ function HomeInner() {
     router.push(`/gallery?${params.toString()}`)
   }
 
+  const signInHref = institutionSlug ? `/sign-in?institution=${institutionSlug}` : '/sign-in'
+  const signUpHref = institutionSlug ? `/sign-up?institution=${institutionSlug}` : '/sign-up'
+  const primaryHref = user ? '/dashboard' : signUpHref
+
   const content = (
-    <div className={`ps-landing ${figtree.className}`}>
-      <style dangerouslySetInnerHTML={{ __html: LANDING_CSS }} />
+    <div className="min-h-screen relative overflow-x-hidden" style={{ background: 'linear-gradient(160deg, #F2F5FB 0%, #EDF1F9 55%, #F6F3EC 100%)' }}>
       <DemoBanner />
 
-      {/* Top-right corner: spinner while the session resolves, avatar once
-          signed in, nothing when signed out — same three-way branch as before. */}
-      <div className="ps-landing-corner">
-        {loading ? (
-          <div className="ps-landing-spinner" />
-        ) : user ? (
-          <AvatarMenu
-            email={user.email || user.user_metadata?.email}
-            onSignOut={() => supabase.auth.signOut().then(() => { window.location.href = '/' })}
-          />
-        ) : null}
+      {/* Ambient blue glows */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div
+          className="absolute -left-44 -top-52 w-[700px] h-[700px] rounded-full"
+          style={{ background: 'radial-gradient(closest-side, rgba(59,110,246,0.16), rgba(59,110,246,0))' }}
+        />
+        <div
+          className="absolute -right-36 -bottom-64 w-[800px] h-[800px] rounded-full"
+          style={{ background: 'radial-gradient(closest-side, rgba(160,190,255,0.28), rgba(160,190,255,0))' }}
+        />
       </div>
 
-      <h1 className="ps-landing-wordmark">
-        pinspace<span className="ps-landing-dot">.</span>
-      </h1>
+      {/* Nav */}
+      <div className="relative z-20 flex items-center justify-between px-6 sm:px-10 py-6">
+        <div className="flex items-center gap-2 text-[#16181D] font-extrabold text-xl tracking-tight">
+          <span className="w-7 h-7 rounded-lg bg-[#3B6EF6] text-white flex items-center justify-center text-xs">◉</span>
+          pinspace
+        </div>
 
-      <p className="ps-landing-tagline">where design work lives.</p>
-
-      {/* Same auth split as before: signed-in users get Dashboard, signed-out
-          users get the Sign In / Get Started pair with the institution param. */}
-      {!loading && (
-        <div className="ps-landing-actions">
-          {user ? (
+        <div className="flex items-center gap-3">
+          {loading ? (
+            <div className="w-8 h-8 border-2 border-[#8A8FA0] border-t-[#3B6EF6] rounded-full animate-spin" />
+          ) : user ? (
             <>
-              <Link href="/dashboard" className="ps-landing-btn ps-landing-btn-light">
-                Dashboard
+              <Link href="/dashboard">
+                <button className="px-5 py-2.5 bg-white/80 hover:border-[#3B6EF6] hover:text-[#3B6EF6] text-[#16181D] rounded-full transition-colors font-semibold text-sm border border-[#16181D]/10">
+                  Dashboard
+                </button>
               </Link>
-              <Link href="/network" className="ps-landing-btn ps-landing-btn-green">
-                Enter the network
-                <ArrowRight />
-              </Link>
+              <AvatarMenu
+                email={user.email || user.user_metadata?.email}
+                onSignOut={() => supabase.auth.signOut().then(() => { window.location.href = '/' })}
+              />
             </>
           ) : (
             <>
               <button
-                onClick={(e) => {
-                  e.preventDefault()
-                  router.push(institutionSlug ? `/sign-in?institution=${institutionSlug}` : '/sign-in')
-                }}
-                className="ps-landing-btn ps-landing-btn-light"
+                onClick={(e) => { e.preventDefault(); router.push(signInHref) }}
+                className="px-6 py-3 bg-white/80 hover:border-[#3B6EF6] hover:text-[#3B6EF6] text-[#16181D] rounded-full transition-colors font-semibold text-[15px] border border-[#16181D]/10"
               >
-                Sign In
+                Sign in
               </button>
               <button
-                onClick={() => router.push(institutionSlug ? `/sign-up?institution=${institutionSlug}` : '/sign-up')}
-                className="ps-landing-btn ps-landing-btn-green"
+                onClick={() => router.push(signUpHref)}
+                className="px-7 py-3.5 bg-[#16181D] hover:bg-[#3B6EF6] text-white rounded-full transition-colors font-bold text-[15px]"
               >
-                Get Started
-                <ArrowRight />
+                Get started
               </button>
             </>
           )}
         </div>
-      )}
+      </div>
+
+      {/* Hero */}
+      <div className="relative z-10 px-4 pt-8 pb-48 sm:pb-56">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="text-center"
+        >
+          <motion.h1
+            className="mx-auto max-w-4xl text-6xl sm:text-7xl md:text-8xl font-extrabold leading-[0.98] tracking-[-0.03em] text-[#16181D]"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.9, delay: 0.15 }}
+          >
+            Your studio,
+            <br />
+            always on the wall.
+          </motion.h1>
+
+          <motion.p
+            className="mt-6 mx-auto max-w-xl text-lg sm:text-xl leading-relaxed text-[#5A5E6B]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.8, delay: 0.35 }}
+          >
+            Pin work into a 3D room, crit it in place, and keep every semester — beautifully archived.
+          </motion.p>
+
+          <motion.div
+            className="flex flex-wrap justify-center gap-3 mt-9"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.8, delay: 0.5 }}
+          >
+            <button
+              onClick={() => router.push(primaryHref)}
+              className="px-9 py-4 bg-[#3B6EF6] hover:bg-[#16181D] text-white rounded-full transition-colors font-bold text-[17px] shadow-[0_14px_34px_rgba(59,110,246,0.35)]"
+            >
+              Enter your studio
+            </button>
+            <button
+              onClick={() => router.push(signInHref)}
+              className="px-8 py-4 bg-white/80 hover:border-[#3B6EF6] hover:text-[#3B6EF6] text-[#16181D] rounded-full transition-colors font-semibold text-[17px] border border-[#16181D]/10"
+            >
+              I have a class code
+            </button>
+          </motion.div>
+
+          <motion.div
+            className="flex flex-wrap justify-center gap-8 mt-8 text-[13px] font-semibold text-[#8A8FA0]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.8, delay: 0.65 }}
+          >
+            <span>✓ Free for students</span>
+            <span>✓ Join with a class code</span>
+            <span>✓ Works in the browser</span>
+          </motion.div>
+        </motion.div>
+      </div>
+
+      {/* Decorative studio wall preview */}
+      <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-[-120px] w-[min(980px,92vw)] h-[280px] sm:h-[360px] rounded-t-[26px] p-5 box-border"
+        style={{ background: 'rgba(255,255,255,0.65)', border: '1px solid rgba(255,255,255,0.9)', backdropFilter: 'blur(16px)', boxShadow: '0 -20px 70px rgba(22,24,29,0.12)' }}
+      >
+        <div className="relative w-full h-full rounded-2xl overflow-hidden" style={{ background: 'linear-gradient(180deg, #EDF1F9 60%, #DFE6F2 60%)' }}>
+          <div className="absolute left-[6%] top-[14%] w-[7%] h-[52%]" style={{ background: 'repeating-linear-gradient(180deg, #8A8FA0 0 2px, #F4F6FA 2px 6px)' }} />
+          <div className="absolute left-[16%] top-[14%] w-[13%] h-[36%]" style={{ background: 'repeating-linear-gradient(135deg, #D3D9E6 0 8px, #C2C9DA 8px 16px)' }} />
+          <div className="absolute left-[33%] top-[18%] w-[10%] h-[30%] rounded" style={{ background: '#3B6EF6' }} />
+          <div className="absolute left-[47%] top-[12%] w-[15%] h-[48%]" style={{ background: 'repeating-linear-gradient(135deg, #D3D9E6 0 8px, #C2C9DA 8px 16px)' }} />
+          <div className="absolute left-[66%] top-[16%] w-[8%] h-[44%]" style={{ background: 'repeating-linear-gradient(180deg, #8A8FA0 0 2px, #F4F6FA 2px 6px)' }} />
+          <div className="absolute right-4 top-4 bg-white/90 rounded-full px-4 py-2 text-xs font-bold text-[#5A5E6B]">
+            your studio, live
+          </div>
+        </div>
+      </div>
 
       <GalleryAvatarModal
         isOpen={showGalleryModal}
         onClose={() => setShowGalleryModal(false)}
         onEnter={handleEnterGallery}
       />
+
+      <footer className="relative z-10 border-t border-[#16181D]/10 bg-white/70 backdrop-blur-sm mt-[220px] sm:mt-[260px]">
+        <div className="max-w-5xl mx-auto px-4 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-[#8A8FA0]">
+          <p>© {new Date().getFullYear()} PinSpace</p>
+          <nav className="flex gap-6">
+            <Link href="/terms" className="hover:text-[#3B6EF6] transition-colors">
+              Terms of Service
+            </Link>
+            <Link href="/privacy" className="hover:text-[#3B6EF6] transition-colors">
+              Privacy Policy
+            </Link>
+          </nav>
+        </div>
+      </footer>
     </div>
   )
 

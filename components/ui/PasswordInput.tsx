@@ -49,7 +49,7 @@ export default function PasswordInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full px-4 pr-11 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+        className="w-full px-4 pr-11 py-3 border border-[#16181D]/12 rounded-xl bg-white focus:ring-2 focus:ring-[#3B6EF6] focus:border-transparent"
         autoComplete={autoComplete}
         minLength={minLength}
         // eslint-disable-next-line jsx-a11y/no-autofocus
@@ -59,7 +59,7 @@ export default function PasswordInput({
         type="button"
         onClick={toggle}
         aria-label={revealed ? 'Hide password' : 'Show password'}
-        className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        className="absolute inset-y-0 right-0 flex items-center px-3 text-[#8A8FA0] hover:text-[#16181D] rounded-r-lg focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
       >
         {revealed ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
       </button>
