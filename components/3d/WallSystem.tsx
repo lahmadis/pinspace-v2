@@ -1,8 +1,8 @@
 'use client'
 
-import { Fragment, useMemo } from 'react'
+import { useMemo } from 'react'
 import * as THREE from 'three'
-import { Text, ContactShadows } from '@react-three/drei'
+import { Text, ContactShadows, Grid } from '@react-three/drei'
 import { Board } from '@/types'
 import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
@@ -89,28 +89,35 @@ interface WallSystemProps {
   highlightedBoardIds?: ReadonlySet<string>
 }
 
-// Wall surface + edge-shadow palette per color. The 'grey' values are
-// byte-identical to the pre-feature hardcoded colors, so grey rooms render
-// exactly as before.
+// Wall surface + edge-shadow palette per color.
 //
-// 'white' is TRUE PAPER WHITE: the main surface is #FFFFFF so it renders at the
-// same value as a #FFFFFF board texel on the same wall (both are metalness-0
-// meshStandardMaterial, coplanar and same-facing → equal albedo → equal shaded
-// value, including identical highlight roll-off). This makes a white-background
-// sheet visually continuous with the wall so only the ink stands out. The edge
-// accents are pulled to near-white (barely below #FFFFFF) so they hold the wall
-// corners without reintroducing a frame around each panel. Cool paper/blue
-// family, matching lib/room/palette.ts (the fixed-camera room's ROOM.wall /
-// ROOM.hairline) — this used to be a warm cream/tan family, styled before the
-// rest of the app moved to the blue/paper design system.
+// The FIRST attempt at this recolor (cream/tan -> cool paper/blue) picked
+// values that were all within a few percent of each other in lightness — main
+// ~98%, edges ~94-96%, the floor ~92%, the sky ~93%. Every surface in the
+// room read as the same pale wash with no wall-to-wall seam and no
+// wall/floor/sky separation, which is its own "cheap" failure mode even
+// though every individual color was "correct" blue/paper. `main` here is
+// pulled down a few points from previous (still clearly the brightest, whitest
+// surface in the room — architecture sheets should pop against it) and the
+// edge tones are real shadow values, not a near-white tint, so the strip
+// between two wall panels reads as a recessed seam instead of disappearing.
+//
+// 'white' is closer to TRUE PAPER WHITE than 'grey': the main surface is
+// #FFFFFF so it renders at the same value as a #FFFFFF board texel on the
+// same wall (both are metalness-0 meshStandardMaterial, coplanar and
+// same-facing → equal albedo → equal shaded value, including identical
+// highlight roll-off), making a white-background sheet visually continuous
+// with the wall so only the ink stands out. Its edge tones are deepened less
+// than grey's, on purpose — over-darkening them would put a visible frame
+// around a wall that's supposed to read as one continuous white surface.
 const WALL_PALETTES: Record<'grey' | 'white', {
   main: string
   sideEdge: string
   topEdge: string
   bottomEdge: string
 }> = {
-  grey: { main: '#FBFCFE', sideEdge: '#E7ECF5', topEdge: '#DFE6F0', bottomEdge: '#D5DEEA' },
-  white: { main: '#FFFFFF', sideEdge: '#FAFAF9', topEdge: '#F7F7F5', bottomEdge: '#F3F3F0' },
+  grey: { main: '#F1F4F9', sideEdge: '#C7D0E0', topEdge: '#B9C4D6', bottomEdge: '#A8B5CA' },
+  white: { main: '#FFFFFF', sideEdge: '#E2E4E4', topEdge: '#D7DAD9', bottomEdge: '#C9CDCB' },
 }
 
 /**
@@ -126,9 +133,15 @@ const WALL_PALETTES: Record<'grey' | 'white', {
  * plates and wall text — plain ink instead, same reasoning as
  * lib/room/palette.ts: a second accent color competing with the blue one reads
  * as inconsistent, not as a deliberate second signal.
+ *
+ * `floor` is deliberately a full step darker than the walls (see the
+ * WALL_PALETTES comment above on why the first recolor pass under-separated
+ * these) — a gallery floor reading darker than its walls is what gives the
+ * room a sense of standing IN a volume rather than everything being one flat
+ * value.
  */
 const ROOM_PALETTE = {
-  floor: '#DCE2ED',
+  floor: '#B7C2D6',
   ink: '#16181D',
   accent: '#3B6EF6',
 } as const
@@ -141,11 +154,22 @@ const ROOM_PALETTE = {
  * Canvas background (StudioRoom.tsx) and the scene fog color below, so a
  * much larger ground plane can fade seamlessly into it — the fog color and
  * the sky color must match exactly, or the ground's own edge (where fog
- * reaches 100%) becomes a visible ring instead of an invisible horizon.
+ * reaches 100%) becomes a visible ring instead of an invisible horizon. Sits
+ * between the wall's ~F1F4F9 and the floor's ~B7C2D6 in lightness, so both
+ * still read as distinct from the sky rather than blending into it.
  */
 export const ROOM_SKY_COLOR = '#E7ECF5'
 
-const GROUND_COLOR = '#DFE5EF'
+// A touch lighter/more muted than the floor plinth — reads as the same
+// ground continuing outward, just further away, rather than a visibly
+// different material.
+const GROUND_COLOR = '#C3CDDE'
+/** Horizon reference grid on the ground plane, outside the room's own
+ *  footprint (the room's opaque floor/walls occlude it directly underneath).
+ *  Minor lines every foot, a heavier line every 10 feet — the same
+ *  cell/section convention any CAD or level-editor grid uses. */
+const GRID_CELL_COLOR = '#AEB9CE'
+const GRID_SECTION_COLOR = '#8CA0C2'
 
 /**
  * Ground plane + fog scale with the room's own footprint rather than a fixed
@@ -262,6 +286,11 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
     return Math.max(8000, span * 10)
   }, [floorBounds.floorWidth, floorBounds.floorDepth])
 
+  // Reuses getRoomFogParams' own numbers (same wallConfig) purely so the grid
+  // fades out at the same distance the scene fog does — two different fades
+  // disagreeing on where the horizon is would look like two horizons.
+  const { fogFar } = useMemo(() => getRoomFogParams(wallConfig), [wallConfig])
+
   return (
     <group>
       {/* Large ground plane the room's floor sits on top of, so orbiting out
@@ -273,6 +302,37 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
         <planeGeometry args={[groundSize, groundSize]} />
         <meshStandardMaterial color={GROUND_COLOR} roughness={0.95} metalness={0} fog />
       </mesh>
+
+      {/* Reference grid on the ground plane — a foot-scale minor line and a
+          10-foot-scale major line, the same convention as any CAD/level-editor
+          floor grid, so the horizon reads as measurable space rather than a
+          flat color. Sits just above the ground plane (avoids z-fighting) and
+          is occluded by the room's own opaque floor/walls directly beneath
+          them, so it only shows on the surrounding "outside" ground —
+          exactly the area the ground plane was added to stop looking empty.
+          `args` is deliberately modest (canonical drei infiniteGrid usage,
+          e.g. their own docs example, uses [10,10]) — infiniteGrid's shader
+          already multiplies the visible extent by (1 + fadeDistance) on top
+          of whatever `args` is, so pairing it with groundSize-scale args
+          would compound into tens of millions of vertex-space units and risk
+          float32 precision jitter in the shader's line test. fadeDistance
+          alone (matched to the scene fog's fogFar) already controls how far
+          out the grid actually reads as visible. */}
+      <Grid
+        position={[floorBounds.floorCenterX, -floorThickness - 0.9, floorBounds.floorCenterZ]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        args={[10, 10]}
+        cellSize={12}
+        cellThickness={0.6}
+        cellColor={GRID_CELL_COLOR}
+        sectionSize={120}
+        sectionThickness={1.2}
+        sectionColor={GRID_SECTION_COLOR}
+        fadeDistance={fogFar}
+        fadeStrength={1.5}
+        followCamera={false}
+        infiniteGrid
+      />
 
       {/* Soft contact shadow under the whole room — grounds the walls and
           floor plinth against the ground plane beneath, on top of (not
@@ -312,27 +372,45 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
           return true
         })
 
-        // Resolve every plate for this wall up front so overlapping labels can be
-        // stacked against each other. Done per wall (not per board) because the
-        // row assignment needs the whole set to decide.
-        const plateKeyFor = (board: Board) => board.localId || board.id
-        const plateLabels = new Map<string, string>()
-        const plateInputs: PlateLayoutInput[] = []
+        // One plate per OWNER per side, not per board — a person with a dozen
+        // boards on one wall used to get a dozen repeats of their own name
+        // stamped above each sheet. Grouped by ownerId when present (falls
+        // back to the display name for legacy rows without one, which can
+        // only over-merge two different people who happen to share a
+        // display name — an acceptable, rare edge case), spanning the
+        // bounding box of every board in the group so the plate sits above
+        // the group's topmost sheet, centered on the group's horizontal span.
+        interface PlateGroup { key: string; label: string; side: 'front' | 'back'; minX: number; maxX: number; topY: number }
+        const plateGroups = new Map<string, PlateGroup>()
         for (const board of boardsOnWall) {
           if (!board.position) continue
           const label = cleanDisplayName(board.ownerName) || cleanDisplayName(board.studentName)
           if (!label) continue
           const { widthIn, heightIn } = getBoardSizeInches(board)
           if (!widthIn || !heightIn || widthIn <= 0 || heightIn <= 0) continue
-          const key = plateKeyFor(board)
-          plateLabels.set(key, label)
-          plateInputs.push({
-            key,
-            centerX: ((board.position.x / 100) - 0.5) * transform.width,
-            baseY: ((board.position.y / 100) - 0.5) * transform.height + heightIn / 2 + NAME_PLATE_GAP_IN,
-            label,
-          })
+          const side: 'front' | 'back' = board.position.side === 'back' ? 'back' : 'front'
+          const identity = board.ownerId || label
+          const key = `${identity}|${side}`
+          const cx = ((board.position.x / 100) - 0.5) * transform.width
+          const cy = ((board.position.y / 100) - 0.5) * transform.height
+          const left = cx - widthIn / 2
+          const right = cx + widthIn / 2
+          const top = cy + heightIn / 2
+          const existing = plateGroups.get(key)
+          if (!existing) {
+            plateGroups.set(key, { key, label, side, minX: left, maxX: right, topY: top })
+          } else {
+            existing.minX = Math.min(existing.minX, left)
+            existing.maxX = Math.max(existing.maxX, right)
+            existing.topY = Math.max(existing.topY, top)
+          }
         }
+        const plateInputs: PlateLayoutInput[] = Array.from(plateGroups.values()).map((g) => ({
+          key: g.key,
+          centerX: (g.minX + g.maxX) / 2,
+          baseY: g.topY + NAME_PLATE_GAP_IN,
+          label: g.label,
+        }))
         const plateRows = assignNamePlateRows(plateInputs)
 
         // Selected student's bay: the bounding box of their boards on THIS wall
@@ -513,64 +591,57 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
               const boardSide = board.position?.side || 'front'
               const finalBoardZ = boardSide === 'back' ? -(WALL_SURFACE_OFFSET + BOARD_OFFSET) : WALL_SURFACE_OFFSET + BOARD_OFFSET
 
-              // Owner name plate. The API resolves `ownerName` live from
-              // user_profiles; `studentName` backs it up for legacy rows. Both
-              // are placeholder-filtered, so an unknown owner renders no plate
-              // rather than the word "Anonymous".
-              const plateKey = plateKeyFor(board)
-              const ownerLabel = plateLabels.get(plateKey) ?? ''
-              // Same z convention as the wall labels below — wall half-depth
-              // plus 0.25 — so the plate clears both the wall surface and the
-              // board at ±3.2 without z-fighting either.
-              const PLATE_SURFACE_OFFSET = 3
-              const plateZ = boardSide === 'back'
-                ? -(PLATE_SURFACE_OFFSET + 0.25)
-                : PLATE_SURFACE_OFFSET + 0.25
-              const plateY =
-                boardY
-                + boardHeight / 2
-                + NAME_PLATE_GAP_IN
-                + (plateRows.get(plateKey) ?? 0) * NAME_PLATE_ROW_STEP_IN
-
               return (
                 // Key by localId (stable across temp→real id swap) when
                 // present so the post-edit render path doesn't remount the
                 // thumbnail purely because a temp board's id changed. Falls
-                // back to board.id for server-loaded boards. A Fragment adds
-                // no Object3D, so the scene graph is unchanged.
-                <Fragment key={board.localId || board.id}>
-                  <BoardThumbnail
-                    board={board}
-                    position={[boardX, boardY, finalBoardZ]}
-                    width={boardWidth}
-                    height={boardHeight}
-                    onClick={onBoardClick}
-                    isHighlighted={highlightedBoardId === board.id}
-                    onHover={(hovered) => onBoardHover?.(hovered ? board.id : null)}
-                    suppressCountBadge={suppressCallouts}
-                  />
-                  {ownerLabel && (
-                    <Text
-                      position={[boardX, plateY, plateZ]}
-                      // Back-side plates face into the back room so they read
-                      // correctly, matching the wall labels.
-                      rotation={boardSide === 'back' ? [0, Math.PI, 0] : [0, 0, 0]}
-                      fontSize={NAME_PLATE_SIZE_IN}
-                      color={ROOM_PALETTE.ink}
-                      // Stands in for a 600 weight the default face does not
-                      // carry; see NAME_PLATE_OUTLINE_IN.
-                      outlineWidth={NAME_PLATE_OUTLINE_IN}
-                      outlineColor={ROOM_PALETTE.ink}
-                      anchorX="center"
-                      // Bottom anchor grows the plate upward from the gap above
-                      // the board, so a long name never creeps down over the sheet.
-                      anchorY="bottom"
-                      maxWidth={Math.max(boardWidth, NAME_PLATE_SIZE_IN * 8)}
-                    >
-                      {ownerLabel}
-                    </Text>
-                  )}
-                </Fragment>
+                // back to board.id for server-loaded boards.
+                <BoardThumbnail
+                  key={board.localId || board.id}
+                  board={board}
+                  position={[boardX, boardY, finalBoardZ]}
+                  width={boardWidth}
+                  height={boardHeight}
+                  onClick={onBoardClick}
+                  isHighlighted={highlightedBoardId === board.id}
+                  onHover={(hovered) => onBoardHover?.(hovered ? board.id : null)}
+                  suppressCountBadge={suppressCallouts}
+                />
+              )
+            })}
+
+            {/* One name plate per owner per side (see plateGroups above) — NOT
+                per board. Same z convention as the wall labels below: wall
+                half-depth plus 0.25, so the plate clears both the wall
+                surface and any board at ±3.2 without z-fighting either. */}
+            {Array.from(plateGroups.values()).map((g) => {
+              const PLATE_SURFACE_OFFSET = 3
+              const plateX = (g.minX + g.maxX) / 2
+              const plateZ = g.side === 'back'
+                ? -(PLATE_SURFACE_OFFSET + 0.25)
+                : PLATE_SURFACE_OFFSET + 0.25
+              const plateY = g.topY + NAME_PLATE_GAP_IN + (plateRows.get(g.key) ?? 0) * NAME_PLATE_ROW_STEP_IN
+              return (
+                <Text
+                  key={g.key}
+                  position={[plateX, plateY, plateZ]}
+                  // Back-side plates face into the back room so they read
+                  // correctly, matching the wall labels.
+                  rotation={g.side === 'back' ? [0, Math.PI, 0] : [0, 0, 0]}
+                  fontSize={NAME_PLATE_SIZE_IN}
+                  color={ROOM_PALETTE.ink}
+                  // Stands in for a 600 weight the default face does not
+                  // carry; see NAME_PLATE_OUTLINE_IN.
+                  outlineWidth={NAME_PLATE_OUTLINE_IN}
+                  outlineColor={ROOM_PALETTE.ink}
+                  anchorX="center"
+                  // Bottom anchor grows the plate upward from the gap above
+                  // the board, so a long name never creeps down over the sheet.
+                  anchorY="bottom"
+                  maxWidth={Math.max(g.maxX - g.minX, NAME_PLATE_SIZE_IN * 8)}
+                >
+                  {g.label}
+                </Text>
               )
             })}
 
