@@ -9,6 +9,7 @@ import { PDFTextureMaterial } from './PDFTexture'
 import { useBoardTexture } from './useBoardTexture'
 import { useDisposableGeometry } from './useDisposableGeometry'
 import VideoBadge from './VideoBadge'
+import { ROOM_SKY } from '@/lib/room/palette'
 
 interface BoardThumbnailProps {
   board: Board
@@ -28,9 +29,29 @@ interface BoardThumbnailProps {
    * board, its texture, and every other overlay render exactly as before.
    */
   suppressCountBadge?: boolean
+  /**
+   * Wall focus: this board is on a wall that isn't the focused one, so it should
+   * recede. Still clickable — you can open a ghosted board directly rather than
+   * having to leave focus first — it just stops competing for attention.
+   */
+  dimmed?: boolean
 }
 
 const BOARD_THICKNESS = 0.08
+
+/**
+ * Wall-focus ghosting for a board's material.
+ *
+ * `map` textures are multiplied by `color`, and a multiply can only ever darken
+ * — so tinting alone would push a de-emphasised board toward black, making it
+ * heavier and MORE conspicuous than the boards it's receding behind. Instead
+ * pair a gentle multiply (drains contrast) with an emissive wash in the sky
+ * colour (lifts the whole quad toward the background), which reads as fading
+ * into the room rather than falling into shadow. No transparency involved, so
+ * there's no depth-sort order to get wrong between overlapping boards.
+ */
+const BOARD_DIM_MULTIPLY = '#D7DEEB'
+const BOARD_DIM_WASH = 0.5
 
 // Skeleton material used only on the very first load (no prior texture exists).
 // Transparent + low opacity so the wall shows through (reads as "loading" rather than "empty gray plate");
@@ -63,25 +84,31 @@ function BoardImageMaterial({
   texture,
   hovered,
   isHighlighted,
+  dimmed,
 }: {
   texture: THREE.Texture
   hovered: boolean
   isHighlighted?: boolean
+  dimmed?: boolean
 }) {
+  // While ghosted the board ignores hover/highlight emphasis — lighting up a
+  // board the user is deliberately looking away from defeats the point — and
+  // washes toward the sky instead. See BOARD_DIM_* above.
   return (
     <meshStandardMaterial
       map={texture}
+      color={dimmed ? BOARD_DIM_MULTIPLY : '#ffffff'}
       roughness={0.7}
       metalness={0.0}
-      emissive={isHighlighted ? '#3B6EF6' : (hovered ? '#3B6EF6' : '#000000')}
-      emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
+      emissive={dimmed ? ROOM_SKY : (isHighlighted || hovered ? '#3B6EF6' : '#000000')}
+      emissiveIntensity={dimmed ? BOARD_DIM_WASH : (isHighlighted ? 0.3 : (hovered ? 0.12 : 0))}
       depthWrite={true}
       depthTest={true}
     />
   )
 }
 
-export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted, onHover, suppressCountBadge }: BoardThumbnailProps) {
+export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted, onHover, suppressCountBadge, dimmed = false }: BoardThumbnailProps) {
   const [hovered, setHovered] = useState(false)
   const meshRef = useRef<THREE.Mesh>(null)
   const uploaderName =
@@ -185,7 +212,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
         {isPDF && imageUrl ? (
           <PDFTextureMaterial pdfUrl={imageUrl} hovered={isHovered} />
         ) : texture ? (
-          <BoardImageMaterial texture={texture} hovered={isHovered} isHighlighted={isHighlighted} />
+          <BoardImageMaterial texture={texture} hovered={isHovered} isHighlighted={isHighlighted} dimmed={dimmed} />
         ) : (
           // Show skeleton ONLY on the very first load (no prior texture available).
           // URL swaps after that keep the previous texture on screen via useBoardTexture.
@@ -193,11 +220,11 @@ export default function BoardThumbnail({ board, position, width, height, onClick
             <BoardSkeletonMaterial hovered={isHovered} isHighlighted={isHighlighted} />
           ) : (
             <meshStandardMaterial
-              color={hovered ? '#f8f8f8' : '#ffffff'}
+              color={dimmed ? BOARD_DIM_MULTIPLY : (hovered ? '#f8f8f8' : '#ffffff')}
               roughness={0.7}
               metalness={0.0}
-              emissive={isHighlighted ? '#3B6EF6' : (hovered ? '#3B6EF6' : '#000000')}
-              emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
+              emissive={dimmed ? ROOM_SKY : (isHighlighted || hovered ? '#3B6EF6' : '#000000')}
+              emissiveIntensity={dimmed ? BOARD_DIM_WASH : (isHighlighted ? 0.3 : (hovered ? 0.12 : 0))}
             />
           )
         )}

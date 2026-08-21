@@ -7,6 +7,7 @@ import { Board } from '@/types'
 import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
 import { getWallTransformResolved, calculateFloorBounds, type WallTextItem } from '@/lib/wallLayout'
+import { ROOM_SKY } from '@/lib/room/palette'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
 import { cleanDisplayName } from '@/lib/displayName'
 
@@ -60,7 +61,6 @@ interface WallSystemProps {
   onBoardClick?: (board: Board) => void
   highlightedBoardId?: string | null
   onBoardHover?: (boardId: string | null) => void
-  onFloorClick?: () => void
   /**
    * Room-level wall color. 'grey' (default) is the exact current look; 'white'
    * is true paper white (#FFFFFF) so a white-background sheet reads as the same
@@ -87,6 +87,23 @@ interface WallSystemProps {
    * fills a wall or sits behind a sheet; it only ever marks active state.
    */
   highlightedBoardIds?: ReadonlySet<string>
+  /**
+   * Wall focus: index of the ONE wall to keep at full strength, ghosting every
+   * other wall (and the boards, plates and labels on it) back toward the sky
+   * colour. `null`/undefined — the default — means no dimming at all, which is
+   * why the guest and share surfaces keep rendering unchanged without opting in.
+   *
+   * Deliberately a wall index rather than a wall+side: a wall ghosts as a whole
+   * object, so focusing the back face of wall 2 still leaves wall 2's front at
+   * full strength rather than half-ghosting a single slab.
+   */
+  dimmedExceptWall?: number | null
+  /**
+   * Fires on a click of the room floor. Used to dismiss wall focus — clicking
+   * off the walls is the natural "never mind" gesture, and it's the only exit
+   * that doesn't require finding a button or knowing the Escape shortcut.
+   */
+  onFloorClick?: () => void
 }
 
 // Wall surface + edge-shadow palette per color.
@@ -158,7 +175,40 @@ const ROOM_PALETTE = {
  * between the wall's ~F1F4F9 and the floor's ~B7C2D6 in lightness, so both
  * still read as distinct from the sky rather than blending into it.
  */
-export const ROOM_SKY_COLOR = '#E7ECF5'
+export const ROOM_SKY_COLOR = ROOM_SKY
+
+/**
+ * Pixels of pointer travel above which a floor click is treated as the end of an
+ * orbit drag rather than a click. Mirrors DRAG_THRESHOLD_PX in WallSurface.tsx —
+ * the floor is the largest drag surface in the room, so without this every orbit
+ * that happens to release over the floor would dismiss wall focus.
+ */
+const FLOOR_DRAG_THRESHOLD_PX = 4
+
+/**
+ * Wall focus de-emphasis. How far an unfocused surface is pulled toward the sky
+ * colour — 0 leaves it alone, 1 makes it vanish into the background. High enough
+ * that the focused wall clearly wins, short of 1 so the room still reads as a
+ * room and you can see where the other walls are to click back onto them.
+ */
+const WALL_DIM_AMOUNT = 0.74
+/** Slightly less for boards: artwork ghosts, but stays identifiable enough to click. */
+const BOARD_DIM_AMOUNT = 0.62
+
+/**
+ * Blend a colour toward the sky. Used for wall focus, which ghosts surfaces by
+ * desaturating them into the background rather than by making them transparent.
+ *
+ * Transparency would be the obvious approach and is the wrong one here: a single
+ * wall is five-plus coplanar meshes with board quads standing 0.2" proud of it,
+ * and three.js sorts transparent objects by distance-to-camera, so those
+ * near-coplanar surfaces flicker and re-order as you orbit. Blending toward the
+ * sky keeps every material opaque — no sort order to get wrong — and matches how
+ * CAD tools ghost the parts of a model you aren't working on.
+ */
+function dimTowardSky(hex: string, amount: number): string {
+  return `#${new THREE.Color(hex).lerp(new THREE.Color(ROOM_SKY_COLOR), amount).getHexString()}`
+}
 
 // A touch lighter/more muted than the floor plinth — reads as the same
 // ground continuing outward, just further away, rather than a visibly
@@ -268,9 +318,21 @@ export function assignNamePlateRows(plates: PlateLayoutInput[]): Map<string, num
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false, highlightedBoardIds }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick }: WallSystemProps) {
 
   const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
+  // Ghosted variants for wall focus. Memoized on the palette rather than
+  // recomputed inside the wall loop: this is four THREE.Color blends that are
+  // identical for every dimmed wall in the room.
+  const dimmedWallPalette = useMemo(() => ({
+    main: dimTowardSky(wallPalette.main, WALL_DIM_AMOUNT),
+    sideEdge: dimTowardSky(wallPalette.sideEdge, WALL_DIM_AMOUNT),
+    topEdge: dimTowardSky(wallPalette.topEdge, WALL_DIM_AMOUNT),
+    bottomEdge: dimTowardSky(wallPalette.bottomEdge, WALL_DIM_AMOUNT),
+  }), [wallPalette])
+  const dimmedInk = useMemo(() => dimTowardSky(ROOM_PALETTE.ink, WALL_DIM_AMOUNT), [])
+  const dimmedAccent = useMemo(() => dimTowardSky(ROOM_PALETTE.accent, WALL_DIM_AMOUNT), [])
+
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
   const floorBounds = calculateFloorBounds(wallConfig)
   const wallDepth = 6 // Wall thickness in inches (same as walls)
@@ -362,6 +424,16 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
         position={[floorBounds.floorCenterX, -floorThickness / 2, floorBounds.floorCenterZ]}
         receiveShadow
         castShadow
+        onClick={(e) => {
+          // Only meaningful while something is focused; otherwise stay out of
+          // the way so a stray floor click can't swallow an orbit gesture.
+          if (!onFloorClick) return
+          // Same guard WallSurface uses: a click that ended a drag was an orbit,
+          // not a click, and must not dismiss focus.
+          if (e.delta > FLOOR_DRAG_THRESHOLD_PX) return
+          e.stopPropagation()
+          onFloorClick()
+        }}
       >
         <boxGeometry args={[floorBounds.floorWidth, floorThickness, floorBounds.floorDepth]} />
         <meshStandardMaterial
@@ -373,8 +445,19 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
 
       {wallConfig.walls.map((wall, wallIndex) => {
         const transform = getTransform(wallIndex)
+        // Wall focus: every wall except the focused one ghosts back. Resolved
+        // once here and threaded down, so the wall slab, its edge shadows, its
+        // boards, name plates, bay outline and text labels all de-emphasise
+        // together — dimming the slab alone would leave the artwork floating at
+        // full contrast, which is the opposite of focus.
+        const isDimmed = dimmedExceptWall != null && wallIndex !== dimmedExceptWall
+        const palette = isDimmed ? dimmedWallPalette : wallPalette
+        const inkColor = isDimmed ? dimmedInk : ROOM_PALETTE.ink
         // Faint glow when another user is editing this wall (presence).
-        const isOthersEditing = othersEditingWalls?.has(wallIndex) ?? false
+        // Suppressed while ghosted: a glowing accent on a wall we're actively
+        // pushing into the background reads as a rendering bug, and PresenceBar
+        // still reports who's where.
+        const isOthersEditing = (othersEditingWalls?.has(wallIndex) ?? false) && !isDimmed
         // Hide thumbnails on the editing wall ONLY once the edit UI has fully taken over
         // (i.e. DraggableBoards are mounted). During the camera transition we keep the
         // thumbnails mounted so there's no empty-wall flicker.
@@ -497,7 +580,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             <mesh castShadow receiveShadow renderOrder={0}>
               <boxGeometry args={[transform.width, transform.height, 6]} />
               <meshStandardMaterial
-                color={wallPalette.main} // room wall color (grey default / paper white)
+                color={palette.main} // room wall color (grey default / paper white), ghosted when unfocused
                 // White mode matches the board material's roughness (0.7) so a
                 // white sheet and the wall share the same sheen — no "glossier
                 // sheet" cue. Grey is unchanged at 0.85.
@@ -505,9 +588,9 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                 metalness={0.0}
                 depthWrite={true}
                 depthTest={true}
-                // Presence highlight: soft brand-violet glow on walls another
-                // user is editing. Black/0 = no glow (default). Tunable.
-                emissive={isOthersEditing ? '#6366f1' : '#000000'}
+                // Presence highlight: soft accent glow on walls another user is
+                // editing. Black/0 = no glow (default). Tunable.
+                emissive={isOthersEditing ? ROOM_PALETTE.accent : '#000000'}
                 emissiveIntensity={isOthersEditing ? 0.45 : 0}
               />
             </mesh>
@@ -521,7 +604,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             >
               <boxGeometry args={[0.2, transform.height, 0.2]} />
               <meshStandardMaterial
-                color={wallPalette.sideEdge} // side edge shadow (per wall color)
+                color={palette.sideEdge} // side edge shadow (per wall color)
                 roughness={0.9}
                 metalness={0.0}
               />
@@ -535,7 +618,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             >
               <boxGeometry args={[0.2, transform.height, 0.2]} />
               <meshStandardMaterial
-                color={wallPalette.sideEdge} // side edge shadow (per wall color)
+                color={palette.sideEdge} // side edge shadow (per wall color)
                 roughness={0.9}
                 metalness={0.0}
               />
@@ -549,7 +632,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             >
               <boxGeometry args={[transform.width, 0.2, 0.2]} />
               <meshStandardMaterial
-                color={wallPalette.topEdge} // top edge shadow (per wall color)
+                color={palette.topEdge} // top edge shadow (per wall color)
                 roughness={0.9}
                 metalness={0.0}
               />
@@ -563,7 +646,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             >
               <boxGeometry args={[transform.width, 0.2, 0.2]} />
               <meshStandardMaterial
-                color={wallPalette.bottomEdge} // bottom edge shadow (per wall color)
+                color={palette.bottomEdge} // bottom edge shadow (per wall color)
                 roughness={0.9}
                 metalness={0.0}
               />
@@ -617,7 +700,8 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                   onClick={onBoardClick}
                   isHighlighted={highlightedBoardId === board.id}
                   onHover={(hovered) => onBoardHover?.(hovered ? board.id : null)}
-                  suppressCountBadge={suppressCallouts}
+                  suppressCountBadge={suppressCallouts || isDimmed}
+                  dimmed={isDimmed}
                 />
               )
             })}
@@ -641,11 +725,11 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                   // correctly, matching the wall labels.
                   rotation={g.side === 'back' ? [0, Math.PI, 0] : [0, 0, 0]}
                   fontSize={NAME_PLATE_SIZE_IN}
-                  color={ROOM_PALETTE.ink}
+                  color={inkColor}
                   // Stands in for a 600 weight the default face does not
                   // carry; see NAME_PLATE_OUTLINE_IN.
                   outlineWidth={NAME_PLATE_OUTLINE_IN}
-                  outlineColor={ROOM_PALETTE.ink}
+                  outlineColor={inkColor}
                   anchorX="center"
                   // Bottom anchor grows the plate upward from the gap above
                   // the board, so a long name never creeps down over the sheet.
@@ -670,7 +754,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                 rotation={frame.side === 'back' ? [0, Math.PI, 0] : [0, 0, 0]}
               >
                 <edgesGeometry args={[new THREE.PlaneGeometry(frame.w, frame.h)]} />
-                <lineBasicMaterial color={ROOM_PALETTE.accent} />
+                <lineBasicMaterial color={isDimmed ? dimmedAccent : ROOM_PALETTE.accent} />
               </lineSegments>
             ))}
 
@@ -700,7 +784,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                     // Back labels face into the back room so they read correctly.
                     rotation={isBack ? [0, Math.PI, 0] : [0, 0, 0]}
                     fontSize={t.fontSize}
-                    color={ROOM_PALETTE.ink}
+                    color={inkColor}
                     letterSpacing={0.08}
                     anchorX="center"
                     anchorY="middle"

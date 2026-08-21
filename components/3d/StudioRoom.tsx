@@ -14,7 +14,8 @@ import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from './WallSystem'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry } from './CameraController'
+import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry, type FocusedWall, type PresetRequest } from './CameraController'
+import type { RoomCameraPreset } from '@/lib/room/cameraViews'
 import RosterPanel from '@/components/room/RosterPanel'
 import UnfoldedView from '@/components/room/UnfoldedView'
 import PlanView from '@/components/room/PlanView'
@@ -234,6 +235,7 @@ function SceneContent({
   onTextSelect,
   onTextDragEnd,
   onFloorClick,
+  dimmedExceptWall,
   onTableModelClick,
   orbitControlsRef,
   showEditUI,
@@ -279,6 +281,8 @@ function SceneContent({
   onTextSelect: (id: string | null) => void
   onTextDragEnd: (id: string, x: number, y: number) => void
   onFloorClick?: () => void
+  /** Wall index to keep at full strength while every other wall ghosts back; null = no dimming. */
+  dimmedExceptWall?: number | null
   onTableModelClick?: (modelUrl: string) => void
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   orbitControlsRef: React.RefObject<any>
@@ -386,6 +390,7 @@ function SceneContent({
         highlightedBoardId={hoveredBoardId}
         onBoardHover={onBoardHover}
         onFloorClick={onFloorClick}
+        dimmedExceptWall={dimmedExceptWall}
         wallColor={wallColor}
       />
 
@@ -741,6 +746,24 @@ export default function StudioRoom(props: StudioRoomProps) {
   const handleWallClick = useCallback((wallIndex: number, side: 'front' | 'back') => {
     setActiveWall({ wallIndex, side })
   }, [])
+
+  /**
+   * Wall focus — camera square-on to one wall with every other wall ghosted.
+   * Distinct from `editingWall`: focus is read-only and leaves orbit live, so
+   * it's reachable on archived rooms and by users who can't edit walls.
+   */
+  const [focusedWall, setFocusedWall] = useState<FocusedWall | null>(null)
+  const [presetRequest, setPresetRequest] = useState<PresetRequest | null>(null)
+
+  const handlePreset = useCallback((preset: RoomCameraPreset) => {
+    // Key off a counter rather than the preset name so pressing the same button
+    // twice re-frames both times.
+    setPresetRequest((prev) => ({ preset, key: (prev?.key ?? 0) + 1 }))
+    // Jumping to a whole-room angle contradicts being focused on one wall.
+    setFocusedWall(null)
+  }, [])
+
+  const handleExitFocus = useCallback(() => setFocusedWall(null), [])
   const [critWalkOn, setCritWalkOn] = useState(false)
   const [critIndex, setCritIndex] = useState(0)
 
@@ -1384,7 +1407,22 @@ export default function StudioRoom(props: StudioRoomProps) {
     rotation: number,
     side: 'front' | 'back'
   ) => {
-    if (props.isArchived) return
+    // Make the wall active either way, so the crit-walk / tidy / export cluster
+    // follows whichever wall the eye just went to.
+    setActiveWall({ wallIndex, side })
+
+    if (props.isArchived) {
+      // An archived room never enters edit mode, so without this the gesture
+      // would do nothing at all. Fall back to read-only focus: same head-on
+      // framing and dimming, no editing. Nonce bumps so re-focusing the same
+      // wall re-frames it rather than being a dead gesture.
+      setFocusedWall((prev) => ({ wallIndex, side, nonce: (prev?.nonce ?? 0) + 1 }))
+      return
+    }
+    // Not archived, so this double click is entering edit mode — which brings
+    // its own head-on camera and passes editingWall as the un-dimmed wall.
+    // Deliberately NOT also setting focusedWall: it would outlive the edit
+    // session and leave the room ghosted after exiting back to the overview.
     // Belt-and-suspenders prefetch for users who double-click without hovering
     // (touch, fast clickers, keyboard). Idempotent — handleWallHover early-
     // returns for already-prefetched walls.
@@ -2168,10 +2206,13 @@ export default function StudioRoom(props: StudioRoomProps) {
         }
       }
 
-      // Escape = deselect or close comment panel
+      // Escape = deselect, close comment panel, or leave wall focus
       if (e.key === 'Escape') {
         clearBoardSelection()
         if (commentPanelBoard) setCommentPanelBoard(null)
+        // Only meaningful outside edit mode; edit mode leaves via its own
+        // save-and-exit path, and focus is suppressed while editing anyway.
+        if (editingWall === null) setFocusedWall(null)
       }
     }
 
@@ -2479,6 +2520,9 @@ export default function StudioRoom(props: StudioRoomProps) {
         <RevisionStrip
           view={roomView}
           onViewChange={setRoomView}
+          onPreset={handlePreset}
+          isFocused={focusedWall !== null}
+          onExitFocus={handleExitFocus}
         />
       )}
 
@@ -2523,6 +2567,9 @@ export default function StudioRoom(props: StudioRoomProps) {
             onTransitionComplete={handleCameraTransitionComplete}
             isFollowing={props.isFollowing}
             followPoseRef={props.followPoseRef}
+            wallConfig={props.wallConfig}
+            focusedWall={focusedWall}
+            presetRequest={presetRequest}
           />
           <SceneContent
             {...props}
@@ -2567,7 +2614,11 @@ export default function StudioRoom(props: StudioRoomProps) {
             selectedTextId={selectedTextId}
             onTextSelect={setSelectedTextId}
             onTextDragEnd={handleTextPositionChange}
-            onFloorClick={undefined}
+            // Only bind a floor click while focused, so an ordinary click on the
+            // floor stays inert (and can't swallow an orbit) the rest of the time.
+            onFloorClick={focusedWall !== null ? handleExitFocus : undefined}
+            // Edit mode dims too — the wall being edited is the focused one.
+            dimmedExceptWall={editingWall ?? focusedWall?.wallIndex ?? null}
             onTableModelClick={handleTableModelClick}
           />
         </Canvas>

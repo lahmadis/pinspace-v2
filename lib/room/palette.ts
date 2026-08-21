@@ -35,6 +35,23 @@ export const ROOM = {
   chip: '#E7EBF3',
 } as const
 
+/**
+ * The 3D scene's sky/horizon color. Deliberately NOT ROOM.background above —
+ * that one is the 2D room-void behind the flat surfaces, and these two are
+ * tuned separately against different neighbours.
+ *
+ * Lives here rather than in components/3d/WallSystem.tsx (which re-exports it as
+ * ROOM_SKY_COLOR, its long-standing name) so that BoardThumbnail can reach it
+ * for wall-focus ghosting without importing from WallSystem — WallSystem already
+ * imports BoardThumbnail, and that would be an import cycle.
+ *
+ * The Canvas background, the scene fog color and the ground plane's fade target
+ * must all be this exact value: if the fog color and the background differ at
+ * all, the ground plane's own edge shows up as a visible ring instead of an
+ * invisible horizon.
+ */
+export const ROOM_SKY = '#E7ECF5'
+
 /** Monospace stack for sheet numbers, wall labels and the revision strip. */
 export const MONO_STACK = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
 

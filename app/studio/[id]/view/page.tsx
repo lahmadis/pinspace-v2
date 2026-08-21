@@ -2,12 +2,15 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 import { Board, FloorTable } from '@/types'
 import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from '@/components/3d/WallSystem'
+import { CameraController, type FocusedWall, type PresetRequest } from '@/components/3d/CameraController'
+import { getInitialRoomPose, type RoomCameraPreset } from '@/lib/room/cameraViews'
+import RoomViewPresets from '@/components/room/RoomViewPresets'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
@@ -28,69 +31,31 @@ interface WallConfig {
   layoutType: 'zigzag' | 'square' | 'linear' | 'lshape'
 }
 
-function getControls(ref: React.RefObject<unknown>): OrbitControlsType | null {
-  const r = ref?.current
-  if (!r) return null
-  if (typeof (r as { get?: () => OrbitControlsType }).get === 'function') {
-    return (r as { get: () => OrbitControlsType }).get()
-  }
-  return r as OrbitControlsType
-}
+/**
+ * Mouse mapping for the read-only room: left orbits, right pans in screen space.
+ * Hoisted to a constant so the object identity is stable across renders —
+ * drei re-applies changed props, and a fresh object literal every render would
+ * mean re-applying this on every frame-triggered re-render.
+ */
+const VIEW_MOUSE_BUTTONS = {
+  LEFT: THREE.MOUSE.ROTATE,
+  MIDDLE: THREE.MOUSE.DOLLY,
+  RIGHT: THREE.MOUSE.PAN,
+} as const
 
-/** Stops orbit the instant the user releases the mouse (no lingering). */
-function CrispOrbitRestore({ orbitControlsRef }: { orbitControlsRef: React.RefObject<unknown> }) {
-  const { camera } = useThree()
-  const restoreOnNextFrame = useRef(false)
-  const positionOnEnd = useRef(new THREE.Vector3())
-  const targetOnEnd = useRef(new THREE.Vector3())
-  const endListenerAdded = useRef(false)
-
-  useFrame(() => {
-    const controls = getControls(orbitControlsRef)
-    if (!controls) return
-
-    if (!endListenerAdded.current) {
-      endListenerAdded.current = true
-      controls.addEventListener('end', () => {
-        positionOnEnd.current.copy(camera.position)
-        targetOnEnd.current.copy(controls.target)
-        restoreOnNextFrame.current = true
-      })
-    }
-
-    // Match StudioRoom controls: no damping, specific mouse buttons, screen-space panning
-    ;(controls as { enableDamping?: boolean; dampingFactor?: number }).enableDamping = false
-    ;(controls as { enableDamping?: boolean; dampingFactor?: number }).dampingFactor = 0
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(controls as any).mouseButtons = {
-      LEFT: THREE.MOUSE.ROTATE,
-      MIDDLE: THREE.MOUSE.DOLLY,
-      RIGHT: THREE.MOUSE.PAN,
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(controls as any).screenSpacePanning = true
-
-    controls.update()
-
-    if (restoreOnNextFrame.current) {
-      camera.position.copy(positionOnEnd.current)
-      controls.target.copy(targetOnEnd.current)
-      restoreOnNextFrame.current = false
-    }
-  })
-
-  return null
-}
-
-function StudioViewCameraControls({ wallConfig }: { wallConfig: WallConfig | null }) {
-  const orbitControlsRef = useRef<OrbitControlsType | null>(null)
+function StudioViewCameraControls({
+  wallConfig,
+  orbitControlsRef,
+}: {
+  wallConfig: WallConfig | null
+  orbitControlsRef: React.MutableRefObject<OrbitControlsType | null>
+}) {
   // Match StudioRoom camera layout and scaling logic so view mode feels identical
   const maxWallWidth = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.width)) : 8
-  const maxWallHeight = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.height)) : 8
+  const maxWallHeightInches = (wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.height)) : 8) * 12
 
   // Convert to inches (1 unit = 1 inch)
   const maxWallWidthInches = maxWallWidth * 12
-  const maxWallHeightInches = maxWallHeight * 12
 
   // Baseline room: 8ft wide, 8ft tall
   const baseWidthInches = 8 * 12
@@ -111,20 +76,15 @@ function StudioViewCameraControls({ wallConfig }: { wallConfig: WallConfig | nul
   // Aim slightly above mid-wall (where boards typically sit) so zoom goes toward the walls, not the floor.
   const targetHeight = Math.max(60, Math.min(maxWallHeightInches * 0.65, maxWallHeightInches)) || 60
 
-  // Axonometric view: position camera at diagonal angle with moderate elevation
-  const baseDistance = 110 * distanceScale
-  const elevationAngle = 35 * (Math.PI / 180) // 35 degrees elevation
-  const azimuthAngle = 45 * (Math.PI / 180)   // 45 degrees around (diagonal view)
-
-  // Calculate axonometric camera position
-  const horizontalDistance = baseDistance * Math.cos(elevationAngle)
-  const cameraHeight = targetHeight + (baseDistance * Math.sin(elevationAngle))
-  const cameraX = horizontalDistance * Math.sin(azimuthAngle)
-  const cameraZ = horizontalDistance * Math.cos(azimuthAngle)
+  // Load-time framing comes from the same helper the 'axon' preset flies back
+  // to, so "reset the view" lands exactly where the room opened rather than at
+  // a separately-maintained approximation of it.
+  const initial = getInitialRoomPose(
+    wallConfig ?? { walls: [{ width: 8, height: 8 }], layoutType: 'zigzag' }
+  )
 
   return (
     <>
-      <CrispOrbitRestore orbitControlsRef={orbitControlsRef} />
       <OrbitControls
         ref={orbitControlsRef}
         enableDamping={false}
@@ -137,12 +97,14 @@ function StudioViewCameraControls({ wallConfig }: { wallConfig: WallConfig | nul
         enablePan={true}
         enableRotate={true}
         enableZoom={true}
+        screenSpacePanning
+        mouseButtons={VIEW_MOUSE_BUTTONS}
         target={[0, targetHeight, 0]}
       />
       <PerspectiveCamera
         makeDefault
-        position={[cameraX, cameraHeight, cameraZ]}
-        fov={50}
+        position={[initial.position.x, initial.position.y, initial.position.z]}
+        fov={initial.fov}
       />
     </>
   )
@@ -179,6 +141,32 @@ function StudioViewPageInner() {
   // empty array would re-introduce the empty-walls bug.
   const [loading, setLoading] = useState(!(initialCache?.boards && initialCache?.wallConfig))
   const [error, setError] = useState<string | null>(null)
+
+  /**
+   * Wall focus in the read-only room: double-click a wall to fly square-on to it
+   * with the rest of the room ghosted. There's no edit mode here, so this is the
+   * only thing a wall double-click does.
+   */
+  const orbitControlsRef = useRef<OrbitControlsType | null>(null)
+  const [focusedWall, setFocusedWall] = useState<FocusedWall | null>(null)
+  const [presetRequest, setPresetRequest] = useState<PresetRequest | null>(null)
+
+  const handlePreset = (preset: RoomCameraPreset) => {
+    // Counter-keyed so pressing the same preset twice re-frames both times.
+    setPresetRequest((prev) => ({ preset, key: (prev?.key ?? 0) + 1 }))
+    // A whole-room angle contradicts being focused on one wall.
+    setFocusedWall(null)
+  }
+
+  // Escape leaves focus, matching the editor.
+  useEffect(() => {
+    if (!focusedWall) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFocusedWall(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [focusedWall])
   // Phase 6.2: workspace id resolved from the room id in the URL. Used for
   // wall-config + view-counter calls which remain workspace-scoped.
   const [resolvedWorkspaceId, setResolvedWorkspaceId] = useState<string | null>(null)
@@ -580,7 +568,7 @@ function StudioViewPageInner() {
         <p className="text-sm text-gray-700">
           <span className="font-semibold">💬 Click boards</span> to view comments
           <span className="mx-3 text-gray-400">•</span>
-          <span className="font-semibold">🖱️ Click table/model</span> for full 3D view
+          <span className="font-semibold">Double-click a wall</span> to focus it
           <span className="mx-3 text-gray-400">•</span>
           <span className="font-semibold">Drag</span> to rotate camera
         </p>
@@ -667,7 +655,14 @@ function StudioViewPageInner() {
           <WallSystem
             boards={boards}
             wallConfig={wallConfig}
-            onWallDoubleClick={() => {}} // No wall edit in view mode
+            // No wall EDIT in view mode — double-click focuses the wall instead.
+            onWallDoubleClick={(wallIndex, _dims, _pos, _rot, side) =>
+              // Nonce bumps so re-focusing the wall you're already on re-frames
+              // it rather than being a dead gesture after you've orbited away.
+              setFocusedWall((prev) => ({ wallIndex, side, nonce: (prev?.nonce ?? 0) + 1 }))
+            }
+            onFloorClick={focusedWall !== null ? () => setFocusedWall(null) : undefined}
+            dimmedExceptWall={focusedWall?.wallIndex ?? null}
             editingWall={null}
             onBoardClick={handleBoardClick}
             wallColor={wallColor}
@@ -686,8 +681,34 @@ function StudioViewPageInner() {
         ))}
         
         {/* Camera Controls - scaled by wall size; crisp stop on mouse release (no lingering) */}
-        <StudioViewCameraControls wallConfig={wallConfig} />
+        <StudioViewCameraControls wallConfig={wallConfig} orbitControlsRef={orbitControlsRef} />
+        {/* Drives preset flights and head-on wall focus. Also supplies the
+            crisp stop-on-release behaviour that used to live in a local
+            CrispOrbitRestore here — running both would have meant two useFrame
+            hooks writing camera position and target in the same frame. */}
+        <CameraController
+          orbitControlsRef={orbitControlsRef}
+          editingWall={null}
+          wallPosition={null}
+          wallRotation={0}
+          wallConfig={wallConfig}
+          focusedWall={focusedWall}
+          presetRequest={presetRequest}
+        />
       </Canvas>
+
+      {/* Sits above the instructions pill below (absolute bottom-6, ~46px tall),
+          which is the only other bottom-centre element on this page. */}
+      <div
+        className="fixed left-0 right-0 z-40 pointer-events-none flex justify-center"
+        style={{ bottom: 84 }}
+      >
+        <RoomViewPresets
+          onPreset={handlePreset}
+          isFocused={focusedWall !== null}
+          onExitFocus={() => setFocusedWall(null)}
+        />
+      </div>
 
       {/* Lightbox Modal */}
       <LightboxModal

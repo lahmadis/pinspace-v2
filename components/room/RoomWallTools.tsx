@@ -9,12 +9,22 @@ import { ROOM, MONO_STACK, SANS_STACK } from '@/lib/room/palette'
  * export it as a printable contact sheet. Sits just above RevisionStrip's
  * clearance band so the two never overlap — see REVISION_STRIP_CLEARANCE in
  * StudioRoom.tsx, which this intentionally does not import (kept free of a
- * cross-file layout coupling; if that constant changes, nudge the 132px
- * bottom offset below to match).
+ * cross-file layout coupling; if that constant changes, nudge BOTTOM_OFFSET_PX
+ * below to match).
  *
  * All local state (critWalkOn/critBoards/etc.) lives in StudioRoom — this
  * component is presentational plus the tidy/export triggers.
  */
+
+/**
+ * Distance from the viewport bottom, clearing RevisionStrip beneath.
+ *
+ * RevisionStrip is two stacked rows in the Room view — the camera-preset row
+ * above the Room/Unfolded/Plan pill — and this component only ever renders in
+ * that same Room view, so it must clear both rows, not just the pill. Was 132
+ * when the strip was a single row.
+ */
+const BOTTOM_OFFSET_PX = 176
 
 interface RoomWallToolsProps {
   critWalkOn: boolean
@@ -77,7 +87,7 @@ export default function RoomWallTools({
     return (
       <div
         className="fixed left-1/2 z-30 flex items-center gap-3 rounded-full shadow-xl px-3 py-2"
-        style={{ bottom: 132, transform: 'translateX(-50%)', background: ROOM.accent, boxShadow: '0 16px 44px rgba(59,110,246,0.35)' }}
+        style={{ bottom: BOTTOM_OFFSET_PX, transform: 'translateX(-50%)', background: ROOM.accent, boxShadow: '0 16px 44px rgba(59,110,246,0.35)' }}
       >
         <button
           type="button"
@@ -119,7 +129,7 @@ export default function RoomWallTools({
   return (
     <div
       className="fixed left-1/2 z-30 flex items-center gap-2 rounded-full shadow-lg px-2 py-2"
-      style={{ bottom: 132, transform: 'translateX(-50%)', background: 'rgba(255,255,255,0.9)', border: `1px solid ${ROOM.hairline}` }}
+      style={{ bottom: BOTTOM_OFFSET_PX, transform: 'translateX(-50%)', background: 'rgba(255,255,255,0.9)', border: `1px solid ${ROOM.hairline}` }}
     >
       <span className="hidden sm:inline" style={{ fontFamily: MONO_STACK, fontSize: 10, letterSpacing: '0.14em', color: ROOM.ink2, paddingLeft: 8, textTransform: 'uppercase' }}>
         {wallLabel}

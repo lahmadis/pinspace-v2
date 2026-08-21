@@ -1,12 +1,23 @@
 'use client'
 
 import { ROOM, MONO_STACK } from '@/lib/room/palette'
+import type { RoomCameraPreset } from '@/lib/room/cameraViews'
+import RoomViewPresets from './RoomViewPresets'
 
 export type RoomView = 'room' | 'unfolded' | 'plan'
 
 interface RevisionStripProps {
   view: RoomView
   onViewChange: (view: RoomView) => void
+  /**
+   * Fly the camera to a named angle. Omit to hide the preset row entirely —
+   * surfaces that mount the room without a CameraController have nothing to
+   * fly.
+   */
+  onPreset?: (preset: RoomCameraPreset) => void
+  /** True while a single wall is focused, which is the only time exiting means anything. */
+  isFocused?: boolean
+  onExitFocus?: () => void
 }
 
 const VIEWS: Array<{ id: RoomView; label: string }> = [
@@ -16,15 +27,31 @@ const VIEWS: Array<{ id: RoomView; label: string }> = [
 ]
 
 /**
- * Bottom-center view switcher — Room / Unfolded / Plan. Used to sit above a
- * milestone timeline (First pin-up / Mid-review / Final review); that strip
- * was removed per explicit request, so this is just the switcher pill now. A
- * light paper/sheet bar matching the room's own chrome — only the active view
- * button inverts to a filled color.
+ * Bottom-center controls for the 3D room.
+ *
+ * Two stacked rows on purpose, because they operate on different things: the
+ * lower pill switches what is RENDERED (Room is a live 3D canvas; Unfolded and
+ * Plan are flat DOM), while the upper row only moves the CAMERA within the Room
+ * render. Folding camera angles into the same segmented control would imply
+ * "Axon" is a peer of "Plan" and that picking one deselects the other, which
+ * isn't true — so the presets are plain buttons with no pressed state, and the
+ * row is hidden outside the Room view where a camera doesn't exist.
  */
-export default function RevisionStrip({ view, onViewChange }: RevisionStripProps) {
+export default function RevisionStrip({
+  view,
+  onViewChange,
+  onPreset,
+  isFocused = false,
+  onExitFocus,
+}: RevisionStripProps) {
+  const showPresets = view === 'room' && Boolean(onPreset)
+
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none pb-5 flex justify-center">
+    <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none pb-5 flex flex-col items-center gap-2">
+      {showPresets && onPreset && (
+        <RoomViewPresets onPreset={onPreset} isFocused={isFocused} onExitFocus={onExitFocus} />
+      )}
+
       <div
         className="pointer-events-auto flex items-center gap-1 p-1 rounded-full shadow-xl"
         style={{ background: ROOM.wall, border: `1px solid ${ROOM.hairline}` }}
