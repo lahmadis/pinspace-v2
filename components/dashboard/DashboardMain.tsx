@@ -49,7 +49,7 @@ function withInstitution(path: string, slug: string | null): string {
 }
 
 const interactiveLink =
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-pinspace border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary shadow-[var(--shadow-soft)] transition-colors hover:border-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+  'inline-flex min-h-11 items-center justify-center gap-2 rounded-pinspace border-transparent bg-background-light px-4 py-2 text-sm font-semibold text-text-primary shadow-sm transition-all hover:bg-background-lighter hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
 interface ProjectCardProps {
   workspace: DashboardWorkspace
@@ -76,11 +76,11 @@ function ProjectCard({
 
   return (
     <Card
-      className={`group relative overflow-visible p-0 transition-[transform,box-shadow] ${
+      className={`group relative overflow-hidden p-0 border border-border bg-background-card transition-[transform,box-shadow] ${
         isArchived ? 'opacity-70' : 'hover:-translate-y-0.5 hover:shadow-[var(--shadow-raised)]'
       }`}
     >
-      <div className="relative flex h-32 items-center justify-center rounded-t-pinspace-lg bg-background-lighter">
+      <div className="relative flex h-28 w-full m-0 p-0 items-center justify-center border-b border-border/40 bg-background-lighter">
         <Icon className="h-10 w-10 text-accent" aria-hidden="true" />
         <div className="absolute left-3 top-3 flex flex-wrap gap-2">
           {isArchived && (
@@ -140,20 +140,23 @@ function ProjectCard({
 
       <Link
         href={withInstitution(`/workspace/${workspace.id}`, institutionSlug)}
-        className="block rounded-b-pinspace-lg p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+        className="block rounded-b-pinspace-lg p-3.5 sm:p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
       >
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="truncate text-base font-bold text-text-primary">{projectName}</h2>
-            <p className="mt-1 text-xs text-text-muted">
-              {workspace.board_count !== undefined
-                ? `${workspace.board_count} board${workspace.board_count === 1 ? '' : 's'}`
-                : workspace.created_at
-                  ? new Date(workspace.created_at).toLocaleDateString()
-                  : 'Open project'}
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-text-muted">
+              <span>
+                {workspace.board_count !== undefined
+                  ? `${workspace.board_count} board${workspace.board_count === 1 ? '' : 's'}`
+                  : workspace.created_at
+                    ? new Date(workspace.created_at).toLocaleDateString()
+                    : 'Open project'}
+              </span>
+              <span className="font-semibold text-text-muted opacity-0 transition-opacity duration-150 group-hover:opacity-100" aria-hidden="true">|</span>
             </p>
           </div>
-          <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
+          <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-text-muted opacity-0 transition-opacity duration-150 group-hover:opacity-100" aria-hidden="true" />
         </div>
       </Link>
     </Card>
@@ -291,7 +294,7 @@ export function DashboardMain({
               </Button>
             )}
             {canCreate && (
-              <Link href={cfg.newHref} className={`${interactiveLink} border-pinspace-ink bg-primary hover:bg-primary-light`}>
+              <Link href={cfg.newHref} className={`${interactiveLink} bg-primary text-pinspace-ink shadow-[0_4px_16px_rgba(255,200,0,0.35)] hover:bg-primary-hover hover:shadow-[0_6px_20px_rgba(255,200,0,0.45)] hover:-translate-y-0.5`}>
                 <Plus className="h-4 w-4" aria-hidden="true" />
                 {cfg.newLabel}
               </Link>
@@ -306,11 +309,16 @@ export function DashboardMain({
             <span className="sr-only">Loading projects</span>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
               {[0, 1, 2, 3].map((item) => (
-                <Card key={item} className="overflow-hidden p-0">
-                  <Skeleton className="h-32 rounded-none" />
-                  <div className="space-y-3 p-4">
+                <Card key={item} className="overflow-hidden p-0 border border-border shadow-sm">
+                  <div className="relative flex h-28 w-full m-0 p-0 items-center justify-center border-b border-border/40 bg-background-lighter">
+                    <Skeleton className="h-10 w-10 rounded-full" />
+                  </div>
+                  <div className="space-y-2 p-3.5 sm:p-4">
                     <Skeleton className="h-5 w-3/4" />
-                    <Skeleton className="h-4 w-1/2" />
+                    <div className="flex items-center justify-between">
+                      <Skeleton className="h-3.5 w-1/3" />
+                      <Skeleton className="h-4 w-4 rounded" />
+                    </div>
                   </div>
                 </Card>
               ))}

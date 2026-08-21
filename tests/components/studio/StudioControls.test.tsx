@@ -43,14 +43,14 @@ describe('PinSpace studio controls', () => {
     const user = userEvent.setup()
     render(<NewStudioPage />)
 
-    const name = screen.getByLabelText(/room name/i)
-    await user.click(screen.getByRole('button', { name: 'Create room' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('Enter a room name')
+    const name = screen.getByLabelText(/space name/i)
+    await user.click(screen.getByRole('button', { name: 'Create space' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter a space name')
     expect(name).toHaveAttribute('aria-invalid', 'true')
 
     await user.type(name, '  Material Lab  ')
     await user.type(screen.getByLabelText('Description (optional)'), '  Models and studies  ')
-    await user.click(screen.getByRole('button', { name: 'Create room' }))
+    await user.click(screen.getByRole('button', { name: 'Create space' }))
 
     await waitFor(() => expect(push).toHaveBeenCalledWith('/workspace/workspace-1'))
     expect(fetchMock).toHaveBeenCalledWith('/api/workspaces', expect.objectContaining({
@@ -59,7 +59,7 @@ describe('PinSpace studio controls', () => {
     }))
   })
 
-  it('prevents duplicate room creation while the request is pending', async () => {
+  it('prevents duplicate space creation while the request is pending', async () => {
     let resolveRequest: ((value: unknown) => void) | undefined
     const pending = new Promise((resolve) => { resolveRequest = resolve })
     const fetchMock = vi.fn().mockReturnValue(pending)
@@ -67,11 +67,11 @@ describe('PinSpace studio controls', () => {
     const user = userEvent.setup()
     render(<NewStudioPage />)
 
-    await user.type(screen.getByLabelText('Room name'), 'Material Lab')
-    const submit = screen.getByRole('button', { name: 'Create room' })
+    await user.type(screen.getByLabelText('Space name'), 'Material Lab')
+    const submit = screen.getByRole('button', { name: 'Create space' })
     await user.click(submit)
-    expect(screen.getByRole('button', { name: 'Creating room' })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: 'Creating room' }))
+    expect(screen.getByRole('button', { name: 'Creating space' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Creating space' }))
     expect(fetchMock).toHaveBeenCalledTimes(1)
     await act(async () => {
       resolveRequest?.({ ok: true, json: async () => ({ id: 'workspace-1' }) })

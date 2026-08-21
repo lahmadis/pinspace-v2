@@ -50,6 +50,6 @@ describe('PersonalNetworkPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load your network')
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
-    expect(await screen.findByRole('heading', { name: 'No rooms yet' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'No spaces yet' })).toBeInTheDocument()
   })
 })

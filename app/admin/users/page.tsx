@@ -107,7 +107,7 @@ export default function AdminUsersPage() {
       <div className="flex min-h-screen items-center justify-center bg-background p-6">
         <Card className="w-full max-w-md p-8">
           <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-text-primary">PinSpace Admin</h1>
+            <h1 className="text-2xl font-bold text-text-primary">pinspace Admin</h1>
             <p className="text-sm text-text-secondary mt-1">Sign in with your admin email</p>
           </div>
           <form onSubmit={handleAdminSignIn} className="space-y-4">

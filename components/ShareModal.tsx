@@ -233,7 +233,7 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
               <section className="mt-5 border-t border-border pt-5" aria-labelledby="guest-critics-heading">
                 <h3 id="guest-critics-heading" className="mb-1 text-sm font-bold text-text-primary">Guest critics</h3>
                 <p className="mb-3 text-xs text-text-secondary">
-                  Named, no-account links that can comment and trace on this room. Revoke anytime.
+                  Named, no-account links that can comment and trace on this space. Revoke anytime.
                 </p>
 
                 <div className="flex flex-col gap-2 mb-3">

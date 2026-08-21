@@ -21,20 +21,20 @@ export function AuthShell({
   wide = false,
 }: AuthShellProps) {
   return (
-    <main className="min-h-screen bg-background px-4 py-5 sm:px-6 sm:py-8">
+    <main className="min-h-screen bg-white bg-[linear-gradient(to_right,rgba(0,0,0,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.04)_1px,transparent_1px)] bg-[size:40px_40px] px-4 py-5 sm:px-6 sm:py-8">
       <div className="mx-auto flex min-h-[calc(100vh-2.5rem)] w-full max-w-6xl flex-col sm:min-h-[calc(100vh-4rem)]">
         <Link
           href="/"
           className="inline-flex min-h-11 w-fit items-center rounded-pinspace px-2 font-mono text-sm font-bold uppercase tracking-[0.18em] text-primary-dark transition-colors hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          PinSpace
+          pinspace
         </Link>
 
         <div className="my-auto grid items-center gap-8 py-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(24rem,0.65fr)] lg:gap-16">
-          <section aria-label="About PinSpace" className="hidden max-w-xl lg:block">
+          <section aria-label="About pinspace" className="hidden max-w-xl lg:block">
             <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-accent">{eyebrow}</p>
             <p className="mt-4 text-5xl font-bold leading-[0.98] text-text-primary">
-              A shared home for studio thinking.
+              Where design work lives.
             </p>
             <p className="mt-5 max-w-lg text-lg leading-8 text-text-secondary">
               Build rooms, connect work across your community, and keep critique close to the ideas it shapes.

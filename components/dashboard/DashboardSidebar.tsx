@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { LogOut, Menu, Network, Settings, User, Users } from 'lucide-react'
+import { LogOut, Menu, Network, PanelsTopLeft, Settings, User, Users } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef } from 'react'
 
@@ -86,6 +86,7 @@ function SidebarContent({
   }`
   const adminActive = pathname === '/admin' || pathname.startsWith('/admin/')
   const settingsActive = pathname === '/settings' || pathname.startsWith('/settings/')
+  const myBoardsActive = pathname === '/my-boards' || pathname.startsWith('/my-boards/')
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -93,6 +94,15 @@ function SidebarContent({
         {hasOrganization && scopeButton('wentworth', orgLabel, <Network className="h-4 w-4" />)}
         {scopeButton('shared', 'Shared', <Users className="h-4 w-4" />)}
         {scopeButton('personal', 'Personal', <User className="h-4 w-4" />)}
+        <Link
+          href="/my-boards"
+          aria-current={myBoardsActive ? 'page' : undefined}
+          onClick={onNavigate}
+          className={linkClass(myBoardsActive)}
+        >
+          <PanelsTopLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="truncate">My boards</span>
+        </Link>
 
         {/* The switcher remains server-gated by its own endpoint. Only one copy
             is mounted while the mobile Sheet is open to avoid duplicate reads. */}
@@ -264,7 +274,7 @@ export function DashboardSidebar({
             href="/"
             className="rounded-pinspace font-mono text-xl font-bold tracking-tight text-text-primary transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            PinSpace
+            pinspace
           </Link>
         </div>
         <div className="flex min-h-0 flex-1 flex-col px-3 pb-3">
@@ -288,11 +298,11 @@ export function DashboardSidebar({
         <div className="flex min-h-[calc(100dvh-10rem)] flex-col">
           <Link
             href="/"
-            aria-label="PinSpace home"
+            aria-label="pinspace home"
             onClick={closeMobileNavigation}
             className="mb-2 w-fit rounded-pinspace font-mono text-lg font-bold tracking-tight text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            PinSpace
+            pinspace
           </Link>
           <SidebarContent
             {...contentProps}

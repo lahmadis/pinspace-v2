@@ -5,7 +5,7 @@ import { Button, Dialog, Select } from '@/components/ui'
 
 // Named 3D avatar material colors maintain readable contrast in the gallery scene.
 export const GALLERY_AVATAR_COLOR_OPTIONS = {
-  yellow: { name: 'PinSpace yellow', value: '#FFC800' },
+  yellow: { name: 'pinspace yellow', value: '#FFC800' },
   green: { name: 'Deep green', value: '#14705C' },
   forest: { name: 'Forest', value: '#0A2F28' },
   ocean: { name: 'Ocean blue', value: '#176B87' },

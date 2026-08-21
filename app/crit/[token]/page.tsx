@@ -378,7 +378,7 @@ export default function CritPage() {
   }, [token])
 
   useEffect(() => {
-    document.title = roomName ? `${roomName} – Guest critique` : 'Guest critique – PinSpace'
+    document.title = roomName ? `${roomName} – Guest critique` : 'Guest critique – pinspace'
   }, [roomName])
 
   // Phase B.4: presence. Track this guest on the SAME studio-presence channel

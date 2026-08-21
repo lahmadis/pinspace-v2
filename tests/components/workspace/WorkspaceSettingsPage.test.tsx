@@ -64,7 +64,7 @@ describe('WorkspaceSettingsPage', () => {
     expect(await screen.findByRole('heading', { name: 'Members' })).toBeInTheDocument()
     expect(screen.queryByText('ABC123')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Room settings' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Space settings' })).not.toBeInTheDocument()
   })
 
   it('does not expose owner-only settings to a non-owner instructor member', async () => {
@@ -77,18 +77,18 @@ describe('WorkspaceSettingsPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Members' })).toBeInTheDocument()
     expect(screen.queryByText('ABC123')).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Room settings' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Space settings' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Archive project' })).not.toBeInTheDocument()
   })
 
-  it('shows a clear room settings empty state to the owner', async () => {
+  it('shows a clear space settings empty state to the owner', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ workspace: workspace({ rooms: [] }) }) }))
     render(<WorkspaceSettingsPage />)
 
-    expect(await screen.findByRole('heading', { name: 'No rooms yet' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'No spaces yet' })).toBeInTheDocument()
   })
 
-  it('labels room settings and saves wall color through the existing API contract', async () => {
+  it('labels space settings and saves wall color through the existing API contract', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ workspace: workspace() }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
@@ -126,7 +126,7 @@ describe('WorkspaceSettingsPage', () => {
     render(<WorkspaceSettingsPage />)
 
     await user.click(await screen.findByRole('button', { name: 'Delete Review room' }))
-    const dialog = screen.getByRole('dialog', { name: 'Delete room?' })
-    expect(dialog).toHaveTextContent('Every board in this room')
+    const dialog = screen.getByRole('dialog', { name: 'Delete space?' })
+    expect(dialog).toHaveTextContent('Every board in this space')
   })
 })

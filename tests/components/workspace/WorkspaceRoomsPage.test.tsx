@@ -64,13 +64,15 @@ describe('WorkspaceRoomsPage', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
   })
 
-  it('keeps room entry and every owner action visible through a touch-safe menu', async () => {
+  it('keeps room entry and every owner action visible through a touch-safe menu without sidebar navigation', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ workspace: workspace() }) }))
     const user = userEvent.setup()
     render(<WorkspaceRoomsPage />)
 
-    expect(await screen.findByRole('link', { name: /Enter A room name long enough/ })).toHaveAttribute('href', '/studio/room-1')
-    expect(screen.getByRole('link', { name: 'Invite and settings' })).toHaveAttribute('href', '/workspace/workspace-1/settings')
+    expect(await screen.findByRole('link', { name: 'Back to projects' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.queryByRole('navigation', { name: 'Primary navigation' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Enter A room name long enough/ })).toHaveAttribute('href', '/studio/room-1')
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/workspace/workspace-1/settings')
     const actions = screen.getByRole('button', { name: /Actions for A room name/ })
     expect(actions).toHaveClass('min-h-11')
     expect(actions).not.toHaveClass('opacity-0')
@@ -96,12 +98,12 @@ describe('WorkspaceRoomsPage', () => {
     render(<WorkspaceRoomsPage />)
 
     expect(await screen.findByRole('link', { name: /Enter A room name/ })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Invite and settings' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Actions for A room name/ }))
     expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Publish to network' })).not.toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Delete room' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add room' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add Space' })).toBeInTheDocument()
   })
 
   it('creates and copies a room share link through the existing owner-only contract', async () => {
@@ -116,30 +118,32 @@ describe('WorkspaceRoomsPage', () => {
 
     await user.click(await screen.findByRole('button', { name: /Actions for A room name/ }))
     await user.click(screen.getByRole('menuitem', { name: 'Share room' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Share room' })
+    const dialog = await screen.findByRole('dialog', { name: 'Share space' })
     expect(fetchMock).toHaveBeenCalledWith('/api/rooms/room-1/share', { method: 'POST' })
     await user.click(within(dialog).getByRole('button', { name: 'Copy share link' }))
     expect(writeText).toHaveBeenCalledWith('https://pinspace.test/share/token-1')
   })
 
   it('does not expose network settings without the instructor account capability', async () => {
+    userId = 'student-1'
     accountRole = 'student'
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ workspace: workspace() }) }))
     render(<WorkspaceRoomsPage />)
 
-    expect(await screen.findByRole('link', { name: 'Invite and settings' })).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Project details' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Network settings' })).not.toBeInTheDocument()
   })
 
-  it('renders an empty state and validates room creation inline', async () => {
+  it('renders an empty state and validates space creation inline', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ workspace: workspace({ rooms: [] }) }) }))
     const user = userEvent.setup()
     render(<WorkspaceRoomsPage />)
 
-    expect(await screen.findByRole('heading', { name: 'No rooms yet' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Add room' }))
-    await user.click(screen.getByRole('button', { name: 'Create room' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('Enter a room name')
+    expect(await screen.findByRole('heading', { name: 'Spaces' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Add Space' }))
+    expect(screen.getByText('Name your new space')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter a space name')
   })
 
   it('uses an explicit destructive dialog with guarded confirmation', async () => {
@@ -149,8 +153,8 @@ describe('WorkspaceRoomsPage', () => {
 
     await user.click(await screen.findByRole('button', { name: /Actions for A room name/ }))
     await user.click(screen.getByRole('menuitem', { name: 'Delete room' }))
-    const dialog = screen.getByRole('dialog', { name: 'Delete room?' })
-    expect(dialog).toHaveTextContent('Every board in this room')
-    expect(within(dialog).getByRole('button', { name: 'Delete room' })).toBeEnabled()
+    const dialog = screen.getByRole('dialog', { name: 'Delete space?' })
+    expect(dialog).toHaveTextContent('Every board in this space')
+    expect(within(dialog).getByRole('button', { name: 'Delete space' })).toBeEnabled()
   })
 })

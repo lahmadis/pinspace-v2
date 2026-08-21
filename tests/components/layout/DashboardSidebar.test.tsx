@@ -38,7 +38,7 @@ describe('DashboardSidebar', () => {
     signOut.mockResolvedValue(undefined)
   })
 
-  it('preserves organization, shared, personal, settings, admin, and gated network destinations', () => {
+  it('preserves organization, shared, personal, settings, admin, my boards, and gated network destinations', () => {
     render(
       <DashboardSidebar
         currentScope="personal"
@@ -55,13 +55,14 @@ describe('DashboardSidebar', () => {
     expect(screen.getByRole('button', { name: 'Wentworth' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Shared' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Personal' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'My boards' })).toHaveAttribute('href', '/my-boards')
     expect(screen.getByRole('link', { name: 'Organization network' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Admin' })).toHaveAttribute('href', '/admin')
     expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByText('Ada')).toBeInTheDocument()
   })
 
-  it('hides authorization-controlled destinations when access is absent', () => {
+  it('hides authorization-controlled destinations when access is absent while retaining My boards', () => {
     render(
       <DashboardSidebar
         currentScope="shared"
@@ -77,6 +78,7 @@ describe('DashboardSidebar', () => {
     expect(screen.queryByRole('button', { name: 'Network' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Shared' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'My boards' })).toHaveAttribute('href', '/my-boards')
   })
 
   it('closes mobile navigation after a scope change and preserves sign out', async () => {
@@ -127,7 +129,7 @@ describe('DashboardSidebar', () => {
     const trigger = screen.getByRole('button', { name: 'Open navigation' })
     await user.click(trigger)
     let sheet = screen.getByRole('dialog', { name: 'Dashboard navigation' })
-    const homeLink = within(sheet).getByRole('link', { name: 'PinSpace home' })
+    const homeLink = within(sheet).getByRole('link', { name: 'pinspace home' })
     const closeButton = within(sheet).getByRole('button', { name: 'Close sheet' })
     expect(homeLink).toHaveFocus()
 
@@ -196,7 +198,7 @@ describe('DashboardSidebar', () => {
         name: 'Dashboard navigation',
       })
       await waitFor(() =>
-        expect(within(desktopNavigation).getByRole('link', { name: 'PinSpace' })).toHaveFocus()
+        expect(within(desktopNavigation).getByRole('link', { name: /pinspace/i })).toHaveFocus()
       )
     } finally {
       window.matchMedia = originalMatchMedia

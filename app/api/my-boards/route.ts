@@ -21,10 +21,10 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch all boards owned by the user
+    // Fetch all boards owned by the user with room and workspace details
     const { data: boards, error } = await supabase
       .from('boards')
-      .select('*')
+      .select('*, rooms(id, name), workspaces:workspace_id(id, name)')
       .eq('owner_id', userId)
       .order('uploaded_at', { ascending: false })
 
@@ -34,37 +34,44 @@ export async function GET() {
     }
 
     // Transform to frontend format
-    const transformedBoards = (boards || []).map((board) => ({
-      id: board.id,
-      studioId: board.workspace_id,
-      workspaceId: board.workspace_id,
-      studentName: board.student_name,
-      studentEmail: board.student_email,
-      title: board.title,
-      description: board.description,
-      thumbnailUrl: board.thumbnail_url,
-      fullImageUrl: board.full_image_url,
-      tags: board.tags || [],
-      uploadedAt: board.uploaded_at,
-      position: (board.position_wall_index !== null && board.position_x !== null && board.position_y !== null) ? {
-        wallIndex: board.position_wall_index,
-        x: parseFloat(board.position_x),
-        y: parseFloat(board.position_y),
-        width: board.position_width ? parseFloat(board.position_width) : undefined,
-        height: board.position_height ? parseFloat(board.position_height) : undefined,
-        side: board.position_side || 'front',
-      } : undefined,
-      ownerId: board.owner_id,
-      ownerName: board.owner_name,
-      ownerColor: board.owner_color,
-      originalWidth: board.original_width,
-      originalHeight: board.original_height,
-      aspectRatio: board.aspect_ratio ? parseFloat(board.aspect_ratio) : undefined,
-      physicalWidth: board.physical_width ? parseFloat(board.physical_width) : undefined,
-      physicalHeight: board.physical_height ? parseFloat(board.physical_height) : undefined,
-      boardWidthIn: board.board_width_in != null ? Number(board.board_width_in) : undefined,
-      boardHeightIn: board.board_height_in != null ? Number(board.board_height_in) : undefined,
-    }))
+    const transformedBoards = (boards || []).map((board) => {
+      const room = board.rooms as { id?: string; name?: string } | null
+      const workspace = board.workspaces as { id?: string; name?: string } | null
+      return {
+        id: board.id,
+        studioId: board.workspace_id,
+        workspaceId: board.workspace_id,
+        workspaceName: workspace?.name || undefined,
+        roomId: board.room_id || room?.id || undefined,
+        roomName: room?.name || undefined,
+        studentName: board.student_name,
+        studentEmail: board.student_email,
+        title: board.title,
+        description: board.description,
+        thumbnailUrl: board.thumbnail_url,
+        fullImageUrl: board.full_image_url,
+        tags: board.tags || [],
+        uploadedAt: board.uploaded_at,
+        position: (board.position_wall_index !== null && board.position_x !== null && board.position_y !== null) ? {
+          wallIndex: board.position_wall_index,
+          x: parseFloat(board.position_x),
+          y: parseFloat(board.position_y),
+          width: board.position_width ? parseFloat(board.position_width) : undefined,
+          height: board.position_height ? parseFloat(board.position_height) : undefined,
+          side: board.position_side || 'front',
+        } : undefined,
+        ownerId: board.owner_id,
+        ownerName: board.owner_name,
+        ownerColor: board.owner_color,
+        originalWidth: board.original_width,
+        originalHeight: board.original_height,
+        aspectRatio: board.aspect_ratio ? parseFloat(board.aspect_ratio) : undefined,
+        physicalWidth: board.physical_width ? parseFloat(board.physical_width) : undefined,
+        physicalHeight: board.physical_height ? parseFloat(board.physical_height) : undefined,
+        boardWidthIn: board.board_width_in != null ? Number(board.board_width_in) : undefined,
+        boardHeightIn: board.board_height_in != null ? Number(board.board_height_in) : undefined,
+      }
+    })
 
     return NextResponse.json({ boards: transformedBoards })
   } catch (error) {

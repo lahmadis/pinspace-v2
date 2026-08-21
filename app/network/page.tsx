@@ -57,11 +57,11 @@ function PersonalNetworkInner() {
 
   return (
     <NetworkRouteShell
-      title="Your network" eyebrow="Personal discovery" countLabel={nodes.length === 1 ? 'room' : 'rooms'}
+      title="Your network" eyebrow="Personal discovery" countLabel={nodes.length === 1 ? 'space' : 'spaces'}
       backHref="/dashboard" backLabel="Dashboard" nodes={nodes}
       loadState={authStatus === 'loading' ? 'loading' : loadState}
       loadingTitle="Loading your network" errorTitle="Could not load your network" errorDescription="Check your connection and try again."
-      emptyTitle="No rooms yet" emptyDescription="Create your first room to see it mapped here."
+      emptyTitle="No spaces yet" emptyDescription="Create your first space to see it mapped here."
       emptyAction={<Link href="/dashboard" className="inline-flex min-h-11 items-center rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 font-semibold text-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Go to dashboard</Link>}
       onRetry={() => void load()} onNodeClick={(node) => router.push(`/network/${node.id}`)}
     />

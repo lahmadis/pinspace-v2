@@ -284,6 +284,43 @@ export default function BubbleNetwork({
   const [connectionLines, setConnectionLines] = useState<ConnectionLine[]>([])
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 })
   const [isDragging, setIsDragging] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  const toggleFullscreen = useCallback(async () => {
+    if (!containerRef.current) return
+    try {
+      if (!document.fullscreenElement) {
+        if (containerRef.current.requestFullscreen) {
+          await containerRef.current.requestFullscreen().catch(() => {
+            setIsFullscreen((prev) => !prev)
+          })
+        } else {
+          setIsFullscreen((prev) => !prev)
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen().catch(() => {
+            setIsFullscreen((prev) => !prev)
+          })
+        } else {
+          setIsFullscreen((prev) => !prev)
+        }
+      }
+    } catch {
+      setIsFullscreen((prev) => !prev)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isNativeFs = Boolean(document.fullscreenElement && containerRef.current && document.fullscreenElement === containerRef.current)
+      if (document.fullscreenElement) {
+        setIsFullscreen(isNativeFs)
+      }
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
   
   const simulationRef = useRef<d3.Simulation<BubbleNode, undefined> | null>(null)
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
@@ -301,10 +338,10 @@ export default function BubbleNetwork({
 
   useEffect(() => {
     const updateDimensions = () => {
-      if (fullScreen) {
+      if (fullScreen || isFullscreen) {
         setDimensions({
           width: window.innerWidth,
-          height: window.innerHeight - headerHeight,
+          height: fullScreen ? window.innerHeight - headerHeight : window.innerHeight,
         })
         if (containerRef.current) setContainerRect(containerRef.current.getBoundingClientRect())
       } else if (containerRef.current) {
@@ -664,14 +701,16 @@ export default function BubbleNetwork({
   // RENDER
   // ============================================================================
 
+  const isEffectiveFullscreen = fullScreen || isFullscreen
+
   return (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden bg-pinspace-forest ${fullScreen ? 'fixed inset-0' : 'h-full w-full'}`}
+      className={`relative overflow-hidden bg-pinspace-forest ${isEffectiveFullscreen ? 'fixed inset-0 z-50 h-screen w-screen' : 'h-full w-full'}`}
       style={{
-        ...(fullScreen ? { top: headerHeight } : {}),
-        height: fullScreen ? `calc(100vh - ${headerHeight}px)` : '100%',
-        minHeight: fullScreen ? undefined : 600,
+        ...(fullScreen && !isFullscreen ? { top: headerHeight } : {}),
+        height: isEffectiveFullscreen ? (fullScreen && !isFullscreen ? `calc(100vh - ${headerHeight}px)` : '100vh') : '100%',
+        minHeight: isEffectiveFullscreen ? undefined : 600,
       }}
     >
       {/* Grid background */}
@@ -878,38 +917,6 @@ export default function BubbleNetwork({
       {/* Tooltip */}
       <Tooltip data={tooltipData} containerRect={containerRect} />
 
-      <section
-        aria-label="Network directory"
-        className="absolute left-3 top-3 z-20 max-h-52 w-[min(28rem,calc(100%-1.5rem))] overflow-y-auto rounded-pinspace-lg border border-white/20 bg-pinspace-forest/95 p-3 text-white shadow-[var(--shadow-soft)] backdrop-blur-md sm:left-4 sm:top-4"
-      >
-        <div className="mb-2 flex items-baseline justify-between gap-3">
-          <h2 className="text-sm font-bold">Network directory</h2>
-          <p className="font-mono text-[11px] uppercase tracking-wide text-white/65">{nodes.length} items</p>
-        </div>
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {nodes.map((node) => {
-            const count = node.memberCount ?? node.count ?? 0
-            const yearLabel = node.year === 'Masters' ? 'Masters' : node.year ? `Year ${node.year}` : null
-            return (
-              <li key={node.id} className="min-w-0">
-                <button
-                  type="button"
-                  onClick={() => onNodeClick?.(node)}
-                  onFocus={() => onNodeHover?.(node)}
-                  onPointerEnter={() => onNodeHover?.(node)}
-                  aria-label={`Open ${node.name || node.label}`}
-                  className="min-h-11 w-full rounded-pinspace border border-white/20 bg-white/10 px-3 py-2 text-left hover:border-primary hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                >
-                  <span className="block break-words text-sm font-semibold">{node.name || node.label}</span>
-                  <span className="mt-0.5 block break-words text-xs text-white/70">
-                    {[node.department, yearLabel, node.instructor, `${count} ${count === 1 ? 'member' : 'members'}`].filter(Boolean).join(' · ')}
-                  </span>
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      </section>
 
       {/* Zoom controls */}
       <div className="absolute bottom-4 right-4 z-20 flex flex-col gap-2">
@@ -947,20 +954,19 @@ export default function BubbleNetwork({
         </button>
         <button
           className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-white/25 bg-pinspace-forest/90 text-white backdrop-blur-sm transition-colors hover:border-primary hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          aria-label="Reset network view"
-          onClick={() => {
-            if (svgRef.current && zoomRef.current) {
-              d3.select(svgRef.current)
-                .transition()
-                .duration(300)
-                .call(zoomRef.current.transform, d3.zoomIdentity)
-            }
-          }}
-          title="Reset view"
+          aria-label={isFullscreen ? 'Exit full screen' : 'Toggle full screen'}
+          onClick={() => void toggleFullscreen()}
+          title={isFullscreen ? 'Exit full screen' : 'Full screen'}
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-          </svg>
+          {isFullscreen ? (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9L4 4m0 0h4m-4 0v4m16 5l-5-5m5 5v-4m0 4h-4M9 15l-5 5m0 0h4m-4 0v-4m16-5l-5 5m5 0v-4m0 4h-4" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          )}
         </button>
       </div>
 

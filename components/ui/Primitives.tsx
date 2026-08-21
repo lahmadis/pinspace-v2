@@ -26,10 +26,10 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 type ButtonStyleProps = Pick<ButtonProps, 'variant' | 'size'> & { className?: string }
 
 const buttonVariants = {
-  primary: 'border-pinspace-ink bg-primary text-pinspace-ink hover:bg-primary-light',
-  secondary: 'border-accent bg-accent text-white hover:bg-accent-light',
+  primary: 'border-transparent bg-primary text-pinspace-ink shadow-[0_4px_16px_rgba(255,200,0,0.35)] hover:bg-primary-hover hover:shadow-[0_6px_20px_rgba(255,200,0,0.45)] hover:-translate-y-0.5',
+  secondary: 'border-transparent bg-accent text-white shadow-[0_4px_16px_rgba(20,112,92,0.25)] hover:bg-accent-light hover:-translate-y-0.5',
   ghost: 'border-transparent bg-transparent text-text-primary hover:bg-background-lighter',
-  danger: 'border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger))] text-white hover:bg-[rgb(var(--color-danger)/0.9)]',
+  danger: 'border-transparent bg-[rgb(var(--color-danger))] text-white hover:bg-[rgb(var(--color-danger)/0.9)]',
 }
 
 const buttonSizes = {
@@ -40,7 +40,7 @@ const buttonSizes = {
 
 export function buttonStyles({ variant = 'primary', size = 'md', className }: ButtonStyleProps = {}) {
   return cn(
-    'inline-flex items-center justify-center gap-2 rounded-pinspace border font-semibold shadow-[0_3px_0_rgb(var(--color-ink))] transition-[transform,background-color,box-shadow] duration-150 active:translate-y-0.5 active:shadow-none disabled:cursor-not-allowed disabled:opacity-55',
+    'inline-flex items-center justify-center gap-2 rounded-pinspace border font-semibold transition-[transform,background-color,box-shadow] duration-150 active:translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-55',
     focus,
     buttonVariants[variant],
     buttonSizes[size],
@@ -261,11 +261,13 @@ export const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(f
   { className, ...props },
   ref
 ) {
+  const hasPadding = className && /\b(p|px|py|pt|pb|pl|pr)-\d+/.test(className)
   return (
     <div
       ref={ref}
       className={cn(
-        'rounded-pinspace-lg border border-border bg-background-card p-5 shadow-[var(--shadow-soft)]',
+        'rounded-pinspace-lg border border-border bg-background-card shadow-[var(--shadow-soft)]',
+        !hasPadding && 'p-5',
         className
       )}
       {...props}

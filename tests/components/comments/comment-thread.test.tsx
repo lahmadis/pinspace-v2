@@ -25,7 +25,7 @@ describe('shared comment thread', () => {
     expect(screen.getByText('No comments yet')).toBeInTheDocument()
 
     rerender(<CommentList comments={[comment]} loading={false} error="" onRetry={vi.fn()} />)
-    expect(screen.getAllByText('Amina Khan')).toHaveLength(2)
+    expect(screen.getByText('Amina Khan')).toBeInTheDocument()
     expect(screen.getByText(comment.content)).toBeInTheDocument()
   })
 

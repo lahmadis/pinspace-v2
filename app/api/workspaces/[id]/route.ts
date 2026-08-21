@@ -3,6 +3,7 @@ import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { validateName } from '@/lib/validation/safeName'
 import { isSuperadmin, isNetworkPublished } from '@/lib/auth/superadmin'
 import { collectBoardStoragePaths } from '@/lib/storage/boardObjects'
+import { generateInviteCode } from '@/lib/workspaceUtils'
 import {
   listStorageObjectPaths,
   loadBoardObjectRows,
@@ -181,6 +182,15 @@ export async function GET(
       }
     }
 
+    let inviteCode = workspace.invite_code
+    if (isOwner && (!inviteCode || typeof inviteCode !== 'string' || inviteCode.trim() === '' || inviteCode === 'undefined')) {
+      inviteCode = generateInviteCode()
+      await admin
+        .from('workspaces')
+        .update({ invite_code: inviteCode })
+        .eq('id', workspaceId)
+    }
+
     const transformedWorkspace = {
       id: workspace.id,
       name: workspace.name,
@@ -194,7 +204,7 @@ export async function GET(
         role: m.role || 'student',
         joinedAt: m.created_at || new Date(),
       })),
-      inviteCode: isOwner ? workspace.invite_code || undefined : undefined,
+      inviteCode: (isOwner || membersList.some((m) => m.user_id === userId && m.role === 'instructor')) ? inviteCode || undefined : undefined,
       createdAt: workspace.created_at || new Date(),
       isPublic: workspace.is_public || false,
       publishedAt: workspace.published_at || undefined,

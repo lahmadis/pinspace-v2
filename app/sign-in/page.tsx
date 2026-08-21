@@ -288,7 +288,7 @@ function SignInInner() {
     if (institutionSlug) forgotPasswordParams.set('institution', institutionSlug)
     const forgotPasswordHref = `/forgot-password${forgotPasswordParams.size ? `?${forgotPasswordParams}` : ''}`
     const genericSubtitle = isPassword
-      ? 'Welcome back. Sign in to PinSpace.'
+      ? 'Welcome back. Sign in to pinspace.'
       : "We'll send a 6-digit sign-in code to your email."
     const subtitle = !institutionSlug
       ? genericSubtitle

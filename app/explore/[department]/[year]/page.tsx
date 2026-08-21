@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { notFound, useParams } from 'next/navigation'
 import { Maximize2, Minimize2, Network } from 'lucide-react'
 import BubbleNetwork, { type BubbleNode } from '@/components/network/BubbleNetwork'
+import { NetworkShimmerCanvas } from '@/components/network/NetworkShimmer'
 import { Button, Card, EmptyState, StatusState } from '@/components/ui'
 
 const DEPARTMENTS: Record<string, string> = {
@@ -78,7 +79,7 @@ export default function YearPage() {
 
       <main className="mx-auto grid max-w-[96rem] gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <section aria-label={`${departmentName} ${year.label} studio network`} className="min-h-[34rem] overflow-hidden rounded-pinspace-lg border border-border bg-pinspace-forest sm:min-h-[40rem]">
-          {loadState === 'loading' ? <div className="flex min-h-[34rem] items-center justify-center p-4"><StatusState status="loading" title="Loading studios" /></div>
+          {loadState === 'loading' ? <NetworkShimmerCanvas title={`Loading ${departmentName} ${year.label}...`} />
             : loadState === 'error' ? <div className="flex min-h-[34rem] items-center justify-center p-4"><StatusState status="error" title="Could not load studios" description="Try the request again." action={<Button type="button" onClick={() => void loadStudios()}>Try again</Button>} className="w-full max-w-lg" /></div>
               : nodes.length === 0 ? <div className="flex min-h-[34rem] items-center justify-center p-4"><EmptyState title="No studios published yet" description={`There are no published ${year.label} ${departmentName} studios.`} icon={<Network className="h-8 w-8" aria-hidden="true" />} className="w-full max-w-lg" /></div>
                 : <BubbleNetwork nodes={nodes} onNodeClick={openNode} />}

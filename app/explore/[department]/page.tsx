@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { notFound, useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Network } from 'lucide-react'
 import BubbleNetwork, { type BubbleNode } from '@/components/network/BubbleNetwork'
+import { NetworkShimmerCanvas } from '@/components/network/NetworkShimmer'
 import { Button, Card, EmptyState, Select, StatusState } from '@/components/ui'
 
 const DEPARTMENTS: Record<string, string> = {
@@ -38,7 +39,7 @@ export default function DepartmentPage() {
   const [academicYears, setAcademicYears] = useState<{ year: string; count: number }[]>([])
   const [loadState, setLoadState] = useState<LoadState>('loading')
 
-  useEffect(() => { if (departmentName) document.title = `${departmentName} Studios – PinSpace` }, [departmentName])
+  useEffect(() => { if (departmentName) document.title = `${departmentName} Studios – pinspace` }, [departmentName])
   useEffect(() => {
     if (!departmentName) return
     const load = async () => {
@@ -119,7 +120,7 @@ export default function DepartmentPage() {
           </div>
 
           <section aria-label={`${departmentName} network`} className="min-h-[34rem] overflow-hidden rounded-pinspace-lg border border-border bg-pinspace-forest sm:min-h-[40rem]">
-            {loadState === 'loading' ? <div className="flex min-h-[34rem] items-center justify-center p-4"><StatusState status="loading" title={`Loading ${departmentName} studios`} /></div>
+            {loadState === 'loading' ? <NetworkShimmerCanvas title={`Loading ${departmentName} studios...`} />
               : loadState === 'error' ? <div className="flex min-h-[34rem] items-center justify-center p-4"><StatusState status="error" title="Could not load department studios" description="Try again without changing your filters." action={<Button type="button" onClick={() => void loadResults()}>Try again</Button>} className="w-full max-w-lg" /></div>
                 : nodes.length === 0 ? <div className="flex min-h-[34rem] items-center justify-center p-4"><EmptyState title="No studios match these filters" description="Choose another year or check back when studios are published." icon={<Network className="h-8 w-8" aria-hidden="true" />} className="w-full max-w-lg" /></div>
                   : <BubbleNetwork nodes={nodes} onNodeClick={(node) => { if (node.url) window.location.href = node.url }} />}

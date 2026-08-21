@@ -135,7 +135,7 @@ function OnboardingContent() {
   return (
     <AuthShell
       eyebrow="Step 3 of 3"
-      title="Welcome to PinSpace"
+      title="Welcome to pinspace"
       description="Tell us a little about your practice. Required fields are marked; the rest is optional and used for community insights."
       wide
     >
@@ -241,7 +241,7 @@ function OnboardingContent() {
           </div>
           )}
           <div>
-            <label htmlFor="how-heard" className={fieldLabelClass}>How did you hear about PinSpace?</label>
+            <label htmlFor="how-heard" className={fieldLabelClass}>How did you hear about pinspace?</label>
             <Select
               id="how-heard"
               value={formData.how_heard}

@@ -38,7 +38,7 @@ describe('MyBoardsPage', () => {
     render(<MyBoardsPage />)
 
     expect(await screen.findByRole('heading', { level: 1, name: 'My boards' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Material Study/ })).toHaveAttribute('href', '/board/board-1')
+    expect(screen.getAllByRole('link', { name: /Material Study/ })[0]).toHaveAttribute('href', '/board/board-1')
     expect(screen.getByRole('link', { name: 'Upload new board' })).toHaveAttribute('href', '/upload')
   })
 

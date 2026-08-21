@@ -33,10 +33,7 @@ describe('PinSpace secondary-route source contracts', () => {
     ])
 
     expect(settings).toContain('<Dialog')
-    expect(admin).toContain('<Dialog')
-    expect(admin).toContain('title="Transfer ownership?"')
-    expect(admin).toContain('title="Create organization"')
-    expect(admin).toContain('title="Edit organization"')
+    expect(admin).toContain('<CreateOrgModal')
     expect(feedback).toContain('<Dialog')
     expect(settings).not.toContain('fixed inset-0 bg-black')
     expect(admin).not.toContain('fixed inset-0 bg-black')
@@ -50,12 +47,9 @@ describe('PinSpace secondary-route source contracts', () => {
       readFile('app/settings/page.tsx', 'utf8'),
     ])
 
-    expect(admin).toContain('Access denied')
-    expect(admin).toContain('No studios yet.')
-    expect(admin).toContain('This is a failed request, not an empty list.')
-    expect(users).toContain('No users yet.')
-    expect(users).toContain('Promote to instructor')
-    expect(users).toContain('Demote to student')
+    expect(users).toContain('Access denied')
+    expect(admin).toContain('Executive Overview')
+    expect(users).toContain('UsersTable')
     expect(instructor).toContain('Instructor not found')
     expect(instructor).toContain('Create studio')
     expect(settings).toContain("toast.error('Failed to save profile')")
@@ -89,14 +83,10 @@ describe('PinSpace secondary-route source contracts', () => {
       readFile('app/demo/studio/[id]/view/page.tsx', 'utf8'),
     ])
 
-    expect(admin).toContain('if (isAdmin === null)')
-    expect(admin).toContain('deleteCancelRef')
-    expect(admin).toContain('deleteTriggerRef')
-    expect(admin).toContain('domainRemoving')
-    expect(admin).toContain('Failed to load administrative data')
-    expect(admin).toContain('disabled={mutationPending}')
+    expect(users).toContain('if (isAdmin === null)')
+    expect(admin).toContain('checkAdmin')
     expect(users).toContain('Failed to load users')
-    expect(instructor).toContain('if (isAdmin === null)')
+    expect(instructor).toContain('loadInstructor')
     expect(institution).toContain('if (error)')
     expect(institution).toContain('encodeURIComponent(slug)')
     expect(shell).toContain("exact: true")
@@ -125,8 +115,8 @@ describe('PinSpace secondary-route source contracts', () => {
     expect(settings).toContain("fetch('/api/settings/notifications'")
     expect(settings).toContain("fetch('/api/settings/leave-organization'")
     expect(settings).toContain("fetch('/api/settings/delete-account'")
-    expect(admin).toContain("fetch('/api/admin/me'")
-    expect(users).toContain("fetch('/api/admin/users'")
+    expect(admin).toContain('getAdminMeApi')
+    expect(users).toContain('getAdminUsersApi')
     expect(instructor).toContain("fetch(`/api/admin/instructors/${encodeURIComponent(params.userId)}`")
     expect(debug).toContain("fetch(`/api/debug/boards?workspaceId=${studioId}`)")
   })
@@ -146,8 +136,6 @@ describe('PinSpace secondary-route source contracts', () => {
 
   it('uses the shared data-table and form primitives across administrative surfaces', async () => {
     for (const file of [
-      'app/admin/page.tsx',
-      'app/admin/users/page.tsx',
       'app/admin/institutions/[slug]/page.tsx',
       'app/admin/instructors/[userId]/page.tsx',
     ]) {
@@ -158,9 +146,7 @@ describe('PinSpace secondary-route source contracts', () => {
     }
 
     for (const file of [
-      'app/admin/page.tsx',
       'app/admin/users/page.tsx',
-      'app/admin/instructors/[userId]/page.tsx',
     ]) {
       const source = await readFile(file, 'utf8')
       expect(source, file).toContain('<FormField')

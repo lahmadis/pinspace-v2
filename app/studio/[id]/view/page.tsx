@@ -365,7 +365,7 @@ export default function StudioViewPage() {
   }, [boards, searchParams, selectedBoard])
 
   useEffect(() => {
-    document.title = 'Studio View – PinSpace'
+    document.title = 'Studio View – pinspace'
   }, [])
 
   const fetchBoards = async () => {
@@ -497,8 +497,53 @@ export default function StudioViewPage() {
   if (loading) {
     return (
       <StudioShell label="Studio viewer loading">
-        <div className="flex h-full w-full items-center justify-center p-4">
-          <StatusState status="loading" title="Loading studio" description="Preparing the public room and its boards." />
+        <div className="flex h-screen flex-col bg-background text-text-primary overflow-hidden">
+          {/* Shimmer Header Bar */}
+          <div className="flex items-center justify-between border-b border-border bg-background-light px-4 py-3 sm:px-6">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-24 rounded-pinspace bg-background-light/20 animate-pulse" />
+              <div className="h-5 w-40 rounded bg-background-light/20 animate-pulse" />
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-full bg-background-light/10 animate-pulse" />
+              <div className="h-8 w-8 rounded-full bg-background-light/10 animate-pulse" />
+              <div className="h-8 w-20 rounded-pinspace bg-background-light/20 animate-pulse" />
+            </div>
+          </div>
+
+          {/* Main Viewport Shimmer Canvas */}
+          <div className="flex-1 min-h-0 relative flex items-center justify-center p-6 bg-gradient-to-b from-pinspace-forest via-[#113830] to-[#0A2620]">
+            {/* Subtle Room Wall Outline Skeleton */}
+            <div className="absolute inset-8 rounded-xl border border-background-light/10 bg-background-light/5 backdrop-blur-sm pointer-events-none" />
+
+            {/* Center High-Contrast Loading Badge & Shimmer Card */}
+            <div className="relative z-10 flex flex-col items-center justify-center p-8 rounded-2xl bg-pinspace-forest/90 border border-background-light/20 shadow-2xl backdrop-blur-xl text-center max-w-sm w-full mx-4">
+              <div className="relative mb-4 flex items-center justify-center">
+                <div className="h-12 w-12 rounded-full border-[3px] border-background-light/20 border-t-pinspace-amber animate-spin" />
+                <span className="absolute text-xl select-none" aria-hidden="true">🏛️</span>
+              </div>
+
+              {/* High-Contrast Visible White/Cream Title & Subtitle */}
+              <h3 className="text-base font-bold text-background-light mb-1.5 tracking-wide">
+                Loading 3D Studio View...
+              </h3>
+              <p className="text-xs font-medium text-pinspace-cream/80 max-w-xs leading-relaxed">
+                Preparing the public room layout, walls, and boards.
+              </p>
+
+              {/* Shimmer Progress Indicator Bar */}
+              <div className="mt-5 w-full h-1.5 rounded-full bg-background-light/10 overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-pinspace-amber via-accent to-pinspace-cream w-3/4 rounded-full animate-pulse" />
+              </div>
+            </div>
+
+            {/* Floating Bottom Toolbar Skeleton */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2 rounded-full bg-pinspace-forest/80 border border-background-light/15 shadow-lg backdrop-blur-md">
+              <div className="h-7 w-16 rounded-full bg-background-light/15 animate-pulse" />
+              <div className="h-7 w-20 rounded-full bg-background-light/15 animate-pulse" />
+              <div className="h-7 w-7 rounded-full bg-background-light/15 animate-pulse" />
+            </div>
+          </div>
         </div>
       </StudioShell>
     )
@@ -529,9 +574,9 @@ export default function StudioViewPage() {
       <div className="fixed left-[max(0.75rem,env(safe-area-inset-left))] top-[max(0.75rem,env(safe-area-inset-top))] z-40 flex max-w-[calc(100vw-5rem)] flex-wrap items-center gap-2 sm:max-w-[calc(100vw-14rem)]">
         <button
           onClick={() => router.push('/')}
-          className="min-h-11 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 font-bold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="min-h-11 rounded-pinspace border-transparent bg-primary px-4 py-2 font-bold text-pinspace-ink shadow-[0_4px_16px_rgba(255,200,0,0.35)] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          PinSpace
+          pinspace
         </button>
 
         <button

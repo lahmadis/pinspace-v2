@@ -34,7 +34,7 @@ describe('ExplorePage', () => {
       return new Promise((resolve) => { resolveStudios = resolve })
     }))
     render(<ExplorePage />)
-    expect(screen.getByRole('status')).toHaveTextContent('Loading studio network')
+    expect(screen.getByRole('status')).toHaveTextContent('Loading Studio Network...')
 
     await waitFor(() => expect(resolveStudios).toBeTypeOf('function'))
     await act(async () => { resolveStudios({ ok: false, status: 500 }) })

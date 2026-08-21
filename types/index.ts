@@ -49,6 +49,9 @@ export interface Board {
   localId?: string
   studioId: string
   workspaceId?: string  // alias used by some APIs; prefer studioId when both exist
+  workspaceName?: string
+  roomId?: string
+  roomName?: string
   studentName: string
   studentEmail?: string
   title: string

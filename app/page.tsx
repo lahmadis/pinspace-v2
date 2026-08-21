@@ -103,7 +103,7 @@ function HomeInner() {
           ) : (
             <Link
               href={signInHref}
-              aria-label="Sign in to PinSpace"
+              aria-label="Sign in to pinspace"
               className="inline-flex min-h-11 items-center justify-center rounded-full bg-accent px-6 py-2 text-sm font-extrabold text-primary transition-colors hover:bg-pinspace-ink hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pinspace-ink focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
             >
               Sign In
@@ -112,11 +112,11 @@ function HomeInner() {
         </div>
 
         <div className="flex w-full flex-col items-center">
-          <h1 className="max-w-full whitespace-nowrap text-[clamp(4rem,11.95vw,10.75rem)] font-black leading-[0.85] tracking-[-0.055em] text-pinspace-ink">
+          <h1 className="max-w-full whitespace-nowrap text-[clamp(4rem,11.95vw,10.75rem)] font-black leading-[0.85] tracking-[-0.035em] text-pinspace-ink">
             <span>pinspace</span><span className="text-accent">.</span>
           </h1>
           <p className="mt-6 text-[clamp(1.25rem,2.08vw,1.875rem)] font-semibold leading-tight text-pinspace-ink sm:mt-[34px]">
-            Explore studios in immersive 3D
+            where design work lives
           </p>
 
           {loading && (
@@ -140,13 +140,12 @@ function HomeInner() {
                 >
                   Dashboard
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => setShowGalleryModal(true)}
+                <Link
+                  href={isDemo ? '/explore?demo=true' : '/explore'}
                   className="inline-flex min-h-16 items-center justify-center rounded-full border-0 bg-accent px-10 py-5 text-[19px] font-extrabold text-primary transition-colors hover:bg-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pinspace-ink focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
                 >
                   Enter the network <span aria-hidden="true" className="ml-1">→</span>
-                </button>
+                </Link>
               </>
             ) : (
               <Link

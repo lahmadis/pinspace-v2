@@ -102,7 +102,7 @@ export default function FeedbackButton() {
                 id="feedback-message"
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
-                placeholder="What happened, or what would make PinSpace better?"
+                placeholder="What happened, or what would make pinspace better?"
                 rows={5}
                 maxLength={FEEDBACK_MESSAGE_MAX_LENGTH}
                 disabled={submitting}

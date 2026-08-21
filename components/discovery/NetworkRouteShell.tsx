@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Boxes } from 'lucide-react'
 import BubbleNetwork, { type BubbleNode } from '@/components/network/BubbleNetwork'
+import { NetworkShimmerCanvas } from '@/components/network/NetworkShimmer'
 import { Button, EmptyState, StatusState } from '@/components/ui'
 
 type NetworkRouteShellProps = {
@@ -46,7 +47,11 @@ export default function NetworkRouteShell({
   }, [])
 
   if (loadState === 'loading') {
-    return <main className="flex min-h-screen items-center justify-center bg-pinspace-forest px-4"><StatusState status="loading" title={loadingTitle} description="Mapping rooms and connections." /></main>
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-pinspace-forest p-4 sm:p-6">
+        <NetworkShimmerCanvas title={loadingTitle} />
+      </main>
+    )
   }
 
   if (loadState === 'error' || loadState === 'not-found') {

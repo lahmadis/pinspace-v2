@@ -4,6 +4,7 @@ import Link from 'next/link'
 import type { ReactNode } from 'react'
 
 import { Button, Dialog, StatusState } from '@/components/ui'
+import { PublicStudioShimmerCanvas } from './PublicStudioShimmer'
 
 export function PublicStatusScreen({
   status,
@@ -16,6 +17,10 @@ export function PublicStatusScreen({
   description: ReactNode
   action?: ReactNode
 }) {
+  if (status === 'loading') {
+    return <PublicStudioShimmerCanvas title={title} description={description} />
+  }
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-pinspace-forest px-4 py-10 text-text-primary">
       <StatusState status={status} title={title} description={description} action={action} className="w-full max-w-md shadow-[var(--shadow-raised)]" />
@@ -37,10 +42,10 @@ export function PublicStudioHeader({
       <div className="flex min-w-0 items-center gap-2">
         <Link
           href="/"
-          aria-label="PinSpace home"
-          className="pointer-events-auto inline-flex min-h-11 shrink-0 items-center rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 font-black text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-light focus-visible:ring-offset-2 focus-visible:ring-offset-pinspace-forest"
+          aria-label="pinspace home"
+          className="pointer-events-auto inline-flex min-h-11 shrink-0 items-center rounded-pinspace border-transparent bg-primary px-4 py-2 font-black text-pinspace-ink shadow-[0_4px_16px_rgba(255,200,0,0.35)] hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-light focus-visible:ring-offset-2 focus-visible:ring-offset-pinspace-forest"
         >
-          PinSpace
+          pinspace
         </Link>
         {roomName && (
           <p className="min-w-0 truncate rounded-pinspace border border-background-light/30 bg-pinspace-forest/85 px-3 py-2.5 text-sm font-semibold text-background-light shadow-[var(--shadow-soft)] backdrop-blur-md" title={roomName}>

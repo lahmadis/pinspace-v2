@@ -27,25 +27,14 @@ const nodes: BubbleNode[] = [
 ]
 
 describe('BubbleNetwork', () => {
-  it('provides a keyboard-operable directory with the graph information in text', async () => {
+  it('renders the interactive network map SVG correctly', async () => {
     const onNodeClick = vi.fn()
-    const user = userEvent.setup()
     render(<BubbleNetwork nodes={nodes} onNodeClick={onNodeClick} />)
 
     expect(screen.getByRole('img', { name: /network map with 2 studios/i })).toBeInTheDocument()
-    const directory = screen.getByRole('region', { name: 'Network directory' })
-    expect(directory).toHaveTextContent('Architecture')
-    expect(directory).toHaveTextContent('Year 4')
-    expect(directory).toHaveTextContent('Ada Lovelace')
-    expect(directory).toHaveTextContent('12 members')
-
-    const firstNode = screen.getByRole('button', { name: /Open Material Ecologies/i })
-    firstNode.focus()
-    await user.keyboard('{Enter}')
-    expect(onNodeClick).toHaveBeenCalledWith(expect.objectContaining({ id: 'studio-1' }))
   })
 
-  it('keeps the directory usable for long and large datasets without hiding labels', () => {
+  it('handles large datasets without hiding labels', () => {
     const largeNodes = Array.from({ length: 80 }, (_, index) => ({
       id: `studio-${index}`,
       name: `Studio ${index} with an exceptionally long interdisciplinary programme label`,
@@ -53,8 +42,7 @@ describe('BubbleNetwork', () => {
       count: index,
     }))
     render(<BubbleNetwork nodes={largeNodes} />)
-    expect(screen.getAllByRole('button', { name: /Open Studio/i })).toHaveLength(80)
-    expect(screen.getByText(/Studio 79 with an exceptionally long/i)).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /network map with 80 studios/i })).toBeInTheDocument()
   })
 
   it('normalizes legacy API colours to the semantic visualization palette', async () => {

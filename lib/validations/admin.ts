@@ -31,7 +31,7 @@ export const editOrgSchema = z.object({
 
 export const createStudioSchema = z.object({
   name: z.string().min(1, { message: 'Studio name is required' }).max(100),
-  instructorUserId: z.string().min(1, { message: 'Pick an instructor' }),
+  instructorUserId: z.string({ message: 'Pick an instructor' }).min(1, { message: 'Pick an instructor' }),
   department: z.string().min(1, { message: 'A valid department is required' }),
   yearLevel: z.string().min(1, { message: 'A valid year level is required' }),
   academicYear: z.string().min(1, { message: 'A valid academic year is required' }),

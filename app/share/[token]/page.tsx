@@ -265,7 +265,7 @@ export default function SharePage() {
   }, [token])
 
   useEffect(() => {
-    document.title = roomName ? `${roomName} – PinSpace` : 'Shared Studio – PinSpace'
+    document.title = roomName ? `${roomName} – pinspace` : 'Shared Studio – pinspace'
   }, [roomName])
 
   const handleBoardClick = (board: Board) => {

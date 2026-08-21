@@ -1,13 +1,28 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
-import { CalendarDays, Image as ImageIcon, LayoutDashboard, PanelsTopLeft, Settings, Upload } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  Building2,
+  CalendarDays,
+  DoorOpen,
+  ExternalLink,
+  Grid,
+  Image as ImageIcon,
+  LayoutDashboard,
+  Layers,
+  PanelsTopLeft,
+  Search,
+  Settings,
+  SlidersHorizontal,
+  Upload,
+} from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
+import { MyBoardsShimmer } from '@/components/boards/MyBoardsShimmer'
 import { AppShell } from '@/components/layout/AppShell'
 import { PageHeader } from '@/components/layout/PageHeader'
-import { Badge, Button, Card, EmptyState, Skeleton, StatusState } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, Input, Select, StatusState } from '@/components/ui'
 import { useAuthSession } from '@/hooks/useAuthSession'
 import type { Board } from '@/types'
 
@@ -21,7 +36,7 @@ const footerNavigation = [
 ]
 
 const actionLink =
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 text-sm font-semibold text-text-primary shadow-[0_3px_0_rgb(var(--color-ink))] transition-[transform,background-color,box-shadow] hover:bg-primary-light active:translate-y-0.5 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+  'inline-flex min-h-12 items-center justify-center gap-2.5 rounded-pinspace border-transparent bg-primary px-6 py-2.5 text-base font-black text-pinspace-ink shadow-[0_4px_16px_rgba(255,200,0,0.35)] transition-all hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
 export default function MyBoardsPage() {
   const router = useRouter()
@@ -29,6 +44,13 @@ export default function MyBoardsPage() {
   const [boards, setBoards] = useState<Board[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
+
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedProject, setSelectedProject] = useState<string>('all')
+  const [selectedSpace, setSelectedSpace] = useState<string>('all')
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'title'>('newest')
+  const [viewMode, setViewMode] = useState<'grid' | 'grouped'>('grid')
 
   const fetchBoards = useCallback(async () => {
     if (authStatus !== 'authenticated') return
@@ -63,6 +85,67 @@ export default function MyBoardsPage() {
     }
   }, [authStatus, fetchBoards, router])
 
+  // Extract unique Projects & Spaces for filter dropdowns
+  const availableProjects = useMemo(() => {
+    const set = new Set<string>()
+    boards.forEach((b) => {
+      const p = b.workspaceName || (b.workspaceId ? `Project ${b.workspaceId.slice(0, 8)}` : null)
+      if (p) set.add(p)
+    })
+    return Array.from(set).sort()
+  }, [boards])
+
+  const availableSpaces = useMemo(() => {
+    const set = new Set<string>()
+    boards.forEach((b) => {
+      if (b.roomName) set.add(b.roomName)
+    })
+    return Array.from(set).sort()
+  }, [boards])
+
+  // Filter & Sort Boards
+  const filteredBoards = useMemo(() => {
+    return boards
+      .filter((board) => {
+        // Search filter
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase().trim()
+          const titleMatch = board.title.toLowerCase().includes(q)
+          const studentMatch = board.studentName?.toLowerCase().includes(q)
+          const tagMatch = board.tags?.some((t) => t.toLowerCase().includes(q))
+          if (!titleMatch && !studentMatch && !tagMatch) return false
+        }
+        // Project filter
+        if (selectedProject !== 'all') {
+          const pName = board.workspaceName || (board.workspaceId ? `Project ${board.workspaceId.slice(0, 8)}` : null)
+          if (pName !== selectedProject && board.workspaceId !== selectedProject) return false
+        }
+        // Space filter
+        if (selectedSpace !== 'all') {
+          if (board.roomName !== selectedSpace && board.roomId !== selectedSpace) return false
+        }
+        return true
+      })
+      .sort((a, b) => {
+        if (sortBy === 'newest') return new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+        if (sortBy === 'oldest') return new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime()
+        if (sortBy === 'title') return a.title.localeCompare(b.title)
+        return 0
+      })
+  }, [boards, searchQuery, selectedProject, selectedSpace, sortBy])
+
+  // Grouped by Space
+  const groupedBoards = useMemo(() => {
+    const map = new Map<string, Board[]>()
+    filteredBoards.forEach((board) => {
+      const key = board.roomName ? `Space: ${board.roomName}` : board.workspaceName ? `Project: ${board.workspaceName}` : 'Other Boards'
+      const list = map.get(key) || []
+      list.push(board)
+      map.set(key, list)
+    })
+    return map
+  }, [filteredBoards])
+
   return (
     <AppShell
       navigation={navigation}
@@ -73,7 +156,7 @@ export default function MyBoardsPage() {
       <PageHeader
         eyebrow="Library"
         title="My boards"
-        description="All of your uploaded boards, ready to review or share."
+        description="All of your uploaded boards, organized by project and space."
         actions={
           <Link href="/upload" className={actionLink}>
             <Upload className="h-4 w-4" aria-hidden="true" />
@@ -84,20 +167,7 @@ export default function MyBoardsPage() {
 
       <div className="mx-auto w-full max-w-[96rem] px-4 py-6 sm:px-6 lg:px-8">
         {loading ? (
-          <div role="status" aria-label="Loading your boards" className="space-y-5">
-            <span className="sr-only">Loading your boards</span>
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {[0, 1, 2].map((item) => (
-                <Card key={item} className="overflow-hidden p-0">
-                  <Skeleton className="aspect-[16/10] rounded-none" />
-                  <div className="space-y-3 p-5">
-                    <Skeleton className="h-5 w-3/4" />
-                    <Skeleton className="h-4 w-1/2" />
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </div>
+          <MyBoardsShimmer />
         ) : fetchError ? (
           <StatusState
             status="error"
@@ -114,61 +184,244 @@ export default function MyBoardsPage() {
             action={<Link href="/upload" className={actionLink}>Upload your first board</Link>}
           />
         ) : (
-          <section aria-labelledby="board-library-title">
-            <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 id="board-library-title" className="text-xl font-bold text-text-primary">Board library</h2>
-                <p className="mt-1 text-sm text-text-secondary">
-                  {boards.length} board{boards.length === 1 ? '' : 's'}
-                </p>
+          <section aria-labelledby="board-library-title" className="space-y-6">
+            {/* Interactive Search & Filter Toolbar */}
+            <div className="flex flex-col gap-4 rounded-pinspace-lg border border-border bg-background-light p-4 shadow-[var(--shadow-soft)] sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+                {/* Search Bar */}
+                <div className="relative min-w-[200px] flex-1">
+                  <Input
+                    type="search"
+                    aria-label="Search boards by title or tag"
+                    placeholder="Search by title, student, or tag…"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    className="min-h-10 pl-9"
+                  />
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted pointer-events-none" />
+                </div>
+
+                {/* Project Filter */}
+                {availableProjects.length > 0 && (
+                  <Select
+                    aria-label="Filter by Project"
+                    value={selectedProject}
+                    onChange={(event) => setSelectedProject(event.target.value)}
+                    className="min-h-10 w-full sm:w-48"
+                  >
+                    <option value="all">All projects ({boards.length})</option>
+                    {availableProjects.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </Select>
+                )}
+
+                {/* Space Filter */}
+                {availableSpaces.length > 0 && (
+                  <Select
+                    aria-label="Filter by Space"
+                    value={selectedSpace}
+                    onChange={(event) => setSelectedSpace(event.target.value)}
+                    className="min-h-10 w-full sm:w-44"
+                  >
+                    <option value="all">All spaces</option>
+                    {availableSpaces.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </Select>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                {/* Sort selector */}
+                <Select
+                  aria-label="Sort boards"
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value as 'newest' | 'oldest' | 'title')}
+                  className="min-h-10 w-36"
+                >
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="title">Title (A-Z)</option>
+                </Select>
+
+                {/* View switcher */}
+                <div className="flex items-center gap-1 rounded-pinspace border border-border bg-background p-1" role="group" aria-label="View layout">
+                  <Button
+                    type="button"
+                    variant={viewMode === 'grid' ? 'primary' : 'ghost'}
+                    size="sm"
+                    className="min-h-8 px-2.5 text-xs"
+                    onClick={() => setViewMode('grid')}
+                    title="Grid view"
+                  >
+                    <Grid className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={viewMode === 'grouped' ? 'primary' : 'ghost'}
+                    size="sm"
+                    className="min-h-8 px-2.5 text-xs"
+                    onClick={() => setViewMode('grouped')}
+                    title="Grouped by Space"
+                  >
+                    <Layers className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {boards.map((board) => (
-                <Link
-                  key={board.id}
-                  href={`/board/${board.id}`}
-                  className="group rounded-pinspace-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            {/* Results Counter Bar */}
+            <div className="flex items-center justify-between">
+              <h2 id="board-library-title" className="text-xl font-bold text-text-primary">
+                {filteredBoards.length} board{filteredBoards.length === 1 ? '' : 's'}
+                {selectedProject !== 'all' || selectedSpace !== 'all' || searchQuery ? ' (filtered)' : ''}
+              </h2>
+              {(searchQuery || selectedProject !== 'all' || selectedSpace !== 'all') && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setSearchQuery(''); setSelectedProject('all'); setSelectedSpace('all'); }}
+                  className="text-xs font-semibold text-accent"
                 >
-                  <Card className="h-full overflow-hidden p-0 transition-[transform,box-shadow] group-hover:-translate-y-0.5 group-hover:shadow-[var(--shadow-raised)]">
-                    <div className="relative aspect-[16/10] overflow-hidden bg-background-lighter">
-                      {board.thumbnailUrl ? (
-                        // Board images can be hosted by Supabase; native images avoid a brittle host allowlist.
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={board.thumbnailUrl}
-                          alt=""
-                          loading="lazy"
-                          className="h-full w-full object-cover transition-transform duration-200 motion-reduce:transition-none group-hover:scale-[1.02]"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center">
-                          <ImageIcon className="h-12 w-12 text-text-muted" aria-hidden="true" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="p-5">
-                      <h3 className="break-words text-lg font-bold text-text-primary">{board.title}</h3>
-                      <p className="mt-1 break-words text-sm text-text-secondary">{board.studentName}</p>
-                      {board.tags && board.tags.length > 0 && (
-                        <div className="mt-4 flex flex-wrap gap-2" aria-label="Board tags">
-                          {board.tags.slice(0, 3).map((tag) => <Badge key={tag}>{tag}</Badge>)}
-                          {board.tags.length > 3 && <Badge>+{board.tags.length - 3}</Badge>}
-                        </div>
-                      )}
-                      <p className="mt-4 flex items-center gap-2 font-mono text-xs text-text-muted">
-                        <CalendarDays className="h-4 w-4" aria-hidden="true" />
-                        Uploaded {new Date(board.uploadedAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </Card>
-                </Link>
-              ))}
+                  Reset filters
+                </Button>
+              )}
             </div>
+
+            {filteredBoards.length === 0 ? (
+              <EmptyState
+                title="No matching boards found"
+                description="Try clearing your search query or filters."
+                action={
+                  <Button type="button" onClick={() => { setSearchQuery(''); setSelectedProject('all'); setSelectedSpace('all'); }}>
+                    Clear all filters
+                  </Button>
+                }
+              />
+            ) : viewMode === 'grouped' ? (
+              /* Grouped View */
+              <div className="space-y-8">
+                {Array.from(groupedBoards.entries()).map(([groupTitle, groupBoards]) => (
+                  <div key={groupTitle} className="space-y-4">
+                    <div className="flex items-center gap-2 border-b border-border/60 pb-2">
+                      <DoorOpen className="h-5 w-5 text-accent" />
+                      <h3 className="text-lg font-bold text-text-primary">{groupTitle}</h3>
+                      <Badge className="ml-2">{groupBoards.length}</Badge>
+                    </div>
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                      {groupBoards.map((board) => (
+                        <BoardCard key={board.id} board={board} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* Grid View */
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                {filteredBoards.map((board) => (
+                  <BoardCard key={board.id} board={board} />
+                ))}
+              </div>
+            )}
           </section>
         )}
       </div>
     </AppShell>
+  )
+}
+
+function BoardCard({ board }: { board: Board }) {
+  const roomPath = board.workspaceId
+    ? `/studio/${board.workspaceId}${board.roomId ? `?room=${board.roomId}` : ''}`
+    : `/board/${board.id}`
+
+  return (
+    <Card className="group relative h-full overflow-hidden p-0 border border-border bg-background-card transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[var(--shadow-raised)]">
+      <div className="relative aspect-[16/10] overflow-hidden bg-background-lighter">
+        <Link
+          href={`/board/${board.id}`}
+          className="block h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          {board.thumbnailUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={board.thumbnailUrl}
+              alt={board.title}
+              loading="lazy"
+              className="h-full w-full object-cover transition-transform duration-200 motion-reduce:transition-none group-hover:scale-[1.02]"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <ImageIcon className="h-12 w-12 text-text-muted" aria-hidden="true" />
+            </div>
+          )}
+        </Link>
+
+        {/* Hover Quick Action Overlay */}
+        <div className="absolute inset-0 flex items-center justify-center bg-pinspace-forest/70 opacity-0 backdrop-blur-xs transition-opacity duration-200 group-hover:opacity-100 p-4 pointer-events-none group-hover:pointer-events-auto">
+          <Link
+            href={roomPath}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-pinspace bg-primary px-4 py-2 text-sm font-black text-pinspace-ink shadow-lg transition-transform hover:scale-105 hover:bg-primary-hover"
+          >
+            <DoorOpen className="h-4 w-4" />
+            Open in 3D Space
+          </Link>
+        </div>
+      </div>
+
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-2">
+          <Link
+            href={`/board/${board.id}`}
+            className="break-words text-lg font-bold text-text-primary group-hover:text-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            {board.title}
+          </Link>
+        </div>
+
+        <p className="mt-1 break-words text-sm text-text-secondary">{board.studentName}</p>
+
+        {/* Project & Space Badges */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {board.workspaceName && (
+            <Badge variant="accent" className="flex items-center gap-1">
+              <Building2 className="h-3 w-3" />
+              <span className="truncate max-w-[120px]">{board.workspaceName}</span>
+            </Badge>
+          )}
+          {board.roomName && (
+            <Badge className="flex items-center gap-1">
+              <DoorOpen className="h-3 w-3" />
+              <span className="truncate max-w-[120px]">{board.roomName}</span>
+            </Badge>
+          )}
+        </div>
+
+        {board.tags && board.tags.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Board tags">
+            {board.tags.slice(0, 3).map((tag) => (
+              <Badge key={tag} className="text-xs bg-background-lighter">{tag}</Badge>
+            ))}
+            {board.tags.length > 3 && <Badge className="text-xs">+{board.tags.length - 3}</Badge>}
+          </div>
+        )}
+
+        <p className="mt-4 flex items-center justify-between font-mono text-xs text-text-muted pt-3 border-t border-border/40">
+          <span className="flex items-center gap-1.5">
+            <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
+            {new Date(board.uploadedAt).toLocaleDateString()}
+          </span>
+          <Link
+            href={`/board/${board.id}`}
+            className="inline-flex items-center gap-1 text-accent font-semibold group-hover:underline"
+          >
+            View <ExternalLink className="h-3 w-3" />
+          </Link>
+        </p>
+      </div>
+    </Card>
   )
 }

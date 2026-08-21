@@ -129,7 +129,7 @@ export default function AdminOverviewPage() {
     <AdminShell
       currentPath="/admin"
       title="Executive Overview"
-      description="PinSpace platform telemetry, operational metrics, and quick actions."
+      description="pinspace platform telemetry, operational metrics, and quick actions."
       actions={
         <div className="flex items-center gap-2">
           <CreateOrgModal onCreated={loadAll} />

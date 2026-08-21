@@ -124,16 +124,14 @@ describe('PinSpace entry flows', () => {
     render(<Home />)
     expect(screen.getByRole('status')).toHaveTextContent('Checking your session')
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('pinspace.')
-    expect(screen.getByText('Explore studios in immersive 3D')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Enter the network' })).toBeEnabled()
+    expect(screen.getByText('where design work lives')).toBeInTheDocument()
 
     await act(async () => finishSession({ data: { session: null } }))
-    expect(await screen.findByRole('link', { name: 'Dashboard' })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: /Sign in to Get Started/i })).toHaveAttribute(
       'href',
-      '/sign-in?redirect=%2Fdashboard',
+      '/sign-in',
     )
-    expect(screen.getByRole('link', { name: 'Sign in to PinSpace' })).toHaveAttribute('href', '/sign-in')
+    expect(screen.getByRole('link', { name: /Sign in to pinspace/i })).toHaveAttribute('href', '/sign-in')
     expect(screen.queryByText('From first pin to final review.')).not.toBeInTheDocument()
   })
 
@@ -148,27 +146,19 @@ describe('PinSpace entry flows', () => {
   })
 
   it('preserves institution and demo context across landing actions', async () => {
-    const user = userEvent.setup()
     searchParams.set('institution', 'north-school')
     searchParams.set('demo', 'true')
 
     render(<Home />)
 
-    const dashboard = await screen.findByRole('link', { name: 'Dashboard' })
-    expect(dashboard).toHaveAttribute(
-      'href',
-      '/sign-in?institution=north-school&redirect=%2Fdashboard',
-    )
-    expect(screen.getByRole('link', { name: 'Sign in to PinSpace' })).toHaveAttribute(
+    const signInAction = await screen.findByRole('link', { name: /Sign in to Get Started/i })
+    expect(signInAction).toHaveAttribute(
       'href',
       '/sign-in?institution=north-school',
     )
-
-    await user.click(screen.getByRole('button', { name: 'Enter the network' }))
-    expect(screen.getByRole('dialog', { name: 'Create your gallery avatar' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Enter gallery' }))
-    expect(push).toHaveBeenCalledWith(
-      '/gallery?color=yellow&appearance=casual&department=architecture&year=year-1&demo=true',
+    expect(screen.getByRole('link', { name: /Sign in to pinspace/i })).toHaveAttribute(
+      'href',
+      '/sign-in?institution=north-school',
     )
   })
 
@@ -177,9 +167,9 @@ describe('PinSpace entry flows', () => {
 
     render(<Home />)
 
-    expect(await screen.findByRole('link', { name: 'Dashboard' })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: /Sign in to Get Started/i })).toHaveAttribute(
       'href',
-      '/sign-in?redirect=%2Fdashboard',
+      '/sign-in',
     )
     expect(screen.queryByRole('status', { name: /checking your session/i })).not.toBeInTheDocument()
   })
@@ -411,7 +401,7 @@ describe('PinSpace entry flows', () => {
     expect(screen.getByLabelText(/last name/i)).toHaveAttribute('required')
     expect(screen.getByLabelText(/^I am a/)).toHaveAttribute('required')
     expect(screen.getByLabelText('Age range')).toHaveAttribute('id', 'age-range')
-    expect(screen.getByLabelText('How did you hear about PinSpace?')).toHaveAttribute('id', 'how-heard')
+    expect(screen.getByLabelText(/How did you hear about pinspace/i)).toHaveAttribute('id', 'how-heard')
 
     const user = userEvent.setup()
     await user.tab()

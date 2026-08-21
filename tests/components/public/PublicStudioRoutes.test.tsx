@@ -70,7 +70,7 @@ describe('PinSpace public studio routes', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<SharePage />)
 
-    expect(await screen.findByRole('link', { name: 'PinSpace home' })).toHaveAttribute('href', '/')
+    expect(await screen.findByRole('link', { name: 'pinspace home' })).toHaveAttribute('href', '/')
     expect(screen.getByText('Open studio')).toBeInTheDocument()
     expect(screen.getByText('View only')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('No boards in this studio yet')

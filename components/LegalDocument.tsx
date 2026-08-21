@@ -16,7 +16,7 @@ export default function LegalDocument({ content }: LegalDocumentProps) {
             href="/"
             className="inline-flex min-h-11 items-center rounded-pinspace px-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            ← Back to PinSpace
+            ← Back to pinspace
           </Link>
           <nav aria-label="Legal pages" className="flex gap-1 text-sm">
             <Link href="/terms" className="inline-flex min-h-11 items-center rounded-pinspace px-3 text-text-secondary transition-colors hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">

@@ -19,17 +19,17 @@ const jetBrainsMono = JetBrains_Mono({
 
 export function generateMetadata(): Metadata {
   return {
-    title: 'PinSpace - Interactive Studio Network',
+    title: 'pinspace - Interactive Studio Network',
     description: 'Explore studio work in immersive 3D spaces. Browse student projects, pin boards to virtual walls, and discover design work from programs across the country.',
     openGraph: {
-      title: 'PinSpace - Interactive Studio Network',
+      title: 'pinspace - Interactive Studio Network',
       description: 'Explore studio work in immersive 3D spaces.',
       type: 'website',
-      siteName: 'PinSpace',
+      siteName: 'pinspace',
     },
     twitter: {
       card: 'summary_large_image',
-      title: 'PinSpace - Interactive Studio Network',
+      title: 'pinspace - Interactive Studio Network',
       description: 'Explore studio work in immersive 3D spaces.',
     },
     other: {

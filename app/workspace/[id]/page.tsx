@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   Check,
   ChevronRight,
@@ -40,6 +41,7 @@ import {
   Skeleton,
   StatusState,
 } from '@/components/ui'
+import { WorkspaceRoomsShimmer } from '@/components/workspace/WorkspaceRoomsShimmer'
 import { useAuthSession } from '@/hooks/useAuthSession'
 import { academicYearOptions, currentAcademicYear } from '@/lib/academicYear'
 import { useProfile } from '@/lib/ProfileContext'
@@ -291,7 +293,7 @@ export default function WorkspaceRoomsPage() {
   const handleCreateRoom = async () => {
     if (creatingRoomRef.current) return
     const name = newRoomName.trim()
-    if (!name) { setRoomError('Enter a room name'); return }
+    if (!name) { setRoomError('Enter a space name'); return }
     creatingRoomRef.current = true
     setRoomBusy('create')
     setRoomError('')
@@ -300,13 +302,13 @@ export default function WorkspaceRoomsPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
       })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error || 'Failed to create room')
+      if (!response.ok) throw new Error(data.error || 'Failed to create space')
       setNewRoomName('')
       setAddingRoom(false)
       await refresh()
-      toast.success(`Created room "${name}"`)
+      toast.success(`Created space "${name}"`)
     } catch (caughtError) {
-      setRoomError(caughtError instanceof Error ? caughtError.message : 'Failed to create room')
+      setRoomError(caughtError instanceof Error ? caughtError.message : 'Failed to create space')
     } finally {
       creatingRoomRef.current = false
       setRoomBusy(null)
@@ -315,7 +317,7 @@ export default function WorkspaceRoomsPage() {
 
   const handleRenameRoom = async (room: Room) => {
     const name = editingRoomName.trim()
-    if (!name) { setRoomError('Enter a room name'); return }
+    if (!name) { setRoomError('Enter a space name'); return }
     if (name === room.name) { setEditingRoomId(null); return }
     setRoomBusy(room.id)
     try {
@@ -323,12 +325,12 @@ export default function WorkspaceRoomsPage() {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
       })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error || 'Failed to rename room')
+      if (!response.ok) throw new Error(data.error || 'Failed to rename space')
       setEditingRoomId(null)
       setEditingRoomName('')
       await refresh()
     } catch (caughtError) {
-      setRoomError(caughtError instanceof Error ? caughtError.message : 'Failed to rename room')
+      setRoomError(caughtError instanceof Error ? caughtError.message : 'Failed to rename space')
     } finally {
       setRoomBusy(null)
     }
@@ -341,12 +343,12 @@ export default function WorkspaceRoomsPage() {
     try {
       const response = await fetch(`/api/rooms/${room.id}`, { method: 'DELETE' })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error || 'Failed to delete room')
+      if (!response.ok) throw new Error(data.error || 'Failed to delete space')
       setRoomToDelete(null)
       await refresh()
-      toast.success(`Deleted room "${room.name}"`)
+      toast.success(`Deleted space "${room.name}"`)
     } catch (caughtError) {
-      setRoomError(caughtError instanceof Error ? caughtError.message : 'Failed to delete room')
+      setRoomError(caughtError instanceof Error ? caughtError.message : 'Failed to delete space')
     } finally {
       setRoomBusy(null)
     }
@@ -466,128 +468,182 @@ export default function WorkspaceRoomsPage() {
     }
   }
 
-  const shellProps = { navigation, footerNavigation, currentPath: `/workspace/${workspaceId}`, contentClassName: 'bg-background' }
-
   if (authStatus === 'loading' || loading) {
-    return (
-      <AppShell {...shellProps}>
-        <div role="status" className="mx-auto w-full max-w-[96rem] space-y-5 px-4 py-8 sm:px-6 lg:px-8">
-          <p className="font-semibold text-text-primary">Loading workspace…</p>
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-48" />)}</div>
-        </div>
-      </AppShell>
-    )
+    return <WorkspaceRoomsShimmer />
   }
 
   if (error || !workspace) {
     return (
-      <AppShell {...shellProps}>
+      <div className="min-h-dvh w-full bg-background text-text-primary">
+        <header className="border-b border-border bg-background-light py-5">
+          <div className="mx-auto w-full max-w-[96rem] px-4 sm:px-6 lg:px-8">
+            <Link
+              href="/dashboard"
+              className="inline-flex min-h-9 items-center gap-2 rounded-pinspace text-sm font-semibold text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              Back to projects
+            </Link>
+          </div>
+        </header>
         <div className="mx-auto w-full max-w-xl px-4 py-12 sm:px-6">
           <StatusState role="alert" status="error" title="Workspace unavailable" description={error || 'Workspace not found'} action={<div className="flex flex-wrap gap-3"><Button type="button" onClick={() => void fetchWorkspace()}>Try again</Button><Link href="/dashboard" className={actionLink}>Back to projects</Link></div>} />
         </div>
-      </AppShell>
+      </div>
     )
   }
 
   const instructorName = workspace.members.find((item) => item.role === 'instructor')?.name
 
   return (
-    <AppShell {...shellProps}>
-      <PageHeader
-        eyebrow={workspace.type === 'shared' ? 'Shared project' : workspace.type === 'personal' ? 'Personal project' : 'Class project'}
-        title={workspace.name}
-        description={instructorName ? `Owner: ${instructorName}` : 'Organize the project into focused rooms.'}
-        actions={instructorMember || owner ? <>{canPublish && <Button type="button" variant="ghost" onClick={() => setNetworkSettingsOpen(true)}><Network className="h-4 w-4" aria-hidden="true" />Network settings</Button>}<Link href={`/workspace/${workspaceId}/settings`} className={actionLink}>{owner ? 'Invite and settings' : 'Project details'}</Link></> : undefined}
-      />
+    <div className="min-h-dvh w-full bg-background text-text-primary">
+      <header className="border-b border-border bg-background-light py-5">
+        <div className="mx-auto w-full max-w-[96rem] px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <Link
+                href="/dashboard"
+                aria-label="Back to projects"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-pinspace border border-border bg-background-light text-text-secondary shadow-xs transition-colors hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+              </Link>
+              <div className="min-w-0">
+                <h1 className="break-words text-2xl font-bold tracking-tight text-text-primary sm:text-3xl">
+                  {workspace.name}
+                </h1>
+                <p className="mt-0.5 text-sm font-medium text-text-secondary">
+                  {instructorName ? `Owner: ${instructorName}` : 'Organize the project into focused spaces.'}
+                </p>
+              </div>
+            </div>
+            <div role="group" aria-label="Page actions" className="flex shrink-0 items-center gap-2">
+              <Link
+                href={`/workspace/${workspaceId}/settings`}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-pinspace border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary shadow-[var(--shadow-soft)] transition-all hover:border-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <Settings className="h-4 w-4" aria-hidden="true" />
+                {owner ? 'Settings' : 'Project details'}
+              </Link>
+            </div>
+          </div>
+        </div>
+      </header>
 
       <div className="mx-auto w-full max-w-[96rem] px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div className="mb-5 flex items-center gap-2.5">
+          <DoorOpen className="h-5 w-5 text-accent shrink-0" aria-hidden="true" />
           <div>
-            <h2 className="text-xl font-bold text-text-primary">Rooms</h2>
-            <p className="mt-1 text-sm text-text-secondary">Enter a room to open its 3D studio.</p>
+            <h2 className="text-xl font-bold text-text-primary">Spaces</h2>
+            <p className="text-sm text-text-secondary">Click a space to enter its 3D studio.</p>
           </div>
-          {canAddRoom && rooms.length > 0 && !addingRoom && <Button type="button" onClick={() => { setAddingRoom(true); setRoomError('') }}><Plus className="h-4 w-4" aria-hidden="true" />Add room</Button>}
         </div>
 
-        {roomError && <StatusState id="room-error" role="alert" status="error" title={roomError} className="mb-5" />}
+        <div className="grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {/* Action Tile / In-Grid Form: Add Space (renders first in grid) */}
+          {canAddRoom && (
+            addingRoom ? (
+              <Card className="relative flex min-h-48 flex-col justify-center p-5 border border-border bg-background-card rounded-pinspace-lg shadow-[var(--shadow-soft)]">
+                <form
+                  onSubmit={(event) => { event.preventDefault(); void handleCreateRoom() }}
+                  className="flex flex-col justify-center gap-3"
+                  noValidate
+                >
+                  <label htmlFor="new-room-name" className="text-base font-bold text-text-primary">
+                    Name your new space
+                  </label>
+                  <Input
+                    id="new-room-name"
+                    value={newRoomName}
+                    maxLength={100}
+                    disabled={roomBusy === 'create'}
+                    autoFocus
+                    aria-invalid={roomError === 'Enter a room name' || roomError === 'Enter a space name'}
+                    aria-describedby={roomError ? 'room-error' : undefined}
+                    onChange={(event) => { setNewRoomName(event.target.value); setRoomError('') }}
+                    onKeyDown={(event) => { if (event.key === 'Escape') { setAddingRoom(false); setNewRoomName(''); setRoomError('') } }}
+                    placeholder="e.g. Pin-up 2, Midterm Review"
+                  />
+                  {roomError && <p id="room-error" role="alert" className="text-xs font-semibold text-[rgb(var(--color-danger))]">{roomError}</p>}
+                  <div className="flex items-center gap-2.5 pt-1">
+                    <Button type="submit" loading={roomBusy === 'create'}>
+                      Create
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={roomBusy === 'create'}
+                      onClick={() => { setAddingRoom(false); setNewRoomName(''); setRoomError('') }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              </Card>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { setAddingRoom(true); setRoomError('') }}
+                className="group relative flex min-h-48 flex-col items-center justify-center gap-3 rounded-pinspace-lg border-2 border-dashed border-border bg-background-light/50 p-5 text-center transition-all hover:border-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-muted text-accent transition-transform group-hover:scale-110">
+                  <Plus className="h-6 w-6" aria-hidden="true" />
+                </span>
+                <span className="text-base font-bold text-text-primary group-hover:text-accent">Add Space</span>
+              </button>
+            )
+          )}
 
-        {addingRoom && (
-          <Card className="mb-5">
-            <form onSubmit={(event) => { event.preventDefault(); void handleCreateRoom() }} className="flex flex-col gap-3 sm:flex-row sm:items-end" noValidate>
-              <div className="min-w-0 flex-1">
-                <label htmlFor="new-room-name" className="mb-1.5 block text-sm font-semibold text-text-primary">Room name</label>
-                <Input id="new-room-name" value={newRoomName} maxLength={100} disabled={roomBusy === 'create'} autoFocus aria-invalid={roomError === 'Enter a room name'} aria-describedby={roomError ? 'room-error' : undefined} onChange={(event) => { setNewRoomName(event.target.value); setRoomError('') }} placeholder="e.g. Midterm review" />
-              </div>
-              <Button type="submit" loading={roomBusy === 'create'}>Create room</Button>
-              <Button type="button" variant="ghost" disabled={roomBusy === 'create'} onClick={() => { setAddingRoom(false); setNewRoomName(''); setRoomError('') }}>Cancel</Button>
-            </form>
-          </Card>
-        )}
+          {rooms.map((room, index) => (
+            <RoomCard
+              key={room.id}
+              room={room}
+              index={index}
+              total={rooms.length}
+              busy={roomBusy === room.id}
+              editing={editingRoomId === room.id}
+              editingName={editingRoomName}
+              nameError={roomError === 'Enter a room name' || roomError === 'Enter a space name'}
+              canRename={canRename}
+              canShare={canShare}
+              canPublish={canPublish}
+              canDelete={canDelete}
+              canReorder={owner}
+              onEditingNameChange={setEditingRoomName}
+              onStartRename={(selectedRoom) => { setEditingRoomId(selectedRoom.id); setEditingRoomName(selectedRoom.name); setRoomError('') }}
+              onShare={(selectedRoom) => void handleShareRoom(selectedRoom)}
+              onSaveRename={(selectedRoom) => void handleRenameRoom(selectedRoom)}
+              onCancelRename={() => { setEditingRoomId(null); setEditingRoomName('') }}
+              onTogglePublish={(selectedRoom) => void handleTogglePublish(selectedRoom)}
+              onDelete={setRoomToDelete}
+              onMove={moveRoom}
+            />
+          ))}
+        </div>
 
-        {rooms.length === 0 ? (
-          <EmptyState title="No rooms yet" description={canAddRoom ? 'Add the first room to start organizing this project.' : 'The project owner has not added any rooms yet.'} icon={<DoorOpen className="h-8 w-8" aria-hidden="true" />} action={canAddRoom && !addingRoom ? <Button type="button" onClick={() => setAddingRoom(true)}>Add room</Button> : undefined} />
-        ) : (
-          <div className="grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {rooms.map((room, index) => (
-              <RoomCard
-                key={room.id}
-                room={room}
-                index={index}
-                total={rooms.length}
-                busy={roomBusy === room.id}
-                editing={editingRoomId === room.id}
-                editingName={editingRoomName}
-                nameError={roomError === 'Enter a room name'}
-                canRename={canRename}
-                canShare={canShare}
-                canPublish={canPublish}
-                canDelete={canDelete}
-                canReorder={owner}
-                onEditingNameChange={setEditingRoomName}
-                onStartRename={(selectedRoom) => { setEditingRoomId(selectedRoom.id); setEditingRoomName(selectedRoom.name); setRoomError('') }}
-                onShare={(selectedRoom) => void handleShareRoom(selectedRoom)}
-                onSaveRename={(selectedRoom) => void handleRenameRoom(selectedRoom)}
-                onCancelRename={() => { setEditingRoomId(null); setEditingRoomName('') }}
-                onTogglePublish={(selectedRoom) => void handleTogglePublish(selectedRoom)}
-                onDelete={setRoomToDelete}
-                onMove={moveRoom}
-              />
-            ))}
-          </div>
-        )}
-
-        {owner && workspace.type === 'class' && (
-          <Card className="mt-8">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <h2 className="flex items-center gap-2 text-lg font-bold text-text-primary"><UserPlus className="h-5 w-5 text-accent" aria-hidden="true" />Add students</h2>
-                <p className="mt-1 max-w-2xl text-sm text-text-secondary">Enroll existing accounts by comma- or line-separated email addresses.</p>
-              </div>
-              {!enrollOpen && <Button type="button" variant="secondary" onClick={() => { setEnrollOpen(true); setEnrollResult(null) }}>Add students</Button>}
-            </div>
-            {enrollOpen && <div className="mt-4"><label htmlFor="student-emails" className="mb-1.5 block text-sm font-semibold text-text-primary">Student emails</label><textarea id="student-emails" rows={4} value={enrollText} disabled={enrollBusy} onChange={(event) => setEnrollText(event.target.value)} className="min-h-28 w-full rounded-pinspace border border-border bg-background-light px-3.5 py-2 text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" /><div className="mt-3 flex flex-wrap gap-2"><Button type="button" loading={enrollBusy} onClick={() => void handleEnroll()}>Add students</Button><Button type="button" variant="ghost" disabled={enrollBusy} onClick={() => { setEnrollOpen(false); setEnrollText('') }}>Cancel</Button></div></div>}
-            {enrollResult && <StatusState status="info" title={`${enrollResult.enrolled.length} enrolled · ${enrollResult.alreadyMember.length} already joined · ${enrollResult.notFound.length} without accounts`} description={enrollResult.notFound.length ? enrollResult.notFound.join(', ') : undefined} className="mt-4" />}
-          </Card>
+        {rooms.length === 0 && !canAddRoom && (
+          <EmptyState
+            title="No spaces yet"
+            description="The project owner has not added any spaces yet."
+            icon={<DoorOpen className="h-8 w-8" aria-hidden="true" />}
+          />
         )}
       </div>
 
-      {publishModalRoom && <NetworkSettingsDialog publishing current={workspace.networkMetadata ? { department: workspace.networkMetadata.department, year: workspace.networkMetadata.year, instructor: workspace.instructor || '', academicYear: workspace.academicYear || currentAcademicYear() } : undefined} onOpenChange={(open) => { if (!open) setPublishModalRoom(null) }} onConfirm={async (metadata) => { await saveNetworkMetadata(metadata); await updatePublish(publishModalRoom, true) }} />}
-      {networkSettingsOpen && <NetworkSettingsDialog publishing={false} current={workspace.networkMetadata ? { department: workspace.networkMetadata.department, year: workspace.networkMetadata.year, instructor: workspace.instructor || '', academicYear: workspace.academicYear || currentAcademicYear() } : undefined} onOpenChange={setNetworkSettingsOpen} onConfirm={async (metadata) => { await saveNetworkMetadata(metadata); toast.success('Network settings saved') }} />}
-
-      <Dialog open={Boolean(roomToShare)} onOpenChange={(open) => { if (!open && !shareBusy) setRoomToShare(null) }} closeOnOutsideClick={!shareBusy} hideCloseButton={shareBusy} title="Share room" description={roomToShare ? `Create a read-only link to “${roomToShare.name}”.` : undefined}>
+      <Dialog open={Boolean(roomToShare)} onOpenChange={(open) => { if (!open && !shareBusy) setRoomToShare(null) }} closeOnOutsideClick={!shareBusy} hideCloseButton={shareBusy} title="Share space" description={roomToShare ? `Create a read-only link to “${roomToShare.name}”.` : undefined}>
         {shareBusy && <StatusState role="status" status="loading" title="Creating secure share link…" />}
         {shareError && <StatusState role="alert" status="error" title="Could not create share link" description={shareError} />}
-        {shareUrl && <div><label htmlFor="room-share-link" className="mb-1.5 block text-sm font-semibold text-text-primary">Share link</label><div className="flex min-w-0 flex-col gap-3 sm:flex-row"><Input id="room-share-link" readOnly value={shareUrl} className="min-w-0 font-mono text-sm" /><Button type="button" variant="secondary" onClick={() => void copyShareLink()}>{shareCopied ? <Check className="h-4 w-4" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}{shareCopied ? 'Copied' : 'Copy share link'}</Button></div><p className="mt-3 text-sm text-text-secondary">Anyone with this link can view the room. Share it only with people you trust.</p></div>}
+        {shareUrl && <div><label htmlFor="room-share-link" className="mb-1.5 block text-sm font-semibold text-text-primary">Share link</label><div className="flex min-w-0 flex-col gap-3 sm:flex-row"><Input id="room-share-link" readOnly value={shareUrl} className="min-w-0 font-mono text-sm" /><Button type="button" variant="secondary" onClick={() => void copyShareLink()}>{shareCopied ? <Check className="h-4 w-4" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}{shareCopied ? 'Copied' : 'Copy share link'}</Button></div><p className="mt-3 text-sm text-text-secondary">Anyone with this link can view the space. Share it only with people you trust.</p></div>}
         <div className="mt-5 flex justify-end"><Button type="button" variant="ghost" disabled={shareBusy} onClick={() => setRoomToShare(null)}>Close</Button></div>
       </Dialog>
 
-      <Dialog open={Boolean(roomToDelete)} onOpenChange={(open) => { if (!open && !roomBusy) setRoomToDelete(null) }} closeOnOutsideClick={!roomBusy} hideCloseButton={Boolean(roomBusy)} title="Delete room?" description={roomToDelete ? `“${roomToDelete.name}” will be permanently deleted.` : undefined}>
-        <StatusState status="warning" title="Every board in this room will also be deleted." description="This cannot be undone." />
+      <Dialog open={Boolean(roomToDelete)} onOpenChange={(open) => { if (!open && !roomBusy) setRoomToDelete(null) }} closeOnOutsideClick={!roomBusy} hideCloseButton={Boolean(roomBusy)} title="Delete space?" description={roomToDelete ? `“${roomToDelete.name}” will be permanently deleted.` : undefined}>
+        <StatusState status="warning" title="Every board in this space will also be deleted." description="This cannot be undone." />
         <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <Button type="button" variant="ghost" disabled={Boolean(roomBusy)} onClick={() => setRoomToDelete(null)}>Cancel</Button>
-          <Button type="button" variant="danger" loading={Boolean(roomBusy)} onClick={() => void handleDeleteRoom()}>Delete room</Button>
+          <Button type="button" variant="danger" loading={Boolean(roomBusy)} onClick={() => void handleDeleteRoom()}>Delete space</Button>
         </div>
       </Dialog>
-    </AppShell>
+    </div>
   )
 }

@@ -8,11 +8,11 @@ const landingSource = readFileSync(resolve(process.cwd(), 'app/page.tsx'), 'utf8
 describe('approved PinSpace landing reference', () => {
   it('uses the exact reference identity and full-viewport composition', () => {
     expect(landingSource).toContain('pinspace')
-    expect(landingSource).toContain('Explore studios in immersive 3D')
+    expect(landingSource).toContain('where design work lives')
     expect(landingSource).toContain('bg-primary')
     expect(landingSource).toContain('font-sans')
     expect(landingSource).toContain('font-black')
-    expect(landingSource).toContain('tracking-[-0.055em]')
+    expect(landingSource).toContain('tracking-[-0.035em]')
     expect(landingSource).toContain('text-[clamp(4rem,11.95vw,10.75rem)]')
     expect(landingSource).toContain('bg-background-light')
     expect(landingSource).toContain('bg-accent')
