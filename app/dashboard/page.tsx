@@ -264,10 +264,10 @@ function DashboardContent() {
 
   if (!isLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(160deg, #F2F5FB 0%, #EDF1F9 55%, #F6F3EC 100%)' }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 mx-auto mb-4" />
-          <p className="text-gray-600">Loading...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-[#3B6EF6]/20 border-t-[#3B6EF6] mx-auto mb-4" />
+          <p className="text-[#5A5E6B]">Loading...</p>
         </div>
       </div>
     )
@@ -275,13 +275,13 @@ function DashboardContent() {
 
   if (fetchError) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(160deg, #F2F5FB 0%, #EDF1F9 55%, #F6F3EC 100%)' }}>
         <div className="text-center max-w-sm px-6">
-          <p className="text-gray-900 font-semibold mb-2">Failed to load your projects</p>
-          <p className="text-gray-500 text-sm mb-4">Check your connection and try again.</p>
+          <p className="text-[#16181D] font-bold mb-2">Failed to load your projects</p>
+          <p className="text-[#8A8FA0] text-sm mb-4">Check your connection and try again.</p>
           <button
             onClick={() => { setFetchError(false); fetchUserStudios() }}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
+            className="px-5 py-2.5 bg-[#3B6EF6] text-white rounded-full hover:bg-[#16181D] transition-colors text-sm font-bold"
           >
             Retry
           </button>
@@ -327,9 +327,9 @@ function DashboardContent() {
       )}
 
       {renamingId && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Rename Project</h3>
+        <div className="fixed inset-0 bg-[#16181D]/30 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-[0_30px_90px_rgba(22,24,29,0.3)] max-w-sm w-full p-7">
+            <h3 className="text-lg font-extrabold text-[#16181D] mb-4">Rename Project</h3>
             <input
               type="text"
               value={renamingValue}
@@ -339,20 +339,20 @@ function DashboardContent() {
                 if (e.key === 'Enter') submitRename()
                 if (e.key === 'Escape') { setRenamingId(null); setRenamingValue('') }
               }}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
+              className="w-full px-4 py-3 border border-[#16181D]/12 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3B6EF6] mb-4"
               autoFocus
             />
             <div className="flex gap-3">
               <button
                 onClick={() => { setRenamingId(null); setRenamingValue('') }}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                className="flex-1 px-4 py-2.5 border border-[#16181D]/12 text-[#5A5E6B] rounded-full hover:bg-[#16181D]/5 transition-colors font-semibold"
               >
                 Cancel
               </button>
               <button
                 onClick={submitRename}
                 disabled={!renamingValue.trim()}
-                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium"
+                className="flex-1 px-4 py-2.5 bg-[#3B6EF6] text-white rounded-full hover:bg-[#16181D] disabled:opacity-50 transition-colors font-bold"
               >
                 Rename
               </button>
@@ -362,22 +362,22 @@ function DashboardContent() {
       )}
 
       {confirmDeleteId && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Project?</h3>
-            <p className="text-sm text-gray-600 mb-6">
-              <strong>&ldquo;{confirmDeleteName}&rdquo;</strong> and all its boards will be permanently deleted. This cannot be undone.
+        <div className="fixed inset-0 bg-[#16181D]/30 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-[0_30px_90px_rgba(22,24,29,0.3)] max-w-sm w-full p-7">
+            <h3 className="text-lg font-extrabold text-[#16181D] mb-2">Delete Project?</h3>
+            <p className="text-sm text-[#5A5E6B] mb-6">
+              <strong className="text-[#16181D]">&ldquo;{confirmDeleteName}&rdquo;</strong> and all its boards will be permanently deleted. This cannot be undone.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => { setConfirmDeleteId(null); setConfirmDeleteName('') }}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                className="flex-1 px-4 py-2.5 border border-[#16181D]/12 text-[#5A5E6B] rounded-full hover:bg-[#16181D]/5 transition-colors font-semibold"
               >
                 Cancel
               </button>
               <button
                 onClick={executeDelete}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                className="flex-1 px-4 py-2.5 bg-[#C2452D] text-white rounded-full hover:bg-[#a5391f] transition-colors font-bold"
               >
                 Delete
               </button>
@@ -387,22 +387,22 @@ function DashboardContent() {
       )}
 
       {confirmLeaveId && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Leave this project?</h3>
-            <p className="text-sm text-gray-600 mb-6">
-              You&rsquo;ll lose access to <strong>&ldquo;{confirmLeaveName}&rdquo;</strong> until you&rsquo;re invited again. Boards you created stay with the project.
+        <div className="fixed inset-0 bg-[#16181D]/30 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-[0_30px_90px_rgba(22,24,29,0.3)] max-w-sm w-full p-7">
+            <h3 className="text-lg font-extrabold text-[#16181D] mb-2">Leave this project?</h3>
+            <p className="text-sm text-[#5A5E6B] mb-6">
+              You&rsquo;ll lose access to <strong className="text-[#16181D]">&ldquo;{confirmLeaveName}&rdquo;</strong> until you&rsquo;re invited again. Boards you created stay with the project.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => { setConfirmLeaveId(null); setConfirmLeaveName('') }}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                className="flex-1 px-4 py-2.5 border border-[#16181D]/12 text-[#5A5E6B] rounded-full hover:bg-[#16181D]/5 transition-colors font-semibold"
               >
                 Cancel
               </button>
               <button
                 onClick={executeLeave}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                className="flex-1 px-4 py-2.5 bg-[#C2452D] text-white rounded-full hover:bg-[#a5391f] transition-colors font-bold"
               >
                 Leave
               </button>
@@ -418,10 +418,10 @@ export default function DashboardPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(160deg, #F2F5FB 0%, #EDF1F9 55%, #F6F3EC 100%)' }}>
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 mx-auto mb-4" />
-            <p className="text-gray-600">Loading...</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-4 border-[#3B6EF6]/20 border-t-[#3B6EF6] mx-auto mb-4" />
+            <p className="text-[#5A5E6B]">Loading...</p>
           </div>
         </div>
       }

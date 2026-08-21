@@ -45,7 +45,7 @@ export function SuperadminOrgSwitcher() {
 
   return (
     <div className="px-1 pt-2 pb-1">
-      <label className="flex items-center gap-1.5 px-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-1">
+      <label className="flex items-center gap-1.5 px-2 text-[10px] font-bold uppercase tracking-wide text-[#8A8FA0] mb-1">
         <Globe className="w-3 h-3" />
         Superadmin · view org network
       </label>
@@ -55,7 +55,7 @@ export function SuperadminOrgSwitcher() {
           const id = e.target.value
           if (id) router.push(`/explore?org=${encodeURIComponent(id)}`)
         }}
-        className="w-full text-sm rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+        className="w-full text-sm rounded-xl border border-[#16181D]/10 bg-white px-2.5 py-2 text-[#5A5E6B] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
       >
         <option value="" disabled>
           Select an organization…

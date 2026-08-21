@@ -52,13 +52,13 @@ export function DashboardSidebar({
       key={scope}
       type="button"
       onClick={() => handleScopeClick(scope)}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left ${
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors text-left ${
         currentScope === scope
-          ? 'bg-indigo-600 text-white shadow-sm'
-          : 'text-gray-700 hover:bg-white hover:shadow-sm'
+          ? 'bg-white text-[#16181D] shadow-[0_2px_10px_rgba(22,24,29,0.07)]'
+          : 'text-[#5A5E6B] hover:bg-white/60'
       }`}
     >
-      <span className={`shrink-0 ${currentScope === scope ? 'text-white' : 'text-gray-400'}`}>{icon}</span>
+      <span className={`shrink-0 ${currentScope === scope ? 'text-[#3B6EF6]' : 'text-[#8A8FA0]'}`}>{icon}</span>
       <span className="truncate">{label}</span>
     </button>
   )
@@ -70,7 +70,7 @@ export function DashboardSidebar({
         <button
           type="button"
           onClick={onToggle}
-          className="fixed top-4 left-4 z-50 md:hidden p-2 rounded-lg bg-white border border-gray-200 shadow-sm text-gray-600 hover:bg-gray-50"
+          className="fixed top-4 left-4 z-50 md:hidden p-2 rounded-xl bg-white border border-[#16181D]/10 shadow-sm text-[#5A5E6B] hover:bg-[#3B6EF6]/5"
           aria-label="Open navigation"
         >
           <Menu className="w-5 h-5" />
@@ -85,24 +85,26 @@ export function DashboardSidebar({
       {/* Sidebar */}
       <aside
         className={[
-          'fixed inset-y-0 left-0 z-40 w-60 flex flex-col bg-[#f3f4f6] border-r border-gray-200',
+          'fixed inset-y-0 left-0 z-40 w-60 flex flex-col border-r border-[#16181D]/8',
           'transform transition-transform duration-200 ease-in-out',
           isOpen ? 'translate-x-0' : '-translate-x-full',
           'md:relative md:translate-x-0 md:z-auto md:shrink-0',
         ].join(' ')}
+        style={{ background: 'linear-gradient(180deg, #F2F5FB 0%, #EDF1F9 100%)' }}
       >
         {/* Logo row */}
         <div className="shrink-0 h-16 flex items-center justify-between px-5">
-          <Link href="/" className="hover:opacity-80 transition-opacity">
-            <span className="text-xl font-bold text-gray-900 tracking-tight">PinSpace</span>
+          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <span className="w-[22px] h-[22px] rounded-[7px] bg-[#3B6EF6] text-white flex items-center justify-center text-[11px] shrink-0">◉</span>
+            <span className="text-lg font-extrabold text-[#16181D] tracking-tight">pinspace</span>
           </Link>
           <button
             type="button"
             onClick={onToggle}
-            className="md:hidden p-1.5 rounded-lg hover:bg-gray-200 transition-colors"
+            className="md:hidden p-1.5 rounded-lg hover:bg-[#16181D]/8 transition-colors"
             aria-label="Close menu"
           >
-            <X className="w-4 h-4 text-gray-500" />
+            <X className="w-4 h-4 text-[#8A8FA0]" />
           </button>
         </div>
 
@@ -118,21 +120,21 @@ export function DashboardSidebar({
         </nav>
 
         {/* Bottom section */}
-        <div className="shrink-0 border-t border-gray-200 px-3 py-3 space-y-0.5">
+        <div className="shrink-0 border-t border-[#16181D]/8 px-3 py-3 space-y-0.5">
           {isAdmin && (
             <Link
               href="/admin"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-white hover:shadow-sm transition-colors"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-[#5A5E6B] hover:bg-white/60 transition-colors"
             >
-              <Settings className="w-4 h-4 text-gray-400 shrink-0" />
+              <Settings className="w-4 h-4 text-[#8A8FA0] shrink-0" />
               Admin
             </Link>
           )}
           <Link
             href="/settings"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-white hover:shadow-sm transition-colors"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-[#5A5E6B] hover:bg-white/60 transition-colors"
           >
-            <Settings className="w-4 h-4 text-gray-400 shrink-0" />
+            <Settings className="w-4 h-4 text-[#8A8FA0] shrink-0" />
             Settings
           </Link>
 
@@ -143,21 +145,24 @@ export function DashboardSidebar({
               <img
                 src={avatarUrl}
                 alt="Avatar"
-                className="w-7 h-7 rounded-full object-cover shrink-0 border border-gray-200"
+                className="w-8 h-8 rounded-full object-cover shrink-0 border border-[#16181D]/10"
               />
             ) : (
-              <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0 select-none">
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-extrabold shrink-0 select-none"
+                style={{ background: 'linear-gradient(140deg, #FFB08A, #E86A92)' }}
+              >
                 {initials}
               </div>
             )}
-            <span className="flex-1 min-w-0 text-sm font-medium text-gray-800 truncate">{displayName}</span>
+            <span className="flex-1 min-w-0 text-sm font-bold text-[#16181D] truncate">{displayName}</span>
             <button
               type="button"
               onClick={handleSignOut}
               title="Sign out"
-              className="p-1 rounded hover:bg-gray-200 transition-colors shrink-0"
+              className="p-1.5 rounded-full hover:bg-[#16181D]/8 transition-colors shrink-0"
             >
-              <LogOut className="w-3.5 h-3.5 text-gray-500" />
+              <LogOut className="w-3.5 h-3.5 text-[#8A8FA0]" />
             </button>
           </div>
         </div>

@@ -78,23 +78,23 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
   return (
     <>
       {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      <div
+        className="fixed inset-0 bg-[#16181D]/30 z-50 flex items-center justify-center p-4"
         onClick={onClose}
       >
         {/* Modal */}
-        <div 
-          className="bg-white rounded-xl shadow-2xl max-w-md w-full p-8"
+        <div
+          className="bg-white rounded-3xl shadow-[0_30px_90px_rgba(22,24,29,0.3)] max-w-md w-full p-8"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Join a {noun}</h2>
+            <h2 className="text-2xl font-extrabold text-[#16181D]">Join a {noun}</h2>
             <button
               onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-[#16181D]/10 hover:border-[#3B6EF6] hover:text-[#3B6EF6] transition-colors"
             >
-              <svg className="w-5 h-5 text-gray-500" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-4 h-4 text-[#5A5E6B]" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
                 <path d="M6 18L18 6M6 6l12 12"></path>
               </svg>
             </button>
@@ -103,7 +103,7 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="inviteCode" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="inviteCode" className="block text-[11px] font-bold tracking-[0.06em] uppercase text-[#8A8FA0] mb-2">
                 Enter Invite Code
               </label>
               <input
@@ -112,21 +112,21 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value)}
                 placeholder="ABC12345"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4444ff] focus:border-transparent text-center text-xl font-mono font-bold tracking-wider"
+                className="w-full px-4 py-3 border border-[#16181D]/12 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3B6EF6] focus:border-transparent text-center text-xl font-mono font-bold tracking-wider"
                 autoFocus
               />
-              <p className="mt-2 text-sm text-gray-500">
+              <p className="mt-2 text-sm text-[#8A8FA0]">
                 Enter the 8-character code or paste the full invite link
               </p>
             </div>
 
             {/* Info Box */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="bg-[#3B6EF6]/6 border border-[#3B6EF6]/20 rounded-xl p-4">
               <div className="flex gap-2">
                 <span className="text-xl">💡</span>
-                <div className="text-sm text-blue-900">
-                  <p className="font-medium mb-1">Where to find the code?</p>
-                  <p className="text-blue-800">
+                <div className="text-sm text-[#16181D]">
+                  <p className="font-bold mb-1">Where to find the code?</p>
+                  <p className="text-[#5A5E6B]">
                     {helperText}
                   </p>
                 </div>
@@ -138,14 +138,14 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+                className="flex-1 px-4 py-3 border border-[#16181D]/12 text-[#5A5E6B] rounded-full hover:bg-[#16181D]/5 transition-colors font-semibold"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={loading || !inviteCode.trim()}
-                className="flex-1 px-4 py-3 bg-[#4444ff] text-white rounded-lg hover:bg-[#3333ee] disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-semibold"
+                className="flex-1 px-4 py-3 bg-[#3B6EF6] text-white rounded-full hover:bg-[#16181D] disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold"
               >
                 {loading ? 'Checking...' : 'Continue'}
               </button>
