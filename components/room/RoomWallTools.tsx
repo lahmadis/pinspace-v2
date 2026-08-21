@@ -5,15 +5,14 @@ import { ROOM, MONO_STACK, SANS_STACK } from '@/lib/room/palette'
 
 /**
  * Bottom-center cluster for the wall the viewer is currently facing: start a
- * crit walk (spotlight one board at a time), auto-tidy the wall's layout, or
- * export it as a printable contact sheet. Sits just above RevisionStrip's
- * clearance band so the two never overlap — see REVISION_STRIP_CLEARANCE in
- * StudioRoom.tsx, which this intentionally does not import (kept free of a
- * cross-file layout coupling; if that constant changes, nudge BOTTOM_OFFSET_PX
- * below to match).
+ * crit walk (spotlight one board at a time), or export the wall as a printable
+ * contact sheet. Sits just above RevisionStrip's clearance band so the two never
+ * overlap — see REVISION_STRIP_CLEARANCE in StudioRoom.tsx, which this
+ * intentionally does not import (kept free of a cross-file layout coupling; if
+ * that constant changes, nudge BOTTOM_OFFSET_PX below to match).
  *
  * All local state (critWalkOn/critBoards/etc.) lives in StudioRoom — this
- * component is presentational plus the tidy/export triggers.
+ * component is presentational plus the export trigger.
  */
 
 /**
@@ -34,9 +33,6 @@ interface RoomWallToolsProps {
   onEndCrit: () => void
   onCritPrev: () => void
   onCritNext: () => void
-  canTidy: boolean
-  onAutoTidy: () => void
-  tidying: boolean
   onExport: () => void
   wallLabel: string
 }
@@ -71,9 +67,6 @@ export default function RoomWallTools({
   onEndCrit,
   onCritPrev,
   onCritNext,
-  canTidy,
-  onAutoTidy,
-  tidying,
   onExport,
   wallLabel,
 }: RoomWallToolsProps) {
@@ -137,11 +130,6 @@ export default function RoomWallTools({
       <button type="button" onClick={onStartCrit} style={pillButton(true)}>
         ▶ Crit walk
       </button>
-      {canTidy && critBoards.length > 1 && (
-        <button type="button" onClick={onAutoTidy} disabled={tidying} style={{ ...pillButton(), opacity: tidying ? 0.6 : 1 }}>
-          ▦ {tidying ? 'Tidying…' : 'Auto-tidy'}
-        </button>
-      )}
       <button type="button" onClick={onExport} style={pillButton()}>
         ⤓ Export
       </button>

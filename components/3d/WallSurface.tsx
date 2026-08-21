@@ -25,7 +25,7 @@ interface WallSurfaceProps {
   }) => void
   /**
    * Fires on a plain single click — makes this wall the "active" one for
-   * crit walk / auto-tidy / export (there's no camera-facing wall to infer
+   * crit walk / export (there's no camera-facing wall to infer
    * that from once the room is orbit-based). A native click ALSO fires
    * (twice) immediately before a dblclick, so a double-click both selects
    * and opens edit mode — harmless, since edit mode is entered on the same

@@ -35,7 +35,7 @@ interface WallSystemProps {
   onWallDoubleClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   /**
    * Fires on a plain single click of a wall — sets it as the "active" wall
-   * for crit walk / auto-tidy / export. See WallSurface's onSurfaceClick doc.
+   * for crit walk / export. See WallSurface's onSurfaceClick doc.
    */
   onWallClick?: (wallIndex: number, side: 'front' | 'back') => void
   /**

@@ -243,7 +243,7 @@ function SceneContent({
   suppressCallouts,
 }: StudioRoomProps & {
   onWallDoubleClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
-  /** Single click on a wall — sets it as the active wall for crit walk / auto-tidy / export. */
+  /** Single click on a wall — sets it as the active wall for crit walk / export. */
   onWallClick?: (wallIndex: number, side: 'front' | 'back') => void
   /** Pointer-over on a wall surface. Used to fire-and-forget pre-warm board textures. */
   onWallHover?: (wallIndex: number, side: 'front' | 'back') => void
@@ -736,7 +736,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     setCritWalkOn(false)
   }, [])
 
-  // Which wall crit walk / auto-tidy / export operate on. Set by a single
+  // Which wall crit walk / export operate on. Set by a single
   // click on a wall surface (WallSystem's onWallClick) — orbit means there is
   // no "the wall you're facing" the way the old fixed-camera room had, so
   // this is an explicit selection instead of something derived from camera
@@ -913,50 +913,6 @@ export default function StudioRoom(props: StudioRoomProps) {
   const critNext = useCallback(() => {
     setCritIndex((i) => (critBoards.length ? (i + 1) % critBoards.length : 0))
   }, [critBoards.length])
-
-  // Auto-tidy: evenly space the facing wall's boards left-to-right along one
-  // baseline. Deliberately does NOT touch board size (position.width/height,
-  // board_width_in/board_height_in) — resizing someone's sheet as a side
-  // effect of straightening the wall would be a surprise, not a tidy-up.
-  // Each PATCH goes through the same /api/boards/[id]/position route the
-  // drag-to-move editor already uses, so it carries the same membership
-  // check; realtime then converges every viewer via the existing boards
-  // subscription in app/studio/[id]/page.tsx — no separate refresh path to
-  // keep in sync with that one.
-  const [autoTidying, setAutoTidying] = useState(false)
-  const handleAutoTidyWall = useCallback(async () => {
-    if (!activeWall || critBoards.length < 2 || autoTidying) return
-    setAutoTidying(true)
-    try {
-      const n = critBoards.length
-      const step = 100 / (n + 1)
-      const results = await Promise.all(
-        critBoards.map((b, i) => {
-          if (!b.position) return Promise.resolve(true)
-          return fetch(`/api/boards/${b.id}/position`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              wallIndex: b.position.wallIndex,
-              side: b.position.side ?? 'front',
-              x: step * (i + 1),
-              y: 50,
-            }),
-          }).then((res) => res.ok)
-        })
-      )
-      if (results.some((ok) => !ok)) {
-        toast.error('Some boards could not be moved. Please try again.')
-      } else {
-        toast.success(`Tidied wall ${activeWall.wallIndex + 1}`)
-      }
-      await props.onBoardUpdate()
-    } catch {
-      toast.error('Failed to tidy wall. Please try again.')
-    } finally {
-      setAutoTidying(false)
-    }
-  }, [activeWall, critBoards, autoTidying, props])
 
   // Export as a printable contact sheet. Opens a plain HTML document in a new
   // tab (built with the browser's own print-to-PDF, not a PDF library — this
@@ -1407,7 +1363,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     rotation: number,
     side: 'front' | 'back'
   ) => {
-    // Make the wall active either way, so the crit-walk / tidy / export cluster
+    // Make the wall active either way, so the crit-walk / export cluster
     // follows whichever wall the eye just went to.
     setActiveWall({ wallIndex, side })
 
@@ -2484,9 +2440,6 @@ export default function StudioRoom(props: StudioRoomProps) {
           onEndCrit={endCritWalk}
           onCritPrev={critPrev}
           onCritNext={critNext}
-          canTidy={!!props.canEditWalls && !props.isArchived}
-          onAutoTidy={handleAutoTidyWall}
-          tidying={autoTidying}
           onExport={handleExportWallContactSheet}
           wallLabel={activeWall ? `Wall ${activeWall.wallIndex + 1}${activeWall.side === 'back' ? ' · Reverse' : ''}` : ''}
         />
