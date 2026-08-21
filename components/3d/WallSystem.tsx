@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { Text, ContactShadows, Grid } from '@react-three/drei'
+import { Text, Grid } from '@react-three/drei'
 import { Board } from '@/types'
 import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
@@ -221,8 +221,34 @@ const GROUND_COLOR = '#C3CDDE'
  *  footprint (the room's opaque floor/walls occlude it directly underneath).
  *  Minor lines every foot, a heavier line every 10 feet — the same
  *  cell/section convention any CAD or level-editor grid uses. */
-const GRID_CELL_COLOR = '#AEB9CE'
-const GRID_SECTION_COLOR = '#8CA0C2'
+// Lines have to carry against GROUND_COLOR (#C3CDDE) from a long way off. The
+// first values sat only a few percent darker than the ground and read as
+// almost nothing on screen; these are a real step down in lightness.
+const GRID_CELL_COLOR = '#93A3C0'
+const GRID_SECTION_COLOR = '#5E76A2'
+
+/**
+ * The three stacked horizontal planes, top to bottom: the room's floor plate,
+ * the reference grid, then the ground that runs out to the horizon.
+ *
+ * Walls stand on y = 0, so the floor is there too. The gaps below it exist
+ * purely for the depth buffer, and they only work because StudioRoom's camera
+ * sets `near = 5` rather than three.js's default 0.1 — resolvable depth goes as
+ * z²/(near · 2²⁴), so that one change buys ~50x precision and makes a few
+ * inches of separation safe even at a large room's maximum zoom-out. With the
+ * old 0.1 near plane, even six inches would have flickered out there.
+ *
+ * If anyone lowers that near plane, these gaps stop being sufficient — the
+ * symptom is the grid flickering in and out as the camera orbits.
+ *
+ * The read-only surfaces (view / crit / share) allow twice the editor's zoom-out
+ * distance, so their margin at the far end is four times worse; there the scene
+ * fog reaches full strength before the grid gets close to the quantum, which is
+ * what covers the tail.
+ */
+const FLOOR_Y = 0
+const GRID_Y = -4
+const GROUND_Y = -8
 
 /**
  * Ground plane + fog scale with the room's own footprint rather than a fixed
@@ -344,8 +370,6 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
 
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
   const floorBounds = calculateFloorBounds(wallConfig)
-  const wallDepth = 6 // Wall thickness in inches (same as walls)
-  const floorThickness = wallDepth // Floor thickness matches wall thickness
 
   // groundSize just needs to clear fogFar by a healthy margin so its own
   // edge stays hidden in fog; the fog numbers themselves are computed by
@@ -364,75 +388,52 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
 
   return (
     <group>
-      {/* Large ground plane the room's floor sits on top of, so orbiting out
-          past the floor's edge finds more ground (fading into fog) instead
-          of empty background — the "floating platform" fix. Sits below the
-          floor's underside so the floor itself still reads as a slightly
-          raised, deliberate plinth rather than an abrupt seam. */}
-      <mesh position={[floorBounds.floorCenterX, -floorThickness - 1, floorBounds.floorCenterZ]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      {/* Large ground plane the room sits on, so orbiting out past the floor's
+          edge finds more ground (fading into fog) instead of empty background
+          — the "floating platform" fix. */}
+      <mesh position={[floorBounds.floorCenterX, GROUND_Y, floorBounds.floorCenterZ]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[groundSize, groundSize]} />
         <meshStandardMaterial color={GROUND_COLOR} roughness={0.95} metalness={0} fog />
       </mesh>
 
-      {/* Reference grid on the ground plane — a foot-scale minor line and a
-          10-foot-scale major line, the same convention as any CAD/level-editor
-          floor grid, so the horizon reads as measurable space rather than a
-          flat color. Sits above the ground plane and is occluded by the
-          room's own opaque floor/walls directly beneath them, so it only
-          shows on the surrounding "outside" ground — exactly the area the
-          ground plane was added to stop looking empty. Clearance above the
-          ground plane is a half-foot, not fractions of an inch: at this
-          scene's scale (far clip plane in the thousands of inches, default
-          near of 0.1) the depth buffer can't reliably resolve a sub-inch gap
-          between two nearly-coplanar meshes, so a thin gap here z-fights —
-          the grid flickering in and out as the camera orbits — rather than
-          cleanly compositing above the ground. Sitting this far above ground
-          also lands the grid inside the floor box's own vertical span at its
-          footprint, which is fine: the box is solid and always faces the
-          camera from above (nothing ever sees its underside), so it still
-          fully occludes the grid there. Six inches is still visually flush
-          with the ground at any real camera distance (orbit's minDistance is
-          80+ inches) while giving the depth test enough separation to
-          resolve consistently, including at large rooms' max zoom-out.
-          `args` is deliberately modest (canonical drei infiniteGrid usage,
-          e.g. their own docs example, uses [10,10]) — infiniteGrid's shader
-          already multiplies the visible extent by (1 + fadeDistance) on top
-          of whatever `args` is, so pairing it with groundSize-scale args
-          would compound into tens of millions of vertex-space units and risk
-          float32 precision jitter in the shader's line test. fadeDistance
-          alone (matched to the scene fog's fogFar) already controls how far
-          out the grid actually reads as visible. */}
+      {/* Reference grid — a foot-scale minor line and a 10-foot-scale major
+          line, the same convention as any CAD or level-editor floor grid, so
+          the surrounding space reads as measurable rather than a flat colour.
+          Sits between the ground and the room's floor plate (see FLOOR_Y /
+          GRID_Y / GROUND_Y for why they're spaced), so the opaque floor hides
+          it inside the room and it only shows on the ground around it.
+
+          `args` is deliberately modest (canonical drei infiniteGrid usage, e.g.
+          their own docs example, uses [10,10]) — infiniteGrid's shader already
+          multiplies the visible extent by (1 + fadeDistance) on top of whatever
+          `args` is, so pairing it with groundSize-scale args would compound into
+          tens of millions of vertex-space units and risk float32 precision
+          jitter in the shader's line test. fadeDistance alone (matched to the
+          scene fog's fogFar) already controls how far out the grid reads. */}
       <Grid
-        position={[floorBounds.floorCenterX, -floorThickness + 5, floorBounds.floorCenterZ]}
+        position={[floorBounds.floorCenterX, GRID_Y, floorBounds.floorCenterZ]}
         args={[10, 10]}
         cellSize={12}
-        cellThickness={0.6}
+        cellThickness={1}
         cellColor={GRID_CELL_COLOR}
         sectionSize={120}
-        sectionThickness={1.2}
+        sectionThickness={1.8}
         sectionColor={GRID_SECTION_COLOR}
         fadeDistance={fogFar}
-        fadeStrength={1.5}
+        fadeStrength={1}
         followCamera={false}
         infiniteGrid
       />
 
-      {/* Soft contact shadow under the whole room — grounds the walls and
-          floor plinth against the ground plane beneath, on top of (not
-          instead of) the directional lights' real shadows. */}
-      <ContactShadows
-        position={[floorBounds.floorCenterX, -floorThickness - 0.5, floorBounds.floorCenterZ]}
-        opacity={0.35}
-        scale={Math.max(floorBounds.floorWidth, floorBounds.floorDepth) * 2.2}
-        blur={2.4}
-        far={floorThickness + 40}
-      />
-
-      {/* Dynamic floor with thickness matching walls */}
+      {/* Floor: a flat surface sitting on the grid, NOT a slab. It used to be a
+          box as deep as the walls, whose side faces read as a thick grey band
+          around the room's edge. A plan-like plate reads better and there is
+          nothing to see underneath it anyway — the camera can't go below the
+          horizon (OrbitControls' maxPolarAngle). */}
       <mesh
-        position={[floorBounds.floorCenterX, -floorThickness / 2, floorBounds.floorCenterZ]}
+        position={[floorBounds.floorCenterX, FLOOR_Y, floorBounds.floorCenterZ]}
+        rotation={[-Math.PI / 2, 0, 0]}
         receiveShadow
-        castShadow
         onClick={(e) => {
           // Only meaningful while something is focused; otherwise stay out of
           // the way so a stray floor click can't swallow an orbit gesture.
@@ -444,7 +445,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
           onFloorClick()
         }}
       >
-        <boxGeometry args={[floorBounds.floorWidth, floorThickness, floorBounds.floorDepth]} />
+        <planeGeometry args={[floorBounds.floorWidth, floorBounds.floorDepth]} />
         <meshStandardMaterial
           color={ROOM_PALETTE.floor} // cool neutral floor; never tinted toward the accent
           roughness={0.9}

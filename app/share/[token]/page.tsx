@@ -129,6 +129,15 @@ function ShareViewCameraControls({ wallConfig }: { wallConfig: WallConfig | null
         makeDefault
         position={[cameraX, cameraHeight, cameraZ]}
         fov={50}
+        // See StudioRoom's camera: a 0.1 near plane leaves only inches of
+        // depth precision at full zoom-out, which makes WallSystem's stacked
+        // floor/grid/ground planes flicker. Nothing is ever within 5 inches
+        // of the camera here either.
+        near={5}
+        // maxDistance below can exceed three.js's default far of 2000 on a
+        // large room, which clips boards away as you zoom out. Same formula
+        // StudioRoom uses.
+        far={maxDistance + maxWallWidthInches * layoutFactor + 1000}
       />
     </>
   )
@@ -399,17 +408,23 @@ export default function SharePage() {
           return <fog attach="fog" args={[ROOM_SKY_COLOR, fogNear, fogFar]} />
         })()}
         <ambientLight intensity={0.5} />
+        {/* Key light. Matches the editor (see StudioRoom): the old [15,20,10]
+            sat BELOW the top of a 96" wall with a frustum too small to contain
+            a default room, so shadows truncated at a hard line partway across
+            the floor — and the same room looked different here than in the
+            editor. */}
         <directionalLight
-          position={[15, 20, 10]}
+          position={[400, 700, 300]}
           intensity={1.2}
           castShadow
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
-          shadow-camera-far={500}
-          shadow-camera-left={-200}
-          shadow-camera-right={200}
-          shadow-camera-top={200}
-          shadow-camera-bottom={-200}
+          shadow-camera-near={1}
+          shadow-camera-far={2500}
+          shadow-camera-left={-700}
+          shadow-camera-right={700}
+          shadow-camera-top={700}
+          shadow-camera-bottom={-700}
           shadow-bias={-0.0001}
         />
         <directionalLight position={[-10, 12, -8]} intensity={0.5} />

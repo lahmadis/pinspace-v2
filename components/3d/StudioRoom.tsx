@@ -339,18 +339,32 @@ function SceneContent({
       {/* Ambient light - reduced for better shadow definition */}
       <ambientLight intensity={0.5} />
       
-      {/* Main directional light - creates shadows and depth */}
-      <directionalLight 
-        position={[15, 20, 10]} 
-        intensity={1.2} 
+      {/* Main directional light - creates shadows and depth.
+          Position and shadow frustum are both well clear of the room rather
+          than fixed: at y=20 the light sat BELOW the top of a 96" wall, and a
+          ±200 frustum doesn't contain a default room (x −92..140, z −141..97)
+          once projected along the light direction — so shadows truncated at a
+          hard straight line partway across the floor. Outside a shadow
+          frustum three.js returns fully lit, so the symptom is a shadow that
+          simply stops, not a dark patch.
+
+          shadow-bias is coupled to shadow-camera-far: three.js applies it in
+          the shadow camera's LINEAR ortho depth, so -0.0001 is worth ~0.25" of
+          world offset at far=2500 but only ~0.05" at the old far=500.
+          Re-tightening far without raising the bias by the same factor brings
+          shadow acne back. */}
+      <directionalLight
+        position={[400, 700, 300]}
+        intensity={1.2}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
-        shadow-camera-far={500}
-        shadow-camera-left={-200}
-        shadow-camera-right={200}
-        shadow-camera-top={200}
-        shadow-camera-bottom={-200}
+        shadow-camera-near={1}
+        shadow-camera-far={2500}
+        shadow-camera-left={-700}
+        shadow-camera-right={700}
+        shadow-camera-top={700}
+        shadow-camera-bottom={-700}
         shadow-bias={-0.0001}
       />
       
@@ -609,6 +623,16 @@ function SceneContent({
               makeDefault
               position={[cameraX, cameraHeight, cameraZ]}
               fov={ROOM_DEFAULT_FOV}
+              // near, NOT the three.js default of 0.1. Depth precision goes as
+              // z²/(near · 2²⁴), so a 0.1" near plane leaves only ~8 inches
+              // resolvable at this room's maximum zoom-out — which is why the
+              // near-coplanar floor/grid/ground planes in WallSystem needed
+              // absurd separations to stop flickering, and would still have
+              // flickered on a large room. Raising near is the actual fix, and
+              // it's free here: nothing is ever within 5 inches of the camera.
+              // OrbitControls' own minDistance is 40+ inches even for the
+              // smallest room, and edit mode clamps to 140-240.
+              near={5}
               far={cameraFar}
             />
 

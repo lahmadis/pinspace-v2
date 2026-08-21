@@ -141,20 +141,24 @@ export default function DemoStudioRoomPage() {
             const { fogNear, fogFar } = getRoomFogParams(wallConfig)
             return <fog attach="fog" args={[ROOM_SKY_COLOR, fogNear, fogFar]} />
           })()}
-          <PerspectiveCamera makeDefault position={[0, 60, 120]} fov={35} />
+          <PerspectiveCamera makeDefault position={[0, 60, 120]} fov={35} near={5} far={2000} />
 
           <ambientLight intensity={0.6} />
+          {/* Matches the editor's key light — see StudioRoom. A low light with a
+              small shadow frustum truncates shadows partway across the floor. */}
           <directionalLight
-            position={[10, 20, 10]}
+            position={[400, 700, 300]}
             intensity={1.2}
             castShadow
             shadow-mapSize-width={2048}
             shadow-mapSize-height={2048}
-            shadow-camera-far={200}
-            shadow-camera-left={-100}
-            shadow-camera-right={100}
-            shadow-camera-top={100}
-            shadow-camera-bottom={-100}
+            shadow-camera-near={1}
+            shadow-camera-far={2500}
+            shadow-camera-left={-700}
+            shadow-camera-right={700}
+            shadow-camera-top={700}
+            shadow-camera-bottom={-700}
+            shadow-bias={-0.0001}
           />
           <hemisphereLight args={['#ffffff', '#8888aa', 0.4]} />
 
@@ -181,7 +185,12 @@ export default function DemoStudioRoomPage() {
             wallDimensions={null}
           />
 
-          {editingWall === null && <OrbitControls ref={orbitControlsRef as React.RefObject<import('three-stdlib').OrbitControls>} enableDamping={false} dampingFactor={0} />}
+          {editingWall === null && <OrbitControls ref={orbitControlsRef as React.RefObject<import('three-stdlib').OrbitControls>} enableDamping={false} dampingFactor={0}
+            // Bounded like every other room surface. Unbounded (the three.js
+            // defaults of 0 and Infinity) let the camera dolly into the near
+            // plane at one end and past the far plane at the other, clipping
+            // the room away in both directions.
+            minDistance={60} maxDistance={900} />}
         </Canvas>
       </div>
 
