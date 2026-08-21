@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { notFound, useSearchParams, useRouter } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
@@ -38,7 +38,7 @@ type StudioItem = {
   networkMetadata?: { year?: string }
 }
 
-export default function DepartmentPage({ params }: { params: { department: string } }) {
+function DepartmentPageInner({ params }: { params: { department: string } }) {
   const searchParams = useSearchParams()
   const router = useRouter()
   const viewParam = searchParams.get('view')
@@ -58,7 +58,7 @@ export default function DepartmentPage({ params }: { params: { department: strin
 
   useEffect(() => {
     if (!meta) return
-    document.title = `${meta.name} Studios – PinSpace`
+    document.title = `${meta.name} Spaces – PinSpace`
   }, [meta])
 
   // Load available academic years for the tab bar
@@ -328,7 +328,7 @@ export default function DepartmentPage({ params }: { params: { department: strin
                     onClick={() => setViewMode('all')}
                     className={`px-3 py-1 rounded-full border text-sm ${viewState.isAll ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
                   >
-                    View All Studios
+                    View All Spaces
                   </button>
                 </div>
               )
@@ -386,7 +386,7 @@ export default function DepartmentPage({ params }: { params: { department: strin
         <aside className="space-y-4">
           <div className="bg-white rounded-2xl shadow p-6 border border-gray-100">
             <div className={`text-sm font-semibold uppercase ${meta.accent}`}>{meta.name} Program</div>
-            <h3 className="text-xl font-bold text-gray-900 mt-1">Studios by Year</h3>
+            <h3 className="text-xl font-bold text-gray-900 mt-1">Spaces by Year</h3>
             <p className="text-gray-600 text-sm mt-1">WIT Design Network</p>
             <div className="mt-4 space-y-2 text-sm">
               {years.map((y) => (
@@ -413,5 +413,13 @@ export default function DepartmentPage({ params }: { params: { department: strin
         </aside>
       </main>
     </div>
+  )
+}
+
+export default function DepartmentPage({ params }: { params: { department: string } }) {
+  return (
+    <Suspense fallback={null}>
+      <DepartmentPageInner params={params} />
+    </Suspense>
   )
 }

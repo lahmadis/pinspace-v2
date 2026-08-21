@@ -207,7 +207,7 @@ export default function YearPage({ params }: { params: { department: string; yea
             <p className="text-gray-600 text-sm mt-1">WIT Design Network</p>
             <div className="mt-4 space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-600">Studios</span>
+                <span className="text-gray-600">Spaces</span>
                 <span className="text-gray-900 font-semibold">{studioCount}</span>
               </div>
             </div>

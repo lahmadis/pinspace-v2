@@ -61,13 +61,13 @@ export default function DemoStudioRoomPage() {
   }
 
   if (loading) {
-    return <Loading message="Loading demo studio..." />
+    return <Loading message="Loading demo space..." />
   }
 
   if (!studio) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-text-muted">Studio not found</p>
+        <p className="text-text-muted">Space not found</p>
       </div>
     )
   }

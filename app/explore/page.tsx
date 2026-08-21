@@ -271,8 +271,8 @@ function ExplorePageInner() {
             </div>
             <div className="hidden md:block h-5 w-px bg-slate-600 shrink-0" />
             <div className="min-w-0">
-              <h1 className="text-lg font-semibold text-white">Studio Network</h1>
-              <p className="text-xs text-slate-400">{totalStudios} studios • {totalStudents} students</p>
+              <h1 className="text-lg font-semibold text-white">Space Network</h1>
+              <p className="text-xs text-slate-400">{totalStudios} spaces • {totalStudents} students</p>
             </div>
           </div>
 
@@ -280,11 +280,11 @@ function ExplorePageInner() {
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full md:w-auto md:shrink-0">
             <input
               type="search"
-              placeholder="Search by studio name or professor…"
+              placeholder="Search by space name or professor…"
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setRoomDrillWorkspace(null) }}
               className="w-full sm:w-80 sm:min-w-[18rem] px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              aria-label="Search studios by name or professor"
+              aria-label="Search spaces by name or professor"
             />
             <div className="flex items-center gap-2 sm:gap-3">
               <button
@@ -301,7 +301,7 @@ function ExplorePageInner() {
                     : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
                 }`}
               >
-                All Studios
+                All Spaces
               </button>
               <button
                 onClick={() => {
@@ -317,7 +317,7 @@ function ExplorePageInner() {
                     : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
                 }`}
               >
-                Drill-down<span className="hidden sm:inline"> (Year → Dept → Studio)</span>
+                Drill-down<span className="hidden sm:inline"> (Year → Dept → Space)</span>
               </button>
             </div>
           </div>
@@ -376,13 +376,13 @@ function ExplorePageInner() {
             style={{ height: '100vh', paddingTop: headerHeight }}
           >
             <div className="text-center">
-              <p className="text-slate-400 text-xl font-medium">No studios yet</p>
+              <p className="text-slate-400 text-xl font-medium">No spaces yet</p>
               <p className="text-slate-500 text-sm mt-2">
                 {!isDemo && !hasOrg
-                  ? "We couldn't find studios for your institution. Contact support if this seems wrong."
+                  ? "We couldn't find spaces for your institution. Contact support if this seems wrong."
                   : !isDemo && selectedAcademicYear
-                    ? `No published studios for ${selectedAcademicYear}`
-                    : 'No published studios found for your institution'}
+                    ? `No published spaces for ${selectedAcademicYear}`
+                    : 'No published spaces found for your institution'}
               </p>
             </div>
           </div>
@@ -423,7 +423,7 @@ function ExplorePageInner() {
         <button
           type="button"
           onClick={() => setRoomDrillWorkspace(null)}
-          aria-label="Back to studios"
+          aria-label="Back to spaces"
           className="fixed left-4 z-30 flex items-center gap-2 max-w-[70vw] px-4 py-2 rounded-full bg-slate-800/90 hover:bg-slate-700 text-white text-sm font-medium border border-slate-600/50 backdrop-blur-sm shadow-lg transition-colors"
           style={{ top: measuredHeaderHeight + (!isDemo && availableAcademicYears.length > 0 ? 44 : 0) + 12 }}
         >

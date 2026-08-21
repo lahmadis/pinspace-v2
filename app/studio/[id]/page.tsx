@@ -1,7 +1,7 @@
 'use client'
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { Figtree, JetBrains_Mono } from 'next/font/google'
@@ -47,10 +47,10 @@ const StudioRoom = dynamic(
   {
     ssr: false,
     loading: () => (
-    <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
+    <div className="w-full h-screen flex items-center justify-center" style={{ background: CHROME.accent }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
-          <p className="text-white/90 font-medium">Loading 3D Studio...</p>
+          <p className="text-white/90 font-medium">Loading space...</p>
         </div>
     </div>
   ),
@@ -58,7 +58,7 @@ const StudioRoom = dynamic(
 
 const DEFAULT_CONFIG = DEFAULT_WALL_CONFIG
 
-export default function StudioPage() {
+function StudioPageInner() {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -1026,10 +1026,10 @@ export default function StudioPage() {
 
   if (isLoading) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: CHROME.accent }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
-          <p className="text-white/90 font-medium">Loading Studio...</p>
+          <p className="text-white/90 font-medium">Loading space...</p>
         </div>
       </div>
     )
@@ -1037,14 +1037,14 @@ export default function StudioPage() {
 
   if (boardsError) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: CHROME.accent }}>
         <div className="text-center">
           <p className="text-white font-semibold text-lg mb-2">Failed to load boards</p>
           <p className="text-white/70 text-sm mb-6">Check your connection and try again.</p>
           <div className="flex gap-3 justify-center">
             <button
               onClick={() => { setBoardsError(false); setIsLoading(true); setRetryCount(c => c + 1) }}
-              className="px-5 py-2 bg-white text-indigo-600 rounded-lg font-medium hover:bg-white/90 transition-colors"
+              className="px-5 py-2 bg-white text-[#3B6EF6] rounded-lg font-medium hover:bg-white/90 transition-colors"
             >
               Retry
             </button>
@@ -1086,7 +1086,7 @@ export default function StudioPage() {
       )}
       {/* Archive banner */}
       {isArchived && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-indigo-600 text-white text-sm font-medium text-center py-2 px-4">
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#3B6EF6] text-white text-sm font-medium text-center py-2 px-4">
           This workspace is archived. View only.
         </div>
       )}
@@ -1098,11 +1098,13 @@ export default function StudioPage() {
       )}
 
       {wallConfig && (
-        <div className={`${figtree.className} relative w-full h-screen overflow-hidden`} style={{ background: '#EDE9DE' }}>
+        <div className={`${figtree.className} relative w-full h-screen overflow-hidden`} style={{ background: '#E7ECF5' }}>
           {/* The three pulsing indigo blur orbs that used to sit here were the
               remaining lavender in the room: they tinted the paper background
               and competed with the white sheets on the walls. A developed
-              drawing surface wants a flat, neutral field behind it. */}
+              drawing surface wants a flat, neutral field behind it. Background
+              matches ROOM_SKY_COLOR (the room Canvas's own fog/sky color) so
+              there's no color flash while the Canvas mounts on top of this. */}
 
           {/* Top Left - Logo and breadcrumb. Hidden in wall edit mode. */}
           {!isEditMode && (
@@ -1164,7 +1166,7 @@ export default function StudioPage() {
                           return (
                             <li key={r.id}>
                               {isCurrent ? (
-                                <div className="px-3 py-2 text-sm bg-indigo-50 text-indigo-700 font-medium flex items-center justify-between">
+                                <div className="px-3 py-2 text-sm bg-[#3B6EF6]/10 text-[#3B6EF6] font-medium flex items-center justify-between">
                                   <span>{r.name}</span>
                                   <span className="text-xs">current</span>
                                 </div>
@@ -1187,7 +1189,7 @@ export default function StudioPage() {
                         <Link
                           href={`/workspace/${workspaceId}`}
                           onClick={() => setShowRoomSwitcher(false)}
-                          className="block px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 font-medium"
+                          className="block px-3 py-2 text-sm text-[#3B6EF6] hover:bg-[#3B6EF6]/10 font-medium"
                         >
                           See all rooms →
                         </Link>
@@ -1239,7 +1241,7 @@ export default function StudioPage() {
                   <button
                     ref={studioMenuTriggerRef}
                     onClick={() => setShowStudioMenu((v) => !v)}
-                    aria-label="Studio options"
+                    aria-label="Space options"
                     aria-haspopup="menu"
                     aria-expanded={showStudioMenu}
                     style={{ background: CHROME.accent, color: CHROME.paper, borderColor: CHROME.hairline }}
@@ -1260,7 +1262,7 @@ export default function StudioPage() {
                       <div
                         className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
                         role="menu"
-                        aria-label="Studio options"
+                        aria-label="Space options"
                       >
                         {/* Place 3D model — opens the floor editor to add tables
                             and upload/position models. Tables live in the same
@@ -1270,9 +1272,9 @@ export default function StudioPage() {
                           <button
                             role="menuitem"
                             onClick={() => { setShowStudioMenu(false); setFloorEditorMode('tables'); setFloorEditorOpen(true) }}
-                            className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+                            className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B6EF6]"
                           >
-                            <Box className="w-4 h-4 text-indigo-600" />
+                            <Box className="w-4 h-4 text-[#3B6EF6]" />
                             Place 3D model
                           </button>
                         )}
@@ -1285,9 +1287,9 @@ export default function StudioPage() {
                           <button
                             role="menuitem"
                             onClick={() => { setShowStudioMenu(false); handleReconfigureWalls() }}
-                            className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+                            className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B6EF6]"
                           >
-                            <Settings className="w-4 h-4 text-indigo-600" />
+                            <Settings className="w-4 h-4 text-[#3B6EF6]" />
                             Reconfigure Walls
                           </button>
                         )}
@@ -1302,7 +1304,7 @@ export default function StudioPage() {
                             role="menuitem"
                             onClick={() => { if (!someoneElsePresenting) { setShowStudioMenu(false); setPresenting(!isPresenter) } }}
                             disabled={someoneElsePresenting}
-                            className={`w-full text-left px-4 py-3 text-sm font-medium flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${
+                            className={`w-full text-left px-4 py-3 text-sm font-medium flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B6EF6] ${
                               canEditRoomConfig ? 'border-t border-gray-100' : ''
                             } ${
                               someoneElsePresenting
@@ -1310,7 +1312,7 @@ export default function StudioPage() {
                                 : 'text-gray-900 hover:bg-gray-50'
                             }`}
                           >
-                            <Presentation className="w-4 h-4 text-blue-600" />
+                            <Presentation className="w-4 h-4 text-[#3B6EF6]" />
                             {someoneElsePresenting
                               ? `${friendlyName(presenter!.fullName)} is presenting`
                               : isPresenter
@@ -1336,7 +1338,7 @@ export default function StudioPage() {
             <div className="sm:hidden fixed top-4 right-4 z-40">
               <button
                 onClick={() => setShowStudioMenu((v) => !v)}
-                aria-label={showStudioMenu ? 'Close studio menu' : 'Open studio menu'}
+                aria-label={showStudioMenu ? 'Close space menu' : 'Open space menu'}
                 aria-haspopup="menu"
                 aria-expanded={showStudioMenu}
                 className="p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
@@ -1360,7 +1362,7 @@ export default function StudioPage() {
                       onClick={() => { setShowStudioMenu(false); setShowShareModal(true) }}
                       className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2"
                     >
-                      <Share2 className="w-4 h-4 text-blue-600" />
+                      <Share2 className="w-4 h-4 text-[#3B6EF6]" />
                       Share
                     </button>
                     {!isArchived && canEditWalls && (
@@ -1369,7 +1371,7 @@ export default function StudioPage() {
                         onClick={() => { setShowStudioMenu(false); setFloorEditorMode('tables'); setFloorEditorOpen(true) }}
                         className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
                       >
-                        <Box className="w-4 h-4 text-indigo-600" />
+                        <Box className="w-4 h-4 text-[#3B6EF6]" />
                         Place 3D model
                       </button>
                     )}
@@ -1379,7 +1381,7 @@ export default function StudioPage() {
                         onClick={() => { setShowStudioMenu(false); handleReconfigureWalls() }}
                         className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
                       >
-                        <Settings className="w-4 h-4 text-indigo-600" />
+                        <Settings className="w-4 h-4 text-[#3B6EF6]" />
                         Reconfigure Walls
                       </button>
                     )}
@@ -1396,7 +1398,7 @@ export default function StudioPage() {
                             : 'text-gray-900 hover:bg-gray-50'
                         }`}
                       >
-                        <Presentation className="w-4 h-4 text-blue-600" />
+                        <Presentation className="w-4 h-4 text-[#3B6EF6]" />
                         {someoneElsePresenting
                           ? `${friendlyName(presenter!.fullName)} is presenting`
                           : isPresenter
@@ -1458,5 +1460,13 @@ export default function StudioPage() {
         </div>
       )}
     </>
+  )
+}
+
+export default function StudioPage() {
+  return (
+    <Suspense fallback={null}>
+      <StudioPageInner />
+    </Suspense>
   )
 }

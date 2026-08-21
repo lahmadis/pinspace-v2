@@ -16,12 +16,12 @@ export default function Loading({ message = 'Loading...' }: LoadingProps) {
         {/* Spinner */}
         <div className="relative w-16 h-16">
           <motion.div
-            className="absolute inset-0 rounded-full border-4 border-primary/30"
+            className="absolute inset-0 rounded-full border-4 border-[#3B6EF6]/30"
             animate={{ rotate: 360 }}
             transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
           />
           <motion.div
-            className="absolute inset-0 rounded-full border-4 border-transparent border-t-primary"
+            className="absolute inset-0 rounded-full border-4 border-transparent border-t-[#3B6EF6]"
             animate={{ rotate: 360 }}
             transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
           />

@@ -351,7 +351,7 @@ function StudioViewPageInner() {
   }, [boards, searchParams])
 
   useEffect(() => {
-    document.title = 'Studio View – PinSpace'
+    document.title = 'Space View – PinSpace'
   }, [])
 
   const fetchBoards = async () => {
@@ -480,10 +480,10 @@ function StudioViewPageInner() {
 
   if (loading) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#3B6EF6' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
-          <p className="text-white/90 font-medium">Loading studio...</p>
+          <p className="text-white/90 font-medium">Loading space...</p>
         </div>
       </div>
     )
@@ -491,14 +491,14 @@ function StudioViewPageInner() {
 
   if (error) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#E7ECF5' }}>
         <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
           <div className="text-6xl mb-4">😕</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Oops!</h2>
           <p className="text-gray-600 mb-6">{error}</p>
-          <button 
+          <button
             onClick={() => window.location.reload()}
-            className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
+            className="px-6 py-3 bg-[#3B6EF6] text-white rounded-lg hover:bg-[#2F5CD6] transition-colors font-medium"
           >
             Try Again
           </button>
@@ -508,21 +508,19 @@ function StudioViewPageInner() {
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#EDE9DE' }}>
+    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#E7ECF5' }}>
       <DemoBanner />
 
-      {/* Animated gradient background effects (match studio room page) */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)' }}></div>
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)', animationDelay: '1s' }}></div>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(102, 102, 255, 0.1)' }}></div>
-      </div>
+      {/* Flat, neutral field behind the board grid — matches the room's own
+          ROOM_SKY_COLOR (see components/3d/WallSystem.tsx) instead of the
+          previous pulsing indigo blur orbs, which read as a different, older
+          design language than the rest of the app. */}
 
       {/* Top Left - Logo and Back (match studio room chrome, but back to network/gallery) */}
       <div className="fixed top-4 left-4 z-40 flex items-center gap-2.5">
         <button
           onClick={() => router.push('/')}
-          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
+          className="px-5 py-2.5 bg-[#3B6EF6] hover:bg-[#2F5CD6] text-white rounded-xl shadow-lg shadow-[#3B6EF6]/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
         >
           PinSpace
         </button>
@@ -571,7 +569,7 @@ function StudioViewPageInner() {
       {/* Top-right status pill (view mode + board count) */}
       <div className="fixed top-4 right-4 z-40 flex items-center gap-2.5">
         <div className="px-4 py-2.5 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2">
-          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+          <div className="w-2 h-2 bg-[#3B6EF6] rounded-full animate-pulse" />
           <span>View Mode</span>
           <span className="opacity-80">• {boards.length} boards</span>
         </div>

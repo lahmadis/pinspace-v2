@@ -250,7 +250,7 @@ export default function SharePage() {
   }, [token])
 
   useEffect(() => {
-    document.title = roomName ? `${roomName} – PinSpace` : 'Shared Studio – PinSpace'
+    document.title = roomName ? `${roomName} – PinSpace` : 'Shared Space – PinSpace'
   }, [roomName])
 
   const handleBoardClick = (board: Board) => {
@@ -281,10 +281,10 @@ export default function SharePage() {
 
   if (loadState === 'loading') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#3B6EF6' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-4 border-white/20 border-t-white mx-auto mb-4" />
-          <p className="text-white/90 font-medium">Loading studio…</p>
+          <p className="text-white/90 font-medium">Loading space…</p>
         </div>
       </div>
     )
@@ -292,7 +292,7 @@ export default function SharePage() {
 
   if (loadState === 'not-found') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#E7ECF5' }}>
         <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
           <div className="text-6xl mb-4">🔗</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Link not found</h2>
@@ -304,14 +304,14 @@ export default function SharePage() {
 
   if (loadState === 'error') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#EDE9DE' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#E7ECF5' }}>
         <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
           <div className="text-6xl mb-4">😕</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Something went wrong</h2>
-          <p className="text-gray-600 mb-6">We had trouble loading this studio.</p>
+          <p className="text-gray-600 mb-6">We had trouble loading this space.</p>
           <button
             onClick={() => window.location.reload()}
-            className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
+            className="px-6 py-3 bg-[#3B6EF6] text-white rounded-lg hover:bg-[#2F5CD6] transition-colors font-medium"
           >
             Try Again
           </button>
@@ -321,17 +321,15 @@ export default function SharePage() {
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#EDE9DE' }}>
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)' }} />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full blur-3xl animate-pulse" style={{ backgroundColor: 'rgba(102, 102, 255, 0.2)', animationDelay: '1s' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(102, 102, 255, 0.1)' }} />
-      </div>
+    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#E7ECF5' }}>
+      {/* Flat, neutral field matching ROOM_SKY_COLOR — see the comment on the
+          equivalent wrapper in app/studio/[id]/page.tsx for why the previous
+          pulsing indigo blur orbs were removed rather than recolored. */}
 
       <div className="fixed top-4 left-4 z-40 flex items-center gap-2.5">
         <a
           href="/"
-          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
+          className="px-5 py-2.5 bg-[#3B6EF6] hover:bg-[#2F5CD6] text-white rounded-xl shadow-lg shadow-[#3B6EF6]/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
         >
           PinSpace
         </a>
@@ -347,7 +345,7 @@ export default function SharePage() {
 
       <div className="fixed top-4 right-4 z-40">
         <div className="px-4 py-2.5 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 font-medium text-sm flex items-center gap-2">
-          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+          <div className="w-2 h-2 bg-[#3B6EF6] rounded-full animate-pulse" />
           <span>View Mode</span>
           <span className="opacity-80">• {boards.length} boards</span>
         </div>
