@@ -30,19 +30,15 @@ interface WallSystemProps {
   boards: Board[]
   wallConfig: WallConfig
   /**
-   * Fires on DOUBLE click of a wall surface (single click is inert, leaving it
-   * free for orbit/drag). StudioRoom uses this to enter 2D edit mode.
+   * Fires on DOUBLE click of a wall surface. A single click is swallowed by the
+   * surface without doing anything — see WallSurface's handleClick for why it
+   * has to be swallowed rather than simply unhandled.
    */
   onWallDoubleClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
   /**
-   * Fires on a plain single click of a wall — sets it as the "active" wall
-   * for crit walk / export. See WallSurface's onSurfaceClick doc.
-   */
-  onWallClick?: (wallIndex: number, side: 'front' | 'back') => void
-  /**
    * Fires when the pointer enters a wall surface. StudioRoom uses this to
    * fire-and-forget pre-warm board full-image textures for the boards on
-   * that wall, so the subsequent wall-click into edit mode doesn't show the
+   * that wall, so the subsequent double-click into edit mode doesn't show the
    * grey skeleton placeholder while 2400px JPEGs load.
    */
   onWallHover?: (wallIndex: number, side: 'front' | 'back') => void
@@ -325,7 +321,7 @@ export function assignNamePlateRows(plates: PlateLayoutInput[]): Map<string, num
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick, onNamePlateClick }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick, onNamePlateClick }: WallSystemProps) {
 
   const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
   // Ghosted variants for wall focus. Memoized on the palette rather than
@@ -573,7 +569,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             position={[transform.x, transform.height / 2, transform.z]}
             rotation={[0, transform.rotationY, 0]}
           >
-            {/* Clickable front and back – same wall-local coords so no inversion */}
+            {/* Front and back pick surfaces – same wall-local coords so no inversion */}
             <WallSurface
               wallDimensions={wall}
               side="front"
@@ -582,7 +578,6 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                 const rotation = transform.rotationY
                 onWallDoubleClick?.(wallIndex, wall, position, rotation, side)
               }}
-              onSurfaceClick={({ side }) => onWallClick?.(wallIndex, side)}
               onSurfaceHover={({ side }) => onWallHover?.(wallIndex, side)}
             />
             <WallSurface
@@ -593,7 +588,6 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                 const rotation = transform.rotationY
                 onWallDoubleClick?.(wallIndex, wall, position, rotation + Math.PI, side)
               }}
-              onSurfaceClick={({ side }) => onWallClick?.(wallIndex, side)}
               onSurfaceHover={({ side }) => onWallHover?.(wallIndex, side)}
             />
 

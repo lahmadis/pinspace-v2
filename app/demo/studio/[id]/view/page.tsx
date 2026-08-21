@@ -197,8 +197,8 @@ export default function DemoStudioRoomPage() {
         >
           <h3 className="font-semibold text-sm mb-2">💡 Demo Tips</h3>
           <ul className="text-xs text-gray-600 space-y-1.5">
-            <li>• Click a wall to enter edit mode</li>
-            <li>• Drag boards to rearrange (changes not saved)</li>
+            {/* No edit mode on this page — onWallDoubleClick is a no-op here,
+                so promising one sent people clicking at nothing. */}
             <li>• Click boards to view comments</li>
             <li>• Use mouse to rotate and zoom</li>
           </ul>

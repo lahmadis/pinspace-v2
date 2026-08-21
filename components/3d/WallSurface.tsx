@@ -24,15 +24,6 @@ interface WallSurfaceProps {
     worldPoint: THREE.Vector3
   }) => void
   /**
-   * Fires on a plain single click — makes this wall the "active" one for
-   * crit walk / export (there's no camera-facing wall to infer
-   * that from once the room is orbit-based). A native click ALSO fires
-   * (twice) immediately before a dblclick, so a double-click both selects
-   * and opens edit mode — harmless, since edit mode is entered on the same
-   * wall it just got set active on.
-   */
-  onSurfaceClick?: (params: { side: 'front' | 'back' }) => void
-  /**
    * Fires on pointer-over. WallSystem uses this to kick off a fire-and-forget
    * texture pre-warm for boards on this side, so the user's subsequent
    * double-click into edit mode doesn't show the grey skeleton placeholder.
@@ -42,16 +33,15 @@ interface WallSurfaceProps {
 }
 
 /**
- * Invisible plane representing one wall face (front/back). Single click
- * selects it as active (see onSurfaceClick); double click enters wall-edit
- * mode. Geometry is axis-aligned in local space; parent group handles
+ * Invisible plane representing one wall face (front/back). Double click enters
+ * wall-edit mode; single click is swallowed rather than ignored (see
+ * handleClick). Geometry is axis-aligned in local space; parent group handles
  * rotation/position.
  */
 export function WallSurface({
   wallDimensions,
   side,
   onSurfaceDoubleClick,
-  onSurfaceClick,
   onSurfaceHover,
   visibleOutline = false,
 }: WallSurfaceProps) {
@@ -66,11 +56,20 @@ export function WallSurface({
   // Optional hover outline (very light)
   const [hovered, setHovered] = useState(false)
 
+  /**
+   * Absorbs single clicks without doing anything with them.
+   *
+   * The wall plane is invisible, so without this a click on a wall raycasts
+   * straight through to whatever sits behind it — a board mounted on the REVERSE
+   * face (its box geometry is hit from behind, opening that board's lightbox), or
+   * the floor, whose click handler exits wall focus. Clicking a wall would then
+   * do something arbitrary that depends on what happens to be on the other side.
+   *
+   * This used to be a side effect of the wall-selection handler that lived here;
+   * that feature is gone, the absorbing is still needed.
+   */
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
-    // Ignore a click that ended a drag — that gesture was an orbit.
-    if (e.delta > DRAG_THRESHOLD_PX) return
-    onSurfaceClick?.({ side })
   }
 
   const handleDoubleClick = (e: ThreeEvent<MouseEvent>) => {

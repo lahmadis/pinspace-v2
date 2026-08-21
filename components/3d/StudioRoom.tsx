@@ -3,9 +3,6 @@
 const isDev = process.env.NODE_ENV === 'development'
 const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
 
-/** Used by the contact-sheet export — escapes text dropped into a document.write() HTML string. */
-const escapeHtml = (s: string) => s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]!))
-
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { supabase } from '@/lib/supabase/client'
@@ -21,7 +18,6 @@ import UnfoldedView from '@/components/room/UnfoldedView'
 import PlanView from '@/components/room/PlanView'
 import TwoDView from '@/components/room/TwoDView'
 import RevisionStrip, { type RoomView } from '@/components/room/RevisionStrip'
-import RoomWallTools from '@/components/room/RoomWallTools'
 import { deriveRoomStudents, type RoomStudent } from '@/lib/room/students'
 import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
@@ -204,7 +200,6 @@ function SceneContent({
   othersEditingWalls,
   onBoardUpdate: _onBoardUpdate,
   onWallDoubleClick,
-  onWallClick,
   onWallHover,
   editingWall,
   placedBoards3D,
@@ -245,8 +240,6 @@ function SceneContent({
   suppressCallouts,
 }: StudioRoomProps & {
   onWallDoubleClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
-  /** Single click on a wall — sets it as the active wall for crit walk / export. */
-  onWallClick?: (wallIndex: number, side: 'front' | 'back') => void
   /** Pointer-over on a wall surface. Used to fire-and-forget pre-warm board textures. */
   onWallHover?: (wallIndex: number, side: 'front' | 'back') => void
   editingWall: number | null
@@ -385,7 +378,6 @@ function SceneContent({
         // normal 3D room (WallSystem reads wallConfig.textItems).
         wallConfig={{ ...wallConfig, textItems }}
         onWallDoubleClick={onWallDoubleClick}
-        onWallClick={onWallClick}
         onWallHover={onWallHover}
         editingWall={editingWall}
         editUIActive={showEditUI}
@@ -737,19 +729,6 @@ export default function StudioRoom(props: StudioRoomProps) {
 
   const handleSelectStudent = useCallback((student: RoomStudent) => {
     setSelectedStudentId((prev) => (prev === student.id ? null : student.id))
-    // Roster selection and crit walk both drive the same spotlight — mutually exclusive.
-    setCritWalkOn(false)
-  }, [])
-
-  // Which wall crit walk / export operate on. Set by a single
-  // click on a wall surface (WallSystem's onWallClick) — orbit means there is
-  // no "the wall you're facing" the way the old fixed-camera room had, so
-  // this is an explicit selection instead of something derived from camera
-  // angle. Crit walk state lives further down, right after useBoardState
-  // hands back localBoards (crit walk's board list is derived from it).
-  const [activeWall, setActiveWall] = useState<{ wallIndex: number; side: 'front' | 'back' } | null>(null)
-  const handleWallClick = useCallback((wallIndex: number, side: 'front' | 'back') => {
-    setActiveWall({ wallIndex, side })
   }, [])
 
   /**
@@ -782,19 +761,15 @@ export default function StudioRoom(props: StudioRoomProps) {
    * where each board sits; a plan drawn from above has no face of its own.
    */
   const handlePlanWallClick = useCallback((wallIndex: number, side: 'front' | 'back') => {
-    setActiveWall({ wallIndex, side })
     setFocusedWall((prev) => ({ wallIndex, side, nonce: (prev?.nonce ?? 0) + 1 }))
     setRoomView('room')
   }, [])
 
   const handleOpenStudentArchive = useCallback((studentId: string) => {
     setSelectedStudentId(studentId)
-    setCritWalkOn(false)
     setFocusedWall(null)
     setRoomView('2d')
   }, [])
-  const [critWalkOn, setCritWalkOn] = useState(false)
-  const [critIndex, setCritIndex] = useState(0)
 
   const [editingWall, setEditingWall] = useState<number | null>(null)
   const [editingWallDimensions, setEditingWallDimensions] = useState<WallDimensions | null>(null)
@@ -902,85 +877,6 @@ export default function StudioRoom(props: StudioRoomProps) {
     // parent-sync leaves position for that wall's boards under local control.
     { wall: editingWall, side: editingWallSide },
   )
-
-  // Crit walk: spotlight one board at a time on `activeWall` (state declared
-  // above, set by clicking a wall surface). The board list is derived from
-  // localBoards, which is why this lives here and not next to the rest of
-  // the crit-walk state. Deliberately NOT plumbed through realtime/presence
-  // — this is a per-viewer browsing aid, not something crit participants
-  // need to see in sync, same as the roster's selectedStudentId.
-  const prevActiveWallKeyRef = useRef<string | null>(null)
-
-  const critBoards = useMemo(() => {
-    if (!activeWall) return []
-    return localBoards
-      .filter((b) => b.position && b.position.wallIndex === activeWall.wallIndex && (b.position.side ?? 'front') === activeWall.side)
-      .sort((a, b) => (a.position?.x ?? 0) - (b.position?.x ?? 0))
-  }, [localBoards, activeWall])
-
-  // Changing walls mid-crit ends the session — a new wall is a new set of
-  // boards, and silently carrying the index over would spotlight an unrelated
-  // sheet (or nothing, once index is out of range).
-  useEffect(() => {
-    const key = activeWall ? `${activeWall.wallIndex}:${activeWall.side}` : null
-    if (prevActiveWallKeyRef.current !== null && prevActiveWallKeyRef.current !== key) {
-      setCritWalkOn(false)
-    }
-    prevActiveWallKeyRef.current = key
-  }, [activeWall])
-
-  const startCritWalk = useCallback(() => {
-    if (critBoards.length === 0) return
-    setSelectedStudentId(null)
-    setCritIndex(0)
-    setCritWalkOn(true)
-  }, [critBoards.length])
-  const endCritWalk = useCallback(() => setCritWalkOn(false), [])
-  const critPrev = useCallback(() => {
-    setCritIndex((i) => (critBoards.length ? (i - 1 + critBoards.length) % critBoards.length : 0))
-  }, [critBoards.length])
-  const critNext = useCallback(() => {
-    setCritIndex((i) => (critBoards.length ? (i + 1) % critBoards.length : 0))
-  }, [critBoards.length])
-
-  // Export as a printable contact sheet. Opens a plain HTML document in a new
-  // tab (built with the browser's own print-to-PDF, not a PDF library — this
-  // repo has no PDF dependency, and reaching for one is exactly the kind of
-  // build-risk this project's CLAUDE.md warns against introducing without a
-  // way to verify the Vercel build locally) with one image per board on the
-  // facing wall, laid out for Cmd/Ctrl+P → Save as PDF.
-  const handleExportWallContactSheet = useCallback(() => {
-    if (critBoards.length === 0) return
-    const win = window.open('', '_blank', 'noopener,noreferrer')
-    if (!win) {
-      toast.error('Allow pop-ups to export this wall.')
-      return
-    }
-    const label = activeWall ? `Wall ${activeWall.wallIndex + 1}${activeWall.side === 'back' ? ' (reverse)' : ''}` : 'Wall'
-    const figures = critBoards
-      .map((b) => {
-        const url = escapeHtml(b.thumbnailUrl || b.fullImageUrl || '')
-        const title = escapeHtml(b.title || 'Untitled')
-        return `<figure>${url ? `<img src="${url}" alt="" />` : '<div class="placeholder"></div>'}<figcaption>${title}</figcaption></figure>`
-      })
-      .join('')
-    win.document.write(
-      `<!DOCTYPE html><html><head><title>${escapeHtml(label)} — Contact Sheet</title><meta charset="utf-8" />` +
-        `<style>
-          body { font-family: system-ui, -apple-system, sans-serif; margin: 32px; color: #16181D; }
-          h1 { font-size: 18px; margin: 0 0 4px; }
-          p { font-size: 12px; color: #8A8FA0; margin: 0 0 24px; }
-          .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-          figure { margin: 0; break-inside: avoid; }
-          img, .placeholder { width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #DCE2ED; display: block; background: #F2F5FB; }
-          figcaption { font-size: 11px; margin-top: 6px; color: #16181D; }
-          @media print { body { margin: 0.5in; } }
-        </style></head><body>` +
-        `<h1>${escapeHtml(label)}</h1><p>${critBoards.length} board${critBoards.length === 1 ? '' : 's'} · exported from pinspace</p>` +
-        `<div class="grid">${figures}</div></body></html>`
-    )
-    win.document.close()
-  }, [critBoards, activeWall])
 
   // Sync tables when wall config loads or studio changes (strip blob URLs so GLTF never sees them)
   useEffect(() => {
@@ -1383,8 +1279,10 @@ export default function StudioRoom(props: StudioRoomProps) {
     }
   }, [localBoards])
 
-  // Enters 2D edit mode for a wall side. Fires on DOUBLE click only — a single
-  // click stays free for orbit/drag.
+  // Enters 2D edit mode for a wall side. Fires on DOUBLE click only; a single
+  // click is swallowed by the wall surface (WallSurface.handleClick) rather
+  // than left unhandled — orbit is unaffected either way, since it runs off
+  // pointer events, not clicks.
   const handleWallDoubleClick = (
     wallIndex: number,
     wallDimensions: WallDimensions,
@@ -1392,10 +1290,6 @@ export default function StudioRoom(props: StudioRoomProps) {
     rotation: number,
     side: 'front' | 'back'
   ) => {
-    // Make the wall active either way, so the crit-walk / export cluster
-    // follows whichever wall the eye just went to.
-    setActiveWall({ wallIndex, side })
-
     if (props.isArchived) {
       // An archived room never enters edit mode, so without this the gesture
       // would do nothing at all. Fall back to read-only focus: same head-on
@@ -1581,17 +1475,11 @@ export default function StudioRoom(props: StudioRoomProps) {
   // boards already in state so the panel costs no extra fetch.
   const roomStudents = useMemo(() => deriveRoomStudents(localBoards), [localBoards])
   const highlightedBoardIds = useMemo(() => {
-    // Crit walk and roster selection are mutually exclusive (each clears the
-    // other — see handleSelectStudent and startCritWalk), so at most one of
-    // these ever applies; both drive the same wall-outline highlight.
-    if (critWalkOn) {
-      const spotlit = critBoards[critIndex]
-      return spotlit ? new Set([spotlit.id]) : undefined
-    }
+    // Roster selection is the only thing driving the wall-outline highlight.
     if (!selectedStudentId) return undefined
     const student = roomStudents.find((s) => s.id === selectedStudentId)
     return student ? new Set(student.boardIds) : undefined
-  }, [critWalkOn, critBoards, critIndex, selectedStudentId, roomStudents])
+  }, [selectedStudentId, roomStudents])
 
   /**
    * Persist a new slideshow position, then let the existing refetch path
@@ -2462,20 +2350,6 @@ export default function StudioRoom(props: StudioRoomProps) {
         />
       )}
 
-      {editingWall === null && roomView === 'room' && (
-        <RoomWallTools
-          critWalkOn={critWalkOn}
-          critBoards={critBoards}
-          critIndex={critIndex}
-          onStartCrit={startCritWalk}
-          onEndCrit={endCritWalk}
-          onCritPrev={critPrev}
-          onCritNext={critNext}
-          onExport={handleExportWallContactSheet}
-          wallLabel={activeWall ? `Wall ${activeWall.wallIndex + 1}${activeWall.side === 'back' ? ' · Reverse' : ''}` : ''}
-        />
-      )}
-
       {editingWall === null && roomView === 'unfolded' && (
         <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
           <UnfoldedView
@@ -2512,10 +2386,8 @@ export default function StudioRoom(props: StudioRoomProps) {
             // Plain setter, NOT handleSelectStudent: that one toggles a
             // selection off when you re-pick the same person, which is right
             // for the roster's highlight-a-wall behaviour but here would mean
-            // clicking a card sometimes bounces you straight back out. Still
-            // ends any crit walk, so the "roster selection and crit walk are
-            // mutually exclusive" invariant holds on this path too.
-            onSelectStudent={(student) => { setSelectedStudentId(student.id); setCritWalkOn(false) }}
+            // clicking a card sometimes bounces you straight back out.
+            onSelectStudent={(student) => setSelectedStudentId(student.id)}
             onClearSelection={() => setSelectedStudentId(null)}
             onBoardClick={handleLightboxOpen}
           />
@@ -2593,7 +2465,6 @@ export default function StudioRoom(props: StudioRoomProps) {
             localBoards={localBoards}
             highlightedBoardIds={highlightedBoardIds}
             onWallDoubleClick={handleWallDoubleClick}
-            onWallClick={handleWallClick}
             onWallHover={handleWallHover}
             editingWall={editingWall}
             placedBoards3D={placedBoards3D}
