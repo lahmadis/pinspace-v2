@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { calculateFloorBounds, getWallTransformResolved, getWallTransform } from '@/lib/wallLayout'
 import { makePlanProjection, type PlanBoundsLike } from '@/lib/room/planProjection'
+import { ROOM, MONO_STACK } from '@/lib/room/palette'
 import type { WallConfig, WallTransformOverride } from '@/lib/wallLayout'
 import type { FloorTable } from '@/types'
 import { X, Plus, Upload, Trash2 } from 'lucide-react'
@@ -83,6 +84,17 @@ interface FloorEditorOverlayProps {
    * withheld. Defaults to false (fail-closed).
    */
   canDeleteWalls?: boolean
+  /**
+   * Canvas the plan is drawn into. Defaults to this editor's own modal size.
+   * The Plan tab passes its own square viewBox and margin so the editor draws
+   * at exactly the scale and position of the plan already on screen — toggling
+   * into Edit then adds handles to that drawing rather than swapping it for a
+   * differently-scaled one. Both go through the same projection helper, so
+   * "same numbers" is structural rather than something to keep in sync by hand.
+   */
+  viewWidth?: number
+  viewHeight?: number
+  padding?: number
 }
 
 const VIEW_WIDTH = 700
@@ -90,9 +102,7 @@ const VIEW_HEIGHT = 500
 
 const PADDING = 40
 
-function getUniformScale(bounds: PlanBoundsLike) {
-  return makePlanProjection(bounds, VIEW_WIDTH, VIEW_HEIGHT, PADDING)
-}
+
 
 /**
  * Endpoint snap radius, in scene units. 1 unit = 1 inch (lib/wallLayout.ts), so
@@ -104,6 +114,18 @@ const ENDPOINT_SNAP_THRESHOLD_IN = 6
 
 /** Rotation snap increment. Matches board rotation (DraggableBoard.tsx). */
 const ROTATION_SNAP_RAD = Math.PI / 2
+
+/**
+ * Inches → architectural feet-inches, e.g. 102 → `8'-6"`. Rounded to the nearest
+ * inch: the drag is continuous but sub-inch precision is noise at room scale and
+ * makes the readout jitter while you move.
+ */
+function formatFeetInches(totalInches: number): string {
+  const rounded = Math.round(totalInches)
+  const feet = Math.floor(rounded / 12)
+  const inches = rounded % 12
+  return `${feet}'-${inches}"`
+}
 
 type Point2 = { x: number; z: number }
 
@@ -160,24 +182,6 @@ function nearestOtherEndpoint(
   return best
 }
 
-/**
- * World → screen for this editor's canvas.
- *
- * Delegates to the shared projection (lib/room/planProjection.ts), which means
- * world +Z now reads DOWN the screen. This used to be `maxZ - z` — +Z up — which
- * drew the room vertically mirrored relative to the read-only Plan view. The two
- * had to agree before they could share a canvas; see that module's header.
- *
- * The drag handlers' `deltaPy` sign flipped with it, since screen-down is now
- * world-+Z rather than world-−Z.
- */
-function worldToScreen(
-  x: number,
-  z: number,
-  bounds: PlanBoundsLike
-): [number, number] {
-  return getUniformScale(bounds).toPx(x, z)
-}
 
 
 function wrapAngle(a: number): number {
@@ -201,6 +205,9 @@ export default function FloorEditorOverlay({
   onWallRemoved,
   onPersistWallConfig,
   canDeleteWalls = false,
+  viewWidth = VIEW_WIDTH,
+  viewHeight = VIEW_HEIGHT,
+  padding = PADDING,
 }: FloorEditorOverlayProps) {
   // Snapping is opt-in per gesture via Shift. Read live (not latched at
   // pointer-down) so it can be toggled mid-drag; `lastPointerRef` lets the
@@ -275,7 +282,11 @@ export default function FloorEditorOverlay({
   const { minX, maxX, minZ, maxZ } = bounds
 
   // Uniform scale (px per inch) — same factor for X and Z so grid cells are square
-  const { scale: uniformScale, offsetX: floorOffsetX, offsetY: floorOffsetY, usedWidth: floorUsedWidth, usedHeight: floorUsedHeight } = getUniformScale(bounds)
+  // One projection per render, from the canvas size this instance was given —
+  // the modal uses its own 700x500, the Plan tab passes its own so the editor
+  // draws at exactly the scale and position of the plan already on screen.
+  const proj = makePlanProjection(bounds, viewWidth, viewHeight, padding)
+  const { scale: uniformScale, offsetX: floorOffsetX, offsetY: floorOffsetY, usedWidth: floorUsedWidth, usedHeight: floorUsedHeight } = proj
   // World-per-pixel conversion used in drag handlers
   const invScale = 1 / uniformScale
 
@@ -481,7 +492,7 @@ export default function FloorEditorOverlay({
         const deltaPx = clientX - wallDragStart.startPx
         const deltaPy = clientY - wallDragStart.startPy
         // + not −: the shared projection maps world +Z to screen-DOWN, so a
-        // downward drag is a positive Z delta. See worldToScreen above.
+        // downward drag is a positive Z delta. See lib/room/planProjection.ts.
         const rawX = wallDragStart.x + deltaPx * invScale
         const rawZ = wallDragStart.z + deltaPy * invScale
 
@@ -732,7 +743,7 @@ export default function FloorEditorOverlay({
       e.stopPropagation()
       if (!onWallConfigChange) return
       const transform = getWallTransformResolved(wallConfig, index)
-      const [centerPx, centerPy] = worldToScreen(transform.x, transform.z, bounds)
+      const [centerPx, centerPy] = proj.toPx(transform.x, transform.z)
       const rect = floorPlanRef.current?.getBoundingClientRect()
       if (!rect) return
       const centerClientX = rect.left + centerPx
@@ -747,7 +758,13 @@ export default function FloorEditorOverlay({
         initialRotationY: transform.rotationY,
       })
     },
-    [wallConfig, bounds, onWallConfigChange]
+    // `proj` is listed because this closes over it. Today it's redundant —
+    // `bounds` is a fresh object each render so the callback rebuilds anyway —
+    // but that's incidental, and the moment `bounds` is memoized, or the canvas
+    // size props change without the config changing, an omitted `proj` would
+    // capture a stale projection and start the rotate gesture from the wrong
+    // screen centre.
+    [wallConfig, bounds, proj, onWallConfigChange]
   )
 
   const handleWallStretchPointerDown = useCallback(
@@ -925,10 +942,10 @@ export default function FloorEditorOverlay({
       [transform.x + halfW * cos + halfD * sin, transform.z - halfW * sin + halfD * cos], // 2: end-front
       [transform.x - halfW * cos + halfD * sin, transform.z + halfW * sin + halfD * cos], // 3: start-front
     ]
-    const screenCorners = worldCorners.map(([x, z]) => worldToScreen(x, z, bounds))
+    const screenCorners = worldCorners.map(([x, z]) => proj.toPx(x, z))
     const points = screenCorners.flat()
 
-    // Front edge = corners 2→3 (slate-400, 2px)
+    // Front edge = corners 2→3 (ROOM.ink2, 2px)
     const frontEdge: [number, number, number, number] = [
       screenCorners[2][0], screenCorners[2][1],
       screenCorners[3][0], screenCorners[3][1],
@@ -940,17 +957,17 @@ export default function FloorEditorOverlay({
     const startZ = transform.z + halfW * sin
     const endX = transform.x + halfW * cos
     const endZ = transform.z - halfW * sin
-    const [startPx, startPy] = worldToScreen(startX, startZ, bounds)
-    const [endPx, endPy] = worldToScreen(endX, endZ, bounds)
+    const [startPx, startPy] = proj.toPx(startX, startZ)
+    const [endPx, endPy] = proj.toPx(endX, endZ)
 
     // Rotate handle: midpoint of front edge offset 24px outward in screen space
     // Front edge midpoint in world = center offset by +halfD in local Z: Three.js Ry(θ) → (+sinθ, +cosθ)
     const frontMidWorldX = transform.x + halfD * sin
     const frontMidWorldZ = transform.z + halfD * cos
-    const [frontMidPx, frontMidPy] = worldToScreen(frontMidWorldX, frontMidWorldZ, bounds)
+    const [frontMidPx, frontMidPy] = proj.toPx(frontMidWorldX, frontMidWorldZ)
 
     // Offset 24px outward from wall center direction
-    const [centerPx, centerPy] = worldToScreen(transform.x, transform.z, bounds)
+    const [centerPx, centerPy] = proj.toPx(transform.x, transform.z)
     const outDx = frontMidPx - centerPx
     const outDy = frontMidPy - centerPy
     const outLen = Math.sqrt(outDx * outDx + outDy * outDy) || 1
@@ -967,6 +984,11 @@ export default function FloorEditorOverlay({
       centerPx, centerPy,
       frontMidPx, frontMidPy,
       handlePx, handlePy,
+      /** Live width, for the dimension readout while stretching. */
+      widthInches: transform.width,
+      /** Unit vector pointing out of the wall's front, for placing that readout. */
+      outUx: outDx / outLen,
+      outUy: outDy / outLen,
     }
   })
 
@@ -980,11 +1002,11 @@ export default function FloorEditorOverlay({
     const endGridZ = Math.floor(maxZ / GRID_INCHES) * GRID_INCHES
 
     for (let gx = startGridX; gx <= endGridX; gx += GRID_INCHES) {
-      const [px] = worldToScreen(gx, 0, bounds)
+      const [px] = proj.toPx(gx, 0)
       gridLines.push({ x1: px, y1: floorOffsetY, x2: px, y2: floorOffsetY + floorUsedHeight })
     }
     for (let gz = startGridZ; gz <= endGridZ; gz += GRID_INCHES) {
-      const [, py] = worldToScreen(0, gz, bounds)
+      const [, py] = proj.toPx(0, gz)
       gridLines.push({ x1: floorOffsetX, y1: py, x2: floorOffsetX + floorUsedWidth, y2: py })
     }
   }
@@ -1114,13 +1136,16 @@ export default function FloorEditorOverlay({
           <div
             ref={floorPlanRef}
             className="relative rounded-lg overflow-hidden"
-            style={{ width: VIEW_WIDTH, height: VIEW_HEIGHT }}
+            style={{ width: viewWidth, height: viewHeight }}
           >
             <svg
               className="absolute inset-0 w-full h-full"
-              viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
+              viewBox={`0 0 ${viewWidth} ${viewHeight}`}
               preserveAspectRatio="none"
-              style={{ pointerEvents: mode === 'walls' ? 'none' : 'none' }}
+              // The SVG itself never takes pointer events; the individual walls,
+              // handles and tables opt back in. (This was a ternary with the
+              // same value in both branches.)
+              style={{ pointerEvents: 'none' }}
             >
               {/* Floor background */}
               <rect
@@ -1149,19 +1174,22 @@ export default function FloorEditorOverlay({
                 <g key={index}>
                   <polygon
                     points={points.join(',')}
-                    fill={isSelected ? '#6366f1' : '#4f46e5'}
-                    stroke={isSelected ? '#facc15' : '#3730a3'}
+                    // Walls draw as ink like they do in the read-only plan;
+                    // selection is the accent. Previously indigo fill with a
+                    // yellow selection ring — both from the retired palette.
+                    fill={isSelected ? ROOM.accent : ROOM.ink}
+                    stroke={isSelected ? ROOM.accent : ROOM.ink}
                     strokeWidth={isSelected ? 2.5 : 0.5}
                     className={mode === 'walls' ? 'cursor-move' : ''}
                     style={{ pointerEvents: mode === 'walls' ? 'all' : 'none' }}
                     onPointerDown={mode === 'walls' ? (e) => handleWallPointerDown(index, e) : undefined}
                   />
-                  {/* Front-edge indicator: slate-400, 2px */}
+                  {/* Front-edge indicator: ROOM.ink2, 2px */}
                   {mode === 'walls' && (
                     <line
                       x1={frontEdge[0]} y1={frontEdge[1]}
                       x2={frontEdge[2]} y2={frontEdge[3]}
-                      stroke="#94a3b8"
+                      stroke={ROOM.ink2}
                       strokeWidth={2}
                       strokeLinecap="round"
                       style={{ pointerEvents: 'none' }}
@@ -1177,11 +1205,11 @@ export default function FloorEditorOverlay({
                   having landed it by hand. Drawn after the walls so it is never
                   occluded, and non-interactive so it can't steal the drag. */}
               {mode === 'walls' && activeSnapTarget && (() => {
-                const [cx, cy] = worldToScreen(activeSnapTarget.x, activeSnapTarget.z, bounds)
+                const [cx, cy] = proj.toPx(activeSnapTarget.x, activeSnapTarget.z)
                 return (
                   <g style={{ pointerEvents: 'none' }}>
-                    <circle cx={cx} cy={cy} r={9} fill="none" stroke="#facc15" strokeWidth={2} />
-                    <circle cx={cx} cy={cy} r={3.5} fill="#facc15" />
+                    <circle cx={cx} cy={cy} r={9} fill="none" stroke={ROOM.accent} strokeWidth={2} />
+                    <circle cx={cx} cy={cy} r={3.5} fill={ROOM.accent} />
                   </g>
                 )
               })()}
@@ -1192,7 +1220,7 @@ export default function FloorEditorOverlay({
                   key={`rline-${index}`}
                   x1={centerPx} y1={centerPy}
                   x2={handlePx} y2={handlePy}
-                  stroke="#4f46e5"
+                  stroke={ROOM.accent}
                   strokeWidth={1}
                   style={{ pointerEvents: 'none' }}
                 />
@@ -1203,7 +1231,7 @@ export default function FloorEditorOverlay({
                 <circle
                   key={`rhandle-${index}`}
                   cx={handlePx} cy={handlePy} r={5}
-                  fill="#4f46e5"
+                  fill={ROOM.accent}
                   style={{ pointerEvents: 'all', cursor: 'crosshair' }}
                   onPointerDown={(e) => handleWallRotatePointerDown(index, e)}
                 />
@@ -1212,10 +1240,45 @@ export default function FloorEditorOverlay({
               {/* Stretch endpoint circles (visible) */}
               {mode === 'walls' && wallGeometry.map(({ index, startPx, startPy, endPx, endPy }) => (
                 <g key={`stretch-vis-${index}`} style={{ pointerEvents: 'none' }}>
-                  <circle cx={startPx} cy={startPy} r={4} fill="#ffffff" stroke="#4f46e5" strokeWidth={1.5} />
-                  <circle cx={endPx} cy={endPy} r={4} fill="#ffffff" stroke="#4f46e5" strokeWidth={1.5} />
+                  <circle cx={startPx} cy={startPy} r={4} fill="#ffffff" stroke={ROOM.accent} strokeWidth={1.5} />
+                  <circle cx={endPx} cy={endPy} r={4} fill="#ffffff" stroke={ROOM.accent} strokeWidth={1.5} />
                 </g>
               ))}
+
+              {/* Live dimension while stretching. The W/H fields below already
+                  show the number, but they're off to the side of the canvas —
+                  you can't drag a handle and read a value 300px away at the same
+                  time. This puts it on the wall being resized. Shown only during
+                  the gesture so it isn't permanent clutter. */}
+              {mode === 'walls' && stretchingWallIndex !== null && (() => {
+                const g = wallGeometry[stretchingWallIndex]
+                if (!g) return null
+                const label = formatFeetInches(g.widthInches)
+                // Placed on the BACK of the wall (−outU): the rotate handle sits
+                // ~31px off the front along the same axis, so a front-side badge
+                // paints over it for the whole gesture.
+                const lx = g.centerPx - g.outUx * 26
+                const ly = g.centerPy - g.outUy * 26
+                // Rough box so the text stays readable over walls and grid.
+                const boxW = label.length * 7.2 + 12
+                return (
+                  <g style={{ pointerEvents: 'none' }}>
+                    <rect
+                      x={lx - boxW / 2} y={ly - 11}
+                      width={boxW} height={20} rx={4}
+                      fill={ROOM.accent}
+                    />
+                    <text
+                      x={lx} y={ly + 3}
+                      textAnchor="middle"
+                      style={{ fontFamily: MONO_STACK, fontSize: 12, fontWeight: 600 }}
+                      fill="#ffffff"
+                    >
+                      {label}
+                    </text>
+                  </g>
+                )
+              })()}
             </svg>
 
             {/* 3D minimap preview — walls mode only */}
@@ -1245,7 +1308,7 @@ export default function FloorEditorOverlay({
 
             {/* Tables (tables mode only) */}
             {mode === 'tables' && tables.map((table) => {
-              const [px, py] = worldToScreen(table.x, table.z, bounds)
+              const [px, py] = proj.toPx(table.x, table.z)
               const w = table.width * uniformScale
               const h = table.depth * uniformScale
               const isSelected = selectedTableId === table.id
@@ -1267,11 +1330,14 @@ export default function FloorEditorOverlay({
                     width: w, height: h, minWidth: 24, minHeight: 18,
                     transform: `rotate(${rotationDeg}deg)`,
                     transformOrigin: '50% 50%',
-                    borderColor: isSelected ? '#6366f1' : '#94a3b8',
-                    backgroundColor: isSelected ? 'rgba(99,102,241,0.15)' : 'rgba(148,163,184,0.2)',
+                    borderColor: isSelected ? ROOM.accent : ROOM.ink2,
+                    // Tinted from the same two tokens as the border above —
+                    // these were still indigo-500/slate-400 rgba, so a selected
+                    // table drew an accent border over an indigo fill.
+                    backgroundColor: isSelected ? 'rgba(59,110,246,0.15)' : 'rgba(138,143,160,0.2)',
                   }}
                 >
-                  <span className="text-[10px] font-medium truncate px-1" style={{ color: isSelected ? '#4f46e5' : '#64748b' }}>
+                  <span className="text-[10px] font-medium truncate px-1" style={{ color: isSelected ? ROOM.accent : ROOM.ink2 }}>
                     {table.modelUrl ? 'Model' : 'Table'}
                   </span>
                   {[['0%', '0%'], ['100%', '0%'], ['100%', '100%'], ['0%', '100%']].map(([left, top], i) => (
@@ -1291,8 +1357,8 @@ export default function FloorEditorOverlay({
 
           {/* Legend */}
           {mode === 'walls' && (
-            <p className="mt-2 text-xs text-slate-400">
-              — thin slate edge = front (side boards attach to)
+            <p className="mt-2 text-xs" style={{ color: ROOM.ink2 }}>
+              — thin light edge = front (side boards attach to)
             </p>
           )}
 
