@@ -306,10 +306,23 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
       {/* Reference grid on the ground plane — a foot-scale minor line and a
           10-foot-scale major line, the same convention as any CAD/level-editor
           floor grid, so the horizon reads as measurable space rather than a
-          flat color. Sits just above the ground plane (avoids z-fighting) and
-          is occluded by the room's own opaque floor/walls directly beneath
-          them, so it only shows on the surrounding "outside" ground —
-          exactly the area the ground plane was added to stop looking empty.
+          flat color. Sits above the ground plane and is occluded by the
+          room's own opaque floor/walls directly beneath them, so it only
+          shows on the surrounding "outside" ground — exactly the area the
+          ground plane was added to stop looking empty. Clearance above the
+          ground plane is a half-foot, not fractions of an inch: at this
+          scene's scale (far clip plane in the thousands of inches, default
+          near of 0.1) the depth buffer can't reliably resolve a sub-inch gap
+          between two nearly-coplanar meshes, so a thin gap here z-fights —
+          the grid flickering in and out as the camera orbits — rather than
+          cleanly compositing above the ground. Sitting this far above ground
+          also lands the grid inside the floor box's own vertical span at its
+          footprint, which is fine: the box is solid and always faces the
+          camera from above (nothing ever sees its underside), so it still
+          fully occludes the grid there. Six inches is still visually flush
+          with the ground at any real camera distance (orbit's minDistance is
+          80+ inches) while giving the depth test enough separation to
+          resolve consistently, including at large rooms' max zoom-out.
           `args` is deliberately modest (canonical drei infiniteGrid usage,
           e.g. their own docs example, uses [10,10]) — infiniteGrid's shader
           already multiplies the visible extent by (1 + fadeDistance) on top
@@ -319,7 +332,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
           alone (matched to the scene fog's fogFar) already controls how far
           out the grid actually reads as visible. */}
       <Grid
-        position={[floorBounds.floorCenterX, -floorThickness - 0.9, floorBounds.floorCenterZ]}
+        position={[floorBounds.floorCenterX, -floorThickness + 5, floorBounds.floorCenterZ]}
         args={[10, 10]}
         cellSize={12}
         cellThickness={0.6}
