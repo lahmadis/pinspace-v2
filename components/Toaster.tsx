@@ -17,10 +17,10 @@ const ICONS: Record<Exclude<ToastItem['type'], 'loading'>, string> = {
 
 const STYLES: Record<ToastItem['type'], string> = {
   success: 'bg-emerald-600 border-emerald-500',
-  error: 'bg-red-600 border-red-500',
+  error: 'bg-[#C2452D] border-[#a5391f]',
   warning: 'bg-amber-500 border-amber-400',
-  info: 'bg-blue-600 border-blue-500',
-  loading: 'bg-slate-700 border-slate-500',
+  info: 'bg-[#3B6EF6] border-[#2f5cd6]',
+  loading: 'bg-[#16181D] border-[#16181D]',
 }
 
 const CONTAINER_CLASSES: Record<ToastPosition, string> = {
@@ -99,7 +99,7 @@ export default function Toaster() {
   const renderToast = (t: ToastItem) => (
     <div
       key={t.id}
-      className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-white text-sm font-medium shadow-xl pointer-events-auto max-w-sm ${ENTER_ANIM[t.position]} ${STYLES[t.type]}`}
+      className={`flex items-center gap-3 px-4 py-3 rounded-full border text-white text-sm font-semibold shadow-xl pointer-events-auto max-w-sm ${ENTER_ANIM[t.position]} ${STYLES[t.type]}`}
     >
       {t.type === 'loading' ? (
         <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
