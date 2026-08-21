@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import type { Board } from '@/types'
 import { ROOM, MONO_STACK, SANS_STACK } from '@/lib/room/palette'
 import { wallSegments, planBounds, type WallConfigLike } from '@/lib/room/planGeometry'
+import { makePlanProjection } from '@/lib/room/planProjection'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
 import type { RoomStudent } from '@/lib/room/students'
 
@@ -91,13 +92,12 @@ export default function PlanView({
   const { segments, toPlan, scaleBar, labels, ticks, emptyWalls, dominantSide } = useMemo(() => {
     const segs = wallSegments(wallConfig)
     const b = planBounds(segs, 36)
-    const s = Math.min((VIEW - MARGIN * 2) / (b.width || 1), (VIEW - MARGIN * 2) / (b.depth || 1))
-    const offX = MARGIN + (VIEW - MARGIN * 2 - b.width * s) / 2
-    const offY = MARGIN + (VIEW - MARGIN * 2 - b.depth * s) / 2
-
-    function toPlan(x: number, z: number): [number, number] {
-      return [offX + (x - b.minX) * s, offY + (z - b.minZ) * s]
-    }
+    // Shared with the wall editor (lib/room/planProjection.ts) so the two plans
+    // are provably the same drawing — same scale, same orientation — rather than
+    // two hand-rolled mappings that drifted into mirroring each other.
+    const proj = makePlanProjection(b, VIEW, VIEW, MARGIN)
+    const s = proj.scale
+    const toPlan = proj.toPx
 
     const studentByBoardId = new Map<string, RoomStudent>()
     for (const st of students) for (const id of st.boardIds) studentByBoardId.set(id, st)

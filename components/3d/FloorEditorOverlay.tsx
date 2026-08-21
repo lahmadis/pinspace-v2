@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { calculateFloorBounds, getWallTransformResolved, getWallTransform } from '@/lib/wallLayout'
+import { makePlanProjection, type PlanBoundsLike } from '@/lib/room/planProjection'
 import type { WallConfig, WallTransformOverride } from '@/lib/wallLayout'
 import type { FloorTable } from '@/types'
 import { X, Plus, Upload, Trash2 } from 'lucide-react'
@@ -89,19 +90,8 @@ const VIEW_HEIGHT = 500
 
 const PADDING = 40
 
-function getUniformScale(bounds: { minX: number; maxX: number; minZ: number; maxZ: number }): {
-  scale: number; offsetX: number; offsetY: number; usedWidth: number; usedHeight: number
-} {
-  const floorWidth = bounds.maxX - bounds.minX
-  const floorDepth = bounds.maxZ - bounds.minZ
-  const sx = (VIEW_WIDTH - 2 * PADDING) / floorWidth
-  const sz = (VIEW_HEIGHT - 2 * PADDING) / floorDepth
-  const scale = Math.min(sx, sz)
-  const usedWidth = floorWidth * scale
-  const usedHeight = floorDepth * scale
-  const offsetX = (VIEW_WIDTH - usedWidth) / 2
-  const offsetY = (VIEW_HEIGHT - usedHeight) / 2
-  return { scale, offsetX, offsetY, usedWidth, usedHeight }
+function getUniformScale(bounds: PlanBoundsLike) {
+  return makePlanProjection(bounds, VIEW_WIDTH, VIEW_HEIGHT, PADDING)
 }
 
 /**
@@ -170,16 +160,23 @@ function nearestOtherEndpoint(
   return best
 }
 
+/**
+ * World → screen for this editor's canvas.
+ *
+ * Delegates to the shared projection (lib/room/planProjection.ts), which means
+ * world +Z now reads DOWN the screen. This used to be `maxZ - z` — +Z up — which
+ * drew the room vertically mirrored relative to the read-only Plan view. The two
+ * had to agree before they could share a canvas; see that module's header.
+ *
+ * The drag handlers' `deltaPy` sign flipped with it, since screen-down is now
+ * world-+Z rather than world-−Z.
+ */
 function worldToScreen(
   x: number,
   z: number,
-  bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
+  bounds: PlanBoundsLike
 ): [number, number] {
-  const { minX, maxZ } = bounds
-  const { scale, offsetX, offsetY } = getUniformScale(bounds)
-  const px = offsetX + (x - minX) * scale
-  const py = offsetY + (maxZ - z) * scale
-  return [px, py]
+  return getUniformScale(bounds).toPx(x, z)
 }
 
 
@@ -483,8 +480,10 @@ export default function FloorEditorOverlay({
       if (draggingWallIndex !== null && wallDragStart && onWallConfigChange) {
         const deltaPx = clientX - wallDragStart.startPx
         const deltaPy = clientY - wallDragStart.startPy
+        // + not −: the shared projection maps world +Z to screen-DOWN, so a
+        // downward drag is a positive Z delta. See worldToScreen above.
         const rawX = wallDragStart.x + deltaPx * invScale
-        const rawZ = wallDragStart.z - deltaPy * invScale
+        const rawZ = wallDragStart.z + deltaPy * invScale
 
         // Translate the whole wall so whichever of ITS endpoints is closest to a
         // neighbour's endpoint lands exactly on it. Both ends are candidates;
@@ -533,11 +532,16 @@ export default function FloorEditorOverlay({
         const dy = clientY - rotateStart.centerClientY
         const currentAngle = Math.atan2(dy, dx)
         const delta = wrapAngle(currentAngle - rotateStart.initialAngleFromCenter)
-        // +delta (not −delta): under the corrected width-axis convention the
-        // visible wall long-axis rotates with screen-angle = +rotationY, so an
-        // increasing cursor angle (clockwise drag, screen y-down) must increase
-        // rotationY for the wall to follow the cursor.
-        const rawRotationY = rotateStart.initialRotationY + delta
+        // −delta, and this sign is tied to the projection's handedness: the wall's
+        // long axis is world (cos r, −sin r), so under the shared +Z-down
+        // projection its SCREEN angle is −rotationY. An increasing cursor angle
+        // therefore has to DECREASE rotationY for the wall to track the pointer.
+        //
+        // This was +delta while the editor mapped +Z up — i.e. while it drew the
+        // room as if seen from beneath the floor. Flipping to a true birds-eye
+        // view reverses handedness, and reversing handedness reverses angular
+        // direction; miss this and the wall spins away from the cursor.
+        const rawRotationY = rotateStart.initialRotationY - delta
         // rotateStart is never mutated mid-gesture, so rawRotationY is always
         // recomputed from the pointer — the accumulator is inherently raw and
         // the snap is a pure read-time transform, exactly as in DraggableBoard.
@@ -558,8 +562,9 @@ export default function FloorEditorOverlay({
       if (stretchingWallIndex !== null && stretchStart && onWallConfigChange) {
         const deltaPx = clientX - stretchStart.startPx
         const deltaPy = clientY - stretchStart.startPy
+        // See the wall-drag note above on the sign.
         const deltaX = deltaPx * invScale
-        const deltaZ = -deltaPy * invScale
+        const deltaZ = deltaPy * invScale
         const deltaAlong = deltaX * stretchStart.axisX + deltaZ * stretchStart.axisZ
         const signedDelta = stretchStart.end === 'end' ? deltaAlong : -deltaAlong
         const MIN_WALL_INCHES = 24
@@ -617,8 +622,9 @@ export default function FloorEditorOverlay({
       if (!draggingTableId || !dragStart) return
       const deltaPx = clientX - dragStart.startPx
       const deltaPy = clientY - dragStart.startPy
+      // See the wall-drag note above on the sign. Tables share the projection.
       const newX = dragStart.x + deltaPx * invScale
-      const newZ = dragStart.z - deltaPy * invScale
+      const newZ = dragStart.z + deltaPy * invScale
       setTables((prev) => prev.map((t) => t.id === draggingTableId ? { ...t, x: newX, z: newZ } : t))
       setDragStart((s) => (s ? { ...s, x: newX, z: newZ, startPx: clientX, startPy: clientY } : null))
     },
@@ -1243,7 +1249,12 @@ export default function FloorEditorOverlay({
               const w = table.width * uniformScale
               const h = table.depth * uniformScale
               const isSelected = selectedTableId === table.id
-              const rotationDeg = ((table.rotation ?? 0) * 180) / Math.PI
+              // Negated for the same reason wall rotation is (see the rotate
+              // handler): a world Y-rotation reads as the opposite screen angle
+              // under a +Z-down plan. Currently invisible — the UI only emits
+              // quarter turns and the plan glyph is a plain rectangle — but it
+              // would silently mirror the moment either of those changes.
+              const rotationDeg = -((table.rotation ?? 0) * 180) / Math.PI
               return (
                 <div
                   key={table.id}
