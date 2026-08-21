@@ -3,6 +3,9 @@
 const isDev = process.env.NODE_ENV === 'development'
 const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
 
+/** Used by the contact-sheet export — escapes text dropped into a document.write() HTML string. */
+const escapeHtml = (s: string) => s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]!))
+
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { supabase } from '@/lib/supabase/client'
@@ -17,6 +20,7 @@ import RoomExperience from '@/components/room/RoomExperience'
 import UnfoldedView from '@/components/room/UnfoldedView'
 import PlanView from '@/components/room/PlanView'
 import RevisionStrip, { type RoomView } from '@/components/room/RevisionStrip'
+import RoomWallTools from '@/components/room/RoomWallTools'
 import { buildRevisionNodes } from '@/lib/room/revisions'
 import { deriveRoomStudents, type RoomStudent } from '@/lib/room/students'
 import { EditModeOverlay } from './EditModeOverlay'
@@ -726,7 +730,15 @@ export default function StudioRoom(props: StudioRoomProps) {
     setSelectedStudentId((prev) => (prev === student.id ? null : student.id))
     // Selecting a student implies wanting to stand in front of their work.
     setWalkRequest((prev) => ({ wall: student.wallIndex, nonce: prev.nonce + 1 }))
+    // Roster selection and crit walk both drive the same spotlight — mutually exclusive.
+    setCritWalkOn(false)
   }, [])
+
+  // Crit walk state lives further down, right after useBoardState hands back
+  // localBoards (crit walk's board list is derived from it).
+  const [facingBay, setFacingBay] = useState<{ wallIndex: number; side: 'front' | 'back'; blank: boolean } | null>(null)
+  const [critWalkOn, setCritWalkOn] = useState(false)
+  const [critIndex, setCritIndex] = useState(0)
 
   const [editingWall, setEditingWall] = useState<number | null>(null)
   const [editingWallDimensions, setEditingWallDimensions] = useState<WallDimensions | null>(null)
@@ -834,6 +846,131 @@ export default function StudioRoom(props: StudioRoomProps) {
     // parent-sync leaves position for that wall's boards under local control.
     { wall: editingWall, side: editingWallSide },
   )
+
+  // Crit walk: spotlight one board at a time on the wall the viewer is
+  // currently facing, in the Room view. `facingBay` (state declared above,
+  // set from RoomExperience's onFacingBayChange — it already owns the
+  // nav/shell math) tells us which wall that is; the board list is derived
+  // from localBoards, which is why this lives here and not next to the rest
+  // of the crit-walk state. Deliberately NOT plumbed through realtime/
+  // presence — this is a per-viewer browsing aid, not something crit
+  // participants need to see in sync, same as the roster's selectedStudentId.
+  const prevFacingBayKeyRef = useRef<string | null>(null)
+
+  const critBoards = useMemo(() => {
+    if (!facingBay || facingBay.blank) return []
+    return localBoards
+      .filter((b) => b.position && b.position.wallIndex === facingBay.wallIndex && (b.position.side ?? 'front') === facingBay.side)
+      .sort((a, b) => (a.position?.x ?? 0) - (b.position?.x ?? 0))
+  }, [localBoards, facingBay])
+
+  // Changing walls mid-crit ends the session — a new wall is a new set of
+  // boards, and silently carrying the index over would spotlight an unrelated
+  // sheet (or nothing, once index is out of range).
+  useEffect(() => {
+    const key = facingBay ? `${facingBay.wallIndex}:${facingBay.side}` : null
+    if (prevFacingBayKeyRef.current !== null && prevFacingBayKeyRef.current !== key) {
+      setCritWalkOn(false)
+    }
+    prevFacingBayKeyRef.current = key
+  }, [facingBay])
+
+  const startCritWalk = useCallback(() => {
+    if (critBoards.length === 0) return
+    setSelectedStudentId(null)
+    setCritIndex(0)
+    setCritWalkOn(true)
+  }, [critBoards.length])
+  const endCritWalk = useCallback(() => setCritWalkOn(false), [])
+  const critPrev = useCallback(() => {
+    setCritIndex((i) => (critBoards.length ? (i - 1 + critBoards.length) % critBoards.length : 0))
+  }, [critBoards.length])
+  const critNext = useCallback(() => {
+    setCritIndex((i) => (critBoards.length ? (i + 1) % critBoards.length : 0))
+  }, [critBoards.length])
+
+  // Auto-tidy: evenly space the facing wall's boards left-to-right along one
+  // baseline. Deliberately does NOT touch board size (position.width/height,
+  // board_width_in/board_height_in) — resizing someone's sheet as a side
+  // effect of straightening the wall would be a surprise, not a tidy-up.
+  // Each PATCH goes through the same /api/boards/[id]/position route the
+  // drag-to-move editor already uses, so it carries the same membership
+  // check; realtime then converges every viewer via the existing boards
+  // subscription in app/studio/[id]/page.tsx — no separate refresh path to
+  // keep in sync with that one.
+  const [autoTidying, setAutoTidying] = useState(false)
+  const handleAutoTidyWall = useCallback(async () => {
+    if (!facingBay || critBoards.length < 2 || autoTidying) return
+    setAutoTidying(true)
+    try {
+      const n = critBoards.length
+      const step = 100 / (n + 1)
+      const results = await Promise.all(
+        critBoards.map((b, i) => {
+          if (!b.position) return Promise.resolve(true)
+          return fetch(`/api/boards/${b.id}/position`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              wallIndex: b.position.wallIndex,
+              side: b.position.side ?? 'front',
+              x: step * (i + 1),
+              y: 50,
+            }),
+          }).then((res) => res.ok)
+        })
+      )
+      if (results.some((ok) => !ok)) {
+        toast.error('Some boards could not be moved. Please try again.')
+      } else {
+        toast.success(`Tidied wall ${facingBay.wallIndex + 1}`)
+      }
+      await props.onBoardUpdate()
+    } catch {
+      toast.error('Failed to tidy wall. Please try again.')
+    } finally {
+      setAutoTidying(false)
+    }
+  }, [facingBay, critBoards, autoTidying, props])
+
+  // Export as a printable contact sheet. Opens a plain HTML document in a new
+  // tab (built with the browser's own print-to-PDF, not a PDF library — this
+  // repo has no PDF dependency, and reaching for one is exactly the kind of
+  // build-risk this project's CLAUDE.md warns against introducing without a
+  // way to verify the Vercel build locally) with one image per board on the
+  // facing wall, laid out for Cmd/Ctrl+P → Save as PDF.
+  const handleExportWallContactSheet = useCallback(() => {
+    if (critBoards.length === 0) return
+    const win = window.open('', '_blank', 'noopener,noreferrer')
+    if (!win) {
+      toast.error('Allow pop-ups to export this wall.')
+      return
+    }
+    const label = facingBay ? `Wall ${facingBay.wallIndex + 1}${facingBay.side === 'back' ? ' (reverse)' : ''}` : 'Wall'
+    const figures = critBoards
+      .map((b) => {
+        const url = escapeHtml(b.thumbnailUrl || b.fullImageUrl || '')
+        const title = escapeHtml(b.title || 'Untitled')
+        return `<figure>${url ? `<img src="${url}" alt="" />` : '<div class="placeholder"></div>'}<figcaption>${title}</figcaption></figure>`
+      })
+      .join('')
+    win.document.write(
+      `<!DOCTYPE html><html><head><title>${escapeHtml(label)} — Contact Sheet</title><meta charset="utf-8" />` +
+        `<style>
+          body { font-family: system-ui, -apple-system, sans-serif; margin: 32px; color: #16181D; }
+          h1 { font-size: 18px; margin: 0 0 4px; }
+          p { font-size: 12px; color: #8A8FA0; margin: 0 0 24px; }
+          .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+          figure { margin: 0; break-inside: avoid; }
+          img, .placeholder { width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #DCE2ED; display: block; background: #F2F5FB; }
+          figcaption { font-size: 11px; margin-top: 6px; color: #16181D; }
+          @media print { body { margin: 0.5in; } }
+        </style></head><body>` +
+        `<h1>${escapeHtml(label)}</h1><p>${critBoards.length} board${critBoards.length === 1 ? '' : 's'} · exported from PinSpace</p>` +
+        `<div class="grid">${figures}</div></body></html>`
+    )
+    win.document.close()
+  }, [critBoards, facingBay])
 
   // Sync tables when wall config loads or studio changes (strip blob URLs so GLTF never sees them)
   useEffect(() => {
@@ -2315,6 +2452,8 @@ export default function StudioRoom(props: StudioRoomProps) {
           wallColor={props.wallColor}
           students={roomStudents}
           selectedStudentId={selectedStudentId}
+          spotlightBoardId={critWalkOn ? critBoards[critIndex]?.id ?? null : null}
+          onFacingBayChange={setFacingBay}
           onBoardOpen={handleLightboxOpen}
           onTableModelClick={handleTableModelClick}
           onEditWall={props.canEditWalls && !props.isArchived ? handleEnterWallEdit : undefined}
@@ -2322,6 +2461,23 @@ export default function StudioRoom(props: StudioRoomProps) {
           othersEditingWalls={props.othersEditingWalls}
           requestWallIndex={walkRequest.wall}
           requestNonce={walkRequest.nonce}
+        />
+      )}
+
+      {editingWall === null && roomView === 'room' && (
+        <RoomWallTools
+          critWalkOn={critWalkOn}
+          critBoards={critBoards}
+          critIndex={critIndex}
+          onStartCrit={startCritWalk}
+          onEndCrit={endCritWalk}
+          onCritPrev={critPrev}
+          onCritNext={critNext}
+          canTidy={!!props.canEditWalls && !props.isArchived}
+          onAutoTidy={handleAutoTidyWall}
+          tidying={autoTidying}
+          onExport={handleExportWallContactSheet}
+          wallLabel={facingBay ? `Wall ${facingBay.wallIndex + 1}${facingBay.side === 'back' ? ' · Reverse' : ''}` : ''}
         />
       )}
 

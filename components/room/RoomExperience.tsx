@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { Board, FloorTable } from '@/types'
 import { ROOM } from '@/lib/room/palette'
 import type { RoomStudent } from '@/lib/room/students'
-import { buildRoomShell, type RoomBay, type RoomShellConfig } from '@/lib/room/roomShell'
+import { buildRoomShell, type BaySide, type RoomBay, type RoomShellConfig } from '@/lib/room/roomShell'
 import { useRoomNavigation } from './useRoomNavigation'
 import RoomStage from './RoomStage'
 import RoomCompass from './RoomCompass'
@@ -49,6 +49,10 @@ export interface RoomExperienceProps {
   requestWallIndex?: number | null
   requestSide?: 'front' | 'back'
   requestNonce?: number
+  /** Single board to ring and lift above the rest — crit walk's spotlight. Independent of roster selection. */
+  spotlightBoardId?: string | null
+  /** Fires whenever the bay the viewer is facing changes, so chrome above this component (crit walk, wall tools) can know without duplicating the nav/shell math. Also fires once on mount. */
+  onFacingBayChange?: (bay: { wallIndex: number; side: BaySide; blank: boolean } | null) => void
 }
 
 export default function RoomExperience({
@@ -66,9 +70,21 @@ export default function RoomExperience({
   requestWallIndex,
   requestSide = 'front',
   requestNonce,
+  spotlightBoardId = null,
+  onFacingBayChange,
 }: RoomExperienceProps) {
   const shell = useMemo(() => buildRoomShell(wallConfig, boards), [wallConfig, boards])
   const nav = useRoomNavigation(shell.bays.length)
+
+  useEffect(() => {
+    if (!onFacingBayChange) return
+    const bay = shell.bays[nav.bayIndex]
+    onFacingBayChange(bay ? { wallIndex: bay.wallIndex, side: bay.side, blank: bay.blank } : null)
+    // onFacingBayChange is expected to be stable (useCallback/useState setter) —
+    // including it would re-fire this on every parent render, not just on a
+    // real bay change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shell.bays, nav.bayIndex])
 
   const occupiedBays = useMemo(() => {
     if (!othersEditingWalls || othersEditingWalls.size === 0) return undefined
@@ -106,6 +122,7 @@ export default function RoomExperience({
         wallColor={wallColor}
         students={students}
         selectedStudentId={selectedStudentId}
+        spotlightBoardId={spotlightBoardId}
         onBoardOpen={onBoardOpen}
         suppressCallouts={suppressCallouts}
         animate={nav.animate}

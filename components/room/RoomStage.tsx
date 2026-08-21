@@ -39,6 +39,8 @@ export interface RoomStageProps {
   wallColor?: 'grey' | 'white'
   students?: RoomStudent[]
   selectedStudentId?: string | null
+  /** Single board to ring and lift above the rest — crit walk's spotlight. Wins over selectedStudentId when both are set. */
+  spotlightBoardId?: string | null
   onBoardOpen?: (board: Board) => void
   suppressCallouts?: boolean
   /** False under prefers-reduced-motion: the shell jumps instead of sweeping. */
@@ -84,6 +86,7 @@ export default function RoomStage({
   wallColor = 'grey',
   students = [],
   selectedStudentId = null,
+  spotlightBoardId = null,
   onBoardOpen,
   suppressCallouts = false,
   animate = true,
@@ -159,10 +162,11 @@ export default function RoomStage({
   }, [shell.bays, boardsByBay, studentByBoard, proj.pxPerIn, selectedStudentId])
 
   const selectedBoardIds = useMemo(() => {
+    if (spotlightBoardId) return new Set([spotlightBoardId])
     if (!selectedStudentId) return null
     const s = students.find((x) => x.id === selectedStudentId)
     return s ? new Set(s.boardIds) : null
-  }, [selectedStudentId, students])
+  }, [spotlightBoardId, selectedStudentId, students])
 
   const yawDeg = facing * shell.sliceDeg
   const floorSpan = shell.apothemIn * 2.6 * proj.pxPerIn
