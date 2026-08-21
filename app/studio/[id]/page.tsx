@@ -28,12 +28,18 @@ type RealtimeBoardPayload = {
 const figtree = Figtree({ subsets: ['latin'], weight: ['400', '500', '600', '700'], display: 'swap' })
 const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500'], display: 'swap' })
 
-/** Room chrome palette. Yellow is intentionally absent — it marks active state only. */
+/**
+ * Room chrome palette — the app's one blue accent (matches lib/room/palette.ts's
+ * ROOM.accent and components/3d/WallSystem.tsx's ROOM_PALETTE.accent), not a
+ * separate black-chrome-plus-one-off-green scheme. Previously `ink` (near-black)
+ * filled the logo/breadcrumb/menu buttons and `green` was Share's own distinct
+ * color — reported as "black buttons" and "green Share button" reading as
+ * off-system once the room itself moved to blue/paper.
+ */
 const CHROME = {
-  ink: '#0B0B0B',
-  paper: '#FFFCF0',
-  green: '#14705C',
-  hairline: '#C9C3B4',
+  accent: '#3B6EF6',
+  paper: '#FBFCFE',
+  hairline: '#B9C4D6',
 } as const
 
 const StudioRoom = dynamic(
@@ -1107,7 +1113,7 @@ export default function StudioPage() {
               {/* PinSpace Logo - links to home */}
               <button
                 onClick={() => router.push('/')}
-                style={{ background: CHROME.ink, color: CHROME.paper }}
+                style={{ background: CHROME.accent, color: CHROME.paper }}
                 className={`${figtree.className} px-5 py-2.5 rounded-xl shadow-lg transition-colors duration-200 font-semibold text-base hover:opacity-90`}
               >
                 PinSpace
@@ -1120,7 +1126,7 @@ export default function StudioPage() {
                   or in demo mode (no workspace context). */}
               {workspaceName && workspaceId ? (
                 <div
-                  style={{ background: CHROME.ink, color: CHROME.paper, borderColor: CHROME.hairline }}
+                  style={{ background: CHROME.accent, color: CHROME.paper, borderColor: CHROME.hairline }}
                   className={`${jetbrainsMono.className} px-3 py-2 rounded-xl shadow-lg border transition-colors flex items-center gap-2 text-xs uppercase tracking-[0.14em] relative`}
                 >
                   <button
@@ -1213,7 +1219,7 @@ export default function StudioPage() {
                   always did. */}
               <button
                 onClick={() => { setShowStudioMenu(false); setShowShareModal(true) }}
-                style={{ background: CHROME.green, color: CHROME.paper }}
+                style={{ background: CHROME.accent, color: CHROME.paper }}
                 className={`${figtree.className} px-5 py-2.5 rounded-xl shadow-lg transition-opacity duration-200 font-semibold text-sm flex items-center gap-2 hover:opacity-90`}
               >
                 <Share2 className="w-4 h-4" />
@@ -1236,8 +1242,8 @@ export default function StudioPage() {
                     aria-label="Studio options"
                     aria-haspopup="menu"
                     aria-expanded={showStudioMenu}
-                    style={{ background: CHROME.ink, color: CHROME.paper, borderColor: CHROME.hairline }}
-                    className="p-2.5 rounded-xl shadow-lg border transition-opacity duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/40"
+                    style={{ background: CHROME.accent, color: CHROME.paper, borderColor: CHROME.hairline }}
+                    className="p-2.5 rounded-xl shadow-lg border transition-opacity duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]/40"
                   >
                     {showStudioMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                   </button>

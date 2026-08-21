@@ -94,8 +94,8 @@ type ResizeCursor = 'nwse-resize' | 'nesw-resize'
 /** Stable empties so a no-snap pointer sample doesn't allocate every frame. */
 const EMPTY_GUIDES: ActiveGuides = { vertical: [], horizontal: [] }
 const EMPTY_SIZE_MATCHES: SizeMatch[] = []
-/** Pink shared with the alignment guides. */
-const SNAP_ACCENT = '#ec4899'
+/** Blue accent shared with the alignment guides — matches the app's one accent color everywhere else. */
+const SNAP_ACCENT = '#3B6EF6'
 /** Thickness of guide lines and the size-match outline, in wall inches. */
 const SNAP_LINE_THICKNESS_IN = 0.5
 
@@ -352,9 +352,10 @@ useEffect(() => {
   })
 
   // Boards whose width or height the in-progress resize currently matches.
-  // Rendered as a pink outline on the matched board rather than a guide line —
-  // a shared dimension is not a spatial alignment, so a line between the two
-  // would imply an edge relationship that isn't there. Cleared on pointer-up.
+  // Rendered as an accent-colored outline on the matched board rather than a
+  // guide line — a shared dimension is not a spatial alignment, so a line
+  // between the two would imply an edge relationship that isn't there.
+  // Cleared on pointer-up.
   const [sizeMatches, setSizeMatches] = useState<SizeMatch[]>(EMPTY_SIZE_MATCHES)
 
   const updatePosition = (clientX: number, clientY: number) => {

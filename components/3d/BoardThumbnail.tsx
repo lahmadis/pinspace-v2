@@ -52,7 +52,7 @@ function BoardSkeletonMaterial({ hovered, isHighlighted }: { hovered: boolean; i
       opacity={0.24}
       roughness={0.85}
       metalness={0.0}
-      emissive={isHighlighted || hovered ? '#6366f1' : '#000000'}
+      emissive={isHighlighted || hovered ? '#3B6EF6' : '#000000'}
       emissiveIntensity={0}
       depthWrite={false}
     />
@@ -73,7 +73,7 @@ function BoardImageMaterial({
       map={texture}
       roughness={0.7}
       metalness={0.0}
-      emissive={isHighlighted ? '#6366f1' : (hovered ? '#6366f1' : '#000000')}
+      emissive={isHighlighted ? '#3B6EF6' : (hovered ? '#3B6EF6' : '#000000')}
       emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
       depthWrite={true}
       depthTest={true}
@@ -196,7 +196,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               color={hovered ? '#f8f8f8' : '#ffffff'}
               roughness={0.7}
               metalness={0.0}
-              emissive={isHighlighted ? '#6366f1' : (hovered ? '#6366f1' : '#000000')}
+              emissive={isHighlighted ? '#3B6EF6' : (hovered ? '#3B6EF6' : '#000000')}
               emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
             />
           )
@@ -210,11 +210,14 @@ export default function BoardThumbnail({ board, position, width, height, onClick
             attach="geometry"
             args={[skeletonEdgeGeometry]}
           />
-          <lineBasicMaterial attach="material" color="#94a3b8" transparent opacity={0.5} />
+          <lineBasicMaterial attach="material" color="#8A8FA0" transparent opacity={0.5} />
         </lineSegments>
       )}
 
-      {/* Callout count badge — a pink marker at the top-right corner.
+      {/* Callout count badge — a redline marker at the top-right corner,
+          matching lib/room/palette.ts's ROOM.redline convention ("instructor
+          comment markers only") used by the Unfolded/Plan views, so a callout
+          reads the same way regardless of which view you're looking at it in.
           Only rendered for viewers permitted to see callouts (the server omits
           the count for guests/public, so calloutCount is undefined for them) and
           only when at least one callout exists. NO distanceFactor: like a real UI
@@ -223,8 +226,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           room view — the whole point of a badge is to stay legible there). Still
           billboards to the camera (DOM overlay). pointerEvents:'none' so clicks
           pass through to the board and open the lightbox. Top-right corner — the
-          linkUrl VideoBadge sits top-LEFT, so the two never collide. No red /
-          pulse / animation — a quiet marker.
+          linkUrl VideoBadge sits top-LEFT, so the two never collide.
 
           suppressCountBadge hides it while a 2D panel is open over the room (the
           lightbox, or the floor-plan editor): this <Html> is a DOM overlay at
@@ -249,10 +251,10 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               height: '22px',
               padding: '0 6px',
               borderRadius: '11px',
-              // pink-500 — reads as a distinct callout marker rather than
-              // blending into the indigo hover/highlight frame (#6366f1). The
+              // ROOM.redline — reads as a distinct callout marker rather than
+              // blending into the blue hover/highlight frame (#3B6EF6). The
               // white ring keeps it legible on BOTH the grey and white walls.
-              background: '#ec4899',
+              background: '#C2452D',
               color: '#fff',
               fontSize: '13px',
               fontWeight: 600,
@@ -280,7 +282,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           style={{ pointerEvents: 'none' }}
         >
           <div style={{
-            background: 'rgba(0, 0, 0, 0.8)',
+            background: 'rgba(22, 24, 29, 0.85)',
             color: 'white',
             padding: '6px 12px',
             borderRadius: '6px',
@@ -302,13 +304,13 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               attach="geometry"
               args={[frameEdgeGeometry]}
             />
-            <lineBasicMaterial attach="material" color="#6366f1" linewidth={3} />
+            <lineBasicMaterial attach="material" color="#3B6EF6" linewidth={3} />
           </lineSegments>
 
           <mesh position={[0, 0, -0.001]}>
             <planeGeometry args={[width + 0.1, height + 0.1]} />
             <meshBasicMaterial
-              color="#6366f1"
+              color="#3B6EF6"
               transparent
               opacity={0.1}
             />

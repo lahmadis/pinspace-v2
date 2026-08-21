@@ -18,9 +18,26 @@ export interface PresentUser {
   joinedAt?: number
 }
 
-/** Deterministic avatar color from a user id, so a given user is always the same hue. */
+/**
+ * Deterministic avatar color from a user id, so a given user is always the
+ * same hue. Also feeds the presenter's laser-pointer color (CameraController).
+ * Muted/harmonized set rather than pure-saturated primaries (the previous
+ * palette put unmixed indigo/pink/amber/green/red side by side, which reads
+ * as a totally different, louder design language than the rest of the room)
+ * — still eight genuinely distinct hues, spread roughly every 30-40° around
+ * the color wheel (165/255/28/336/95/205/285/225) so adjacent slots don't
+ * collapse into "which one was that again." Deliberately excludes the exact
+ * accent blue (#3B6EF6, ~221°) even though blue-family hues are otherwise
+ * fair game — reusing it here would make a presence dot/laser color
+ * indistinguishable from the app's own active-selection highlight. Shares
+ * this palette with getAvatarColor in components/LightboxModal.tsx (same
+ * values, expressed as Tailwind arbitrary classes there instead of raw hex)
+ * so a person's color feels consistent across both surfaces even though the
+ * two hash different inputs (user id here, display name there) and so won't
+ * always land on the same slot for the same person.
+ */
 export function colorFor(userId: string): string {
-  const palette = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444', '#3b82f6']
+  const palette = ['#4E9F8F', '#8A7BD8', '#E0935A', '#C2708A', '#7FA06B', '#5B93C7', '#9C7BAE', '#6B7FA6']
   let hash = 0
   for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) >>> 0
   return palette[hash % palette.length]

@@ -20,7 +20,6 @@ import UnfoldedView from '@/components/room/UnfoldedView'
 import PlanView from '@/components/room/PlanView'
 import RevisionStrip, { type RoomView } from '@/components/room/RevisionStrip'
 import RoomWallTools from '@/components/room/RoomWallTools'
-import { buildRevisionNodes } from '@/lib/room/revisions'
 import { deriveRoomStudents, type RoomStudent } from '@/lib/room/students'
 import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
@@ -725,11 +724,6 @@ export default function StudioRoom(props: StudioRoomProps) {
   // Canvas; Unfolded and Plan are pure DOM/CSS, so switching to either from
   // Room unmounts WebGL, and switching back remounts it.
   const [roomView, setRoomView] = useState<RoomView>('room')
-
-  // Milestones are computed once per mount. Date.now() in render would make the
-  // component impure; a mount-time snapshot is stable and accurate enough for a
-  // strip whose granularity is days.
-  const revision = useMemo(() => buildRevisionNodes(new Date()), [])
 
   const handleSelectStudent = useCallback((student: RoomStudent) => {
     setSelectedStudentId((prev) => (prev === student.id ? null : student.id))
@@ -2485,8 +2479,6 @@ export default function StudioRoom(props: StudioRoomProps) {
         <RevisionStrip
           view={roomView}
           onViewChange={setRoomView}
-          nodes={revision.nodes}
-          semester={revision.semester}
         />
       )}
 

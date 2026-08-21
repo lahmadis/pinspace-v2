@@ -16,8 +16,13 @@ import type { TraceStreamEntry } from '@/components/3d/CameraController'
 import { toast } from '@/lib/toast'
 import { Download, ExternalLink } from 'lucide-react'
 
-// Trace ink palette + brush widths (width = fraction of image width).
-const TRACE_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6']
+// Trace ink palette + brush widths (width = fraction of image width). A
+// deliberate multi-option picker (like a real 4-marker set), not an
+// identity/accent color, so it keeps four distinguishable hues rather than
+// collapsing to the one blue accent — but pulled into the same muted
+// warm-paper/cool-blue family as the rest of the room instead of bright
+// saturated primaries. Red matches ROOM.redline (lib/room/palette.ts).
+const TRACE_COLORS = ['#C2452D', '#B08430', '#4E9F8F', '#3B6EF6']
 const TRACE_WIDTHS: Array<{ label: string; value: number }> = [
   { label: 'Thin', value: 0.004 },
   { label: 'Thick', value: 0.01 },
@@ -192,16 +197,21 @@ function getInitials(name: string): string {
     .slice(0, 2)
 }
 
+// Same 8-hue palette as colorFor in components/3d/PresenceBar.tsx (see that
+// export's comment for why these specific values/spread), expressed as
+// Tailwind arbitrary-value classes since callers here want a className, not
+// an inline style. Was raw Tailwind primaries (purple/blue/green/yellow/pink/
+// indigo/red/teal) — unrelated to, and much louder than, the room's palette.
 function getAvatarColor(name: string): string {
   const colors = [
-    'bg-purple-500',
-    'bg-blue-500',
-    'bg-green-500',
-    'bg-yellow-500',
-    'bg-pink-500',
-    'bg-indigo-500',
-    'bg-red-500',
-    'bg-teal-500',
+    'bg-[#4E9F8F]',
+    'bg-[#8A7BD8]',
+    'bg-[#E0935A]',
+    'bg-[#C2708A]',
+    'bg-[#7FA06B]',
+    'bg-[#5B93C7]',
+    'bg-[#9C7BAE]',
+    'bg-[#6B7FA6]',
   ]
   const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
   return colors[hash % colors.length]
@@ -2519,7 +2529,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           }}
                           className={`flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium border transition-colors ${
                             calloutMode
-                              ? 'border-pink-300 bg-pink-500/30 text-white'
+                              ? 'border-[#3B6EF6]/60 bg-[#3B6EF6]/40 text-white'
                               : 'border-white/15 bg-white/5 text-white/90 hover:bg-white/15'
                           }`}
                           title={calloutMode ? 'Click the image to place a callout (Esc to cancel)' : 'Add a callout pin to the image'}
@@ -2547,7 +2557,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           }}
                           className={`flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium border transition-colors ${
                             traceMode
-                              ? 'border-amber-300 bg-amber-500/30 text-white'
+                              ? 'border-[#3B6EF6]/60 bg-[#3B6EF6]/40 text-white'
                               : 'border-white/15 bg-white/5 text-white/90 hover:bg-white/15'
                           }`}
                           title={traceMode ? 'Stop tracing (Esc)' : 'Draw a trace over the board'}
@@ -2650,7 +2660,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                             className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 w-7 h-7 rounded-full border-2 text-[11px] font-bold flex items-center justify-center shadow-md transition-transform hover:scale-110 ${
                               root.resolved
                                 ? 'bg-slate-500/70 border-white/70 text-white/90 opacity-50'
-                                : 'bg-pink-500 border-white text-white'
+                                : 'bg-[#C2452D] border-white text-white'
                             } ${isActive ? 'ring-2 ring-white scale-110' : ''}`}
                             style={{ left: `${pt.x}px`, top: `${pt.y}px` }}
                             title={root.resolved ? 'Resolved callout' : 'Open callout thread'}
@@ -2695,7 +2705,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                               rows={3}
                               placeholder="Add a callout…"
                               disabled={composerPosting}
-                              className="w-full px-2.5 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-400 resize-none bg-white text-gray-800 placeholder:text-gray-400"
+                              className="w-full px-2.5 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B6EF6] resize-none bg-white text-gray-800 placeholder:text-gray-400"
                             />
                             <div className="flex items-center justify-end gap-2 mt-2">
                               <button
@@ -2708,7 +2718,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                               <button
                                 onClick={handleSubmitCallout}
                                 disabled={!composerText.trim() || composerPosting}
-                                className="px-2.5 py-1.5 text-[11px] font-semibold rounded-md bg-pink-600 text-white hover:bg-pink-500 disabled:opacity-40"
+                                className="px-2.5 py-1.5 text-[11px] font-semibold rounded-md bg-[#3B6EF6] text-white hover:bg-[#2F5CD6] disabled:opacity-40"
                               >
                                 {composerPosting ? 'Adding…' : 'Add callout'}
                               </button>
@@ -2734,7 +2744,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                               className="flex items-center gap-1.5 text-[11px] text-white/90 hover:text-white"
                               title="Toggle resolved callouts"
                             >
-                              <span className={`w-3 h-3 rounded-sm border flex items-center justify-center text-[8px] leading-none ${showResolved ? 'bg-pink-500 border-pink-500 text-white' : 'border-white/40 text-transparent'}`}>✓</span>
+                              <span className={`w-3 h-3 rounded-sm border flex items-center justify-center text-[8px] leading-none ${showResolved ? 'bg-[#3B6EF6] border-[#3B6EF6] text-white' : 'border-white/40 text-transparent'}`}>✓</span>
                               Show resolved
                             </button>
                           </div>
@@ -2979,7 +2989,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       <textarea
                         value={editingContent}
                         onChange={(e) => setEditingContent(e.target.value)}
-                        className="w-full px-2.5 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6366f1] focus:border-transparent resize-none bg-white text-gray-800"
+                        className="w-full px-2.5 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B6EF6] focus:border-transparent resize-none bg-white text-gray-800"
                         rows={3}
                         disabled={savingCommentId === comment.id}
                       />
@@ -2987,7 +2997,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         <button
                           onClick={() => handleSaveEdit(comment.id)}
                           disabled={!editingContent.trim() || savingCommentId === comment.id}
-                          className="px-2.5 py-1.5 bg-[#4f46e5] text-white rounded-md hover:bg-[#4338ca] disabled:opacity-40 text-[11px] font-semibold"
+                          className="px-2.5 py-1.5 bg-[#3B6EF6] text-white rounded-md hover:bg-[#2F5CD6] disabled:opacity-40 text-[11px] font-semibold"
                         >
                           {savingCommentId === comment.id ? 'Saving...' : 'Save'}
                         </button>
@@ -3020,7 +3030,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   onChange={(e) => setNewComment(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Share your thoughts..."
-                  className="w-full px-3 py-2.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6366f1] focus:border-transparent resize-none bg-white text-gray-800 placeholder:text-gray-400 shadow-sm"
+                  className="w-full px-3 py-2.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B6EF6] focus:border-transparent resize-none bg-white text-gray-800 placeholder:text-gray-400 shadow-sm"
                   rows={3}
                   disabled={posting}
                 />
@@ -3035,7 +3045,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   <button
                     onClick={handlePost}
                     disabled={!newComment.trim() || posting}
-                    className="px-4 py-2 bg-[#4f46e5] text-white rounded-lg hover:bg-[#4338ca] disabled:opacity-40 disabled:cursor-not-allowed transition-all text-xs font-semibold shadow-sm hover:shadow-md disabled:shadow-none"
+                    className="px-4 py-2 bg-[#3B6EF6] text-white rounded-lg hover:bg-[#2F5CD6] disabled:opacity-40 disabled:cursor-not-allowed transition-all text-xs font-semibold shadow-sm hover:shadow-md disabled:shadow-none"
                   >
                     {posting ? (
                       <span className="flex items-center gap-2">
@@ -3054,7 +3064,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 <p className="text-xs text-gray-600 mb-3">Sign in to leave feedback</p>
                 <a
                   href="/sign-in"
-                  className="inline-block px-5 py-2 bg-[#4f46e5] text-white rounded-lg hover:bg-[#4338ca] transition-all text-xs font-semibold shadow-md hover:shadow-lg"
+                  className="inline-block px-5 py-2 bg-[#3B6EF6] text-white rounded-lg hover:bg-[#2F5CD6] transition-all text-xs font-semibold shadow-md hover:shadow-lg"
                 >
                   Sign In to Comment
                 </a>
@@ -3074,7 +3084,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {/* Header */}
           <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-pink-500 text-white text-[11px] font-bold">
+              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#C2452D] text-white text-[11px] font-bold">
                 {calloutNumber.get(activeRoot.id)}
               </span>
               <h3 className="text-sm font-semibold text-gray-900 truncate">
@@ -3088,7 +3098,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   className={`px-2 py-1 text-[11px] font-semibold rounded-md border transition-colors ${
                     activeRoot.resolved
                       ? 'border-gray-300 text-gray-600 hover:bg-gray-100'
-                      : 'border-green-300 text-green-700 hover:bg-green-50'
+                      : 'border-[#3B6EF6]/40 text-[#3B6EF6] hover:bg-[#3B6EF6]/10'
                   }`}
                   title={activeRoot.resolved ? 'Reopen this callout' : 'Mark resolved'}
                 >
@@ -3117,7 +3127,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               return (
                 <div
                   key={c.id}
-                  className={`rounded-xl border p-2.5 ${isRoot ? 'bg-pink-50/60 border-pink-100' : 'bg-gray-50 border-gray-100 ml-3'}`}
+                  className={`rounded-xl border p-2.5 ${isRoot ? 'bg-[#C2452D]/[0.06] border-[#C2452D]/15' : 'bg-gray-50 border-gray-100 ml-3'}`}
                 >
                   <div className="flex items-baseline justify-between gap-2 mb-1">
                     <span className="text-[11px] font-semibold text-gray-900 truncate">{c.authorName}</span>
@@ -3191,13 +3201,13 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   rows={2}
                   placeholder="Reply…"
                   disabled={replyPosting}
-                  className="w-full px-2.5 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-400 resize-none bg-white text-gray-800 placeholder:text-gray-400"
+                  className="w-full px-2.5 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B6EF6] resize-none bg-white text-gray-800 placeholder:text-gray-400"
                 />
                 <div className="flex justify-end">
                   <button
                     onClick={() => handleSubmitReply(activeRoot.id)}
                     disabled={!replyText.trim() || replyPosting}
-                    className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-pink-600 text-white hover:bg-pink-500 disabled:opacity-40"
+                    className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-[#3B6EF6] text-white hover:bg-[#2F5CD6] disabled:opacity-40"
                   >
                     {replyPosting ? 'Replying…' : 'Reply'}
                   </button>

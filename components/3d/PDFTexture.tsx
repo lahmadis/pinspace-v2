@@ -148,11 +148,11 @@ export function PDFTextureMaterial({ pdfUrl, hovered = false }: PDFTextureMateri
   if (loading) {
     return (
       <meshStandardMaterial
-        color="#e0e7ff"
+        color="#E4EBFC"
         side={THREE.DoubleSide}
         roughness={0.7}
         metalness={0.0}
-        emissive="#6366f1"
+        emissive="#3B6EF6"
         emissiveIntensity={0.2}
       />
     )
@@ -175,7 +175,7 @@ export function PDFTextureMaterial({ pdfUrl, hovered = false }: PDFTextureMateri
       side={THREE.DoubleSide}
       roughness={0.7}
       metalness={0.0}
-      emissive={hovered ? "#6366f1" : "#000000"}
+      emissive={hovered ? "#3B6EF6" : "#000000"}
       emissiveIntensity={hovered ? 0.1 : 0}
     />
   )

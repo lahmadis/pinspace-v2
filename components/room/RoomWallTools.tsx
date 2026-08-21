@@ -40,7 +40,12 @@ function pillButton(active = false) {
     borderRadius: 999,
     border: `1px solid ${ROOM.hairline}`,
     cursor: 'pointer',
-    background: active ? ROOM.ink : ROOM.wall,
+    // Active state fills with the accent color, not ink/black — the room's
+    // chrome (this bar, the top-left logo/breadcrumb, the top-right Share/
+    // menu buttons in app/studio/[id]/page.tsx) was reported as reading like
+    // a separate black-button design language from the rest of the blue/
+    // paper system.
+    background: active ? ROOM.accent : ROOM.wall,
     color: active ? ROOM.wall : ROOM.ink,
     display: 'flex',
     alignItems: 'center',
@@ -72,7 +77,7 @@ export default function RoomWallTools({
     return (
       <div
         className="fixed left-1/2 z-30 flex items-center gap-3 rounded-full shadow-xl px-3 py-2"
-        style={{ bottom: 132, transform: 'translateX(-50%)', background: ROOM.ink, boxShadow: '0 16px 44px rgba(11,11,11,0.35)' }}
+        style={{ bottom: 132, transform: 'translateX(-50%)', background: ROOM.accent, boxShadow: '0 16px 44px rgba(59,110,246,0.35)' }}
       >
         <button
           type="button"

@@ -52,7 +52,7 @@ export default function VideoBadge({ url, width, height }: VideoBadgeProps) {
           padding: 0,
           borderRadius: '9999px',
           border: '1px solid rgba(255,255,255,0.85)',
-          background: 'rgba(15,23,42,0.78)',
+          background: 'rgba(22,24,29,0.82)',
           color: '#ffffff',
           cursor: 'pointer',
           boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
