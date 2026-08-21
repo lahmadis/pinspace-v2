@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { Network, Users, User, Settings, LogOut, Menu, X } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { Network, Users, User, Settings, LogOut, Menu, X, Archive as ArchiveIcon, Contact } from 'lucide-react'
+import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { resetAccountModeCache } from '@/lib/useAccountMode'
 import { useProfile } from '@/lib/ProfileContext'
@@ -27,6 +27,7 @@ export function DashboardSidebar({
   firstName, userEmail, isAdmin, isOpen, onToggle,
 }: DashboardSidebarProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const { profile } = useProfile()
   const displayName = (profile.fullName ? profile.fullName.trim().split(/\s+/)[0] : null) || firstName || userEmail?.split('@')[0] || 'You'
   const initials = displayName.slice(0, 2).toUpperCase()
@@ -62,6 +63,24 @@ export function DashboardSidebar({
       <span className="truncate">{label}</span>
     </button>
   )
+
+  const navLink = (href: string, label: string, icon: React.ReactNode) => {
+    const active = pathname === href
+    return (
+      <Link
+        href={href}
+        onClick={() => { if (isOpen) onToggle() }}
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+          active
+            ? 'bg-white text-[#16181D] shadow-[0_2px_10px_rgba(22,24,29,0.07)]'
+            : 'text-[#5A5E6B] hover:bg-white/60'
+        }`}
+      >
+        <span className={`shrink-0 ${active ? 'text-[#3B6EF6]' : 'text-[#8A8FA0]'}`}>{icon}</span>
+        {label}
+      </Link>
+    )
+  }
 
   return (
     <>
@@ -117,6 +136,11 @@ export function DashboardSidebar({
           {/* Superadmin-only: read-only org network switcher. Self-gates — renders
               nothing for non-superadmins (server-verified via its endpoint). */}
           <SuperadminOrgSwitcher />
+
+          <div className="pt-2 mt-2 border-t border-[#16181D]/8 space-y-0.5">
+            {navLink('/archive', 'Archive', <ArchiveIcon className="w-4 h-4" />)}
+            {navLink('/people', 'People', <Contact className="w-4 h-4" />)}
+          </div>
         </nav>
 
         {/* Bottom section */}
@@ -130,13 +154,7 @@ export function DashboardSidebar({
               Admin
             </Link>
           )}
-          <Link
-            href="/settings"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-[#5A5E6B] hover:bg-white/60 transition-colors"
-          >
-            <Settings className="w-4 h-4 text-[#8A8FA0] shrink-0" />
-            Settings
-          </Link>
+          {navLink('/settings', 'Settings', <Settings className="w-4 h-4" />)}
 
           {/* Profile row */}
           <div className="flex items-center gap-3 px-3 py-2 mt-1">

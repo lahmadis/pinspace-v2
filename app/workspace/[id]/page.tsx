@@ -38,6 +38,7 @@ import {
   Network,
   GripVertical,
   UserPlus,
+  Contact,
 } from 'lucide-react'
 
 export default function WorkspaceRoomsPage() {
@@ -489,27 +490,36 @@ export default function WorkspaceRoomsPage() {
               )}
             </div>
           </div>
-          {isInstructor && (
-            <div className="flex items-center gap-2">
-              {orgModeAllowsPublish && canPublish && (
-                <button
-                  onClick={() => setNetworkSettingsOpen(true)}
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/workspace/${workspaceId}/people`}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
+            >
+              <Contact className="w-4 h-4" />
+              People
+            </Link>
+            {isInstructor && (
+              <>
+                {orgModeAllowsPublish && canPublish && (
+                  <button
+                    onClick={() => setNetworkSettingsOpen(true)}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
+                    title="Edit network metadata (department, year, instructor)"
+                  >
+                    <Network className="w-4 h-4" />
+                    Network
+                  </button>
+                )}
+                <Link
+                  href={`/workspace/${workspaceId}/settings`}
                   className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
-                  title="Edit network metadata (department, year, instructor)"
                 >
-                  <Network className="w-4 h-4" />
-                  Network
-                </button>
-              )}
-              <Link
-                href={`/workspace/${workspaceId}/settings`}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
-              >
-                <Settings className="w-4 h-4" />
-                Settings
-              </Link>
-            </div>
-          )}
+                  <Settings className="w-4 h-4" />
+                  Settings
+                </Link>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

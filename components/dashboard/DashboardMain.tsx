@@ -18,6 +18,7 @@ export type DashboardWorkspace = Workspace & {
   created_at?: string
   description?: string
   is_archived?: boolean
+  academic_year?: string
 }
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
