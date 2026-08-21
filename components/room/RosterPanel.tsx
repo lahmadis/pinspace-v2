@@ -14,8 +14,8 @@ interface RosterPanelProps {
  * Right-hand roster. One numbered row per student, in wall order, so the panel
  * reads as a pin-up running sheet rather than an alphabetical directory.
  *
- * A light paper/sheet panel, matching the room's own chrome — amber is the
- * only accent color, appearing solely on the selected row and its index chip.
+ * A light paper/sheet panel, matching the room's own chrome — the accent
+ * color appears solely on the selected row and its index chip.
  * The avatar chip stays a flat neutral regardless of selection; the panel
  * already signals selection via the row itself, so a second color-flip on the
  * avatar would just compete with it.
@@ -73,7 +73,7 @@ export default function RosterPanel({ students, selectedStudentId, onSelect }: R
                     // Yellow left border marks the active student; the 3px
                     // transparent border on unselected rows keeps text from
                     // shifting horizontally on selection.
-                    borderLeft: `3px solid ${isSelected ? ROOM.amber : 'transparent'}`,
+                    borderLeft: `3px solid ${isSelected ? ROOM.accent : 'transparent'}`,
                     background: isSelected ? 'rgba(222,154,31,0.10)' : 'transparent',
                   }}
                 >

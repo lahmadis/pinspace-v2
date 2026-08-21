@@ -147,7 +147,7 @@ export default function PlanView({ wallConfig, students, selectedStudentId, onSe
                   y={y - 15}
                   width={196}
                   height={22}
-                  fill={ROOM.amber}
+                  fill={ROOM.accent}
                   opacity={0.28}
                   rx={3}
                 />

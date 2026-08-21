@@ -258,9 +258,10 @@ export default function RoomStage({
                     fontFamily: MONO_STACK,
                     fontSize: 11,
                     letterSpacing: '0.18em',
-                    // No distinct "occupied" color: amber means active/selected
-                    // and nothing else. Presence is signalled by the trailing
-                    // dot appended to the label text below, not by color.
+                    // No distinct "occupied" color: the accent color means
+                    // active/selected and nothing else. Presence is signalled
+                    // by the trailing dot appended to the label text below,
+                    // not by color.
                     color: ROOM.ink2,
                   }}
                 >
@@ -309,7 +310,7 @@ export default function RoomStage({
                         fontSize: 13,
                         fontWeight: 600,
                         color: ROOM.ink,
-                        borderBottom: plate.selected ? `2px solid ${ROOM.amber}` : '2px solid transparent',
+                        borderBottom: plate.selected ? `2px solid ${ROOM.accent}` : '2px solid transparent',
                       }}
                     >
                       {plate.label}

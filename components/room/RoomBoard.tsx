@@ -111,7 +111,7 @@ export default function RoomBoard({
         style={{
           background: '#FFFFFF',
           boxShadow: isHighlighted
-            ? `0 0 0 2px ${ROOM.amber}, 0 10px 26px rgba(33,31,27,0.26)`
+            ? `0 0 0 2px ${ROOM.accent}, 0 10px 26px rgba(33,31,27,0.26)`
             : '0 2px 8px rgba(11,11,11,0.16)',
           outline: 'none',
           cursor: interactive ? 'zoom-in' : 'default',

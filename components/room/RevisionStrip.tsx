@@ -30,11 +30,12 @@ const VIEWS: Array<{ id: RoomView; label: string }> = [
 /**
  * Delta marker — the revision-cloud triangle from construction drawings.
  *
- * Amber is reserved for the active node; complete nodes fill ink2 (muted, but
- * still a filled/solid mark — "this happened"); future nodes stay an outline.
+ * The accent color is reserved for the active node; complete nodes fill ink2
+ * (muted, but still a filled/solid mark — "this happened"); future nodes stay
+ * an outline.
  */
 function Delta({ n, status }: { n: number; status: RevisionNode['status'] }) {
-  const fill = status === 'active' ? ROOM.amber : status === 'complete' ? ROOM.ink2 : 'transparent'
+  const fill = status === 'active' ? ROOM.accent : status === 'complete' ? ROOM.ink2 : 'transparent'
   const stroke = status === 'future' ? ROOM.hairline : fill
   const textColor = status === 'active' ? ROOM.ink : status === 'complete' ? ROOM.wall : ROOM.ink2
 
@@ -57,10 +58,10 @@ function Delta({ n, status }: { n: number; status: RevisionNode['status'] }) {
  * Bottom chrome: the view switcher sitting directly above the revision strip.
  *
  * A light paper/sheet bar, matching the room's own chrome — only the active
- * view button and the active revision node invert to a filled color (amber
- * for the node, solid ink for the button, mirroring the reference's
- * `.viewtoggle button.active` treatment). Completed milestones read as a
- * filled ink2 mark; future ones stay an outline.
+ * view button and the active revision node invert to a filled color (the
+ * accent color for the node, solid ink for the button, mirroring the
+ * reference's `.viewtoggle button.active` treatment). Completed milestones
+ * read as a filled ink2 mark; future ones stay an outline.
  */
 export default function RevisionStrip({ view, onViewChange, nodes, semester }: RevisionStripProps) {
   return (

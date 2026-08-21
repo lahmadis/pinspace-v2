@@ -176,7 +176,7 @@ export default function UnfoldedView({
                         fontFamily: SANS_STACK,
                         fontWeight: 700,
                         fontSize: 13,
-                        borderBottom: isSelected ? `3px solid ${ROOM.amber}` : '3px solid transparent',
+                        borderBottom: isSelected ? `3px solid ${ROOM.accent}` : '3px solid transparent',
                       }}
                     >
                       {group.student.name}
@@ -208,7 +208,7 @@ export default function UnfoldedView({
                         className="block w-full"
                         style={{
                           height: h,
-                          outline: isSelected ? `2px solid ${ROOM.amber}` : `1px solid ${ROOM.hairline}`,
+                          outline: isSelected ? `2px solid ${ROOM.accent}` : `1px solid ${ROOM.hairline}`,
                           outlineOffset: isSelected ? 2 : 0,
                           background: '#FFFFFF',
                         }}
