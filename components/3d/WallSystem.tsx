@@ -320,7 +320,6 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
           out the grid actually reads as visible. */}
       <Grid
         position={[floorBounds.floorCenterX, -floorThickness - 0.9, floorBounds.floorCenterZ]}
-        rotation={[-Math.PI / 2, 0, 0]}
         args={[10, 10]}
         cellSize={12}
         cellThickness={0.6}
