@@ -73,7 +73,7 @@ function PersonalNetworkInner() {
   if (authStatus === 'loading' || loading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-[#3B6EF6]/20 border-t-[#3B6EF6]" />
       </div>
     )
   }
@@ -117,7 +117,7 @@ function PersonalNetworkInner() {
             </p>
             <Link
               href="/dashboard"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#3B6EF6] text-white rounded-full hover:bg-[#16181D] transition-colors font-semibold text-sm"
             >
               Go to dashboard
             </Link>
@@ -140,7 +140,7 @@ export default function PersonalNetworkPage() {
     <Suspense
       fallback={
         <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-[#3B6EF6]/20 border-t-[#3B6EF6]" />
         </div>
       }
     >
