@@ -10,6 +10,7 @@ import { useBoardTexture } from './useBoardTexture'
 import { useDisposableGeometry } from './useDisposableGeometry'
 import VideoBadge from './VideoBadge'
 import { ROOM_SKY } from '@/lib/room/palette'
+import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 
 interface BoardThumbnailProps {
   board: Board
@@ -182,7 +183,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
   // a board occludes the wall, so a double click there is never meant for it.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleDoubleClick = (e: any) => {
-    e.stopPropagation()
+    consumeDoubleClick(e)
   }
 
   // Board rotation (radians) applied as rotation.z about the board center —

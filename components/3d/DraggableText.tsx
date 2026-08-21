@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import { Text } from '@react-three/drei'
 import type { WallTextItem } from '@/lib/wallLayout'
 import { ROOM_FONT_3D } from '@/lib/room/palette'
+import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 import { useDisposableGeometry } from './useDisposableGeometry'
 
 interface DraggableTextProps {
@@ -180,7 +181,7 @@ export function DraggableText({
           // The wall plane behind this label opens edit mode on double click,
           // and R3F only stops the walk on objects carrying that named handler.
           // Swallow it so double-clicking a label can't jump edit mode.
-          onDoubleClick={(e) => e.stopPropagation()}
+          onDoubleClick={consumeDoubleClick}
           onPointerOver={(e) => {
             e.stopPropagation()
             gl.domElement.style.cursor = 'grab'

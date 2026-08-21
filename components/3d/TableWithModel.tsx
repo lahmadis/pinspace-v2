@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import type { FloorTable } from '@/types'
 import { useRhino3dm } from '@/components/3d/useRhino3dm'
 import { useStlLoader } from '@/components/3d/useStlLoader'
+import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 
 function is3dm(url: string) {
   return url.toLowerCase().endsWith('.3dm')
@@ -176,8 +177,8 @@ export default function TableWithModel({ table, onTableClick }: TableWithModelPr
   // handleClick's stopPropagation does nothing for dblclick — without this, a
   // double click on a table would open the model viewer AND drop edit mode
   // behind it. Swallow unconditionally: the table occludes the wall.
-  const handleDoubleClick = (e: { stopPropagation: () => void }) => {
-    e.stopPropagation()
+  const handleDoubleClick = (e: { stopPropagation: () => void; nativeEvent?: { stopPropagation: () => void } }) => {
+    consumeDoubleClick(e)
   }
 
   const handlePointerOver = (e: { stopPropagation: () => void }) => {

@@ -12,6 +12,7 @@ import type { Board } from '@/types'
 import { Suspense } from 'react'
 import { Text, Html } from '@react-three/drei'
 import { ROOM_FONT_3D } from '@/lib/room/palette'
+import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 import { PDFTextureMaterial } from './PDFTexture'
 import { useBoardTexture } from './useBoardTexture'
 import { toast } from '@/lib/toast'
@@ -1245,7 +1246,7 @@ if (e.intersections && e.intersections.length > 0) {
           // on objects carrying that named handler — so without this a double
           // click on a board overhanging the wall edge could reach an ADJACENT
           // wall's plane and jump edit mode mid-edit.
-          onDoubleClick={(e) => e.stopPropagation()}
+          onDoubleClick={consumeDoubleClick}
           // Make sure boards render in front of the invisible wall plane
           renderOrder={1}
           onPointerOver={(e) => {
@@ -1313,6 +1314,10 @@ if (e.intersections && e.intersections.length > 0) {
             and true dimensions exist; manual resize otherwise stays an override. */}
         {isSoleSelection && canEdit && hasPhysicalSize && (
           <Html position={[0, boardHeight / 2 + 2, 0.1]} center distanceFactor={10} style={{ pointerEvents: 'auto' }}>
+            {/* Guard on the wrapper, not the button — see VideoBadge for why
+                (drei's inner div owns the hit area, and it runs in its own
+                React root so a synthetic stop wouldn't reach the native event). */}
+            <div style={{ display: 'inline-flex' }} onDoubleClick={consumeDoubleClick}>
             <button
               onClick={(e) => { e.stopPropagation(); handleResetToTrueScale() }}
               onPointerDown={(e) => e.stopPropagation()}
@@ -1332,6 +1337,7 @@ if (e.intersections && e.intersections.length > 0) {
             >
               Reset to true scale
             </button>
+            </div>
           </Html>
         )}
 

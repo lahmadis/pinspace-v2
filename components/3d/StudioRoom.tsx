@@ -17,6 +17,7 @@ import RosterPanel from '@/components/room/RosterPanel'
 import UnfoldedView from '@/components/room/UnfoldedView'
 import PlanView from '@/components/room/PlanView'
 import TwoDView from '@/components/room/TwoDView'
+import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 import RevisionStrip, { type RoomView } from '@/components/room/RevisionStrip'
 import { deriveRoomStudents, type RoomStudent } from '@/lib/room/students'
 import { EditModeOverlay } from './EditModeOverlay'
@@ -435,6 +436,10 @@ function SceneContent({
                 onDeselect()
               }
             }}
+            // Empty space ON the wall is still the wall — consuming the double
+            // click here keeps it from reaching the canvas wrapper and dropping
+            // the user out of edit mode.
+            onDoubleClick={consumeDoubleClick}
             // Make sure this plane is behind boards by setting renderOrder
             renderOrder={-1}
           >
@@ -2422,7 +2427,16 @@ export default function StudioRoom(props: StudioRoomProps) {
           onWallDoubleClick (double-click a wall surface), wired below to
           handleWallDoubleClick — unchanged. */}
       {roomView === 'room' && (
-      <div className="w-full h-screen">
+      <div
+        className="w-full h-screen"
+        // Double-click into the space to leave wall-edit mode — the same thing
+        // Save & Exit does. Every 3D object that handles a double click
+        // consumes the native event too (see consumeDoubleClick), so anything
+        // reaching this wrapper is by definition NOT the wall, its boards, or
+        // another wall. Bound only while editing so an ordinary double click in
+        // the space stays inert.
+        onDoubleClick={editingWall !== null ? handleEditComplete : undefined}
+      >
         <Canvas
           shadows
           dpr={[1, 2]}

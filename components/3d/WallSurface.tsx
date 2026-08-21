@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { useMemo, useState } from 'react'
 import { ThreeEvent } from '@react-three/fiber'
+import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 
 // R3F reports `delta` on click-family events: pixels travelled since the last
 // pointerdown. The browser already refuses to fire dblclick when the two clicks
@@ -73,7 +74,9 @@ export function WallSurface({
   }
 
   const handleDoubleClick = (e: ThreeEvent<MouseEvent>) => {
-    e.stopPropagation()
+    // Entering/switching edit mode is a real action, so it must not ALSO reach
+    // the canvas wrapper's exit-edit-mode handler.
+    consumeDoubleClick(e)
     // Ignore a double click that ended a drag — that gesture was an orbit.
     if (e.delta > DRAG_THRESHOLD_PX) return
     // Local coordinates on the plane: x,y in plane space (centered)
