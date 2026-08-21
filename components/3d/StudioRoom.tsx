@@ -11,12 +11,11 @@ import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { supabase } from '@/lib/supabase/client'
 import { Board, FloorTable } from '@/types'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
-import WallSystem from './WallSystem'
+import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from './WallSystem'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry } from './CameraController'
 import RosterPanel from '@/components/room/RosterPanel'
-import RoomExperience from '@/components/room/RoomExperience'
 import UnfoldedView from '@/components/room/UnfoldedView'
 import PlanView from '@/components/room/PlanView'
 import RevisionStrip, { type RoomView } from '@/components/room/RevisionStrip'
@@ -27,7 +26,7 @@ import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
 import { DraggableText } from './DraggableText'
 import { WallDropZone } from '@/components/3d/WallDropZone'
-import { getWallTransformResolved, type WallTextItem } from '@/lib/wallLayout'
+import type { WallTextItem } from '@/lib/wallLayout'
 import type { WallConfigWriter } from '@/lib/wallConfigWriter'
 import RightCommentPanel from '@/components/RightCommentPanel'
 import LightboxModal from '@/components/LightboxModal'
@@ -204,6 +203,7 @@ function SceneContent({
   othersEditingWalls,
   onBoardUpdate: _onBoardUpdate,
   onWallDoubleClick,
+  onWallClick,
   onWallHover,
   editingWall,
   placedBoards3D,
@@ -242,6 +242,8 @@ function SceneContent({
   suppressCallouts,
 }: StudioRoomProps & {
   onWallDoubleClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
+  /** Single click on a wall — sets it as the active wall for crit walk / auto-tidy / export. */
+  onWallClick?: (wallIndex: number, side: 'front' | 'back') => void
   /** Pointer-over on a wall surface. Used to fire-and-forget pre-warm board textures. */
   onWallHover?: (wallIndex: number, side: 'front' | 'back') => void
   editingWall: number | null
@@ -326,8 +328,13 @@ function SceneContent({
   
   return (
     <>
-      {/* Background matches wall color */}
-      <color attach="background" args={['#EDE9DE']} />
+      {/* scene.background wins over the Canvas's DOM `style` background once
+          WebGL paints its first frame, so THIS is what actually has to match
+          the fog color for the ground plane's fade-out to read as a horizon
+          instead of a visible ring. The Canvas `style` value is just the
+          pre-paint fallback and should still match, but isn't the one doing
+          the work. */}
+      <color attach="background" args={[ROOM_SKY_COLOR]} />
       {/* Ambient light - reduced for better shadow definition */}
       <ambientLight intensity={0.5} />
       
@@ -371,6 +378,7 @@ function SceneContent({
         // normal 3D room (WallSystem reads wallConfig.textItems).
         wallConfig={{ ...wallConfig, textItems }}
         onWallDoubleClick={onWallDoubleClick}
+        onWallClick={onWallClick}
         onWallHover={onWallHover}
         editingWall={editingWall}
         editUIActive={showEditUI}
@@ -625,11 +633,12 @@ function SceneContent({
 }
 
 // PresenterCamBroadcast / PresenterCursorBroadcast (camera-pose + raycast-cursor
-// broadcast for the old orbiting room view) and the LaserPointer dot they fed
-// were removed with the fixed-camera room rewrite — both only ever ran while
-// `editingWall === null`, which the Canvas below no longer mounts for. See
-// docs/audit-3d-room.md and the room-rewrite plan for the presenter-follow
-// follow-up (broadcasting `facingBay` instead of a live camera pose).
+// broadcast for the orbiting room view) and the LaserPointer dot they fed were
+// removed during the fixed-camera room rewrite, when the Canvas below stopped
+// mounting for browsing at all. The Canvas is unconditionally mounted again
+// now (orbit is the primary room view once more — see the render below), so
+// restoring presenter camera-pose broadcast is once again possible, but is
+// its own follow-up, not part of this change. See docs/audit-3d-room.md.
 
 export default function StudioRoom(props: StudioRoomProps) {
   const [user, setUser] = useState<User | null>(null)
@@ -708,17 +717,13 @@ export default function StudioRoom(props: StudioRoomProps) {
 
     checkMembership()
   }, [user, props.workspaceId])
-  // Which wall the Roster / Unfolded / Plan tabs have asked the fixed-camera
-  // room to face. RoomExperience owns the actual turn animation; this is just
-  // the request — bump nonce to re-fire on the same wall.
-  const [walkRequest, setWalkRequest] = useState<{ wall: number | null; nonce: number }>({ wall: null, nonce: 0 })
 
   // Phase 4 roster. Derived from the boards already in state — no extra fetch.
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
 
-  // Phase 8: which of the three room views is showing. Room is the fixed-camera
-  // CSS shell (no Canvas); Unfolded and Plan are pure DOM too, so switching
-  // between all three is instant and never touches WebGL.
+  // Which of the three room views is showing. Room is the orbit-capable 3D
+  // Canvas; Unfolded and Plan are pure DOM/CSS, so switching to either from
+  // Room unmounts WebGL, and switching back remounts it.
   const [roomView, setRoomView] = useState<RoomView>('room')
 
   // Milestones are computed once per mount. Date.now() in render would make the
@@ -728,15 +733,20 @@ export default function StudioRoom(props: StudioRoomProps) {
 
   const handleSelectStudent = useCallback((student: RoomStudent) => {
     setSelectedStudentId((prev) => (prev === student.id ? null : student.id))
-    // Selecting a student implies wanting to stand in front of their work.
-    setWalkRequest((prev) => ({ wall: student.wallIndex, nonce: prev.nonce + 1 }))
     // Roster selection and crit walk both drive the same spotlight — mutually exclusive.
     setCritWalkOn(false)
   }, [])
 
-  // Crit walk state lives further down, right after useBoardState hands back
-  // localBoards (crit walk's board list is derived from it).
-  const [facingBay, setFacingBay] = useState<{ wallIndex: number; side: 'front' | 'back'; blank: boolean } | null>(null)
+  // Which wall crit walk / auto-tidy / export operate on. Set by a single
+  // click on a wall surface (WallSystem's onWallClick) — orbit means there is
+  // no "the wall you're facing" the way the old fixed-camera room had, so
+  // this is an explicit selection instead of something derived from camera
+  // angle. Crit walk state lives further down, right after useBoardState
+  // hands back localBoards (crit walk's board list is derived from it).
+  const [activeWall, setActiveWall] = useState<{ wallIndex: number; side: 'front' | 'back' } | null>(null)
+  const handleWallClick = useCallback((wallIndex: number, side: 'front' | 'back') => {
+    setActiveWall({ wallIndex, side })
+  }, [])
   const [critWalkOn, setCritWalkOn] = useState(false)
   const [critIndex, setCritIndex] = useState(0)
 
@@ -847,33 +857,31 @@ export default function StudioRoom(props: StudioRoomProps) {
     { wall: editingWall, side: editingWallSide },
   )
 
-  // Crit walk: spotlight one board at a time on the wall the viewer is
-  // currently facing, in the Room view. `facingBay` (state declared above,
-  // set from RoomExperience's onFacingBayChange — it already owns the
-  // nav/shell math) tells us which wall that is; the board list is derived
-  // from localBoards, which is why this lives here and not next to the rest
-  // of the crit-walk state. Deliberately NOT plumbed through realtime/
-  // presence — this is a per-viewer browsing aid, not something crit
-  // participants need to see in sync, same as the roster's selectedStudentId.
-  const prevFacingBayKeyRef = useRef<string | null>(null)
+  // Crit walk: spotlight one board at a time on `activeWall` (state declared
+  // above, set by clicking a wall surface). The board list is derived from
+  // localBoards, which is why this lives here and not next to the rest of
+  // the crit-walk state. Deliberately NOT plumbed through realtime/presence
+  // — this is a per-viewer browsing aid, not something crit participants
+  // need to see in sync, same as the roster's selectedStudentId.
+  const prevActiveWallKeyRef = useRef<string | null>(null)
 
   const critBoards = useMemo(() => {
-    if (!facingBay || facingBay.blank) return []
+    if (!activeWall) return []
     return localBoards
-      .filter((b) => b.position && b.position.wallIndex === facingBay.wallIndex && (b.position.side ?? 'front') === facingBay.side)
+      .filter((b) => b.position && b.position.wallIndex === activeWall.wallIndex && (b.position.side ?? 'front') === activeWall.side)
       .sort((a, b) => (a.position?.x ?? 0) - (b.position?.x ?? 0))
-  }, [localBoards, facingBay])
+  }, [localBoards, activeWall])
 
   // Changing walls mid-crit ends the session — a new wall is a new set of
   // boards, and silently carrying the index over would spotlight an unrelated
   // sheet (or nothing, once index is out of range).
   useEffect(() => {
-    const key = facingBay ? `${facingBay.wallIndex}:${facingBay.side}` : null
-    if (prevFacingBayKeyRef.current !== null && prevFacingBayKeyRef.current !== key) {
+    const key = activeWall ? `${activeWall.wallIndex}:${activeWall.side}` : null
+    if (prevActiveWallKeyRef.current !== null && prevActiveWallKeyRef.current !== key) {
       setCritWalkOn(false)
     }
-    prevFacingBayKeyRef.current = key
-  }, [facingBay])
+    prevActiveWallKeyRef.current = key
+  }, [activeWall])
 
   const startCritWalk = useCallback(() => {
     if (critBoards.length === 0) return
@@ -900,7 +908,7 @@ export default function StudioRoom(props: StudioRoomProps) {
   // keep in sync with that one.
   const [autoTidying, setAutoTidying] = useState(false)
   const handleAutoTidyWall = useCallback(async () => {
-    if (!facingBay || critBoards.length < 2 || autoTidying) return
+    if (!activeWall || critBoards.length < 2 || autoTidying) return
     setAutoTidying(true)
     try {
       const n = critBoards.length
@@ -923,7 +931,7 @@ export default function StudioRoom(props: StudioRoomProps) {
       if (results.some((ok) => !ok)) {
         toast.error('Some boards could not be moved. Please try again.')
       } else {
-        toast.success(`Tidied wall ${facingBay.wallIndex + 1}`)
+        toast.success(`Tidied wall ${activeWall.wallIndex + 1}`)
       }
       await props.onBoardUpdate()
     } catch {
@@ -931,7 +939,7 @@ export default function StudioRoom(props: StudioRoomProps) {
     } finally {
       setAutoTidying(false)
     }
-  }, [facingBay, critBoards, autoTidying, props])
+  }, [activeWall, critBoards, autoTidying, props])
 
   // Export as a printable contact sheet. Opens a plain HTML document in a new
   // tab (built with the browser's own print-to-PDF, not a PDF library — this
@@ -946,7 +954,7 @@ export default function StudioRoom(props: StudioRoomProps) {
       toast.error('Allow pop-ups to export this wall.')
       return
     }
-    const label = facingBay ? `Wall ${facingBay.wallIndex + 1}${facingBay.side === 'back' ? ' (reverse)' : ''}` : 'Wall'
+    const label = activeWall ? `Wall ${activeWall.wallIndex + 1}${activeWall.side === 'back' ? ' (reverse)' : ''}` : 'Wall'
     const figures = critBoards
       .map((b) => {
         const url = escapeHtml(b.thumbnailUrl || b.fullImageUrl || '')
@@ -970,7 +978,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         `<div class="grid">${figures}</div></body></html>`
     )
     win.document.close()
-  }, [critBoards, facingBay])
+  }, [critBoards, activeWall])
 
   // Sync tables when wall config loads or studio changes (strip blob URLs so GLTF never sees them)
   useEffect(() => {
@@ -1443,27 +1451,6 @@ export default function StudioRoom(props: StudioRoomProps) {
     setPlacedBoards3D(newMap)
   }
 
-  /**
-   * Entry point from the fixed-camera room (double-click the facing wall).
-   * Replaces WallSystem's mesh onDoubleClick, which computed the same
-   * position/rotation from the wall it was rendering — here there's no mesh,
-   * so it's derived directly from the same getWallTransformResolved the old
-   * mesh used, then handed to the unchanged handleWallDoubleClick, which still
-   * drives the (still-Three.js) wall-edit Canvas below.
-   */
-  const handleEnterWallEdit = useCallback((wallIndex: number, side: 'front' | 'back') => {
-    const wall = props.wallConfig?.walls?.[wallIndex]
-    if (!wall) return
-    const transform = getWallTransformResolved(props.wallConfig, wallIndex)
-    const position = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
-    const rotation = side === 'front' ? transform.rotationY : transform.rotationY + Math.PI
-    handleWallDoubleClick(wallIndex, wall, position, rotation, side)
-    // handleWallDoubleClick is a plain (non-memoized) function redefined every
-    // render, so this callback is too — it's only ever read on click, not on a
-    // hot path, so that's cheap.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.wallConfig])
-
   const handleCameraTransitionComplete = () => {
     if (editingWall !== null) {
       setShowEditUI(true)
@@ -1577,10 +1564,17 @@ export default function StudioRoom(props: StudioRoomProps) {
   // boards already in state so the panel costs no extra fetch.
   const roomStudents = useMemo(() => deriveRoomStudents(localBoards), [localBoards])
   const highlightedBoardIds = useMemo(() => {
+    // Crit walk and roster selection are mutually exclusive (each clears the
+    // other — see handleSelectStudent and startCritWalk), so at most one of
+    // these ever applies; both drive the same wall-outline highlight.
+    if (critWalkOn) {
+      const spotlit = critBoards[critIndex]
+      return spotlit ? new Set([spotlit.id]) : undefined
+    }
     if (!selectedStudentId) return undefined
     const student = roomStudents.find((s) => s.id === selectedStudentId)
     return student ? new Set(student.boardIds) : undefined
-  }, [selectedStudentId, roomStudents])
+  }, [critWalkOn, critBoards, critIndex, selectedStudentId, roomStudents])
 
   /**
    * Persist a new slideshow position, then let the existing refetch path
@@ -2280,6 +2274,8 @@ export default function StudioRoom(props: StudioRoomProps) {
     }
   }, [uploadFilesDirect])
 
+  const roomFog = useMemo(() => getRoomFogParams(props.wallConfig), [props.wallConfig])
+
   return (
     <>
       {/* Full-screen 3D model viewer overlay (keeps blob URLs valid) */}
@@ -2445,26 +2441,6 @@ export default function StudioRoom(props: StudioRoomProps) {
       )}
 
       {editingWall === null && roomView === 'room' && (
-        <RoomExperience
-          wallConfig={props.wallConfig}
-          boards={localBoards}
-          tables={tables}
-          wallColor={props.wallColor}
-          students={roomStudents}
-          selectedStudentId={selectedStudentId}
-          spotlightBoardId={critWalkOn ? critBoards[critIndex]?.id ?? null : null}
-          onFacingBayChange={setFacingBay}
-          onBoardOpen={handleLightboxOpen}
-          onTableModelClick={handleTableModelClick}
-          onEditWall={props.canEditWalls && !props.isArchived ? handleEnterWallEdit : undefined}
-          suppressCallouts={lightboxBoard !== null || floorEditorOpen}
-          othersEditingWalls={props.othersEditingWalls}
-          requestWallIndex={walkRequest.wall}
-          requestNonce={walkRequest.nonce}
-        />
-      )}
-
-      {editingWall === null && roomView === 'room' && (
         <RoomWallTools
           critWalkOn={critWalkOn}
           critBoards={critBoards}
@@ -2477,7 +2453,7 @@ export default function StudioRoom(props: StudioRoomProps) {
           onAutoTidy={handleAutoTidyWall}
           tidying={autoTidying}
           onExport={handleExportWallContactSheet}
-          wallLabel={facingBay ? `Wall ${facingBay.wallIndex + 1}${facingBay.side === 'back' ? ' · Reverse' : ''}` : ''}
+          wallLabel={activeWall ? `Wall ${activeWall.wallIndex + 1}${activeWall.side === 'back' ? ' · Reverse' : ''}` : ''}
         />
       )}
 
@@ -2514,11 +2490,20 @@ export default function StudioRoom(props: StudioRoomProps) {
         />
       )}
 
-      {/* The Three.js Canvas now exists only for wall-edit mode — the fixed-
-          camera Room view above (and Unfolded/Plan) are pure DOM/CSS. Entry is
-          RoomExperience's onEditWall (double-click the facing wall), which
-          routes through handleEnterWallEdit → the unchanged handleWallDoubleClick. */}
-      {editingWall !== null && (
+      {/* The orbit-capable 3D Canvas IS the Room view now — mounted whenever
+          roomView === 'room', not just while editing a wall. editingWall is
+          a substate within it (the camera swooshes in close and
+          DraggableBoard takes over that one wall's boards; every other wall
+          keeps rendering normally via WallSystem's BoardThumbnails) rather
+          than a separate top-level mode, which is also why OrbitControls'
+          enabled={editingWall === null} below (unchanged) now actually does
+          something: previously this Canvas only ever mounted with
+          editingWall already non-null, so that comparison was always false
+          and orbit was permanently disabled. Unfolded/Plan stay pure DOM/CSS,
+          unaffected by any of this. Wall-edit entry is WallSystem's
+          onWallDoubleClick (double-click a wall surface), wired below to
+          handleWallDoubleClick — unchanged. */}
+      {roomView === 'room' && (
       <div className="w-full h-screen">
         <Canvas
           shadows
@@ -2529,8 +2514,13 @@ export default function StudioRoom(props: StudioRoomProps) {
             premultipliedAlpha: false
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } as any}
-          style={{ background: '#EDE9DE' }}
+          style={{ background: ROOM_SKY_COLOR }}
         >
+          {/* Must match ROOM_SKY_COLOR above and be a direct Canvas child —
+              R3F's attach="fog" resolves to whatever object is its literal
+              JSX parent, and only the scene's .fog is read by the renderer.
+              See getRoomFogParams' comment in WallSystem.tsx. */}
+          <fog attach="fog" args={[ROOM_SKY_COLOR, roomFog.fogNear, roomFog.fogFar]} />
           <CameraController
             orbitControlsRef={orbitControlsRef}
             editingWall={editingWall}
@@ -2554,6 +2544,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             localBoards={localBoards}
             highlightedBoardIds={highlightedBoardIds}
             onWallDoubleClick={handleWallDoubleClick}
+            onWallClick={handleWallClick}
             onWallHover={handleWallHover}
             editingWall={editingWall}
             placedBoards3D={placedBoards3D}

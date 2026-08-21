@@ -14,9 +14,8 @@ interface WallSurfaceProps {
   wallDimensions: { width: number; height: number } // feet
   side: 'front' | 'back'
   /**
-   * Fires on DOUBLE click only — a single click on a wall is deliberately inert
-   * so it stays free for orbit/drag. Wired to R3F's onDoubleClick, which maps to
-   * the native dblclick event, so double-click timing is the browser's (and thus
+   * Fires on DOUBLE click. Wired to R3F's onDoubleClick, which maps to the
+   * native dblclick event, so double-click timing is the browser's (and thus
    * the platform's) rather than a hand-rolled timer.
    */
   onSurfaceDoubleClick: (params: {
@@ -24,6 +23,15 @@ interface WallSurfaceProps {
     localPoint: THREE.Vector2
     worldPoint: THREE.Vector3
   }) => void
+  /**
+   * Fires on a plain single click — makes this wall the "active" one for
+   * crit walk / auto-tidy / export (there's no camera-facing wall to infer
+   * that from once the room is orbit-based). A native click ALSO fires
+   * (twice) immediately before a dblclick, so a double-click both selects
+   * and opens edit mode — harmless, since edit mode is entered on the same
+   * wall it just got set active on.
+   */
+  onSurfaceClick?: (params: { side: 'front' | 'back' }) => void
   /**
    * Fires on pointer-over. WallSystem uses this to kick off a fire-and-forget
    * texture pre-warm for boards on this side, so the user's subsequent
@@ -34,14 +42,16 @@ interface WallSurfaceProps {
 }
 
 /**
- * Invisible plane representing one wall face (front/back), activated by DOUBLE
- * click. Geometry is axis-aligned in local space; parent group handles
+ * Invisible plane representing one wall face (front/back). Single click
+ * selects it as active (see onSurfaceClick); double click enters wall-edit
+ * mode. Geometry is axis-aligned in local space; parent group handles
  * rotation/position.
  */
 export function WallSurface({
   wallDimensions,
   side,
   onSurfaceDoubleClick,
+  onSurfaceClick,
   onSurfaceHover,
   visibleOutline = false,
 }: WallSurfaceProps) {
@@ -55,6 +65,13 @@ export function WallSurface({
 
   // Optional hover outline (very light)
   const [hovered, setHovered] = useState(false)
+
+  const handleClick = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation()
+    // Ignore a click that ended a drag — that gesture was an orbit.
+    if (e.delta > DRAG_THRESHOLD_PX) return
+    onSurfaceClick?.({ side })
+  }
 
   const handleDoubleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
@@ -77,6 +94,7 @@ export function WallSurface({
     <mesh
       position={[0, 0, zOffset]}
       rotation={[0, 0, 0]}
+      onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       onPointerOver={() => {
         setHovered(true)

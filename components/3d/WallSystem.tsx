@@ -1,8 +1,8 @@
 'use client'
 
-import { Fragment } from 'react'
+import { Fragment, useMemo } from 'react'
 import * as THREE from 'three'
-import { Text } from '@react-three/drei'
+import { Text, ContactShadows } from '@react-three/drei'
 import { Board } from '@/types'
 import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
@@ -32,6 +32,11 @@ interface WallSystemProps {
    * free for orbit/drag). StudioRoom uses this to enter 2D edit mode.
    */
   onWallDoubleClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
+  /**
+   * Fires on a plain single click of a wall — sets it as the "active" wall
+   * for crit walk / auto-tidy / export. See WallSurface's onSurfaceClick doc.
+   */
+  onWallClick?: (wallIndex: number, side: 'front' | 'back') => void
   /**
    * Fires when the pointer enters a wall surface. StudioRoom uses this to
    * fire-and-forget pre-warm board full-image textures for the boards on
@@ -78,8 +83,8 @@ interface WallSystemProps {
   suppressCallouts?: boolean
   /**
    * Board ids belonging to the student selected in the roster. Their bay gets a
-   * yellow outline — an EDGE, drawn proud of the wall. Yellow never fills a wall
-   * or sits behind a sheet; it only ever marks active state.
+   * blue-accent outline — an EDGE, drawn proud of the wall. The accent never
+   * fills a wall or sits behind a sheet; it only ever marks active state.
    */
   highlightedBoardIds?: ReadonlySet<string>
 }
@@ -94,29 +99,77 @@ interface WallSystemProps {
 // value, including identical highlight roll-off). This makes a white-background
 // sheet visually continuous with the wall so only the ink stands out. The edge
 // accents are pulled to near-white (barely below #FFFFFF) so they hold the wall
-// corners without reintroducing a grey frame around each panel.
+// corners without reintroducing a frame around each panel. Cool paper/blue
+// family, matching lib/room/palette.ts (the fixed-camera room's ROOM.wall /
+// ROOM.hairline) — this used to be a warm cream/tan family, styled before the
+// rest of the app moved to the blue/paper design system.
 const WALL_PALETTES: Record<'grey' | 'white', {
   main: string
   sideEdge: string
   topEdge: string
   bottomEdge: string
 }> = {
-  grey: { main: '#FFFCF0', sideEdge: '#EFE9D8', topEdge: '#E7E0CC', bottomEdge: '#DED6C0' },
+  grey: { main: '#FBFCFE', sideEdge: '#E7ECF5', topEdge: '#DFE6F0', bottomEdge: '#D5DEEA' },
   white: { main: '#FFFFFF', sideEdge: '#FAFAF9', topEdge: '#F7F7F5', bottomEdge: '#F3F3F0' },
 }
 
 /**
  * Room scheme. A saturated field behind a board fights the white sheet and black
- * linework of an architecture drawing, so `yellow` here is used for exactly one
+ * linework of an architecture drawing, so `accent` here is used for exactly one
  * thing: the selected student's bay OUTLINE, drawn as lineSegments proud of the
  * wall. It is never a surface colour — not a wall, not the floor, and never the
- * field behind a sheet.
+ * field behind a sheet. Matches ROOM.accent in lib/room/palette.ts — "the one
+ * accent color" is the same blue everywhere in the app now, not a 3D-room-only
+ * yellow.
+ *
+ * `ink` replaces what used to be a green "identity" color for owner name
+ * plates and wall text — plain ink instead, same reasoning as
+ * lib/room/palette.ts: a second accent color competing with the blue one reads
+ * as inconsistent, not as a deliberate second signal.
  */
 const ROOM_PALETTE = {
-  floor: '#D8D3C6',
-  green: '#14705C',
-  yellow: '#FFC800',
+  floor: '#DCE2ED',
+  ink: '#16181D',
+  accent: '#3B6EF6',
 } as const
+
+/**
+ * The room used to sit on a floor sized to exactly fit the walls, in an
+ * otherwise-empty scene with a flat solid background — orbiting past the
+ * floor's edge showed nothing, so the room read as a platform floating in a
+ * void. `ROOM_SKY_COLOR` is that void's replacement: it's used as BOTH the
+ * Canvas background (StudioRoom.tsx) and the scene fog color below, so a
+ * much larger ground plane can fade seamlessly into it — the fog color and
+ * the sky color must match exactly, or the ground's own edge (where fog
+ * reaches 100%) becomes a visible ring instead of an invisible horizon.
+ */
+export const ROOM_SKY_COLOR = '#E7ECF5'
+
+const GROUND_COLOR = '#DFE5EF'
+
+/**
+ * Ground plane + fog scale with the room's own footprint rather than a fixed
+ * constant, so a large custom-configured room (many walls, wide layout)
+ * still comfortably clears whatever distance the orbit camera can reach (see
+ * the maxDistance calculation in StudioRoom.tsx) before fog fully takes
+ * over. groundSize stays several multiples past fogFar so its own edge is
+ * never the thing that becomes visible.
+ *
+ * Exported (rather than computed inline in WallSystem) because `<fog>` has
+ * to be attached at the Canvas/scene level to do anything — nested inside
+ * WallSystem's <group>, R3F's attach="fog" would set it on that group
+ * instead of the scene, and Three.js only ever reads scene.fog. StudioRoom
+ * renders the actual <fog> element; this just gives it the same numbers
+ * WallSystem's ground plane below uses, from the same wallConfig.
+ */
+export function getRoomFogParams(wallConfig: WallConfig): { fogNear: number; fogFar: number } {
+  const bounds = calculateFloorBounds(wallConfig)
+  const span = Math.max(bounds.floorWidth, bounds.floorDepth, 96)
+  return {
+    fogNear: Math.max(800, span * 2),
+    fogFar: Math.max(3000, span * 6),
+  }
+}
 
 /**
  * Owner name plate sizing, in inches (1 world unit = 1 inch). 4" cap height
@@ -191,7 +244,7 @@ export function assignNamePlateRows(plates: PlateLayoutInput[]): Map<string, num
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false, highlightedBoardIds }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false, highlightedBoardIds }: WallSystemProps) {
 
   const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
@@ -199,17 +252,48 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
   const wallDepth = 6 // Wall thickness in inches (same as walls)
   const floorThickness = wallDepth // Floor thickness matches wall thickness
 
+  // groundSize just needs to clear fogFar by a healthy margin so its own
+  // edge stays hidden in fog; the fog numbers themselves are computed by
+  // getRoomFogParams and rendered as an actual <fog> element up in
+  // StudioRoom's <Canvas> (see that export's comment for why it can't live
+  // here as JSX).
+  const groundSize = useMemo(() => {
+    const span = Math.max(floorBounds.floorWidth, floorBounds.floorDepth, 96)
+    return Math.max(8000, span * 10)
+  }, [floorBounds.floorWidth, floorBounds.floorDepth])
+
   return (
     <group>
+      {/* Large ground plane the room's floor sits on top of, so orbiting out
+          past the floor's edge finds more ground (fading into fog) instead
+          of empty background — the "floating platform" fix. Sits below the
+          floor's underside so the floor itself still reads as a slightly
+          raised, deliberate plinth rather than an abrupt seam. */}
+      <mesh position={[floorBounds.floorCenterX, -floorThickness - 1, floorBounds.floorCenterZ]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[groundSize, groundSize]} />
+        <meshStandardMaterial color={GROUND_COLOR} roughness={0.95} metalness={0} fog />
+      </mesh>
+
+      {/* Soft contact shadow under the whole room — grounds the walls and
+          floor plinth against the ground plane beneath, on top of (not
+          instead of) the directional lights' real shadows. */}
+      <ContactShadows
+        position={[floorBounds.floorCenterX, -floorThickness - 0.5, floorBounds.floorCenterZ]}
+        opacity={0.35}
+        scale={Math.max(floorBounds.floorWidth, floorBounds.floorDepth) * 2.2}
+        blur={2.4}
+        far={floorThickness + 40}
+      />
+
       {/* Dynamic floor with thickness matching walls */}
-      <mesh 
-        position={[floorBounds.floorCenterX, -floorThickness / 2, floorBounds.floorCenterZ]} 
+      <mesh
+        position={[floorBounds.floorCenterX, -floorThickness / 2, floorBounds.floorCenterZ]}
         receiveShadow
         castShadow
       >
         <boxGeometry args={[floorBounds.floorWidth, floorThickness, floorBounds.floorDepth]} />
         <meshStandardMaterial
-          color={ROOM_PALETTE.floor} // warm neutral floor; never tinted toward the accent
+          color={ROOM_PALETTE.floor} // cool neutral floor; never tinted toward the accent
           roughness={0.9}
           metalness={0.0}
         />
@@ -252,7 +336,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
         const plateRows = assignNamePlateRows(plateInputs)
 
         // Selected student's bay: the bounding box of their boards on THIS wall
-        // side, drawn as a yellow outline set proud of the surface. Computed per
+        // side, drawn as a blue-accent outline set proud of the surface. Computed per
         // side so a student with work on both faces gets a frame on each.
         const bayFrames: Array<{
           key: string; cx: number; cy: number; w: number; h: number; side: 'front' | 'back'
@@ -302,6 +386,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                 const rotation = transform.rotationY
                 onWallDoubleClick?.(wallIndex, wall, position, rotation, side)
               }}
+              onSurfaceClick={({ side }) => onWallClick?.(wallIndex, side)}
               onSurfaceHover={({ side }) => onWallHover?.(wallIndex, side)}
             />
             <WallSurface
@@ -312,6 +397,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                 const rotation = transform.rotationY
                 onWallDoubleClick?.(wallIndex, wall, position, rotation + Math.PI, side)
               }}
+              onSurfaceClick={({ side }) => onWallClick?.(wallIndex, side)}
               onSurfaceHover={({ side }) => onWallHover?.(wallIndex, side)}
             />
 
@@ -470,11 +556,11 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                       // correctly, matching the wall labels.
                       rotation={boardSide === 'back' ? [0, Math.PI, 0] : [0, 0, 0]}
                       fontSize={NAME_PLATE_SIZE_IN}
-                      color={ROOM_PALETTE.green}
+                      color={ROOM_PALETTE.ink}
                       // Stands in for a 600 weight the default face does not
                       // carry; see NAME_PLATE_OUTLINE_IN.
                       outlineWidth={NAME_PLATE_OUTLINE_IN}
-                      outlineColor={ROOM_PALETTE.green}
+                      outlineColor={ROOM_PALETTE.ink}
                       anchorX="center"
                       // Bottom anchor grows the plate upward from the gap above
                       // the board, so a long name never creeps down over the sheet.
@@ -489,7 +575,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             })}
 
             {/* Selected student's bay outline. lineSegments, not a filled plane,
-                so nothing yellow ever sits behind a sheet. */}
+                so nothing accent-colored ever sits behind a sheet. */}
             {bayFrames.map((frame) => (
               <lineSegments
                 key={frame.key}
@@ -501,7 +587,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                 rotation={frame.side === 'back' ? [0, Math.PI, 0] : [0, 0, 0]}
               >
                 <edgesGeometry args={[new THREE.PlaneGeometry(frame.w, frame.h)]} />
-                <lineBasicMaterial color={ROOM_PALETTE.yellow} />
+                <lineBasicMaterial color={ROOM_PALETTE.accent} />
               </lineSegments>
             ))}
 
@@ -531,7 +617,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                     // Back labels face into the back room so they read correctly.
                     rotation={isBack ? [0, Math.PI, 0] : [0, 0, 0]}
                     fontSize={t.fontSize}
-                    color={ROOM_PALETTE.green}
+                    color={ROOM_PALETTE.ink}
                     letterSpacing={0.08}
                     anchorX="center"
                     anchorY="middle"

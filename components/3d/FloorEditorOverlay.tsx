@@ -1007,7 +1007,7 @@ export default function FloorEditorOverlay({
                 <button
                   type="button"
                   onClick={handleAddTable}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+                  className="flex items-center gap-2 px-4 py-2 bg-[#3B6EF6] hover:bg-[#16181D] text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
                 >
                   <Plus className="w-4 h-4" />
                   Add table
@@ -1016,7 +1016,7 @@ export default function FloorEditorOverlay({
               <button
                 type="button"
                 onClick={() => onSaveAndExit()}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+                className="px-4 py-2 bg-[#3B6EF6] hover:bg-[#16181D] text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
               >
                 Save & exit
               </button>
@@ -1036,7 +1036,7 @@ export default function FloorEditorOverlay({
               <button
                 type="button"
                 onClick={handleAddWall}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-[#3B6EF6] hover:bg-[#16181D] text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
               >
                 <Plus className="w-4 h-4" />
                 Add wall
@@ -1085,7 +1085,7 @@ export default function FloorEditorOverlay({
                             ;(e.target as HTMLInputElement).blur()
                           }
                         }}
-                        className="w-16 px-1.5 py-1 border border-gray-300 rounded text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                        className="w-16 px-1.5 py-1 border border-gray-300 rounded text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
                         aria-label={`Wall ${selectedWallIndex + 1} ${key} in feet`}
                       />
                       <span className="text-gray-400">ft</span>

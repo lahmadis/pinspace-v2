@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 import { Board, FloorTable } from '@/types'
-import WallSystem from '@/components/3d/WallSystem'
+import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from '@/components/3d/WallSystem'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
@@ -148,7 +148,7 @@ function StudioViewCameraControls({ wallConfig }: { wallConfig: WallConfig | nul
   )
 }
 
-export default function StudioViewPage() {
+function StudioViewPageInner() {
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -618,11 +618,20 @@ export default function StudioViewPage() {
           premultipliedAlpha: false,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
-        style={{ background: '#EDE9DE' }}
+        style={{ background: ROOM_SKY_COLOR }}
       >
-        {/* Background matches wall color */}
-        <color attach="background" args={['#EDE9DE']} />
-        
+        {/* Must match ROOM_SKY_COLOR/getRoomFogParams — see the comment on
+            those exports in components/3d/WallSystem.tsx. scene.background
+            (this) wins over the Canvas `style` above once WebGL paints; both
+            still have to agree with each other and with the fog color below,
+            or the ground plane's fade-out shows as a ring instead of a
+            horizon. */}
+        <color attach="background" args={[ROOM_SKY_COLOR]} />
+        {wallConfig && (() => {
+          const { fogNear, fogFar } = getRoomFogParams(wallConfig)
+          return <fog attach="fog" args={[ROOM_SKY_COLOR, fogNear, fogFar]} />
+        })()}
+
         {/* Lighting – match StudioRoom for consistent brightness and color */}
         {/* Ambient light - reduced for better shadow definition */}
         <ambientLight intensity={0.5} />
@@ -730,6 +739,14 @@ export default function StudioViewPage() {
         }}
       />
     </div>
+  )
+}
+
+export default function StudioViewPage() {
+  return (
+    <Suspense fallback={null}>
+      <StudioViewPageInner />
+    </Suspense>
   )
 }
 

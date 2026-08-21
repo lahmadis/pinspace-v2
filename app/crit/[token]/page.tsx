@@ -7,7 +7,7 @@ import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 import { Board, FloorTable } from '@/types'
-import WallSystem from '@/components/3d/WallSystem'
+import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from '@/components/3d/WallSystem'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
@@ -776,9 +776,15 @@ export default function CritPage() {
           premultipliedAlpha: false,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
-        style={{ background: '#EDE9DE' }}
+        style={{ background: ROOM_SKY_COLOR }}
       >
-        <color attach="background" args={['#EDE9DE']} />
+        {/* Must match ROOM_SKY_COLOR/getRoomFogParams — see the comment on
+            those exports in components/3d/WallSystem.tsx. */}
+        <color attach="background" args={[ROOM_SKY_COLOR]} />
+        {wallConfig && (() => {
+          const { fogNear, fogFar } = getRoomFogParams(wallConfig)
+          return <fog attach="fog" args={[ROOM_SKY_COLOR, fogNear, fogFar]} />
+        })()}
         <ambientLight intensity={0.5} />
         <directionalLight
           position={[15, 20, 10]}

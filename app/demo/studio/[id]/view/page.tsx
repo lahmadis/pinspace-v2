@@ -10,7 +10,7 @@ import DemoBanner from '@/components/DemoBanner'
 import Loading from '@/components/Loading'
 import { getStudioById, getBoardsByStudio, transformDemoBoard, type DemoStudio } from '@/lib/mockData'
 import { Board } from '@/types'
-import WallSystem from '@/components/3d/WallSystem'
+import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from '@/components/3d/WallSystem'
 import { CameraController } from '@/components/3d/CameraController'
 import { addDemoParam } from '@/lib/demoMode'
 
@@ -129,10 +129,20 @@ export default function DemoStudioRoomPage() {
           shadows
           dpr={[1, 2]}
           gl={{ antialias: true, alpha: false }}
-          style={{ background: '#EDE9DE' }}
+          style={{ background: ROOM_SKY_COLOR }}
         >
+          {/* Must match ROOM_SKY_COLOR/getRoomFogParams — see the comment on
+              those exports in components/3d/WallSystem.tsx. No scene.background
+              override elsewhere in this file, so the Canvas style above is
+              actually what wins here — still set explicitly for consistency
+              with the other room-viewing surfaces. */}
+          <color attach="background" args={[ROOM_SKY_COLOR]} />
+          {(() => {
+            const { fogNear, fogFar } = getRoomFogParams(wallConfig)
+            return <fog attach="fog" args={[ROOM_SKY_COLOR, fogNear, fogFar]} />
+          })()}
           <PerspectiveCamera makeDefault position={[0, 60, 120]} fov={35} />
-          
+
           <ambientLight intensity={0.6} />
           <directionalLight
             position={[10, 20, 10]}
