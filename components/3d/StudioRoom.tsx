@@ -775,6 +775,18 @@ export default function StudioRoom(props: StudioRoomProps) {
    * archive — the shortcut for "I can see whose work this is, now let me read
    * it" without hunting for them in a list first.
    */
+  /**
+   * Clicking a wall in the plan takes you into the 3D space framed head-on to
+   * that wall — the plan answers "where is it", this is the "take me there".
+   * PlanView picks the side (the fuller face), since it's the thing that knows
+   * where each board sits; a plan drawn from above has no face of its own.
+   */
+  const handlePlanWallClick = useCallback((wallIndex: number, side: 'front' | 'back') => {
+    setActiveWall({ wallIndex, side })
+    setFocusedWall((prev) => ({ wallIndex, side, nonce: (prev?.nonce ?? 0) + 1 }))
+    setRoomView('room')
+  }, [])
+
   const handleOpenStudentArchive = useCallback((studentId: string) => {
     setSelectedStudentId(studentId)
     setCritWalkOn(false)
@@ -2481,9 +2493,12 @@ export default function StudioRoom(props: StudioRoomProps) {
         <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
           <PlanView
             wallConfig={props.wallConfig}
+            boards={localBoards}
             students={roomStudents}
             selectedStudentId={selectedStudentId}
             onSelectStudent={handleSelectStudent}
+            onBoardClick={handleLightboxOpen}
+            onWallClick={handlePlanWallClick}
           />
         </div>
       )}
@@ -2510,7 +2525,11 @@ export default function StudioRoom(props: StudioRoomProps) {
       {editingWall === null && (
         <RevisionStrip
           view={roomView}
-          onViewChange={setRoomView}
+          // Switching tabs by hand drops any wall focus, so coming back to the
+          // space doesn't land you in a room that's still ghosted from a focus
+          // you set several views ago. handlePlanWallClick sets roomView
+          // directly rather than through here, so its focus survives.
+          onViewChange={(v) => { setRoomView(v); setFocusedWall(null) }}
           onPreset={handlePreset}
           isFocused={focusedWall !== null}
           onExitFocus={handleExitFocus}

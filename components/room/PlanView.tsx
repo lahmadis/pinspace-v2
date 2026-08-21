@@ -1,82 +1,200 @@
 'use client'
 
 import { useMemo } from 'react'
+import type { Board } from '@/types'
 import { ROOM, MONO_STACK, SANS_STACK } from '@/lib/room/palette'
 import { wallSegments, planBounds, type WallConfigLike } from '@/lib/room/planGeometry'
+import { getBoardSizeInches } from '@/lib/boardDimensions'
 import type { RoomStudent } from '@/lib/room/students'
 
 interface PlanViewProps {
   wallConfig: WallConfigLike
+  boards: Board[]
   students: RoomStudent[]
   selectedStudentId: string | null
   onSelectStudent: (student: RoomStudent) => void
+  /** Click a board's tick — opens it full-screen in the lightbox. */
+  onBoardClick?: (board: Board) => void
+  /**
+   * Click a wall line — jumps to the 3D space framed head-on to that wall. The
+   * side is decided here rather than by the caller: a plan carries no notion of
+   * which face you meant, and this component already knows which face each
+   * board is on.
+   */
+  onWallClick?: (wallIndex: number, side: 'front' | 'back') => void
 }
 
 const VIEW = 1000
 const MARGIN = 90
 /** Label offset from its wall, in plan units, before collision resolution. */
-const LABEL_OFFSET = 34
+const LABEL_OFFSET = 46
 /** Vertical step when two labels would overlap. */
 const LABEL_STEP = 26
+/** How far a board tick sits off the wall centre-line, per face. */
+const TICK_OFFSET = 7
+/** Thickness of a board tick. */
+const TICK_WEIGHT = 5
+/** Hit-target thickness for a tick. Narrower than the wall's own 30-unit band —
+ *  it wins the click by being drawn later (SVG hit-tests in document order),
+ *  not by being wider. */
+const TICK_HIT_WEIGHT = 18
+const NAME_FONT = 15
+/**
+ * Rough advance width per character as a fraction of font size, for the
+ * name-or-initials fit test. Onest is a touch narrow; 0.52 slightly
+ * under-estimates, which fails safe — we shrink to initials a hair sooner than
+ * strictly needed rather than letting a name overrun its neighbour.
+ */
+const CHAR_W = 0.52
 
 interface PlacedLabel {
   student: RoomStudent
+  text: string
   x: number
   y: number
   anchor: 'start' | 'middle' | 'end'
 }
 
+interface BoardTick {
+  board: Board
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+}
+
 /**
- * Top-down plan of the room.
+ * Top-down plan of the space.
  *
- * Walls are heavy stroke. Each student's name sits outside their wall segment,
- * offset along the wall's outward normal, with their callout count as dots
- * beside it. Labels that would collide are pushed apart rather than overlapping.
+ * Walls are heavy stroke. Every board is drawn as a thin accent tick at its real
+ * position along its wall, spanning its actual width — so the plan shows how
+ * full each wall is and where the gaps are, which is the thing you actually want
+ * from a plan and which no other view answers. Front-face boards tick on the
+ * room-inward side of the wall line, back-face boards on the outward side, so a
+ * double-sided wall reads as two runs rather than one muddled one.
+ *
+ * Each person's name sits with THEIR boards rather than at an even interval
+ * along the wall, so the label points at the work it belongs to. It degrades to
+ * initials when the person's run of boards is too narrow for the full name, and
+ * disappears entirely when even initials won't fit — better a nameless tick than
+ * two overlapping labels.
  */
-export default function PlanView({ wallConfig, students, selectedStudentId, onSelectStudent }: PlanViewProps) {
-  const { segments, toPlan, scaleBar, labels } = useMemo(() => {
+export default function PlanView({
+  wallConfig,
+  boards,
+  students,
+  selectedStudentId,
+  onSelectStudent,
+  onBoardClick,
+  onWallClick,
+}: PlanViewProps) {
+  const { segments, toPlan, scaleBar, labels, ticks, emptyWalls, dominantSide } = useMemo(() => {
     const segs = wallSegments(wallConfig)
     const b = planBounds(segs, 36)
     const s = Math.min((VIEW - MARGIN * 2) / (b.width || 1), (VIEW - MARGIN * 2) / (b.depth || 1))
     const offX = MARGIN + (VIEW - MARGIN * 2 - b.width * s) / 2
     const offY = MARGIN + (VIEW - MARGIN * 2 - b.depth * s) / 2
 
-    // Students grouped onto their primary wall, spread along that wall's length.
-    const byWall = new Map<number, RoomStudent[]>()
-    for (const student of students) {
-      const list = byWall.get(student.wallIndex) ?? []
-      list.push(student)
-      byWall.set(student.wallIndex, list)
+    function toPlan(x: number, z: number): [number, number] {
+      return [offX + (x - b.minX) * s, offY + (z - b.minZ) * s]
     }
 
-    const placed: PlacedLabel[] = []
-    for (const [wallIndex, group] of byWall) {
-      const seg = segs.find((sg) => sg.index === wallIndex)
-      if (!seg) continue
-      // Outward normal: perpendicular to the wall, pointing away from the room
-      // centre so labels never land inside the plan.
-      const dx = seg.x2 - seg.x1
-      const dz = seg.z2 - seg.z1
-      const len = Math.hypot(dx, dz) || 1
-      let nx = -dz / len
-      let nz = dx / len
-      const towardCentre = (b.centerX - seg.cx) * nx + (b.centerZ - seg.cz) * nz
-      if (towardCentre > 0) { nx = -nx; nz = -nz }
+    const studentByBoardId = new Map<string, RoomStudent>()
+    for (const st of students) for (const id of st.boardIds) studentByBoardId.set(id, st)
 
-      group.forEach((student, i) => {
-        // Spread evenly along the wall so several students on one wall read as
-        // separate bays rather than a stack at the midpoint.
-        const t = group.length === 1 ? 0.5 : (i + 0.5) / group.length
-        const wx = seg.x1 + dx * t
-        const wz = seg.z1 + dz * t
-        const [px, py] = toPlan(wx + nx * LABEL_OFFSET, wz + nz * LABEL_OFFSET)
-        placed.push({
-          student,
-          x: px,
-          y: py,
-          anchor: Math.abs(nx) > Math.abs(nz) ? (nx > 0 ? 'start' : 'end') : 'middle',
-        })
-      })
+    const allTicks: BoardTick[] = []
+    const placed: PlacedLabel[] = []
+    const empty: Array<{ x: number; y: number }> = []
+    /** Fuller face per wall — what a wall click should frame in 3D. */
+    const dominantSide = new Map<number, 'front' | 'back'>()
+
+    for (const seg of segs) {
+      const onWall = boards.filter((bd) => bd.position?.wallIndex === seg.index)
+
+      // Local -X is (x2,z2) and local +X is (x1,z1) — see wallSegments — which
+      // is why the lerp below runs from point 2 to point 1.
+      const dx = seg.x1 - seg.x2
+      const dz = seg.z1 - seg.z2
+      const len = Math.hypot(dx, dz) || 1
+
+      // TWO different normals, for two different jobs — conflating them is a
+      // bug that renders plausibly, so they're kept apart deliberately.
+      //
+      // `face` is geometric truth: dx = cos(r)·w and dz = -sin(r)·w, so this
+      // works out to (sin r, cos r) — local +Z rotated by the wall's rotation,
+      // which is exactly the side WallSystem puts front-face boards on. Ticks
+      // MUST use this, or a board shows up on the wrong side of its wall.
+      const faceX = -dz / len
+      const faceZ = dx / len
+
+      // `out` is a presentation heuristic: push text away from the room's
+      // bounding-box centre so labels don't land on top of the plan. It is NOT
+      // the front/back axis and must never be used for ticks — for a zigzag or
+      // square layout it disagrees with `face` on some walls, which is what
+      // previously mirrored their ticks.
+      const towardCentre = (b.centerX - seg.cx) * faceX + (b.centerZ - seg.cz) * faceZ
+      const flip = towardCentre > 0 ? -1 : 1
+      const outX = faceX * flip
+      const outZ = faceZ * flip
+
+      if (onWall.length === 0) {
+        // Offset in plan units (hence /s), matching LABEL_OFFSET — a raw world
+        // offset here would drift with room size.
+        const [ex, ey] = toPlan(seg.cx + outX * (30 / s), seg.cz + outZ * (30 / s))
+        empty.push({ x: ex, y: ey })
+        continue
+      }
+
+      // Framing the empty back of a single-sided wall would look like the jump
+      // to 3D had failed, so a wall click goes to whichever face has more work.
+      const backCount = onWall.filter((bd) => bd.position?.side === 'back').length
+      dominantSide.set(seg.index, backCount > onWall.length - backCount ? 'back' : 'front')
+
+      // Per-person span along this wall, in normalised 0..1 wall coordinates,
+      // so a label can sit over its own boards.
+      const spans = new Map<string, { student: RoomStudent; min: number; max: number }>()
+
+      for (const bd of onWall) {
+        if (!bd.position) continue
+        // position.x is a 0-100 percentage along the wall; /100 is exactly the
+        // lerp parameter from the local -X end to the local +X end.
+        const t = bd.position.x / 100
+        if (!Number.isFinite(t)) continue
+        const { widthIn } = getBoardSizeInches(bd)
+        const halfT = widthIn && seg.width ? widthIn / 2 / seg.width : 0.01
+        const tA = Math.max(0, t - halfT)
+        const tB = Math.min(1, t + halfT)
+
+        // Front boards sit on the wall's +face side, back boards opposite —
+        // using the true face normal, not the outward heuristic.
+        const dir = (bd.position.side === 'back' ? -1 : 1) * TICK_OFFSET / s
+        const [x1, y1] = toPlan(seg.x2 + dx * tA + faceX * dir, seg.z2 + dz * tA + faceZ * dir)
+        const [x2, y2] = toPlan(seg.x2 + dx * tB + faceX * dir, seg.z2 + dz * tB + faceZ * dir)
+        allTicks.push({ board: bd, x1, y1, x2, y2 })
+
+        const student = studentByBoardId.get(bd.id)
+        if (!student) continue
+        const existing = spans.get(student.id)
+        if (!existing) spans.set(student.id, { student, min: tA, max: tB })
+        else { existing.min = Math.min(existing.min, tA); existing.max = Math.max(existing.max, tB) }
+      }
+
+      for (const { student, min, max } of spans.values()) {
+        const mid = (min + max) / 2
+        // Width of this person's run, in plan units — the budget the label has.
+        const spanPx = (max - min) * seg.width * s
+        const full = student.name
+        const text =
+          full.length * CHAR_W * NAME_FONT <= spanPx ? full
+          : student.initials.length * CHAR_W * NAME_FONT <= spanPx ? student.initials
+          : ''
+        if (!text) continue
+        const [lx, ly] = toPlan(
+          seg.x2 + dx * mid + outX * (LABEL_OFFSET / s),
+          seg.z2 + dz * mid + outZ * (LABEL_OFFSET / s),
+        )
+        placed.push({ student, text, x: lx, y: ly, anchor: 'middle' })
+      }
     }
 
     // Greedy de-collision: nudge downward until clear of everything placed.
@@ -86,7 +204,7 @@ export default function PlanView({ wallConfig, students, selectedStudentId, onSe
       let guard = 0
       while (
         guard++ < 20 &&
-        settled.some((o) => Math.abs(o.x - label.x) < 150 && Math.abs(o.y - y) < LABEL_STEP)
+        settled.some((o) => Math.abs(o.x - label.x) < 110 && Math.abs(o.y - y) < LABEL_STEP)
       ) {
         y += LABEL_STEP
       }
@@ -101,12 +219,17 @@ export default function PlanView({ wallConfig, students, selectedStudentId, onSe
       toPlan,
       scaleBar: { feet, px: feet * 12 * s },
       labels: settled,
+      ticks: allTicks,
+      emptyWalls: empty,
+      dominantSide,
     }
+  }, [wallConfig, boards, students])
 
-    function toPlan(x: number, z: number): [number, number] {
-      return [offX + (x - b.minX) * s, offY + (z - b.minZ) * s]
-    }
-  }, [wallConfig, students])
+  const selectedBoardIds = useMemo(() => {
+    if (!selectedStudentId) return null
+    const st = students.find((x) => x.id === selectedStudentId)
+    return st ? new Set(st.boardIds) : null
+  }, [selectedStudentId, students])
 
   return (
     <div className="absolute inset-0 overflow-auto" style={{ background: ROOM.background }}>
@@ -120,11 +243,24 @@ export default function PlanView({ wallConfig, students, selectedStudentId, onSe
           return (
             <g key={seg.index}>
               <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={ROOM.ink} strokeWidth={9} strokeLinecap="square" />
+              {/* Fat transparent hit line — the drawn wall is only 9 units and
+                  hard to hit; this keeps the click target comfortable without
+                  thickening the drawing. */}
+              {onWallClick && (
+                <line
+                  x1={x1} y1={y1} x2={x2} y2={y2}
+                  stroke="transparent" strokeWidth={30} strokeLinecap="square"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => onWallClick(seg.index, dominantSide.get(seg.index) ?? 'front')}
+                >
+                  <title>{`Wall ${String(seg.index + 1).padStart(2, '0')} — open in 3D`}</title>
+                </line>
+              )}
               <text
                 x={(x1 + x2) / 2}
                 y={(y1 + y2) / 2 - 12}
                 textAnchor="middle"
-                style={{ fontFamily: MONO_STACK, fontSize: 13, letterSpacing: '0.16em' }}
+                style={{ fontFamily: MONO_STACK, fontSize: 13, letterSpacing: '0.16em', pointerEvents: 'none' }}
                 fill={ROOM.ink2}
               >
                 W{String(seg.index + 1).padStart(2, '0')}
@@ -133,19 +269,69 @@ export default function PlanView({ wallConfig, students, selectedStudentId, onSe
           )
         })}
 
-        {labels.map(({ student, x, y, anchor }) => {
+        {/* Board ticks — one per board, spanning its real width on the wall. */}
+        {ticks.map(({ board, x1, y1, x2, y2 }) => {
+          const dimmed = selectedBoardIds != null && !selectedBoardIds.has(board.id)
+          return (
+            <g key={board.id}>
+              <line
+                x1={x1} y1={y1} x2={x2} y2={y2}
+                stroke={ROOM.accent}
+                strokeWidth={TICK_WEIGHT}
+                strokeLinecap="round"
+                opacity={dimmed ? 0.25 : 1}
+                pointerEvents="none"
+              />
+              {/* Fat transparent hit line, same trick the walls use. Without it
+                  the tick's own ~4px target sits INSIDE the wall's 30-unit hit
+                  band, so a near-miss doesn't do nothing — it navigates to 3D
+                  instead of opening the board you were aiming at. Drawn after
+                  the wall group, so SVG document order puts it on top. */}
+              {onBoardClick && (
+                <line
+                  x1={x1} y1={y1} x2={x2} y2={y2}
+                  stroke="transparent"
+                  strokeWidth={TICK_HIT_WEIGHT}
+                  strokeLinecap="round"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => onBoardClick(board)}
+                >
+                  <title>{board.title?.trim() || 'Untitled board'}</title>
+                </line>
+              )}
+            </g>
+          )
+        })}
+
+        {/* Walls with nothing pinned up — the plan's most useful signal for an
+            instructor, and one no other view reports at a glance. */}
+        {emptyWalls.map((e, i) => (
+          <text
+            key={i}
+            x={e.x}
+            y={e.y}
+            textAnchor="middle"
+            style={{ fontFamily: MONO_STACK, fontSize: 11, letterSpacing: '0.14em', pointerEvents: 'none' }}
+            fill={ROOM.ink2}
+            opacity={0.6}
+          >
+            EMPTY
+          </text>
+        ))}
+
+        {labels.map(({ student, text, x, y, anchor }) => {
           const isSelected = student.id === selectedStudentId
           return (
             <g
-              key={student.id}
+              key={`${student.id}-${x}-${y}`}
               onClick={() => onSelectStudent(student)}
               style={{ cursor: 'pointer' }}
             >
               {isSelected && (
                 <rect
-                  x={anchor === 'end' ? x - 190 : anchor === 'middle' ? x - 95 : x - 6}
+                  x={x - 95}
                   y={y - 15}
-                  width={196}
+                  width={190}
                   height={22}
                   fill={ROOM.accent}
                   opacity={0.28}
@@ -156,16 +342,17 @@ export default function PlanView({ wallConfig, students, selectedStudentId, onSe
                 x={x}
                 y={y}
                 textAnchor={anchor}
-                style={{ fontFamily: SANS_STACK, fontSize: 15, fontWeight: 700 }}
+                style={{ fontFamily: SANS_STACK, fontSize: NAME_FONT, fontWeight: 700 }}
                 fill={ROOM.ink}
               >
-                {student.name}
+                {text}
+                <title>{student.name}</title>
               </text>
               {/* Callout dots beside the name — one per open callout, capped. */}
               {Array.from({ length: Math.min(student.calloutCount, 6) }).map((_, i) => (
                 <circle
                   key={i}
-                  cx={(anchor === 'end' ? x - 190 : anchor === 'middle' ? x - 88 : x + 8) + i * 11}
+                  cx={x - 88 + i * 11}
                   cy={y + 10}
                   r={3.5}
                   fill={ROOM.accent}
