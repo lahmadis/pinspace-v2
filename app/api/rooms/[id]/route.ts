@@ -55,7 +55,7 @@ async function authorizeRoomMutation(
     .eq('id', roomId)
     .maybeSingle()
   if (roomError || !room) {
-    return { ok: false, response: NextResponse.json({ error: 'Room not found' }, { status: 404 }) }
+    return { ok: false, response: NextResponse.json({ error: 'Space not found' }, { status: 404 }) }
   }
 
   const workspaceId = room.workspace_id as string
@@ -147,7 +147,7 @@ export async function PATCH(
     const updates: Record<string, unknown> = {}
 
     if (typeof body?.name === 'string') {
-      const nameResult = validateName(body.name, { maxLength: 100, fieldLabel: 'Room name' })
+      const nameResult = validateName(body.name, { maxLength: 100, fieldLabel: 'Space name' })
       if (!nameResult.ok) {
         return NextResponse.json({ error: nameResult.error }, { status: 400 })
       }
@@ -165,7 +165,7 @@ export async function PATCH(
       // always allowed (retracting content is never a privilege escalation).
       if (body.isPublished === true && !(await isInstructorAccount(auth.userId))) {
         return NextResponse.json(
-          { error: 'Only instructors can publish rooms to the network.' },
+          { error: 'Only instructors can publish spaces to the network.' },
           { status: 403 }
         )
       }
@@ -193,7 +193,7 @@ export async function PATCH(
         .eq('id', params.id)
       if (updateError) {
         console.error('Error updating room:', updateError)
-        return NextResponse.json({ error: 'Failed to update room' }, { status: 500 })
+        return NextResponse.json({ error: 'Failed to update space' }, { status: 500 })
       }
     }
 
@@ -239,7 +239,7 @@ export async function DELETE(
       .eq('workspace_id', workspaceId)
     if ((roomCount ?? 0) <= 1) {
       return NextResponse.json(
-        { error: 'Cannot delete the only room in a workspace. Create another room first or delete the workspace itself.' },
+        { error: 'Cannot delete the only space in a workspace. Create another space first or delete the workspace itself.' },
         { status: 400 }
       )
     }
@@ -250,7 +250,7 @@ export async function DELETE(
       .eq('id', params.id)
     if (deleteError) {
       console.error('Error deleting room:', deleteError)
-      return NextResponse.json({ error: 'Failed to delete room' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to delete space' }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })

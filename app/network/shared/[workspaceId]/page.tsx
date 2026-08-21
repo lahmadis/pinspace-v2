@@ -98,7 +98,7 @@ function SharedWorkspaceNetworkInner() {
           </h2>
           <p className="text-slate-400 text-sm mb-6">
             {loadState === 'not-found'
-              ? "We couldn't find this shared room or you don't have access to it."
+              ? "We couldn't find this shared space or you don't have access to it."
               : 'We had trouble loading this workspace. Try again.'}
           </p>
           <Link
@@ -140,7 +140,7 @@ function SharedWorkspaceNetworkInner() {
               href={`/workspace/${workspaceId}`}
               className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors shrink-0"
             >
-              Manage rooms
+              Manage spaces
             </Link>
           )}
         </div>
@@ -157,13 +157,13 @@ function SharedWorkspaceNetworkInner() {
             </div>
             <h2 className="text-xl font-semibold text-white mb-2">No studios here yet</h2>
             <p className="text-slate-400 text-sm mb-6">
-              Add rooms to this workspace and they&apos;ll appear as bubbles in the network.
+              Add spaces to this workspace and they&apos;ll appear as bubbles in the network.
             </p>
             <Link
               href={`/workspace/${workspaceId}`}
               className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
             >
-              Add rooms
+              Add spaces
             </Link>
           </div>
         </div>

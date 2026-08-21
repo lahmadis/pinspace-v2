@@ -42,11 +42,11 @@ export default function DemoNetworkPage() {
       <div className="fixed bottom-6 right-6 bg-white rounded-xl shadow-2xl p-6 max-w-sm border-2 border-yellow-400 z-50">
         <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
           <span>🎓</span>
-          <span>Welcome to PinSpace Demo</span>
+          <span>Welcome to pinspace Demo</span>
         </h3>
         <p className="text-sm text-gray-600 mb-4">
           Explore sample studios from MIT, Harvard, Cornell, and Yale.
-          Click through the bubbles to see 3D studio rooms with student work.
+          Click through the bubbles to see 3D studio spaces with student work.
         </p>
         <div className="space-y-2 text-xs text-gray-500">
           <div className="flex items-center gap-2">
@@ -55,7 +55,7 @@ export default function DemoNetworkPage() {
           </div>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-pink-500 rounded-full"></div>
-            <span>Fully interactive 3D rooms</span>
+            <span>Fully interactive 3D spaces</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-purple-500 rounded-full"></div>

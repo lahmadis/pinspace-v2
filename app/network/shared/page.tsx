@@ -96,7 +96,7 @@ function SharedNetworkInner() {
           <div className="min-w-0">
             <h1 className="text-lg font-semibold text-white">Your shared network</h1>
             <p className="text-xs text-slate-400">
-              {nodes.length} {nodes.length === 1 ? 'room' : 'rooms'}
+              {nodes.length} {nodes.length === 1 ? 'space' : 'spaces'}
             </p>
           </div>
         </div>
@@ -111,9 +111,9 @@ function SharedNetworkInner() {
                   d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0" />
               </svg>
             </div>
-            <h2 className="text-xl font-semibold text-white mb-2">No shared rooms yet</h2>
+            <h2 className="text-xl font-semibold text-white mb-2">No shared spaces yet</h2>
             <p className="text-slate-400 text-sm mb-6">
-              You haven&apos;t joined or created any shared rooms yet.
+              You haven&apos;t joined or created any shared spaces yet.
             </p>
             <Link
               href="/dashboard"

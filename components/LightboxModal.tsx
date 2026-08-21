@@ -2660,7 +2660,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                             className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 w-7 h-7 rounded-full border-2 text-[11px] font-bold flex items-center justify-center shadow-md transition-transform hover:scale-110 ${
                               root.resolved
                                 ? 'bg-slate-500/70 border-white/70 text-white/90 opacity-50'
-                                : 'bg-[#C2452D] border-white text-white'
+                                : 'bg-[#3B6EF6] border-white text-white'
                             } ${isActive ? 'ring-2 ring-white scale-110' : ''}`}
                             style={{ left: `${pt.x}px`, top: `${pt.y}px` }}
                             title={root.resolved ? 'Resolved callout' : 'Open callout thread'}
@@ -3084,7 +3084,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {/* Header */}
           <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#C2452D] text-white text-[11px] font-bold">
+              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#3B6EF6] text-white text-[11px] font-bold">
                 {calloutNumber.get(activeRoot.id)}
               </span>
               <h3 className="text-sm font-semibold text-gray-900 truncate">
@@ -3127,7 +3127,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               return (
                 <div
                   key={c.id}
-                  className={`rounded-xl border p-2.5 ${isRoot ? 'bg-[#C2452D]/[0.06] border-[#C2452D]/15' : 'bg-gray-50 border-gray-100 ml-3'}`}
+                  className={`rounded-xl border p-2.5 ${isRoot ? 'bg-[#3B6EF6]/[0.06] border-[#3B6EF6]/15' : 'bg-gray-50 border-gray-100 ml-3'}`}
                 >
                   <div className="flex items-baseline justify-between gap-2 mb-1">
                     <span className="text-[11px] font-semibold text-gray-900 truncate">{c.authorName}</span>

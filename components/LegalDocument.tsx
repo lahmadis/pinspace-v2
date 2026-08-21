@@ -16,7 +16,7 @@ export default function LegalDocument({ content }: LegalDocumentProps) {
             href="/"
             className="text-sm text-text-muted hover:text-primary transition-colors"
           >
-            ← Back to PinSpace
+            ← Back to pinspace
           </Link>
           <nav className="flex gap-4 text-sm">
             <Link href="/terms" className="text-text-muted hover:text-primary transition-colors">

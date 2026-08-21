@@ -250,7 +250,7 @@ export default function SharePage() {
   }, [token])
 
   useEffect(() => {
-    document.title = roomName ? `${roomName} – PinSpace` : 'Shared Space – PinSpace'
+    document.title = roomName ? `${roomName} – pinspace` : 'Shared Space – pinspace'
   }, [roomName])
 
   const handleBoardClick = (board: Board) => {
@@ -331,7 +331,7 @@ export default function SharePage() {
           href="/"
           className="px-5 py-2.5 bg-[#3B6EF6] hover:bg-[#2F5CD6] text-white rounded-xl shadow-lg shadow-[#3B6EF6]/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
         >
-          PinSpace
+          pinspace
         </a>
         {roomName && (
           <div

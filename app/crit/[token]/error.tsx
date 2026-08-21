@@ -23,7 +23,7 @@ export default function CritViewError({
         <h2 className="text-xl font-bold text-gray-900 mb-2">Space failed to load</h2>
         <p className="text-gray-600 mb-6 text-sm">
           Something went wrong loading the 3D space. This can happen if your browser
-          doesn&apos;t support WebGL, or if the room data is unavailable.
+          doesn&apos;t support WebGL, or if the space data is unavailable.
         </p>
         <div className="flex flex-col gap-3">
           <button

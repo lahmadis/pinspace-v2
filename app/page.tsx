@@ -146,7 +146,7 @@ function HomeInner() {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.8, delay: 0.35 }}
           >
-            Pin work into a 3D room, crit it in place, and keep every semester — beautifully archived.
+            Pin work into a 3D space, crit it in place, and keep every semester — beautifully archived.
           </motion.p>
 
           <motion.div
@@ -206,7 +206,7 @@ function HomeInner() {
 
       <footer className="relative z-10 border-t border-[#16181D]/10 bg-white/70 backdrop-blur-sm mt-[220px] sm:mt-[260px]">
         <div className="max-w-5xl mx-auto px-4 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-[#8A8FA0]">
-          <p>© {new Date().getFullYear()} PinSpace</p>
+          <p>© {new Date().getFullYear()} pinspace</p>
           <nav className="flex gap-6">
             <Link href="/terms" className="hover:text-[#3B6EF6] transition-colors">
               Terms of Service

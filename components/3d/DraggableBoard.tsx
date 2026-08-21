@@ -11,6 +11,7 @@ import * as THREE from 'three'
 import type { Board } from '@/types'
 import { Suspense } from 'react'
 import { Text, Html } from '@react-three/drei'
+import { ROOM_FONT_3D } from '@/lib/room/palette'
 import { PDFTextureMaterial } from './PDFTexture'
 import { useBoardTexture } from './useBoardTexture'
 import { toast } from '@/lib/toast'
@@ -1541,6 +1542,7 @@ if (e.intersections && e.intersections.length > 0) {
             {/* Comment count text */}
             <Text
               position={[0, 0, 0.002]}
+              font={ROOM_FONT_3D}
               fontSize={Math.min(boardWidth, boardHeight) * 0.06}
               color="#ffffff"
               anchorX="center"

@@ -173,7 +173,7 @@ export default function WorkspaceRoomsPage() {
     if (creatingRoomRef.current) return
     const trimmed = newRoomName.trim()
     if (!trimmed) {
-      toast.error('Room name required')
+      toast.error('Space name required')
       return
     }
     try {
@@ -185,13 +185,13 @@ export default function WorkspaceRoomsPage() {
         body: JSON.stringify({ name: trimmed }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || 'Failed to create room')
+      if (!res.ok) throw new Error(data?.error || 'Failed to create space')
       setAddingRoom(false)
       setNewRoomName('')
       await fetchWorkspace()
-      toast.success(`Created room "${trimmed}"`)
+      toast.success(`Created space "${trimmed}"`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to create room')
+      toast.error(e instanceof Error ? e.message : 'Failed to create space')
     } finally {
       // Re-enable on success and failure so a failed create can be retried.
       creatingRoomRef.current = false
@@ -202,7 +202,7 @@ export default function WorkspaceRoomsPage() {
   const handleRenameRoom = async (room: Room) => {
     const trimmed = editingRoomName.trim()
     if (!trimmed) {
-      toast.error('Room name required')
+      toast.error('Space name required')
       return
     }
     if (trimmed === room.name) {
@@ -218,12 +218,12 @@ export default function WorkspaceRoomsPage() {
         body: JSON.stringify({ name: trimmed }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || 'Failed to rename room')
+      if (!res.ok) throw new Error(data?.error || 'Failed to rename space')
       setEditingRoomId(null)
       setEditingRoomName('')
       await fetchWorkspace()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to rename room')
+      toast.error(e instanceof Error ? e.message : 'Failed to rename space')
     } finally {
       setRoomBusy(null)
     }
@@ -235,12 +235,12 @@ export default function WorkspaceRoomsPage() {
       setRoomBusy(roomToDelete.id)
       const res = await fetch(`/api/rooms/${roomToDelete.id}`, { method: 'DELETE' })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || 'Failed to delete room')
+      if (!res.ok) throw new Error(data?.error || 'Failed to delete space')
       setRoomToDelete(null)
       await fetchWorkspace()
-      toast.success(`Deleted room "${roomToDelete.name}"`)
+      toast.success(`Deleted space "${roomToDelete.name}"`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to delete room')
+      toast.error(e instanceof Error ? e.message : 'Failed to delete space')
     } finally {
       setRoomBusy(null)
     }
@@ -263,7 +263,7 @@ export default function WorkspaceRoomsPage() {
         body: JSON.stringify({ isPublished: next }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || 'Failed to update room')
+      if (!res.ok) throw new Error(data?.error || 'Failed to update space')
       toast.success(next ? `Published "${room.name}" to Wentworth` : `Unpublished "${room.name}"`)
     } catch (e) {
       setWorkspace((prev) => {
@@ -275,7 +275,7 @@ export default function WorkspaceRoomsPage() {
           ),
         }
       })
-      toast.error(e instanceof Error ? e.message : 'Failed to update room')
+      toast.error(e instanceof Error ? e.message : 'Failed to update space')
     }
   }
 
@@ -302,12 +302,12 @@ export default function WorkspaceRoomsPage() {
       .then(async (res) => {
         if (!res.ok) {
           const data = await res.json().catch(() => ({}))
-          throw new Error(data?.error || 'Failed to reorder rooms')
+          throw new Error(data?.error || 'Failed to reorder spaces')
         }
       })
       .catch((e) => {
         setOrderedRooms(previous)
-        toast.error(e instanceof Error ? e.message : 'Failed to reorder rooms')
+        toast.error(e instanceof Error ? e.message : 'Failed to reorder spaces')
       })
   }
 
@@ -422,7 +422,7 @@ export default function WorkspaceRoomsPage() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 mx-auto mb-4" />
-          <p className="text-gray-600">Loading rooms...</p>
+          <p className="text-gray-600">Loading spaces...</p>
         </div>
       </div>
     )
@@ -560,10 +560,10 @@ export default function WorkspaceRoomsPage() {
         <div className="mb-8">
           <h2 className="text-2xl font-semibold text-gray-900 flex items-center gap-2.5">
             <DoorOpen className="w-6 h-6 text-indigo-600" />
-            Rooms
+            Spaces
           </h2>
           <p className="text-sm text-gray-500 mt-1.5">
-            Click a room to enter its 3D studio.
+            Click a space to enter its 3D studio.
           </p>
         </div>
 
@@ -613,7 +613,7 @@ export default function WorkspaceRoomsPage() {
           {canAddRoom && (
             addingRoom ? (
               <div className="bg-indigo-50 border-2 border-indigo-200 rounded-xl p-6 flex flex-col gap-3">
-                <p className="text-sm font-semibold text-indigo-900">Name your new room</p>
+                <p className="text-sm font-semibold text-indigo-900">Name your new space</p>
                 <input
                   type="text"
                   value={newRoomName}
@@ -653,7 +653,7 @@ export default function WorkspaceRoomsPage() {
                 <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
                   <Plus className="w-5 h-5" />
                 </div>
-                <span className="font-medium text-sm">Add Room</span>
+                <span className="font-medium text-sm">Add Space</span>
               </button>
             )
           )}
@@ -664,15 +664,15 @@ export default function WorkspaceRoomsPage() {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
               <DoorOpen className="w-8 h-8 text-gray-600" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No rooms yet</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No spaces yet</h3>
             <p className="text-sm text-gray-500 max-w-sm mx-auto">
-              The instructor hasn&apos;t set up any rooms in this workspace yet. Check back later.
+              The instructor hasn&apos;t set up any spaces in this workspace yet. Check back later.
             </p>
           </div>
         )}
 
         {/* Add students by email — class owner only. Enrolls students who
-            already have a PinSpace account into workspace_members (which is
+            already have a pinspace account into workspace_members (which is
             what actually grants room access; org membership alone does not). */}
         {isOwner && workspace.type === 'class' && (
           <div className="mt-12 bg-white rounded-xl border border-gray-200 p-6">
@@ -683,7 +683,7 @@ export default function WorkspaceRoomsPage() {
                   Add students
                 </h2>
                 <p className="text-sm text-gray-500 mt-1 max-w-xl">
-                  Enroll students by email. They must already have a PinSpace account —
+                  Enroll students by email. They must already have a pinspace account —
                   anyone without one is listed below so you can ask them to sign up first.
                 </p>
               </div>
@@ -800,13 +800,13 @@ export default function WorkspaceRoomsPage() {
       {roomToDelete && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete room?</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete space?</h3>
             <p className="text-sm text-gray-700 mb-3">
               <strong>&ldquo;{roomToDelete.name}&rdquo;</strong> will be permanently deleted.
             </p>
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-6">
               <p className="text-sm text-red-800">
-                Every board in this room will be deleted along with it. This cannot be undone.
+                Every board in this space will be deleted along with it. This cannot be undone.
               </p>
             </div>
             <div className="flex gap-3">
@@ -822,7 +822,7 @@ export default function WorkspaceRoomsPage() {
                 disabled={roomBusy === roomToDelete.id}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium disabled:opacity-50"
               >
-                {roomBusy === roomToDelete.id ? 'Deleting…' : 'Delete room'}
+                {roomBusy === roomToDelete.id ? 'Deleting…' : 'Delete space'}
               </button>
             </div>
           </div>
@@ -951,7 +951,7 @@ function RoomCardInner({
                   ? 'text-green-700 hover:text-gray-700 hover:bg-gray-50'
                   : 'text-gray-500 hover:text-green-700 hover:bg-green-50'
               }`}
-              aria-label={room.isPublished ? 'Unpublish room' : 'Publish to Wentworth'}
+              aria-label={room.isPublished ? 'Unpublish space' : 'Publish to Wentworth'}
               title={room.isPublished ? 'Unpublish' : 'Publish to Wentworth'}
             >
               <Globe className="w-3.5 h-3.5" />
@@ -961,7 +961,7 @@ function RoomCardInner({
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onStartEdit(room) }}
             disabled={isBusy}
             className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-50"
-            aria-label="Rename room"
+            aria-label="Rename space"
           >
             <Pencil className="w-3.5 h-3.5" />
           </button>
@@ -970,7 +970,7 @@ function RoomCardInner({
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRequestDelete(room) }}
               disabled={isBusy}
               className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
-              aria-label="Delete room"
+              aria-label="Delete space"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>

@@ -294,7 +294,7 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
               <div className="mt-5 pt-5 border-t border-gray-200">
                 <h3 className="text-sm font-bold text-gray-900 mb-1">🎓 Guest critics</h3>
                 <p className="text-xs text-gray-500 mb-3">
-                  Named, no-account links that can comment and trace on this room. Revoke anytime.
+                  Named, no-account links that can comment and trace on this space. Revoke anytime.
                 </p>
 
                 <div className="flex flex-col gap-2 mb-3">

@@ -259,7 +259,7 @@ function ExplorePageInner() {
                 href="/"
                 className="text-xl font-bold text-white hover:text-indigo-400 transition-colors shrink-0"
               >
-                PinSpace
+                pinspace
               </Link>
               {/* Dashboard link — mobile only (sits in top row opposite logo) */}
               <Link

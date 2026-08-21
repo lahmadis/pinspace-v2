@@ -283,7 +283,7 @@ function SignInInner() {
     const signUpHref = `/sign-up${signUpParams.size ? `?${signUpParams}` : ''}`
     const forgotPasswordHref = `/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`
     const genericSubtitle = isPassword
-      ? 'Welcome back. Sign in to PinSpace.'
+      ? 'Welcome back. Sign in to pinspace.'
       : "We'll send a 6-digit sign-in code to your email."
     const subtitle = !institutionSlug
       ? genericSubtitle

@@ -70,11 +70,13 @@ export default function RosterPanel({ students, selectedStudentId, onSelect }: R
                   aria-current={isSelected ? 'true' : undefined}
                   className="w-full flex items-center gap-2.5 pl-2 pr-3 py-2 text-left transition-colors"
                   style={{
-                    // Yellow left border marks the active student; the 3px
+                    // Accent left border marks the active student; the 3px
                     // transparent border on unselected rows keeps text from
-                    // shifting horizontally on selection.
+                    // shifting horizontally on selection. The row tint is the
+                    // same accent at low alpha — it was still a leftover amber
+                    // from the pre-blue palette.
                     borderLeft: `3px solid ${isSelected ? ROOM.accent : 'transparent'}`,
-                    background: isSelected ? 'rgba(222,154,31,0.10)' : 'transparent',
+                    background: isSelected ? 'rgba(59,110,246,0.10)' : 'transparent',
                   }}
                 >
                   <span
@@ -107,7 +109,7 @@ export default function RosterPanel({ students, selectedStudentId, onSelect }: R
                   {student.calloutCount > 0 && (
                     <span
                       className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full tabular-nums"
-                      style={{ fontFamily: MONO_STACK, background: ROOM.redline, color: ROOM.wall }}
+                      style={{ fontFamily: MONO_STACK, background: ROOM.accent, color: ROOM.wall }}
                       title={`${student.calloutCount} callout${student.calloutCount === 1 ? '' : 's'}`}
                     >
                       {student.calloutCount}

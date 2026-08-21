@@ -2,12 +2,16 @@
  * Room palette, shared by the 3D scene and every 2D room surface.
  *
  * Matches the pinspace design-system reference: a warm paper/ink
- * architectural palette with a single blue accent. ACCENT IS ACTIVE STATE
- * ONLY — it marks the selected student, the current wall in the compass, and
- * the active revision node — never a wall, a floor, or the field behind a
- * board. REDLINE marks instructor comments specifically, nothing else.
- * Architecture sheets are white with black linework and a saturated ground
- * fights them.
+ * architectural palette with a single blue accent. ACCENT MARKS ACTIVE STATE
+ * AND ANNOTATION — the selected student, the current wall in the compass, and
+ * every callout marker — but never a wall, a floor, or the field behind a
+ * board. Architecture sheets are white with black linework and a saturated
+ * ground fights them.
+ *
+ * REDLINE is NOT for comment markers. It used to be, which is why the room
+ * shipped red callout bubbles for a while; they now use the accent, because
+ * this same red is the app's destructive colour and a red badge read as
+ * "something is broken". See the token's own note below.
  *
  * No green: the previous palette used it as a generic "identity" accent for
  * owner names and wall tags. The reference sets that text in plain ink
@@ -27,7 +31,17 @@ export const ROOM = {
   ink2: '#8A8FA0',
   /** The one accent color. Active/selected state only. */
   accent: '#3B6EF6',
-  /** Instructor comment markers only. */
+  /**
+   * Red pen. NOT callout/comment markers any more — those are `accent` now, in
+   * the room, the roster, plan view, the 2D archive and the lightbox pins alike,
+   * because this same red is the app's destructive colour (error toasts, delete
+   * flows, form errors) and a red pin read as "something is wrong" rather than
+   * "someone left a note".
+   *
+   * Currently referenced only as a literal, by the trace tool's pen swatches in
+   * components/LightboxModal.tsx — a deliberate multi-option picker where red is
+   * one choice among four, not a status.
+   */
   redline: '#C2452D',
   /** Borders and separators. */
   hairline: '#DCE2ED',
@@ -57,3 +71,29 @@ export const MONO_STACK = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo
 
 /** Sans stack for names and other identity text — the app's ambient Onest. */
 export const SANS_STACK = "'Onest', system-ui, sans-serif"
+
+/**
+ * Onest for text rendered INSIDE the 3D canvas (drei's <Text>, i.e. troika).
+ *
+ * Troika can't read a CSS font stack like SANS_STACK above — it needs an actual
+ * font file it can parse into SDF glyphs, and with no `font` prop it silently
+ * falls back to its own bundled Roboto. That's why 3D labels used to render in a
+ * face that appears nowhere else in the app.
+ *
+ * MUST BE .ttf/.otf/.woff — NEVER .woff2. troika-three-text (0.52.4) converts
+ * woff via woff2otf but hard-rejects woff2 with "woff2 fonts not supported", and
+ * the way that fails is vicious rather than obvious: drei's <Text> wraps
+ * preloadFont in suspend-react, so an unparseable font never resolves, the
+ * component suspends forever, and the nearest boundary — next/dynamic's, up in
+ * app/studio/[id]/page.tsx — sits on "Loading space…" indefinitely. It reads
+ * like a broken data fetch, not a font problem. A .woff2 here cost a debugging
+ * session; don't reintroduce one.
+ *
+ * Self-hosted rather than pointed at fonts.gstatic.com because those URLs carry
+ * a version hash, and a stale one fails silently back to Roboto. Same Onest the
+ * Google Fonts CSS in app/globals.css serves the DOM, so 3D labels and the
+ * surrounding UI share one typeface. This is the regular (400) static instance;
+ * troika has no variable-axis support, which is why the name plates fake their
+ * heavier weight with an outline instead.
+ */
+export const ROOM_FONT_3D = '/fonts/onest-regular.ttf'

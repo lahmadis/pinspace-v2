@@ -91,7 +91,7 @@ export default function PresenceBar({
     <div
       className="fixed top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/15 backdrop-blur-md rounded-xl shadow-lg border border-white/20"
       role="status"
-      aria-label={`${others.length} other ${others.length === 1 ? 'person' : 'people'} editing this room`}
+      aria-label={`${others.length} other ${others.length === 1 ? 'person' : 'people'} editing this space`}
     >
       <div className="flex -space-x-2">
         {shown.map((u) => {

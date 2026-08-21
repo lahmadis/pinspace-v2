@@ -41,9 +41,9 @@ export async function POST() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'PinSpace <noreply@mail.pinspace3d.com>',
+            from: 'pinspace <noreply@mail.pinspace3d.com>',
             to: [NOTIFY_EMAIL],
-            subject: `[PinSpace] Account deletion request — ${userEmail}`,
+            subject: `[pinspace] Account deletion request — ${userEmail}`,
             html: `<p>User <strong>${userEmail}</strong> (id: ${session.user.id}) requested account deletion.</p><p>Their <code>user_profiles.deleted_at</code> is now set. Please manually clean up associated workspaces and boards when ready.</p>`,
           }),
         })

@@ -15,6 +15,21 @@ export interface RoomStudent {
   calloutCount: number
 }
 
+/**
+ * The identity key a board contributes to. Owner id when present so two people
+ * sharing a display name stay distinct, falling back to the normalised name for
+ * legacy rows that predate owner_id.
+ *
+ * Exported because more than one surface has to agree on it: `deriveRoomStudents`
+ * builds the roster from it, and the 3D room's clickable owner name plates
+ * (WallSystem) have to resolve a plate back to the same `RoomStudent.id` to open
+ * that person's 2D archive. Two hand-rolled copies of this rule would silently
+ * mismatch for exactly the legacy rows it exists to handle.
+ */
+export function studentKeyFor(ownerId: string | undefined | null, cleanedName: string): string {
+  return ownerId || `name:${cleanedName.toLowerCase()}`
+}
+
 function initialsFor(name: string): string {
   const parts = name.split(/\s+/).filter(Boolean)
   if (parts.length === 0) return '?'
@@ -41,7 +56,7 @@ export function deriveRoomStudents(boards: Board[]): RoomStudent[] {
   for (const board of boards) {
     const name = cleanDisplayName(board.ownerName) || cleanDisplayName(board.studentName)
     if (!name) continue
-    const key = board.ownerId || `name:${name.toLowerCase()}`
+    const key = studentKeyFor(board.ownerId, name)
 
     let entry = byKey.get(key)
     if (!entry) {

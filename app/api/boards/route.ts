@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
           .eq('id', roomIdParam)
           .maybeSingle()
         if (!ws) {
-          return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+          return NextResponse.json({ error: 'Space not found' }, { status: 404 })
         }
         scopedWorkspaceId = ws.id as string
         const firstRoom = await fetchFirstRoomWithName(ws.id as string)
@@ -949,7 +949,7 @@ export async function POST(request: NextRequest) {
         .eq('id', roomIdRaw)
         .maybeSingle()
       if (!room || room.workspace_id !== workspaceId) {
-        return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Space not found' }, { status: 404 })
       }
       resolvedRoomId = room.id as string
     } else {

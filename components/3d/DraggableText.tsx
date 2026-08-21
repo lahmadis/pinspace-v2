@@ -5,6 +5,7 @@ import { useThree, ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import { Text } from '@react-three/drei'
 import type { WallTextItem } from '@/lib/wallLayout'
+import { ROOM_FONT_3D } from '@/lib/room/palette'
 import { useDisposableGeometry } from './useDisposableGeometry'
 
 interface DraggableTextProps {
@@ -196,6 +197,7 @@ export function DraggableText({
         <Text
           position={[0, 0, 0.05]}
           raycast={() => null}
+          font={ROOM_FONT_3D}
           fontSize={item.fontSize}
           color="#111827"
           anchorX="center"

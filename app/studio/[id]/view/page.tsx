@@ -339,7 +339,7 @@ function StudioViewPageInner() {
   }, [boards, searchParams])
 
   useEffect(() => {
-    document.title = 'Space View – PinSpace'
+    document.title = 'Space View – pinspace'
   }, [])
 
   const fetchBoards = async () => {
@@ -510,7 +510,7 @@ function StudioViewPageInner() {
           onClick={() => router.push('/')}
           className="px-5 py-2.5 bg-[#3B6EF6] hover:bg-[#2F5CD6] text-white rounded-xl shadow-lg shadow-[#3B6EF6]/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
         >
-          PinSpace
+          pinspace
         </button>
 
         <button

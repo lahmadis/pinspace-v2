@@ -58,7 +58,7 @@ function DepartmentPageInner({ params }: { params: { department: string } }) {
 
   useEffect(() => {
     if (!meta) return
-    document.title = `${meta.name} Spaces – PinSpace`
+    document.title = `${meta.name} Spaces – pinspace`
   }, [meta])
 
   // Load available academic years for the tab bar

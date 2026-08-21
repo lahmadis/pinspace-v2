@@ -110,7 +110,7 @@ export default function PlanView({ wallConfig, students, selectedStudentId, onSe
 
   return (
     <div className="absolute inset-0 overflow-auto" style={{ background: ROOM.background }}>
-      <svg viewBox={`0 0 ${VIEW} ${VIEW}`} className="w-full h-full" role="img" aria-label="Room floor plan">
+      <svg viewBox={`0 0 ${VIEW} ${VIEW}`} className="w-full h-full" role="img" aria-label="Space floor plan">
         {/* Floor field */}
         <rect x={0} y={0} width={VIEW} height={VIEW} fill={ROOM.background} />
 
@@ -168,7 +168,7 @@ export default function PlanView({ wallConfig, students, selectedStudentId, onSe
                   cx={(anchor === 'end' ? x - 190 : anchor === 'middle' ? x - 88 : x + 8) + i * 11}
                   cy={y + 10}
                   r={3.5}
-                  fill={ROOM.redline}
+                  fill={ROOM.accent}
                 />
               ))}
             </g>

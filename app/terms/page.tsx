@@ -4,8 +4,8 @@ import type { Metadata } from 'next'
 import LegalDocument from '@/components/LegalDocument'
 
 export const metadata: Metadata = {
-  title: 'Terms of Service · PinSpace',
-  description: 'PinSpace Terms of Service.',
+  title: 'Terms of Service · pinspace',
+  description: 'pinspace Terms of Service.',
 }
 
 export default function TermsPage() {

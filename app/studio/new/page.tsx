@@ -26,7 +26,7 @@ export default function NewStudioPage() {
     e.preventDefault()
     
     if (!formData.name.trim()) {
-      toast.error('Please enter a room name')
+      toast.error('Please enter a space name')
       return
     }
 
@@ -47,7 +47,7 @@ export default function NewStudioPage() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to create room')
+        throw new Error(data.error || 'Failed to create space')
       }
 
       // Phase 6.2: redirect to the rooms list, not directly into a studio.
@@ -56,7 +56,7 @@ export default function NewStudioPage() {
       router.push(`/workspace/${data.workspace?.id || data.id}`)
     } catch (error) {
       console.error('Error:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to create room')
+      toast.error(error instanceof Error ? error.message : 'Failed to create space')
     } finally {
       setLoading(false)
     }
@@ -87,7 +87,7 @@ export default function NewStudioPage() {
               </button>
             </Link>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Create Personal Room</h1>
+              <h1 className="text-xl font-bold text-gray-900">Create Personal Space</h1>
               <p className="text-sm text-gray-600">Set up your individual studio space</p>
             </div>
           </div>
@@ -99,10 +99,10 @@ export default function NewStudioPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Create a New Personal Room
+              Create a New Personal Space
             </h2>
             <p className="text-gray-600">
-              A personal room is your own 3D studio space where you can organize and showcase your architecture work.
+              A personal space is your own 3D studio where you can organize and showcase your architecture work.
             </p>
           </div>
 
@@ -110,7 +110,7 @@ export default function NewStudioPage() {
             {/* Room Name */}
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
-                Room Name *
+                Space Name *
               </label>
               <input
                 type="text"
@@ -123,7 +123,7 @@ export default function NewStudioPage() {
                 required
               />
               <p className="mt-2 text-sm text-gray-500">
-                Choose a name for your personal studio room
+                Choose a name for your personal studio space
               </p>
             </div>
 
@@ -136,7 +136,7 @@ export default function NewStudioPage() {
                 id="description"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Describe what this room is for..."
+                placeholder="Describe what this space is for..."
                 rows={3}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
               />
@@ -151,9 +151,9 @@ export default function NewStudioPage() {
                     What happens next?
                   </p>
                   <ul className="text-sm text-indigo-800 space-y-1">
-                    <li>• A new 3D studio room will be created</li>
+                    <li>• A new 3D studio space will be created</li>
                     <li>• You can add boards and organize your work</li>
-                    <li>• The room will appear in &quot;My Personal Rooms&quot; on your dashboard</li>
+                    <li>• The space will appear in &quot;My Personal Spaces&quot; on your dashboard</li>
                   </ul>
                 </div>
               </div>
@@ -168,10 +168,10 @@ export default function NewStudioPage() {
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  Creating Room...
+                  Creating Space...
                 </span>
               ) : (
-                'Create Room'
+                'Create Space'
               )}
             </button>
           </form>

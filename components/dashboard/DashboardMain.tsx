@@ -373,7 +373,7 @@ export function DashboardMain({
                 is what silently deleted Enter Network for every user with zero
                 rooms. Same shape as app/network/page.tsx and app/explore/page.tsx,
                 where the header and back link sit outside the ternary, and as
-                app/workspace/[id]/page.tsx, where "No rooms yet" renders BELOW
+                app/workspace/[id]/page.tsx, where "No spaces yet" renders BELOW
                 the grid instead of replacing it. Anything added to this grid
                 later inherits the fix. */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

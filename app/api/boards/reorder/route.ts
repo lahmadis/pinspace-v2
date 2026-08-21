@@ -68,10 +68,10 @@ export async function POST(request: NextRequest) {
 
     if (roomErr) {
       console.error('Error loading room for reorder:', roomId, roomErr)
-      return NextResponse.json({ error: 'Failed to load room' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to load space' }, { status: 500 })
     }
     if (!room) {
-      return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Space not found' }, { status: 404 })
     }
 
     const { data: workspace, error: workspaceErr } = await admin
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       authorized = await isSuperadmin(userId, admin)
     }
     if (!authorized) {
-      return NextResponse.json({ error: 'Not authorized to reorder this room' }, { status: 403 })
+      return NextResponse.json({ error: 'Not authorized to reorder this space' }, { status: 403 })
     }
 
     // Current ordering — the same key the client sorts on (lib/boardOrder.ts):
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
 
     const ids = (rows || []).map((r) => r.id as string)
     if (!ids.includes(boardId)) {
-      return NextResponse.json({ error: 'Board not found in this room' }, { status: 404 })
+      return NextResponse.json({ error: 'Board not found in this space' }, { status: 404 })
     }
 
     // Splice: pull the board out, clamp the target into 1..N of the REMAINING

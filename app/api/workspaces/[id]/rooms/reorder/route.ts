@@ -68,7 +68,7 @@ export async function POST(
     }
     if (workspace.owner_id !== userId) {
       return NextResponse.json(
-        { error: 'Only workspace owners can reorder rooms' },
+        { error: 'Only workspace owners can reorder spaces' },
         { status: 403 }
       )
     }
@@ -81,7 +81,7 @@ export async function POST(
       .eq('workspace_id', workspaceId)
     if (roomsError) {
       console.error('Error loading rooms for reorder:', roomsError)
-      return NextResponse.json({ error: 'Failed to load rooms' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to load spaces' }, { status: 500 })
     }
 
     const existingIds = new Set((existingRooms ?? []).map((r) => r.id as string))
@@ -92,7 +92,7 @@ export async function POST(
       ordered.every((id) => existingIds.has(id))
     if (!sameSet) {
       return NextResponse.json(
-        { error: 'orderedRoomIds must be exactly the current set of rooms in this workspace' },
+        { error: 'orderedRoomIds must be exactly the current set of spaces in this workspace' },
         { status: 400 }
       )
     }
@@ -114,7 +114,7 @@ export async function POST(
         .eq('workspace_id', workspaceId)
       if (updateError) {
         console.error('Error reordering rooms:', updateError, { id, index })
-        return NextResponse.json({ error: 'Failed to reorder rooms' }, { status: 500 })
+        return NextResponse.json({ error: 'Failed to reorder spaces' }, { status: 500 })
       }
     }
 

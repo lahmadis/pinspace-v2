@@ -241,10 +241,9 @@ export default function BoardThumbnail({ board, position, width, height, onClick
         </lineSegments>
       )}
 
-      {/* Callout count badge — a redline marker at the top-right corner,
-          matching lib/room/palette.ts's ROOM.redline convention ("instructor
-          comment markers only") used by the Unfolded/Plan views, so a callout
-          reads the same way regardless of which view you're looking at it in.
+      {/* Callout count badge — an accent marker at the top-right corner, the
+          same blue every other marker and active state in the app uses, so a
+          callout reads the same way regardless of which view you're in.
           Only rendered for viewers permitted to see callouts (the server omits
           the count for guests/public, so calloutCount is undefined for them) and
           only when at least one callout exists. NO distanceFactor: like a real UI
@@ -278,10 +277,11 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               height: '22px',
               padding: '0 6px',
               borderRadius: '11px',
-              // ROOM.redline — reads as a distinct callout marker rather than
-              // blending into the blue hover/highlight frame (#3B6EF6). The
-              // white ring keeps it legible on BOTH the grey and white walls.
-              background: '#C2452D',
+              // The one accent blue, same as every other active/marker state in
+              // the app. Was the redline red, which stood out as the only warm
+              // colour left in the room. The white ring keeps it legible on
+              // BOTH the grey and white walls.
+              background: '#3B6EF6',
               color: '#fff',
               fontSize: '13px',
               fontWeight: 600,

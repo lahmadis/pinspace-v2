@@ -11,6 +11,7 @@ import WallSystem from './3d/WallSystem'
 import LightboxModal from './LightboxModal'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
+import { ROOM_FONT_3D } from '@/lib/room/palette'
 
 type Vec3 = { x: number; y: number; z: number }
 
@@ -319,6 +320,7 @@ function StudioLabel({
   return (
     <group position={[0, y, z]}>
       <Text
+        font={ROOM_FONT_3D}
         fontSize={fontSize}
         color={highlighted ? '#6366f1' : '#94a3b8'}
         outlineColor={highlighted ? '#6366f1' : '#cbd5e1'}

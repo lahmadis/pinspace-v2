@@ -234,7 +234,7 @@ function NewWorkspaceForm() {
                     What happens next?
                   </p>
                   <ul className="text-sm text-blue-800 space-y-1">
-                    <li>• A new 3D studio room will be created</li>
+                    <li>• A new 3D studio space will be created</li>
                     <li>• You'll get a unique invite link to share</li>
                     <li>• Students can join using the invite code</li>
                     <li>• Everyone can add and edit their own boards</li>

@@ -176,7 +176,7 @@ export default function WorkspaceSettingsPage() {
     if (!workspace) return
     const trimmed = newRoomName.trim()
     if (!trimmed) {
-      toast.error('Room name required')
+      toast.error('Space name required')
       return
     }
     try {
@@ -187,13 +187,13 @@ export default function WorkspaceSettingsPage() {
         body: JSON.stringify({ name: trimmed }),
       })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data?.error || 'Failed to create room')
+      if (!response.ok) throw new Error(data?.error || 'Failed to create space')
       setAddingRoom(false)
       setNewRoomName('')
       await fetchWorkspace()
-      toast.success(`Created room "${trimmed}"`)
+      toast.success(`Created space "${trimmed}"`)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to create room')
+      toast.error(error instanceof Error ? error.message : 'Failed to create space')
     } finally {
       setRoomBusy(null)
     }
@@ -202,7 +202,7 @@ export default function WorkspaceSettingsPage() {
   const handleRenameRoom = async (room: Room) => {
     const trimmed = editingRoomName.trim()
     if (!trimmed) {
-      toast.error('Room name required')
+      toast.error('Space name required')
       return
     }
     if (trimmed === room.name) {
@@ -218,12 +218,12 @@ export default function WorkspaceSettingsPage() {
         body: JSON.stringify({ name: trimmed }),
       })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data?.error || 'Failed to rename room')
+      if (!response.ok) throw new Error(data?.error || 'Failed to rename space')
       setEditingRoomId(null)
       setEditingRoomName('')
       await fetchWorkspace()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to rename room')
+      toast.error(error instanceof Error ? error.message : 'Failed to rename space')
     } finally {
       setRoomBusy(null)
     }
@@ -255,12 +255,12 @@ export default function WorkspaceSettingsPage() {
       setRoomBusy(roomToDelete.id)
       const response = await fetch(`/api/rooms/${roomToDelete.id}`, { method: 'DELETE' })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data?.error || 'Failed to delete room')
+      if (!response.ok) throw new Error(data?.error || 'Failed to delete space')
       setRoomToDelete(null)
       await fetchWorkspace()
-      toast.success(`Deleted room "${roomToDelete.name}"`)
+      toast.success(`Deleted space "${roomToDelete.name}"`)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to delete room')
+      toast.error(error instanceof Error ? error.message : 'Failed to delete space')
     } finally {
       setRoomBusy(null)
     }
@@ -386,10 +386,10 @@ export default function WorkspaceSettingsPage() {
               <div className="bg-white rounded-xl border border-gray-200 p-8">
                 <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2.5">
                   <DoorOpen className="w-5 h-5 text-indigo-600" />
-                  Rooms ({workspace.rooms?.length ?? 0})
+                  Spaces ({workspace.rooms?.length ?? 0})
                 </h2>
                 <p className="text-sm text-gray-500 mb-6">
-                  Each room is its own 3D wall. Use rooms to separate pin-ups, milestones, or reviews.
+                  Each space is its own 3D wall. Use spaces to separate pin-ups, milestones, or reviews.
                 </p>
 
                 <div className="space-y-3">
@@ -442,7 +442,7 @@ export default function WorkspaceSettingsPage() {
                                 onClick={() => { setEditingRoomId(room.id); setEditingRoomName(room.name) }}
                                 disabled={isBusy}
                                 className="p-1 text-gray-400 hover:text-indigo-600 hover:bg-white rounded disabled:opacity-50"
-                                aria-label="Rename room"
+                                aria-label="Rename space"
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
@@ -487,7 +487,7 @@ export default function WorkspaceSettingsPage() {
                               onClick={() => setRoomToDelete(room)}
                               disabled={isBusy}
                               className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
-                              aria-label="Delete room"
+                              aria-label="Delete space"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -537,7 +537,7 @@ export default function WorkspaceSettingsPage() {
                       className="w-full px-4 py-2.5 border border-dashed border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-colors font-medium text-sm flex items-center justify-center gap-2"
                     >
                       <Plus className="w-4 h-4" />
-                      Add Room
+                      Add Space
                     </button>
                   )}
                 </div>
@@ -666,15 +666,15 @@ export default function WorkspaceSettingsPage() {
           <div className="space-y-6">
             {/* Rooms Link */}
             <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="font-semibold text-gray-900 mb-2">Rooms</h3>
+              <h3 className="font-semibold text-gray-900 mb-2">Spaces</h3>
               <p className="text-sm text-gray-500 mb-4">
-                View and enter rooms in this workspace
+                View and enter spaces in this workspace
               </p>
               <button
                 onClick={handleGoToStudio}
                 className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center justify-center gap-2 shadow-sm"
               >
-                <span>Open Rooms</span>
+                <span>Open Spaces</span>
                 <ExternalLink className="w-4 h-4" />
               </button>
             </div>
@@ -684,7 +684,7 @@ export default function WorkspaceSettingsPage() {
               <div className="bg-white rounded-xl border border-gray-200 p-6">
                 <h3 className="font-semibold text-gray-900 mb-2">Export</h3>
                 <p className="text-sm text-gray-500 mb-4">
-                  Download all boards in this room as a zip with image files and a manifest.
+                  Download all boards in this space as a zip with image files and a manifest.
                 </p>
                 <button
                   onClick={handleExport}
@@ -704,7 +704,7 @@ export default function WorkspaceSettingsPage() {
                   )}
                 </button>
                 <p className="text-xs text-gray-400 mt-2">
-                  Large rooms may take 10-30 seconds to build.
+                  Large spaces may take 10-30 seconds to build.
                 </p>
               </div>
             )}
@@ -757,13 +757,13 @@ export default function WorkspaceSettingsPage() {
       {roomToDelete && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete room?</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete space?</h3>
             <p className="text-sm text-gray-700 mb-3">
               <strong>&ldquo;{roomToDelete.name}&rdquo;</strong> will be permanently deleted.
             </p>
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-6">
               <p className="text-sm text-red-800">
-                Every board in this room will be deleted along with it. This cannot be undone.
+                Every board in this space will be deleted along with it. This cannot be undone.
               </p>
             </div>
             <div className="flex gap-3">
@@ -779,7 +779,7 @@ export default function WorkspaceSettingsPage() {
                 disabled={roomBusy === roomToDelete.id}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium disabled:opacity-50"
               >
-                {roomBusy === roomToDelete.id ? 'Deleting…' : 'Delete room'}
+                {roomBusy === roomToDelete.id ? 'Deleting…' : 'Delete space'}
               </button>
             </div>
           </div>

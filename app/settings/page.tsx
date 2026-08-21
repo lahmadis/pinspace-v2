@@ -427,7 +427,7 @@ export default function SettingsPage() {
                 <Toggle
                   checked={notifyInvites}
                   onChange={(v) => handleToggleNotification('notify_room_invites', v)}
-                  label="Email me when invited to a room"
+                  label="Email me when invited to a space"
                 />
                 <Toggle
                   checked={notifyUpdates}
@@ -472,7 +472,7 @@ export default function SettingsPage() {
                 ) : (
                   <div className="rounded-xl bg-[#C2452D]/6 border border-[#C2452D]/20 p-4">
                     <p className="text-sm text-[#16181D] mb-3">
-                      You&apos;ll lose access to all rooms under <strong>{organization.name}</strong>. This cannot be undone from here.
+                      You&apos;ll lose access to all spaces under <strong>{organization.name}</strong>. This cannot be undone from here.
                     </p>
                     <div className="flex gap-2">
                       <button
@@ -499,7 +499,7 @@ export default function SettingsPage() {
             <SectionCard>
               <SectionHeader icon={<Monitor className="w-4 h-4" />} title="Display" badge />
               <p className="text-sm text-[#8A8FA0]">
-                Theme, units, and default room template settings coming soon.
+                Theme, units, and default space template settings coming soon.
               </p>
             </SectionCard>
 
@@ -507,7 +507,7 @@ export default function SettingsPage() {
             <SectionCard>
               <SectionHeader icon={<Lock className="w-4 h-4" />} title="Privacy" badge />
               <p className="text-sm text-[#8A8FA0]">
-                Control who can see your personal rooms and set default sharing behavior. Coming soon.
+                Control who can see your personal spaces and set default sharing behavior. Coming soon.
               </p>
             </SectionCard>
 
@@ -571,7 +571,7 @@ export default function SettingsPage() {
                       </button>
                     </div>
                     <p className="text-sm text-[#16181D] mb-3">
-                      Your account will be deactivated immediately. All your rooms and boards will
+                      Your account will be deactivated immediately. All your spaces and boards will
                       become inaccessible. This action cannot be reversed from the app.
                     </p>
                     <div className="flex gap-2">

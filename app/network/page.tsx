@@ -96,7 +96,7 @@ function PersonalNetworkInner() {
           <div className="min-w-0">
             <h1 className="text-lg font-semibold text-white">Your network</h1>
             <p className="text-xs text-slate-400">
-              {nodes.length} {nodes.length === 1 ? 'room' : 'rooms'}
+              {nodes.length} {nodes.length === 1 ? 'space' : 'spaces'}
             </p>
           </div>
         </div>
@@ -111,9 +111,9 @@ function PersonalNetworkInner() {
                   d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
             </div>
-            <h2 className="text-xl font-semibold text-white mb-2">No rooms yet</h2>
+            <h2 className="text-xl font-semibold text-white mb-2">No spaces yet</h2>
             <p className="text-slate-400 text-sm mb-6">
-              You haven&apos;t created any personal rooms yet. Create your first room to see it here.
+              You haven&apos;t created any personal spaces yet. Create your first space to see it here.
             </p>
             <Link
               href="/dashboard"

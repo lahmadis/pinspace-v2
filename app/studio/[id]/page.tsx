@@ -258,7 +258,7 @@ function StudioPageInner() {
       const nextConfig = config as unknown as WallConfig
       setWallConfig(nextConfig)
       cacheWallConfigLocally(nextConfig)
-      toast.error("Room layout was updated by another user. Reloaded latest — your changes weren't saved.")
+      toast.error("Space layout was updated by another user. Reloaded latest — your changes weren't saved.")
     },
     [cacheWallConfigLocally]
   )
@@ -1112,13 +1112,13 @@ function StudioPageInner() {
             // workspace + room breadcrumb pill drops to a second line on
             // narrow viewports instead of running off the right edge.
             <div className="fixed top-4 left-4 z-40 flex flex-wrap items-center gap-2.5 max-w-[calc(100vw-2rem)] sm:flex-nowrap sm:max-w-none">
-              {/* PinSpace Logo - links to home */}
+              {/* pinspace Logo - links to home */}
               <button
                 onClick={() => router.push('/')}
                 style={{ background: CHROME.accent, color: CHROME.paper }}
                 className={`${figtree.className} px-5 py-2.5 rounded-xl shadow-lg transition-colors duration-200 font-semibold text-base hover:opacity-90`}
               >
-                PinSpace
+                pinspace
               </button>
 
               {/* Phase 6.2: breadcrumb + room switcher. Workspace name links
@@ -1134,7 +1134,7 @@ function StudioPageInner() {
                   <button
                     onClick={() => router.push(`/workspace/${workspaceId}`)}
                     className="hover:underline"
-                    aria-label={`Back to ${workspaceName} rooms list`}
+                    aria-label={`Back to ${workspaceName} spaces list`}
                   >
                     {workspaceName}
                   </button>
@@ -1143,7 +1143,7 @@ function StudioPageInner() {
                     onClick={() => setShowRoomSwitcher((v) => !v)}
                     disabled={allRooms.length <= 1}
                     className="flex items-center gap-1 disabled:cursor-default"
-                    aria-label="Switch room"
+                    aria-label="Switch space"
                     aria-expanded={showRoomSwitcher}
                   >
                     <span>{currentRoomName ?? '…'}</span>
@@ -1158,7 +1158,7 @@ function StudioPageInner() {
                       onMouseLeave={() => setShowRoomSwitcher(false)}
                     >
                       <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 border-b border-gray-100">
-                        Rooms in {workspaceName}
+                        Spaces in {workspaceName}
                       </div>
                       <ul className="py-1">
                         {allRooms.map((r) => {
@@ -1191,7 +1191,7 @@ function StudioPageInner() {
                           onClick={() => setShowRoomSwitcher(false)}
                           className="block px-3 py-2 text-sm text-[#3B6EF6] hover:bg-[#3B6EF6]/10 font-medium"
                         >
-                          See all rooms →
+                          See all spaces →
                         </Link>
                       </div>
                     </div>

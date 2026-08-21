@@ -172,7 +172,7 @@ export default function AdminInstructorPage({ params }: { params: { userId: stri
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
         <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-xl border border-gray-200">
           <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">PinSpace Admin</h1>
+            <h1 className="text-2xl font-bold text-gray-900">pinspace Admin</h1>
             <p className="text-sm text-gray-500 mt-1">Sign in with your admin email</p>
           </div>
           <form onSubmit={handleAdminSignIn} className="space-y-4">

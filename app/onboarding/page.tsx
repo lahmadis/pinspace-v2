@@ -137,7 +137,7 @@ function OnboardingContent() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Welcome to PinSpace</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-1">Welcome to pinspace</h1>
         <p className="text-sm text-gray-500 mb-6">Quick info to help us understand our community (used for stats only).</p>
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="flex gap-3">
@@ -231,7 +231,7 @@ function OnboardingContent() {
           </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">How did you hear about PinSpace?</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">How did you hear about pinspace?</label>
             <select
               value={formData.how_heard}
               onChange={(e) => setFormData((p) => ({ ...p, how_heard: e.target.value }))}

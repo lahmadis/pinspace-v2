@@ -4,7 +4,7 @@ import { ROOM, MONO_STACK } from '@/lib/room/palette'
 import type { RoomCameraPreset } from '@/lib/room/cameraViews'
 import RoomViewPresets from './RoomViewPresets'
 
-export type RoomView = 'room' | 'unfolded' | 'plan'
+export type RoomView = 'room' | 'unfolded' | 'plan' | '2d'
 
 interface RevisionStripProps {
   view: RoomView
@@ -21,9 +21,13 @@ interface RevisionStripProps {
 }
 
 const VIEWS: Array<{ id: RoomView; label: string }> = [
-  { id: 'room', label: 'Room' },
+  { id: 'room', label: 'Space' },
   { id: 'unfolded', label: 'Unfolded' },
   { id: 'plan', label: 'Plan' },
+  // The per-person board archive. Labelled by what it IS from the viewer's
+  // side — a flat 2D read of the room — rather than "Archive", which sounds
+  // like cold storage for old work.
+  { id: '2d', label: '2D' },
 ]
 
 /**

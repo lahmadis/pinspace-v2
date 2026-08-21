@@ -1,13 +1,14 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { Text, ContactShadows, Grid } from '@react-three/drei'
 import { Board } from '@/types'
 import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
 import { getWallTransformResolved, calculateFloorBounds, type WallTextItem } from '@/lib/wallLayout'
-import { ROOM_SKY } from '@/lib/room/palette'
+import { ROOM_SKY, ROOM_FONT_3D } from '@/lib/room/palette'
+import { studentKeyFor } from '@/lib/room/students'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
 import { cleanDisplayName } from '@/lib/displayName'
 
@@ -104,6 +105,12 @@ interface WallSystemProps {
    * that doesn't require finding a button or knowing the Escape shortcut.
    */
   onFloorClick?: () => void
+  /**
+   * Fires when an owner name plate above a bay is clicked, with the key that
+   * person's `RoomStudent.id` uses (see studentKeyFor). Opens their 2D archive.
+   * Omit to leave the plates inert, which is what the guest surfaces want.
+   */
+  onNamePlateClick?: (studentId: string) => void
 }
 
 // Wall surface + edge-shadow palette per color.
@@ -318,7 +325,7 @@ export function assignNamePlateRows(plates: PlateLayoutInput[]): Map<string, num
 }
 
 
-export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick, onNamePlateClick }: WallSystemProps) {
 
   const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
   // Ghosted variants for wall focus. Memoized on the palette rather than
@@ -332,6 +339,12 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
   }), [wallPalette])
   const dimmedInk = useMemo(() => dimTowardSky(ROOM_PALETTE.ink, WALL_DIM_AMOUNT), [])
   const dimmedAccent = useMemo(() => dimTowardSky(ROOM_PALETTE.accent, WALL_DIM_AMOUNT), [])
+
+  // Backstop for the hover cursor set by clickable name plates. The click path
+  // clears it inline, but a plate can also stop being hoverable without an
+  // onPointerOut ever firing — the wall gets dimmed mid-hover, or the room
+  // unmounts for another reason — and a stuck 'pointer' cursor is app-wide.
+  useEffect(() => () => { document.body.style.cursor = '' }, [])
 
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
   const floorBounds = calculateFloorBounds(wallConfig)
@@ -475,7 +488,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
         // display name — an acceptable, rare edge case), spanning the
         // bounding box of every board in the group so the plate sits above
         // the group's topmost sheet, centered on the group's horizontal span.
-        interface PlateGroup { key: string; label: string; side: 'front' | 'back'; minX: number; maxX: number; topY: number }
+        interface PlateGroup { key: string; studentId: string; label: string; side: 'front' | 'back'; minX: number; maxX: number; topY: number }
         const plateGroups = new Map<string, PlateGroup>()
         for (const board of boardsOnWall) {
           if (!board.position) continue
@@ -493,7 +506,17 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
           const top = cy + heightIn / 2
           const existing = plateGroups.get(key)
           if (!existing) {
-            plateGroups.set(key, { key, label, side, minX: left, maxX: right, topY: top })
+            plateGroups.set(key, {
+              key,
+              // Must match RoomStudent.id so a plate click can resolve to the
+              // person the roster and the 2D archive know about.
+              studentId: studentKeyFor(board.ownerId, label),
+              label,
+              side,
+              minX: left,
+              maxX: right,
+              topY: top,
+            })
           } else {
             existing.minX = Math.min(existing.minX, left)
             existing.maxX = Math.max(existing.maxX, right)
@@ -717,13 +740,31 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                 ? -(PLATE_SURFACE_OFFSET + 0.25)
                 : PLATE_SURFACE_OFFSET + 0.25
               const plateY = g.topY + NAME_PLATE_GAP_IN + (plateRows.get(g.key) ?? 0) * NAME_PLATE_ROW_STEP_IN
+              // A ghosted wall's plates stay inert: they're barely legible, and
+              // clicking one would navigate away from the wall being focused.
+              const plateClickable = Boolean(onNamePlateClick) && !isDimmed
               return (
                 <Text
                   key={g.key}
                   position={[plateX, plateY, plateZ]}
+                  onClick={plateClickable ? (e) => {
+                    e.stopPropagation()
+                    // Same guard the wall surfaces use: a click that ended a
+                    // drag was an orbit, not a click.
+                    if (e.delta > FLOOR_DRAG_THRESHOLD_PX) return
+                    // Clear the hover cursor BEFORE navigating: opening the 2D
+                    // archive unmounts this whole Canvas, so onPointerOut will
+                    // never fire and the pointer cursor would otherwise stick
+                    // across the entire app.
+                    document.body.style.cursor = ''
+                    onNamePlateClick?.(g.studentId)
+                  } : undefined}
+                  onPointerOver={plateClickable ? () => { document.body.style.cursor = 'pointer' } : undefined}
+                  onPointerOut={plateClickable ? () => { document.body.style.cursor = '' } : undefined}
                   // Back-side plates face into the back room so they read
                   // correctly, matching the wall labels.
                   rotation={g.side === 'back' ? [0, Math.PI, 0] : [0, 0, 0]}
+                  font={ROOM_FONT_3D}
                   fontSize={NAME_PLATE_SIZE_IN}
                   color={inkColor}
                   // Stands in for a 600 weight the default face does not
@@ -783,6 +824,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                     position={[textX, textY, textZ]}
                     // Back labels face into the back room so they read correctly.
                     rotation={isBack ? [0, Math.PI, 0] : [0, 0, 0]}
+                    font={ROOM_FONT_3D}
                     fontSize={t.fontSize}
                     color={inkColor}
                     letterSpacing={0.08}

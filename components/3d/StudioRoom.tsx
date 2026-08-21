@@ -19,6 +19,7 @@ import type { RoomCameraPreset } from '@/lib/room/cameraViews'
 import RosterPanel from '@/components/room/RosterPanel'
 import UnfoldedView from '@/components/room/UnfoldedView'
 import PlanView from '@/components/room/PlanView'
+import TwoDView from '@/components/room/TwoDView'
 import RevisionStrip, { type RoomView } from '@/components/room/RevisionStrip'
 import RoomWallTools from '@/components/room/RoomWallTools'
 import { deriveRoomStudents, type RoomStudent } from '@/lib/room/students'
@@ -235,6 +236,7 @@ function SceneContent({
   onTextSelect,
   onTextDragEnd,
   onFloorClick,
+  onNamePlateClick,
   dimmedExceptWall,
   onTableModelClick,
   orbitControlsRef,
@@ -281,6 +283,8 @@ function SceneContent({
   onTextSelect: (id: string | null) => void
   onTextDragEnd: (id: string, x: number, y: number) => void
   onFloorClick?: () => void
+  /** Owner name plate clicked in the 3D room — opens that person's 2D archive. */
+  onNamePlateClick?: (studentId: string) => void
   /** Wall index to keep at full strength while every other wall ghosts back; null = no dimming. */
   dimmedExceptWall?: number | null
   onTableModelClick?: (modelUrl: string) => void
@@ -390,6 +394,7 @@ function SceneContent({
         highlightedBoardId={hoveredBoardId}
         onBoardHover={onBoardHover}
         onFloorClick={onFloorClick}
+        onNamePlateClick={onNamePlateClick}
         dimmedExceptWall={dimmedExceptWall}
         wallColor={wallColor}
       />
@@ -764,6 +769,18 @@ export default function StudioRoom(props: StudioRoomProps) {
   }, [])
 
   const handleExitFocus = useCallback(() => setFocusedWall(null), [])
+
+  /**
+   * Clicking someone's name plate on a 3D wall jumps to their sheets in the 2D
+   * archive — the shortcut for "I can see whose work this is, now let me read
+   * it" without hunting for them in a list first.
+   */
+  const handleOpenStudentArchive = useCallback((studentId: string) => {
+    setSelectedStudentId(studentId)
+    setCritWalkOn(false)
+    setFocusedWall(null)
+    setRoomView('2d')
+  }, [])
   const [critWalkOn, setCritWalkOn] = useState(false)
   const [critIndex, setCritIndex] = useState(0)
 
@@ -947,7 +964,7 @@ export default function StudioRoom(props: StudioRoomProps) {
           figcaption { font-size: 11px; margin-top: 6px; color: #16181D; }
           @media print { body { margin: 0.5in; } }
         </style></head><body>` +
-        `<h1>${escapeHtml(label)}</h1><p>${critBoards.length} board${critBoards.length === 1 ? '' : 's'} · exported from PinSpace</p>` +
+        `<h1>${escapeHtml(label)}</h1><p>${critBoards.length} board${critBoards.length === 1 ? '' : 's'} · exported from pinspace</p>` +
         `<div class="grid">${figures}</div></body></html>`
     )
     win.document.close()
@@ -1101,7 +1118,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             }
           }
           if (res.status === 403) {
-            return { ok: false, message: 'You do not have permission to delete a wall in this room.' }
+            return { ok: false, message: 'You do not have permission to delete a wall in this space.' }
           }
           if (data.partial) {
             // The delete committed and a later step failed. Saying "no changes
@@ -2423,7 +2440,9 @@ export default function StudioRoom(props: StudioRoomProps) {
         </div>
       )}
 
-      {editingWall === null && (
+      {/* Hidden in the 2D view, which is itself a list of everyone — a floating
+          roster there would both duplicate it and sit on top of the grid. */}
+      {editingWall === null && roomView !== '2d' && (
         <RosterPanel
           students={roomStudents}
           selectedStudentId={selectedStudentId}
@@ -2465,6 +2484,25 @@ export default function StudioRoom(props: StudioRoomProps) {
             students={roomStudents}
             selectedStudentId={selectedStudentId}
             onSelectStudent={handleSelectStudent}
+          />
+        </div>
+      )}
+
+      {editingWall === null && roomView === '2d' && (
+        <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
+          <TwoDView
+            boards={localBoards}
+            students={roomStudents}
+            selectedStudentId={selectedStudentId}
+            // Plain setter, NOT handleSelectStudent: that one toggles a
+            // selection off when you re-pick the same person, which is right
+            // for the roster's highlight-a-wall behaviour but here would mean
+            // clicking a card sometimes bounces you straight back out. Still
+            // ends any crit walk, so the "roster selection and crit walk are
+            // mutually exclusive" invariant holds on this path too.
+            onSelectStudent={(student) => { setSelectedStudentId(student.id); setCritWalkOn(false) }}
+            onClearSelection={() => setSelectedStudentId(null)}
+            onBoardClick={handleLightboxOpen}
           />
         </div>
       )}
@@ -2570,6 +2608,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             // Only bind a floor click while focused, so an ordinary click on the
             // floor stays inert (and can't swallow an orbit) the rest of the time.
             onFloorClick={focusedWall !== null ? handleExitFocus : undefined}
+            onNamePlateClick={handleOpenStudentArchive}
             // Edit mode dims too — the wall being edited is the focused one.
             dimmedExceptWall={editingWall ?? focusedWall?.wallIndex ?? null}
             onTableModelClick={handleTableModelClick}

@@ -16,7 +16,7 @@ interface RoomViewPresetsProps {
  * both claim to show you the room from above is worse than one.
  */
 const PRESETS: Array<{ id: RoomCameraPreset; label: string; title: string }> = [
-  { id: 'axon', label: 'Axon', title: 'Reset to the room’s default three-quarter view' },
+  { id: 'axon', label: 'Axon', title: 'Reset to the space’s default three-quarter view' },
   { id: 'fit', label: 'Fit', title: 'Pull back until every wall is in frame' },
 ]
 

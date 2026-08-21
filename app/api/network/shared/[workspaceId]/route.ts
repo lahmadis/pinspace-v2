@@ -52,7 +52,7 @@ export async function GET(
 
     if (roomsErr) {
       console.error('network/shared/[workspaceId] GET rooms error:', roomsErr)
-      return NextResponse.json({ error: 'Failed to fetch rooms' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch spaces' }, { status: 500 })
     }
 
     const roomIds = (rooms ?? []).map((r) => r.id as string)
