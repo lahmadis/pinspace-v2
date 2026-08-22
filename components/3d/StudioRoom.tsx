@@ -17,6 +17,7 @@ import RosterPanel from '@/components/room/RosterPanel'
 import UnfoldedView from '@/components/room/UnfoldedView'
 import PlanView from '@/components/room/PlanView'
 import TwoDView from '@/components/room/TwoDView'
+import RoomCanvasPanel from '@/components/canvas/RoomCanvasPanel'
 import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 import RevisionStrip, { type RoomView } from '@/components/room/RevisionStrip'
 import { deriveRoomStudents, type RoomStudent } from '@/lib/room/students'
@@ -44,6 +45,18 @@ import { getBoardSizeInches } from '@/lib/boardDimensions'
  * the viewport. The 2D views inset by this so the strip is never covered.
  */
 const REVISION_STRIP_CLEARANCE = 116
+/**
+ * Top inset for the canvas panel.
+ *
+ * The breadcrumb (top-4 left-4), PresenceBar (top-4 left-1/2) and the toolbar
+ * (top-4 right-4) all sit at z-40 in one band across the top of the viewport.
+ * The other flat views tolerate that because their content is centred, but a
+ * canvas is a working surface you pan under the cursor: anything painted over
+ * it also intercepts the pointer, so the top strip would be a dead zone you
+ * could drop a note into but never grab again. Clearing the band gives the
+ * canvas an honest rect.
+ */
+const CANVAS_TOP_CLEARANCE = 72
 
 interface WallDimensions {
   height: number
@@ -2079,6 +2092,14 @@ export default function StudioRoom(props: StudioRoomProps) {
         return
       }
 
+      // The Canvas tab owns its own keyboard entirely. These are BOARD
+      // shortcuts, and the 3D room isn't even rendered here — Cmd+Z would
+      // rewind board positions invisibly, so the user presses it again, and
+      // again. Cmd+C is worse: it preventDefaults unconditionally and then
+      // no-ops outside wall editing, which kills native copy on a surface
+      // whose whole point is text and notes.
+      if (roomView === 'canvas') return
+
       // Ctrl/Cmd+Z = undo, Ctrl/Cmd+Y = redo, Ctrl/Cmd+C = copy, Ctrl/Cmd+V
       // = paste. metaKey covers Cmd on macOS; the browser's native `paste`
       // event already fires on Cmd+V, so Cmd+V is handled by the window
@@ -2128,7 +2149,7 @@ export default function StudioRoom(props: StudioRoomProps) {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedBoardId, editingWall, localBoards, handleBoardDelete, commentPanelBoard, undo, redo, handleCopy, clearBoardSelection])
+  }, [selectedBoardId, editingWall, localBoards, handleBoardDelete, commentPanelBoard, undo, redo, handleCopy, clearBoardSelection, roomView])
 
   const [isDragOver, setIsDragOver] = useState(false)
   const dragCounterRef = useRef(0)
@@ -2378,8 +2399,10 @@ export default function StudioRoom(props: StudioRoomProps) {
       )}
 
       {/* Hidden in the 2D view, which is itself a list of everyone — a floating
-          roster there would both duplicate it and sit on top of the grid. */}
-      {editingWall === null && roomView !== '2d' && (
+          roster there would both duplicate it and sit on top of the grid — and
+          on the canvas, where it would cover the working surface and swallow
+          pointer gestures meant for it. */}
+      {editingWall === null && roomView !== '2d' && roomView !== 'canvas' && (
         <RosterPanel
           students={roomStudents}
           selectedStudentId={selectedStudentId}
@@ -2427,6 +2450,20 @@ export default function StudioRoom(props: StudioRoomProps) {
             onSelectStudent={(student) => setSelectedStudentId(student.id)}
             onClearSelection={() => setSelectedStudentId(null)}
             onBoardClick={handleLightboxOpen}
+          />
+        </div>
+      )}
+
+      {editingWall === null && roomView === 'canvas' && (
+        <div
+          className="fixed inset-0 z-20"
+          style={{ top: CANVAS_TOP_CLEARANCE, bottom: REVISION_STRIP_CLEARANCE }}
+        >
+          <RoomCanvasPanel
+            roomId={props.roomId ?? null}
+            // Archived spaces are readable but frozen, same rule the wall
+            // editor uses.
+            canEdit={!props.isArchived}
           />
         </div>
       )}

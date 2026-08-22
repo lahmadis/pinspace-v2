@@ -236,6 +236,12 @@ export default function InfiniteCanvas({
         return
       }
       if (e.key === 'Escape') {
+        // Only swallow Escape when there is a selection to clear. With nothing
+        // selected it must keep bubbling — the studio page uses Escape to leave
+        // follow-presenter, and deselecting a sticky should never detach you
+        // from a crit you are watching.
+        if (selectionRef.current.length === 0) return
+        e.stopPropagation()
         setSelection([])
         return
       }
