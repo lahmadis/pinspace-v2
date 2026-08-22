@@ -126,29 +126,45 @@ export function WallConfigPreview({ wallConfig }: WallConfigPreviewProps) {
 
   return (
     <div
-      className="absolute bottom-4 right-4 z-10 hidden md:flex flex-col rounded-xl overflow-hidden shadow-xl"
-      style={{ background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(255,255,255,0.15)' }}
+      className="absolute bottom-4 right-4 z-20 hidden md:flex flex-col rounded-xl overflow-hidden shadow-2xl backdrop-blur-md transition-all duration-200 pointer-events-auto"
+      style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(255, 255, 255, 0.15)' }}
     >
-      <div className="flex items-center justify-between px-3 py-1.5">
-        <span className="text-xs font-medium text-white/70 tracking-wide">Preview</span>
+      <div 
+        className="flex items-center justify-between px-3 py-1.5 cursor-pointer select-none hover:bg-white/5 transition-colors"
+        onClick={() => setCollapsed((v) => !v)}
+      >
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-xs font-semibold text-white/90 tracking-wide">3D Preview</span>
+        </div>
         <button
           type="button"
-          onClick={() => setCollapsed((v) => !v)}
-          className="p-0.5 rounded hover:bg-white/10 transition-colors"
-          aria-label={collapsed ? 'Expand preview' : 'Collapse preview'}
+          onClick={(e) => {
+            e.stopPropagation()
+            setCollapsed((v) => !v)
+          }}
+          className="p-1 rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-400"
+          aria-label={collapsed ? 'Expand 3D preview' : 'Collapse 3D preview'}
         >
-          {collapsed
-            ? <ChevronDown className="w-3.5 h-3.5 text-white/60" />
-            : <ChevronUp className="w-3.5 h-3.5 text-white/60" />
-          }
+          {collapsed ? (
+            <ChevronUp className="w-4 h-4 text-white/80" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-white/80" />
+          )}
         </button>
       </div>
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_W}
-        height={CANVAS_H}
-        style={{ display: collapsed ? 'none' : 'block' }}
-      />
+      <div className={collapsed ? 'hidden' : 'block relative'}>
+        <canvas
+          ref={canvasRef}
+          width={CANVAS_W}
+          height={CANVAS_H}
+          className="block rounded-b-xl"
+        />
+        <div className="absolute bottom-1 right-2 text-[10px] text-white/40 font-mono pointer-events-none">
+          Live ISO
+        </div>
+      </div>
     </div>
   )
 }
+
