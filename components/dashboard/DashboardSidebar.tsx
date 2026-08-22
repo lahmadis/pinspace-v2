@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Network, Users, User, Settings, LogOut, Menu, X, Archive as ArchiveIcon, Contact } from 'lucide-react'
+import { Network, Users, User, Settings, LogOut, Menu, X, Archive as ArchiveIcon, PencilRuler } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { resetAccountModeCache } from '@/lib/useAccountMode'
@@ -138,8 +138,8 @@ export function DashboardSidebar({
           <SuperadminOrgSwitcher />
 
           <div className="pt-2 mt-2 border-t border-[#16181D]/8 space-y-0.5">
+            {navLink('/desk-crits', 'Desk crits', <PencilRuler className="w-4 h-4" />)}
             {navLink('/archive', 'Archive', <ArchiveIcon className="w-4 h-4" />)}
-            {navLink('/people', 'People', <Contact className="w-4 h-4" />)}
           </div>
         </nav>
 

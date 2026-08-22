@@ -10,7 +10,7 @@ import ShareModal from '@/components/ShareModal'
 import DemoBanner from '@/components/DemoBanner'
 import PresenceBar, { type PresentUser, friendlyName, colorFor } from '@/components/3d/PresenceBar'
 import type { FollowPose, LaserState, LbViewport, LbCursorState, CritDirtySignal, TraceStreamEntry } from '@/components/3d/CameraController'
-import { ArrowLeft, Share2, Settings, Box, ChevronDown, Menu, X, Presentation } from 'lucide-react'
+import { ArrowLeft, Share2, ChevronDown, Presentation } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import { DEFAULT_WALL_CONFIG, type WallConfig } from '@/lib/wallLayout'
@@ -66,18 +66,6 @@ function StudioPageInner() {
   
   const [boards, setBoards] = useState<Board[]>([])
   const [showShareModal, setShowShareModal] = useState(false)
-  // Open state for the collapsed studio-options menu, shared by BOTH toolbars:
-  // the phone hamburger (< sm, which also collapses Share) and the desktop one
-  // (>= sm, where Share stays a standalone button). Only one is displayed at a
-  // time, so a single flag cannot show two open panels — and sharing it means
-  // the Escape and click-outside behaviour is written once.
-  const [showStudioMenu, setShowStudioMenu] = useState(false)
-  // The DESKTOP menu trigger, so Escape can hand focus back instead of dropping
-  // it to the document. Desktop only, on purpose: both toolbars are mounted at
-  // once (one is display:none), so pointing this at both would leave it holding
-  // whichever mounted last and break focus return at the width that has a
-  // physical keyboard.
-  const studioMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [boardsError, setBoardsError] = useState(false)
@@ -867,25 +855,6 @@ function StudioPageInner() {
     ch.track({ ...meta, joinedAt: Date.now(), currentWallIndex })
   }, [currentWallIndex, isDemo])
 
-  // Phase B.1: toggle the local user's presenter flag. Updates the meta ref
-  // (so wall re-tracks preserve it) and re-tracks in place on the existing
-  // channel — the same pattern as the wall-index change, no channel teardown.
-  // No-op until presence is subscribed (and never fires in demo, where the
-  // presence effect returns early and the refs stay null/false).
-  const setPresenting = useCallback((value: boolean) => {
-    const meta = presenceMetaRef.current
-    if (!meta) return
-    presenceMetaRef.current = { ...meta, isPresenting: value }
-    const ch = presenceChannelRef.current
-    if (ch && presenceSubscribedRef.current) {
-      ch.track({
-        ...presenceMetaRef.current,
-        joinedAt: Date.now(),
-        currentWallIndex: currentWallIndexRef.current,
-      })
-    }
-  }, [])
-
   // Walls currently occupied by OTHER users (exclude self) — drives the 3D highlight.
   const othersEditingWalls = useMemo(() => {
     const s = new Set<number>()
@@ -929,79 +898,22 @@ function StudioPageInner() {
   // Bound only while following; flipping isFollowing re-enables OrbitControls on
   // the next frame (see CameraController arbitration).
   //
-  // Skipped while the studio options menu is open, so one Escape dismisses the
-  // menu and does NOT also silently drop the viewer out of follow mode. This
-  // guard lives here rather than in the menu's handler on purpose: the menu
-  // stopping propagation would veto Escape for every other consumer in the app,
-  // whereas this declines it for exactly the one case that conflicts.
+  // This used to stand down while the studio options menu was open, so one
+  // Escape dismissed the menu without also dropping the viewer out of follow
+  // mode. That menu is gone, and with nothing else claiming Escape here, the
+  // guard went with it.
   useEffect(() => {
     if (!isFollowing) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !showStudioMenu) setIsFollowing(false)
+      if (e.key === 'Escape') setIsFollowing(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [isFollowing, showStudioMenu])
+  }, [isFollowing])
 
   // Phase B.3.1: deterministic cursor-dot color for the active presenter (same
   // palette as PresenceBar avatars). Irrelevant when nobody is presenting.
   const laserColor = presenter ? colorFor(presenter.userId) : '#22d3ee'
-
-  // Every action inside the options menu is permission-gated; Share, which is
-  // not, stays out as a standalone button. So when a viewer can edit nothing
-  // and presence is inert, the menu has no items at all — and a trigger that
-  // opens an empty panel is worse than no trigger. Mirrors the gates on the
-  // items themselves; the two must move together.
-  //
-  // Declared above the effects below because they read it in a dependency
-  // array, which is evaluated during render — a `const` declared later would
-  // be in its temporal dead zone and throw at runtime, where tsc cannot see it.
-  const canEditRoomConfig = !isArchived && canEditWalls
-  const hasStudioMenuItems = canEditRoomConfig || !isDemo
-
-  // Escape closes the studio options menu and returns focus to the trigger.
-  // Bound only while the menu is open.
-  //
-  // Deliberately BUBBLE phase and deliberately NOT stopPropagation. An earlier
-  // version captured the event and stopped it, to keep one Escape from also
-  // detaching a follower via the break-away handler above. That worked, and it
-  // also silently ate Escape from every other consumer for as long as the menu
-  // was open — ShareModal (which on desktop can be opened with the menu still
-  // up), the lightbox a presenter can auto-open on a follower's screen, and
-  // StudioRoom's deselect-board. A menu must not become a keyboard trap for the
-  // rest of the app. The break-away handler carries its own guard instead, which
-  // is one narrow exception rather than a blanket veto.
-  useEffect(() => {
-    if (!showStudioMenu) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      setShowStudioMenu(false)
-      // The ref is on the DESKTOP trigger only — both toolbars are mounted at
-      // once, so a shared ref would resolve to whichever mounted last (the
-      // phone one) and focus return would break on desktop, where it matters.
-      // offsetParent is null under display:none, so at phone widths this
-      // correctly declines to focus a hidden node rather than dropping focus
-      // to the document.
-      const trigger = studioMenuTriggerRef.current
-      if (trigger && trigger.offsetParent !== null) trigger.focus()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [showStudioMenu])
-
-  // Close the menu when it cannot be shown at all: entering edit mode unmounts
-  // both toolbars, and hasStudioMenuItems can flip false when the async
-  // workspace fetch lands isArchived. Without this the flag stays true with no
-  // trigger and no panel, so the Escape effect above stays armed against a menu
-  // nobody can see.
-  useEffect(() => {
-    if (isEditMode || !hasStudioMenuItems) setShowStudioMenu(false)
-  }, [isEditMode, hasStudioMenuItems])
-
-  const handleReconfigureWalls = () => {
-    setFloorEditorMode('walls')
-    setFloorEditorOpen(true)
-  }
 
   const handleBoardUpdate = async () => {
     // Reload boards after update — scoped to the room, not the workspace.
@@ -1214,13 +1126,13 @@ function StudioPageInner() {
               switch swaps the two without changing handlers. */}
           {!isEditMode && (
             <div className="hidden sm:flex fixed top-4 right-4 z-40 flex-nowrap justify-end items-center gap-2.5">
-              {/* Share button. Also closes the options menu: Share sits OUTSIDE
-                  the menu here, and the click-outside backdrop paints below it,
-                  so without this both can be open at once and Escape would then
-                  read as dismissing the wrong one. Opens the same modal it
-                  always did. */}
+              {/* Share — now the only chrome over the 3D view.
+                  Room configuration used to sit beside it behind a hamburger;
+                  it moved onto the Plan view, which is the drawing those
+                  actions actually operate on. Share stays out here because it
+                  is the action that brings other people in, not setup. */}
               <button
-                onClick={() => { setShowStudioMenu(false); setShowShareModal(true) }}
+                onClick={() => setShowShareModal(true)}
                 style={{ background: CHROME.accent, color: CHROME.paper }}
                 className={`${figtree.className} px-5 py-2.5 rounded-xl shadow-lg transition-opacity duration-200 font-semibold text-sm flex items-center gap-2 hover:opacity-90`}
               >
@@ -1228,187 +1140,22 @@ function StudioPageInner() {
                 Share
               </button>
 
-              {/* Room configuration — Place 3D model, Reconfigure Walls and
-                  Present — collapses behind one hamburger. Share stays out on
-                  its own: it is the action that brings other people in, and this
-                  is a platform for showing work. The rest is setup.
-
-                  Every item below keeps the gate it had as a standalone button.
-                  Moving an action must not make it reachable to someone who
-                  could not reach it before. */}
-              {hasStudioMenuItems && (
-                <div className="relative">
-                  <button
-                    ref={studioMenuTriggerRef}
-                    onClick={() => setShowStudioMenu((v) => !v)}
-                    aria-label="Space options"
-                    aria-haspopup="menu"
-                    aria-expanded={showStudioMenu}
-                    style={{ background: CHROME.accent, color: CHROME.paper, borderColor: CHROME.hairline }}
-                    className="p-2.5 rounded-xl shadow-lg border transition-opacity duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]/40"
-                  >
-                    {showStudioMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                  </button>
-
-                  {showStudioMenu && (
-                    <>
-                      {/* Click-outside backdrop — sits under the panel, above
-                          the canvas, so a click anywhere else closes rather than
-                          orbiting the 3D view behind it. */}
-                      <div
-                        className="fixed inset-0 z-[-1]"
-                        onClick={() => setShowStudioMenu(false)}
-                      />
-                      <div
-                        className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
-                        role="menu"
-                        aria-label="Space options"
-                      >
-                        {/* Place 3D model — opens the floor editor to add tables
-                            and upload/position models. Tables live in the same
-                            wall-config blob, so this is the same write power as
-                            Reconfigure Walls and gates identically. */}
-                        {canEditRoomConfig && (
-                          <button
-                            role="menuitem"
-                            onClick={() => { setShowStudioMenu(false); setFloorEditorMode('tables'); setFloorEditorOpen(true) }}
-                            className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B6EF6]"
-                          >
-                            <Box className="w-4 h-4 text-[#3B6EF6]" />
-                            Place 3D model
-                          </button>
-                        )}
-
-                        {/* Reconfigure. Gated on canEditWalls as well as archive
-                            status: opening this editor is what writes the blob,
-                            and showing it to someone whose writes will no-op is
-                            a trap. */}
-                        {canEditRoomConfig && (
-                          <button
-                            role="menuitem"
-                            onClick={() => { setShowStudioMenu(false); handleReconfigureWalls() }}
-                            className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B6EF6]"
-                          >
-                            <Settings className="w-4 h-4 text-[#3B6EF6]" />
-                            Reconfigure Walls
-                          </button>
-                        )}
-
-                        {/* Present toggle (Phase B.1). Three states: nobody
-                            presenting → "Present"; you are presenter → "Stop
-                            presenting"; someone else presenting → disabled
-                            "{name} is presenting". Hidden in demo (presence is
-                            inert there). */}
-                        {!isDemo && (
-                          <button
-                            role="menuitem"
-                            onClick={() => { if (!someoneElsePresenting) { setShowStudioMenu(false); setPresenting(!isPresenter) } }}
-                            disabled={someoneElsePresenting}
-                            className={`w-full text-left px-4 py-3 text-sm font-medium flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B6EF6] ${
-                              canEditRoomConfig ? 'border-t border-gray-100' : ''
-                            } ${
-                              someoneElsePresenting
-                                ? 'text-gray-400 cursor-not-allowed'
-                                : 'text-gray-900 hover:bg-gray-50'
-                            }`}
-                          >
-                            <Presentation className="w-4 h-4 text-[#3B6EF6]" />
-                            {someoneElsePresenting
-                              ? `${friendlyName(presenter!.fullName)} is presenting`
-                              : isPresenter
-                                ? 'Stop presenting'
-                                : 'Present'}
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
             </div>
           )}
 
-          {/* Phone-only toolbar (< sm) — collapses Share, Place 3D model, and
-              Reconfigure Walls into a single hamburger so the buttons don't
-              cover the 3D view. Each menu item calls the same handler as its
-              desktop counterpart, then closes the menu. Top-left logo +
-              workspace/room breadcrumb stay visible because they carry the
-              "where am I" context. */}
+          {/* Phone-only Share (< sm). The hamburger this replaces also held
+              Place 3D model and Reconfigure Walls, both of which now live on
+              the Plan view. Share has no other home on a phone, so it becomes
+              a plain button rather than a menu of one. */}
           {!isEditMode && (
             <div className="sm:hidden fixed top-4 right-4 z-40">
               <button
-                onClick={() => setShowStudioMenu((v) => !v)}
-                aria-label={showStudioMenu ? 'Close space menu' : 'Open space menu'}
-                aria-haspopup="menu"
-                aria-expanded={showStudioMenu}
+                onClick={() => setShowShareModal(true)}
+                aria-label="Share this space"
                 className="p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
               >
-                {showStudioMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                <Share2 className="w-5 h-5" />
               </button>
-              {showStudioMenu && (
-                <>
-                  {/* Tap-outside backdrop — sits under the panel, above the
-                      canvas; pointer-events catches the tap and closes. */}
-                  <div
-                    className="fixed inset-0 z-[-1]"
-                    onClick={() => setShowStudioMenu(false)}
-                  />
-                  <div
-                    className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
-                    role="menu"
-                  >
-                    <button
-                      role="menuitem"
-                      onClick={() => { setShowStudioMenu(false); setShowShareModal(true) }}
-                      className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <Share2 className="w-4 h-4 text-[#3B6EF6]" />
-                      Share
-                    </button>
-                    {!isArchived && canEditWalls && (
-                      <button
-                        role="menuitem"
-                        onClick={() => { setShowStudioMenu(false); setFloorEditorMode('tables'); setFloorEditorOpen(true) }}
-                        className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
-                      >
-                        <Box className="w-4 h-4 text-[#3B6EF6]" />
-                        Place 3D model
-                      </button>
-                    )}
-                    {!isArchived && canEditWalls && (
-                      <button
-                        role="menuitem"
-                        onClick={() => { setShowStudioMenu(false); handleReconfigureWalls() }}
-                        className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
-                      >
-                        <Settings className="w-4 h-4 text-[#3B6EF6]" />
-                        Reconfigure Walls
-                      </button>
-                    )}
-                    {/* Present toggle (Phase B.1) — same three states as the
-                        desktop button. Disabled when another user is presenting. */}
-                    {!isDemo && (
-                      <button
-                        role="menuitem"
-                        onClick={() => { if (!someoneElsePresenting) { setShowStudioMenu(false); setPresenting(!isPresenter) } }}
-                        disabled={someoneElsePresenting}
-                        className={`w-full text-left px-4 py-3 text-sm font-medium flex items-center gap-2 border-t border-gray-100 ${
-                          someoneElsePresenting
-                            ? 'text-gray-400 cursor-not-allowed'
-                            : 'text-gray-900 hover:bg-gray-50'
-                        }`}
-                      >
-                        <Presentation className="w-4 h-4 text-[#3B6EF6]" />
-                        {someoneElsePresenting
-                          ? `${friendlyName(presenter!.fullName)} is presenting`
-                          : isPresenter
-                            ? 'Stop presenting'
-                            : 'Present'}
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
             </div>
           )}
 
@@ -1423,6 +1170,7 @@ function StudioPageInner() {
             floorEditorOpen={floorEditorOpen}
             onFloorEditorOpenChange={setFloorEditorOpen}
             floorEditorMode={floorEditorMode}
+            onFloorEditorModeChange={setFloorEditorMode}
             isArchived={isArchived}
             commentNonce={commentNonce}
             currentUserRole={currentUserRole}

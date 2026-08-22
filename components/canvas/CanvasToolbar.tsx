@@ -11,7 +11,7 @@ import { ROOM } from '@/lib/room/palette'
  * The left side is empty and matches what people expect from a canvas app.
  */
 
-export type CanvasTool = 'select' | 'sticky' | 'text' | 'rect' | 'ellipse' | 'ink'
+export type CanvasTool = 'select' | 'sticky' | 'text' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'ink'
 
 interface ToolDef {
   id: CanvasTool
@@ -28,6 +28,8 @@ export const CANVAS_TOOLS: ToolDef[] = [
   { id: 'text', label: 'Text', shortcut: 'T', glyph: 'T' },
   { id: 'rect', label: 'Rectangle', shortcut: 'R', glyph: '▭' },
   { id: 'ellipse', label: 'Ellipse', shortcut: 'O', glyph: '◯' },
+  { id: 'line', label: 'Line', shortcut: 'L', glyph: '╱' },
+  { id: 'arrow', label: 'Arrow', shortcut: 'A', glyph: '↗' },
   { id: 'ink', label: 'Pen', shortcut: 'P', glyph: '✎' },
 ]
 
@@ -45,6 +47,7 @@ export default function CanvasToolbar({
   canRedo,
   onUndo,
   onRedo,
+  onPickImage,
 }: {
   tool: CanvasTool
   onToolChange: (tool: CanvasTool) => void
@@ -55,6 +58,8 @@ export default function CanvasToolbar({
   canRedo?: boolean
   onUndo?: () => void
   onRedo?: () => void
+  /** Opens the file picker. Not a CanvasTool — it arms nothing, it acts now. */
+  onPickImage?: () => void
 }) {
   if (disabled) return null
 
@@ -108,11 +113,38 @@ export default function CanvasToolbar({
         )
       })}
 
+      {/* Image is an ACTION, not a tool: it opens a picker rather than arming
+          the pointer, so it never becomes the active tool and has no shortcut
+          competing with the letter keys. Dragging a file onto the canvas does
+          the same thing and is the faster route — this is for people who don't
+          know that yet. */}
+      <button
+        onClick={onPickImage}
+        title="Add an image (or drag one onto the canvas)"
+        aria-label="Add an image"
+        style={{
+          width: 36,
+          height: 36,
+          display: 'grid',
+          placeItems: 'center',
+          border: 'none',
+          borderRadius: 8,
+          background: 'transparent',
+          color: ROOM.ink2,
+          fontSize: 16,
+          lineHeight: 1,
+          cursor: 'pointer',
+        }}
+      >
+        ▣
+      </button>
+
       <div style={{ height: 1, background: ROOM.hairline, margin: '4px 6px' }} />
 
-      {/* Colour for whatever gets drawn NEXT. It does not restyle the current
-          selection — recolouring an existing node is a separate gesture and
-          does not exist yet. */}
+      {/* Colour for whatever gets drawn next AND for whatever is selected now.
+          The caller applies it to the selection; picking a colour with objects
+          selected means "make these that colour" everywhere else, and doing
+          only half of that is the more surprising behaviour. */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, padding: '2px 4px 4px' }}>
         {INK_COLORS.map((c) => (
           <button

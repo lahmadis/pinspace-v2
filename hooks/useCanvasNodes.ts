@@ -80,7 +80,24 @@ function sortNodes(list: CanvasNode[]): CanvasNode[] {
   )
 }
 
-export function useCanvasNodes(canvasId: string | null, guestToken?: string | null) {
+export function useCanvasNodes(
+  canvasId: string | null,
+  guestToken?: string | null,
+  opts?: {
+    /**
+     * Subscribe to live changes. Default true.
+     *
+     * Pass false where nothing can change underneath you. The desk board reads
+     * many crits at once and writes through the API with its own reload nonce,
+     * so each column would otherwise open TWO channels — a broadcast and a
+     * postgres_changes — for a personal canvas that has exactly one viewer.
+     * Twenty crits is forty channels against a per-client quota of about a
+     * hundred, spent to deliver events nobody is waiting for.
+     */
+    realtime?: boolean
+  }
+) {
+  const realtimeEnabled = opts?.realtime !== false
   const [nodes, setNodes] = useState<CanvasNode[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -399,7 +416,7 @@ export function useCanvasNodes(canvasId: string | null, guestToken?: string | nu
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    if (!canvasId) return
+    if (!canvasId || !realtimeEnabled) return
 
     // Broadcast channel: ephemeral, and the ONLY live signal a guest gets.
     // Account holders join it too, to send the ping.
@@ -472,7 +489,7 @@ export function useCanvasNodes(canvasId: string | null, guestToken?: string | nu
       supabase.removeChannel(live)
       if (changes) supabase.removeChannel(changes)
     }
-  }, [canvasId, guestToken, scheduleRefetch])
+  }, [canvasId, guestToken, realtimeEnabled, scheduleRefetch])
 
   return {
     nodes,

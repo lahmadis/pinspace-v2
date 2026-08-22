@@ -46,7 +46,23 @@ import {
   type CanvasOp,
 } from '@/lib/canvas/history'
 import type { CanvasNode, CanvasNodeType } from '@/lib/canvas/types'
+import {
+  fitPlacedSize,
+  isCanvasImage,
+  readImageSize,
+  rejectionReason,
+  IMAGE_FALLBACK_SIZE,
+} from '@/lib/canvas/imageNode'
+import { useDirectUpload } from '@/lib/useDirectUpload'
+import {
+  alignNodes,
+  distributeNodes,
+  restackNodes,
+  type AlignMode,
+  type DistributeMode,
+} from '@/lib/canvas/arrange'
 import CanvasToolbar, { INK_COLORS, type CanvasTool } from './CanvasToolbar'
+import CanvasSelectionBar from './CanvasSelectionBar'
 import CanvasNodeView, { MIN_INK_EXTENT, STICKY_COLORS, pathFromPoints } from './CanvasNodeView'
 
 /**
@@ -114,6 +130,28 @@ const INK_MIN_STEP_PX = 2
 const INK_MAX_POINTS = 4000
 
 /**
+ * How far a duplicate or paste lands from its source, in canvas units.
+ *
+ * Enough to see there are two of something without throwing the copy across
+ * the board. Matches the cascade used for a multi-file image drop.
+ */
+const DUPLICATE_OFFSET = 28
+
+/**
+ * Minimum thickness given to an axis-aligned line's box, in canvas units.
+ *
+ * A dead-horizontal drag reports the same y throughout — common with a mouse,
+ * not an edge case — and yields a box of zero height. That box does not render
+ * and cannot be hit-tested, so the line exists in the database and nowhere
+ * else. Padding it gives the stroke something to live in and something to
+ * click. The ink path pads by its stroke weight for exactly this reason.
+ */
+const LINE_MIN_EXTENT = 10
+
+/** Right edge of the tool rail in screen px (left: 16 + 44 wide), for clamping. */
+const TOOL_RAIL_RIGHT_EDGE = 72
+
+/**
  * Rebuild the create payload for a node an undo is putting back.
  *
  * The ORIGINAL id, so a redo and any later op still on the stack address the
@@ -147,6 +185,33 @@ function restoreInputOf(node: CanvasNode): CanvasNodeInput {
     fromNodeId: node.fromNodeId,
     toNodeId: node.toNodeId,
   }
+}
+
+/**
+ * True only for an actual file drag, not selected text or a dragged element.
+ *
+ * Module scope so the drag handlers that use it need no dependency on it.
+ */
+function isFileDrag(e: React.DragEvent): boolean {
+  return Array.from(e.dataTransfer?.types ?? []).includes('Files')
+}
+
+/**
+ * An upload in flight, drawn where it will land.
+ *
+ * Local state, NOT a database row. A placeholder node would mean writing a row
+ * that must be cleaned up if the upload fails, and broadcasting a half-made
+ * object to anyone else on the canvas. This is a box on the screen of the
+ * person doing the dropping, and it disappears either way.
+ */
+interface PendingUpload {
+  key: string
+  x: number
+  y: number
+  w: number
+  h: number
+  name: string
+  progress: number
 }
 
 type DragMode = 'pan' | 'move' | 'resize' | 'rotate' | 'marquee' | 'create'
@@ -211,7 +276,11 @@ export default function InfiniteCanvas({
   /** Node whose text is being edited inline. */
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   /** In-progress shape or stroke, before it becomes a node. */
-  const [draft, setDraft] = useState<{ tool: CanvasTool; rect?: Bounds; points?: Point[] } | null>(null)
+  const [draft, setDraft] = useState<{
+    tool: CanvasTool
+    rect?: Bounds
+    points?: Point[]
+  } | null>(null)
   /** Draw a focus ring only when focus arrived from the keyboard. The container
    *  is focusable for its key handlers, so suppressing the ring outright would
    *  leave keyboard users with no indication of where they are. */
@@ -246,8 +315,38 @@ export default function InfiniteCanvas({
   }, [])
   /** Cursor for whatever is under the pointer while nothing is being dragged. */
   const [hoverCursor, setHoverCursor] = useState<string>('default')
+  /** Uploads in flight, drawn at their drop point. */
+  const [pending, setPending] = useState<PendingUpload[]>([])
+  /** Upload and file-type failures. Separate from the node hook's own error. */
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  /** A file is being dragged over the surface. */
+  const [dropActive, setDropActive] = useState(false)
+  /**
+   * dragenter/dragleave fire for every child element the pointer crosses, so a
+   * plain boolean flickers off the moment the cursor passes over a node. Depth
+   * counting is the standard fix: only the leave that balances the last enter
+   * clears the highlight.
+   */
+  const dragDepthRef = useRef(0)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const { upload } = useDirectUpload()
 
   const dragRef = useRef<DragState | null>(null)
+  /**
+   * Whether a gesture is running, as STATE rather than only as a ref.
+   *
+   * The contextual bar has to hide during a drag, and a ref cannot drive that:
+   * reading dragRef during render gave a stale answer, and — worse — a plain
+   * click produces no state change at all on release (nothing moved, so no
+   * commit, no marquee, no setState). The bar stayed hidden after the single
+   * most common way to select something, until an unrelated render happened
+   * along. Mirrored through beginDrag/endDragState so the two cannot drift.
+   */
+  const [dragging, setDragging] = useState(false)
+  const beginDrag = useCallback((state: DragState) => {
+    dragRef.current = state
+    setDragging(true)
+  }, [])
   /**
    * Latest values for the pointer handlers, which must not re-bind per frame.
    *
@@ -268,7 +367,21 @@ export default function InfiniteCanvas({
    * sample, or commit a rect one frame stale. State exists only to render the
    * preview.
    */
-  const draftRef = useRef<{ tool: CanvasTool; rect?: Bounds; points?: Point[] } | null>(null)
+  const draftRef = useRef<{
+    tool: CanvasTool
+    rect?: Bounds
+    points?: Point[]
+  } | null>(null)
+  /**
+   * The raw endpoints of a line being drawn, before they become a box.
+   *
+   * `rect` normalises a drag into min/max corners, which loses the direction it
+   * was made in — and for a line the direction IS the shape. Dragging up-right
+   * and down-right produce the same rect but opposite diagonals. Kept beside
+   * the draft rather than inside it so the existing rect-based preview, hit
+   * test and commit paths are untouched.
+   */
+  const draftLineRef = useRef<{ from: Point; to: Point } | null>(null)
   const toolRef = useRef(tool)
   const colorRef = useRef(color)
   useEffect(() => {
@@ -313,11 +426,15 @@ export default function InfiniteCanvas({
   /** Pointer position relative to the canvas element, not the page. */
   const screenPoint = useCallback((e: { clientX: number; clientY: number }): Point => {
     const rect = containerRef.current?.getBoundingClientRect()
-    return { x: e.clientX - (rect?.left ?? 0), y: e.clientY - (rect?.top ?? 0) }
+    return {
+      x: e.clientX - (rect?.left ?? 0),
+      y: e.clientY - (rect?.top ?? 0),
+    }
   }, [])
 
   const canvasPoint = useCallback(
-    (e: { clientX: number; clientY: number }): Point => toCanvas(viewportRef.current, screenPoint(e)),
+    (e: { clientX: number; clientY: number }): Point =>
+      toCanvas(viewportRef.current, screenPoint(e)),
     [screenPoint]
   )
 
@@ -346,7 +463,10 @@ export default function InfiniteCanvas({
   }, [])
 
   /** One above the current top, so a new object lands on top of the pile. */
-  const nextZ = useCallback(() => nodesRef.current.reduce((max, n) => Math.max(max, n.z), 0) + 1, [])
+  const nextZ = useCallback(
+    () => nodesRef.current.reduce((max, n) => Math.max(max, n.z), 0) + 1,
+    []
+  )
 
   /**
    * Create a node and put it on the undo stack.
@@ -369,6 +489,339 @@ export default function InfiniteCanvas({
         })()
       ),
     [createNode, recordHistory, trackAction]
+  )
+
+  /**
+   * Upload dropped or picked images and turn each into a node.
+   *
+   * Sequential, not concurrent. Compression decodes the whole bitmap, so five
+   * phone photos at once is five full-resolution buffers alive together — on a
+   * laptop that is where the tab starts swapping.
+   *
+   * All the placeholders appear TOGETHER, once dimensions have been read, and
+   * then fill in one at a time. Measuring first is what makes each box the
+   * right shape from its first frame; the read is a decode-header, not a full
+   * decode, and it is bounded by a timeout in readImageSize so a file that
+   * refuses to report cannot stall the drop.
+   */
+  const placeImageFiles = useCallback(
+    async (files: File[], at: Point) => {
+      if (!canEdit || files.length === 0) return
+
+      /**
+       * Keep the FIRST problem, not the last.
+       *
+       * Dropping five files where two fail used to show whichever failed most
+       * recently, and an upload failure would overwrite the "that was a PDF"
+       * message the user actually needed. The first thing that went wrong is
+       * the one that explains the rest.
+       */
+      let reported = false
+      const reportProblem = (message: string) => {
+        if (reported) return
+        reported = true
+        setUploadError(message)
+      }
+
+      const accepted = files.filter(isCanvasImage)
+      const refused = files.filter((f) => !isCanvasImage(f))
+      // FIRST problem wins, and it keeps winning — see reportProblem. Only one
+      // reason is shown at all: dropping a folder of mixed files should not
+      // produce a stack of banners saying nearly the same thing.
+      if (refused.length > 0) reportProblem(rejectionReason(refused[0]))
+      if (accepted.length === 0) return
+
+      // Measured up front so every placeholder is the right shape from the
+      // first frame, and so a cascade can be laid out before anything uploads.
+      const measured = await Promise.all(
+        accepted.map(async (file) => {
+          const size = await readImageSize(file)
+          return {
+            file,
+            ...(size
+              ? fitPlacedSize(size.width, size.height)
+              : { w: IMAGE_FALLBACK_SIZE, h: IMAGE_FALLBACK_SIZE }),
+          }
+        })
+      )
+
+      // Cascade, so dropping several files doesn't hide all but the last.
+      const CASCADE = 28
+      const placements = measured.map((m, i) => ({
+        ...m,
+        key: `${Date.now()}-${i}-${m.file.name}`,
+        x: at.x - m.w / 2 + i * CASCADE,
+        y: at.y - m.h / 2 + i * CASCADE,
+      }))
+
+      setPending((prev) => [
+        ...prev,
+        ...placements.map((p) => ({
+          key: p.key,
+          x: p.x,
+          y: p.y,
+          w: p.w,
+          h: p.h,
+          name: p.file.name,
+          progress: 0,
+        })),
+      ])
+
+      for (const placement of placements) {
+        try {
+          const result = await upload(placement.file, {
+            onProgress: (pct) =>
+              setPending((prev) =>
+                prev.map((p) => (p.key === placement.key ? { ...p, progress: pct } : p))
+              ),
+          })
+          const box = clampToLimits({
+            x: placement.x,
+            y: placement.y,
+            w: placement.w,
+            h: placement.h,
+            rotation: 0,
+          })
+          await createTracked({
+            type: 'image',
+            x: box.x,
+            y: box.y,
+            w: box.w,
+            h: box.h,
+            z: nextZ(),
+            props: {
+              url: result.fullUrl,
+              thumbUrl: result.thumbnailUrl,
+              storagePath: result.storagePath,
+              thumbPath: result.thumbnailPath,
+              name: placement.file.name,
+            },
+          })
+        } catch (err) {
+          reportProblem(
+            `Couldn't upload ${placement.file.name}: ${(err as Error).message || 'upload failed'}`
+          )
+        } finally {
+          // Always, on both paths — a placeholder left behind after a failure is
+          // a permanent grey box the user cannot remove.
+          setPending((prev) => prev.filter((p) => p.key !== placement.key))
+        }
+      }
+    },
+    [canEdit, createTracked, nextZ, upload]
+  )
+
+  // ---------------------------------------------------------------------------
+  // Selection actions: duplicate, copy/paste, stacking, alignment, recolour.
+  //
+  // Every one of these goes through createTracked or commitNode, so they land
+  // on the undo stack for free and need no history handling of their own.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Copy a set of nodes, offset so the copies are visibly separate.
+   *
+   * Returns the new ids so the caller can select them — duplicating and then
+   * dragging is one gesture in every canvas tool, and it only works if what you
+   * just made is what is selected.
+   */
+  const cloneNodes = useCallback(
+    (sources: CanvasNode[], offset: number): Promise<string[]> =>
+      // TRACKED, spanning the whole batch including its recordHistory.
+      //
+      // createTracked does this per node; dropping to createNode to get one
+      // undo entry also dropped the tracking, and that is not cosmetic. An
+      // untracked create means stepHistory's wait sees nothing pending, so
+      // Cmd+D then Cmd+Z pops the entry BEFORE the duplicate, undoes the wrong
+      // thing, and then the clone's late recordHistory lands on top and wipes
+      // the redo branch. One entry AND one tracked promise is the combination
+      // that is actually correct.
+      trackAction(
+        (async (): Promise<string[]> => {
+          if (!canEdit || sources.length === 0) return []
+          // One z for the whole batch to build on, so a duplicated group keeps its
+          // internal stacking instead of being flattened into the order it happens
+          // to be iterated in.
+          const baseZ = nextZ()
+          const created: string[] = []
+          /** Every clone, for ONE history entry — see the push after the loop. */
+          const ops: CanvasOp[] = []
+          // Sequential: each create is a round trip, and firing a dozen at once
+          // would put a dozen rows in flight with no ordering between them.
+          for (let i = 0; i < sources.length; i += 1) {
+            const source = sources[i]
+            const box = clampToLimits({
+              x: source.x + offset,
+              y: source.y + offset,
+              w: source.w,
+              h: source.h,
+              rotation: source.rotation,
+            })
+            // createNode, NOT createTracked: that records one history entry per
+            // node, so duplicating a six-node group cost six Cmd+Z presses. One
+            // gesture is one undo, matching delete, restack and align.
+            const node = await createNode({
+              type: source.type as CanvasNodeType,
+              x: box.x,
+              y: box.y,
+              w: box.w,
+              h: box.h,
+              rotation: box.rotation,
+              z: baseZ + i,
+              // Deep-copied through JSON — props is JSONB, so it is always
+              // JSON-safe. A shallow spread would leave an ink clone SHARING its
+              // source's points array. Nothing mutates props in place today, which
+              // makes this cheap insurance rather than a fix.
+              //
+              // For an image the copy points at the SAME storage object rather than
+              // duplicating the file — which is what a duplicate should do, and is
+              // why the cleanup script counts references rather than assuming one
+              // object per node.
+              props: JSON.parse(JSON.stringify(source.props)) as Record<string, unknown>,
+            })
+            if (node) {
+              created.push(node.id)
+              ops.push({ kind: 'create', node })
+            }
+          }
+          if (ops.length > 0) recordHistory(ops)
+          return created
+        })()
+      ),
+    [canEdit, createNode, nextZ, recordHistory, trackAction]
+  )
+
+  const duplicateSelection = useCallback(async () => {
+    const sources = nodesRef.current.filter((n) => selectionRef.current.includes(n.id))
+    if (sources.length === 0) return
+    const ids = await cloneNodes(sources, DUPLICATE_OFFSET)
+    if (ids.length > 0) setSelection(ids)
+  }, [cloneNodes])
+
+  /**
+   * Clipboard for copy/paste.
+   *
+   * A ref, not the system clipboard. Reading real clipboard data needs
+   * permission and only carries text or images — a sticky's colour, a shape's
+   * stroke and a node's rotation would all be lost on the way through. Within
+   * one canvas this keeps everything, and the cost is that it does not cross
+   * tabs, which is the trade Miro-likes make too.
+   */
+  const clipboardRef = useRef<CanvasNode[]>([])
+
+  const copySelection = useCallback(() => {
+    const picked = nodesRef.current.filter((n) => selectionRef.current.includes(n.id))
+    if (picked.length === 0) return
+    clipboardRef.current = picked.map((n) => ({ ...n, props: { ...n.props } }))
+  }, [])
+
+  const pasteClipboard = useCallback(async () => {
+    const sources = clipboardRef.current
+    if (sources.length === 0) return
+    const ids = await cloneNodes(sources, DUPLICATE_OFFSET)
+    if (ids.length > 0) setSelection(ids)
+  }, [cloneNodes])
+
+  /** Bring the selection to the front, or send it to the back. */
+  const restackSelection = useCallback(
+    (direction: 'front' | 'back') => {
+      if (!canEdit) return
+      const all = nodesRef.current
+      const selected = all
+        .filter((n) => selectionRef.current.includes(n.id))
+        .map((n) => ({ id: n.id, z: n.z }))
+      // Only the OTHERS' z values — see restackNodes. Including the selection's
+      // own made every press a write.
+      const otherZ = all.filter((n) => !selectionRef.current.includes(n.id)).map((n) => n.z)
+      const changes = restackNodes(selected, otherZ, direction)
+      if (changes.length === 0) return
+      const ops: CanvasOp[] = []
+      for (const change of changes) {
+        const before = all.find((n) => n.id === change.id)
+        if (!before) continue
+        ops.push({
+          kind: 'update',
+          id: change.id,
+          before: { z: before.z },
+          after: { z: change.z },
+        })
+        void commitNode(change.id, { z: change.z })
+      }
+      // One entry for the whole restack, like a group drag.
+      if (ops.length > 0) recordHistory(ops)
+    },
+    [canEdit, commitNode, recordHistory]
+  )
+
+  /** Line up or space out the selection. */
+  const arrangeSelection = useCallback(
+    (action: { align: AlignMode } | { distribute: DistributeMode }) => {
+      if (!canEdit) return
+      const picked = nodesRef.current.filter((n) => selectionRef.current.includes(n.id))
+      const inputs = picked.map((n) => ({
+        id: n.id,
+        x: n.x,
+        y: n.y,
+        w: n.w,
+        h: n.h,
+        rotation: n.rotation,
+      }))
+      const moves =
+        'align' in action
+          ? alignNodes(inputs, action.align)
+          : distributeNodes(inputs, action.distribute)
+      if (moves.length === 0) return
+
+      const ops: CanvasOp[] = []
+      for (const move of moves) {
+        const before = picked.find((n) => n.id === move.id)
+        if (!before) continue
+        const box = clampToLimits({ ...before, x: move.x, y: move.y })
+        ops.push({
+          kind: 'update',
+          id: move.id,
+          before: { x: before.x, y: before.y },
+          after: { x: box.x, y: box.y },
+        })
+        void commitNode(move.id, { x: box.x, y: box.y })
+      }
+      if (ops.length > 0) recordHistory(ops)
+    },
+    [canEdit, commitNode, recordHistory]
+  )
+
+  /**
+   * Apply the rail's colour to whatever is selected.
+   *
+   * Which PROP it lands on depends on the node: a sticky's colour is its fill,
+   * a shape's is its stroke, ink and text carry their own `color`. Writing one
+   * key for all of them would silently do nothing for most of the canvas.
+   */
+  const recolorSelection = useCallback(
+    (next: string) => {
+      if (!canEdit) return
+      const picked = nodesRef.current.filter((n) => selectionRef.current.includes(n.id))
+      if (picked.length === 0) return
+      const ops: CanvasOp[] = []
+      for (const node of picked) {
+        // Nothing to recolour on an image, a frame or a connector: writing a
+        // `color` they never read would cost a request, a broadcast and an undo
+        // entry to change nothing on screen.
+        if (node.type === 'image' || node.type === 'frame' || node.type === 'connector') continue
+        const key = node.type === 'sticky' ? 'fill' : node.type === 'shape' ? 'stroke' : 'color'
+        if ((node.props as Record<string, unknown>)[key] === next) continue
+        const after = { props: { ...node.props, [key]: next } }
+        ops.push({
+          kind: 'update',
+          id: node.id,
+          before: { props: node.props },
+          after,
+        })
+        void commitNode(node.id, after)
+      }
+      if (ops.length > 0) recordHistory(ops)
+    },
+    [canEdit, commitNode, recordHistory]
   )
 
   /**
@@ -401,7 +854,10 @@ export default function InfiniteCanvas({
           z: nextZ(),
           props:
             type === 'sticky'
-              ? { text: '', fill: STICKY_COLORS[nodesRef.current.length % STICKY_COLORS.length] }
+              ? {
+                  text: '',
+                  fill: STICKY_COLORS[nodesRef.current.length % STICKY_COLORS.length],
+                }
               : { text: '', color: colorRef.current },
         })
         if (node) {
@@ -582,6 +1038,7 @@ export default function InfiniteCanvas({
         e.stopPropagation()
         setTool('select')
         draftRef.current = null
+        draftLineRef.current = null
         setDraft(null)
         return
       }
@@ -605,7 +1062,8 @@ export default function InfiniteCanvas({
         // left to read. One entry for the whole selection, so it comes back in
         // one press rather than one per node.
         const removed = nodesRef.current.filter((n) => ids.includes(n.id))
-        if (removed.length > 0) recordHistory(removed.map((node): CanvasOp => ({ kind: 'delete', node })))
+        if (removed.length > 0)
+          recordHistory(removed.map((node): CanvasOp => ({ kind: 'delete', node })))
         setSelection([])
         // Tracked so an immediate Cmd+Z waits for these to land before it
         // POSTs the same ids back — "delete, no wait, undo" is the single most
@@ -615,7 +1073,11 @@ export default function InfiniteCanvas({
       }
       // Undo and redo. Cmd/Ctrl+Z, with Shift for redo, and Ctrl+Y as well
       // because that is the redo people reach for on Windows.
-      if (canEdit && (e.metaKey || e.ctrlKey) && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+      if (
+        canEdit &&
+        (e.metaKey || e.ctrlKey) &&
+        (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')
+      ) {
         e.preventDefault()
         const redo = e.key.toLowerCase() === 'y' || e.shiftKey
         void stepHistory(redo ? 'redo' : 'undo')
@@ -626,20 +1088,69 @@ export default function InfiniteCanvas({
         setSelection(nodesRef.current.map((n) => n.id))
         return
       }
+      if (canEdit && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
+        // Browsers bind Cmd+D to "bookmark this page", so this must be taken
+        // before the default runs or the user gets a bookmark dialog instead.
+        e.preventDefault()
+        void duplicateSelection()
+        return
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') {
+        // NOT preventDefault-ed. With nothing selected this should stay the
+        // browser's own copy — the canvas has text in it, and swallowing Cmd+C
+        // unconditionally is how a surface breaks native copy for everything
+        // else on the page.
+        if (selectionRef.current.length === 0) return
+        e.preventDefault()
+        copySelection()
+        return
+      }
+      if (canEdit && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v') {
+        if (clipboardRef.current.length === 0) return
+        e.preventDefault()
+        void pasteClipboard()
+        return
+      }
+      // Stacking order, matching the bracket keys every design tool uses.
+      if (canEdit && !e.metaKey && !e.ctrlKey && (e.key === ']' || e.key === '[')) {
+        if (selectionRef.current.length === 0) return
+        e.preventDefault()
+        restackSelection(e.key === ']' ? 'front' : 'back')
+        return
+      }
       // Single-letter tool switches, and only without a modifier — otherwise
       // Cmd+S would put down a sticky on the way to the browser's save dialog.
       if (canEdit && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
         const key = e.key.toLowerCase()
-        const picked = ({ v: 'select', s: 'sticky', t: 'text', r: 'rect', o: 'ellipse', p: 'ink' } as const)[
-          key as 'v' | 's' | 't' | 'r' | 'o' | 'p'
-        ]
+        const picked = (
+          {
+            v: 'select',
+            s: 'sticky',
+            t: 'text',
+            r: 'rect',
+            o: 'ellipse',
+            l: 'line',
+            a: 'arrow',
+            p: 'ink',
+          } as const
+        )[key as 'v' | 's' | 't' | 'r' | 'o' | 'l' | 'a' | 'p']
         if (picked) {
           e.preventDefault()
           setTool(picked)
         }
       }
     },
-    [canEdit, deleteNode, recordHistory, stepHistory, trackAction]
+    [
+      canEdit,
+      copySelection,
+      deleteNode,
+      duplicateSelection,
+      pasteClipboard,
+      recordHistory,
+      restackSelection,
+      stepHistory,
+      trackAction,
+    ]
   )
 
   const handleKeyUp = useCallback((e: React.KeyboardEvent) => {
@@ -685,7 +1196,7 @@ export default function InfiniteCanvas({
       el.setPointerCapture(e.pointerId)
 
       if (wantsPan) {
-        dragRef.current = {
+        beginDrag({
           mode: 'pan',
           pointerId: e.pointerId,
           startScreen: screen,
@@ -693,7 +1204,7 @@ export default function InfiniteCanvas({
           startViewport: vp,
           originals: new Map(),
           moved: false,
-        }
+        })
         return
       }
 
@@ -712,9 +1223,16 @@ export default function InfiniteCanvas({
         }
 
         setSelection([])
+        draftLineRef.current =
+          activeTool === 'line' || activeTool === 'arrow' ? { from: canvas, to: canvas } : null
         const startDraft = {
           tool: activeTool,
-          rect: { minX: canvas.x, minY: canvas.y, maxX: canvas.x, maxY: canvas.y },
+          rect: {
+            minX: canvas.x,
+            minY: canvas.y,
+            maxX: canvas.x,
+            maxY: canvas.y,
+          },
           points: activeTool === 'ink' ? [canvas] : undefined,
         }
         // Written to the ref FIRST and synchronously. finishDrag reads the ref
@@ -723,7 +1241,7 @@ export default function InfiniteCanvas({
         // source of truth and the state exists only to drive the preview.
         draftRef.current = startDraft
         setDraft(startDraft)
-        dragRef.current = {
+        beginDrag({
           mode: 'create',
           pointerId: e.pointerId,
           startScreen: screen,
@@ -731,7 +1249,7 @@ export default function InfiniteCanvas({
           startViewport: vp,
           originals: new Map(),
           moved: false,
-        }
+        })
         return
       }
 
@@ -747,7 +1265,7 @@ export default function InfiniteCanvas({
         if (hit) {
           const originals = new Map<string, NodeGeometry>([[soleSelected.id, { ...soleSelected }]])
           beginGesture([soleSelected.id])
-          dragRef.current = {
+          beginDrag({
             mode: hit === 'rotate' ? 'rotate' : 'resize',
             pointerId: e.pointerId,
             startScreen: screen,
@@ -757,9 +1275,11 @@ export default function InfiniteCanvas({
             handle: hit,
             rotateOffset: hit === 'rotate' ? rotateGrabOffset(soleSelected, canvas) : undefined,
             grabOffset:
-              hit === 'rotate' ? undefined : resizeGrabOffset(soleSelected, hit as ResizeHandle, canvas),
+              hit === 'rotate'
+                ? undefined
+                : resizeGrabOffset(soleSelected, hit as ResizeHandle, canvas),
             moved: false,
-          }
+          })
           return
         }
       }
@@ -769,7 +1289,7 @@ export default function InfiniteCanvas({
       if (!hitNode) {
         // Empty space: marquee, and clear the selection unless extending.
         if (!e.shiftKey) setSelection([])
-        dragRef.current = {
+        beginDrag({
           mode: 'marquee',
           pointerId: e.pointerId,
           startScreen: screen,
@@ -780,7 +1300,7 @@ export default function InfiniteCanvas({
           // instead of replacing it on the first move.
           marqueeBase: e.shiftKey ? sel : [],
           moved: false,
-        }
+        })
         return
       }
 
@@ -788,7 +1308,9 @@ export default function InfiniteCanvas({
       // keeps the whole selection so a group can be dragged as one.
       let nextSelection: string[]
       if (e.shiftKey) {
-        nextSelection = sel.includes(hitNode.id) ? sel.filter((id) => id !== hitNode.id) : [...sel, hitNode.id]
+        nextSelection = sel.includes(hitNode.id)
+          ? sel.filter((id) => id !== hitNode.id)
+          : [...sel, hitNode.id]
       } else {
         nextSelection = sel.includes(hitNode.id) ? sel : [hitNode.id]
       }
@@ -797,9 +1319,11 @@ export default function InfiniteCanvas({
       if (!canEdit) return
 
       const originals = new Map<string, NodeGeometry>()
-      current.filter((n) => nextSelection.includes(n.id)).forEach((n) => originals.set(n.id, { ...n }))
+      current
+        .filter((n) => nextSelection.includes(n.id))
+        .forEach((n) => originals.set(n.id, { ...n }))
       beginGesture([...originals.keys()])
-      dragRef.current = {
+      beginDrag({
         mode: 'move',
         pointerId: e.pointerId,
         startScreen: screen,
@@ -807,9 +1331,9 @@ export default function InfiniteCanvas({
         startViewport: vp,
         originals,
         moved: false,
-      }
+      })
     },
-    [beginGesture, canEdit, placeTextual, screenPoint, soleSelected, spaceHeld]
+    [beginDrag, beginGesture, canEdit, placeTextual, screenPoint, soleSelected, spaceHeld]
   )
 
   const handlePointerMove = useCallback(
@@ -835,7 +1359,8 @@ export default function InfiniteCanvas({
           )
           if (hit) next = handleCursor(hit, soleSelected.rotation)
         }
-        if (next === 'default' && topmostAt(nodesRef.current, at)) next = canEdit ? 'move' : 'default'
+        if (next === 'default' && topmostAt(nodesRef.current, at))
+          next = canEdit ? 'move' : 'default'
         setHoverCursor((prev) => (prev === next ? prev : next))
         return
       }
@@ -847,7 +1372,11 @@ export default function InfiniteCanvas({
       // gesture has no such ambiguity — the press already committed to drawing —
       // and swallowing the first few pixels makes every stroke open with a
       // straight jump from where the pen went down.
-      if (drag.mode !== 'create' && !drag.moved && Math.hypot(dxScreen, dyScreen) < DRAG_THRESHOLD_PX) {
+      if (
+        drag.mode !== 'create' &&
+        !drag.moved &&
+        Math.hypot(dxScreen, dyScreen) < DRAG_THRESHOLD_PX
+      ) {
         return
       }
       drag.moved = true
@@ -878,6 +1407,7 @@ export default function InfiniteCanvas({
           if (pts.length >= INK_MAX_POINTS) return
           next = { ...prev, points: [...pts, canvas] }
         } else {
+          if (draftLineRef.current) draftLineRef.current = { from: drag.startCanvas, to: canvas }
           next = { ...prev, rect: rectFromPoints(drag.startCanvas, canvas) }
         }
         draftRef.current = next
@@ -930,6 +1460,7 @@ export default function InfiniteCanvas({
       const drag = dragRef.current
       if (!drag || drag.pointerId !== e.pointerId) return
       dragRef.current = null
+      setDragging(false)
       setMarquee(null)
       // releasePointerCapture throws InvalidPointerId when the pointer is no
       // longer active — precisely the pointercancel / lostpointercapture path
@@ -947,6 +1478,10 @@ export default function InfiniteCanvas({
         const d = draftRef.current
         draftRef.current = null
         setDraft(null)
+        // Read below for the diagonal before it is cleared, so a second line
+        // cannot inherit the previous one's direction.
+        const finishedLine = draftLineRef.current
+        draftLineRef.current = null
         // The pen stays armed — drawing is repetitive, and disarming after
         // every stroke would mean re-picking it for each line. Shapes drop back
         // to select, since placing one is usually followed by adjusting it.
@@ -974,7 +1509,13 @@ export default function InfiniteCanvas({
           // put a 0 in the viewBox and divide by zero when it scales.
           const bw = Math.max(MIN_INK_EXTENT, maxX - minX)
           const bh = Math.max(MIN_INK_EXTENT, maxY - minY)
-          const inkBox = clampToLimits({ x: minX, y: minY, w: bw, h: bh, rotation: 0 })
+          const inkBox = clampToLimits({
+            x: minX,
+            y: minY,
+            w: bw,
+            h: bh,
+            rotation: 0,
+          })
           void createTracked({
             type: 'ink',
             x: inkBox.x,
@@ -1001,8 +1542,48 @@ export default function InfiniteCanvas({
         const w = r.maxX - r.minX
         const h = r.maxY - r.minY
         // A click with a shape tool is a miss, not a zero-size shape.
-        if (w < MIN_NODE_SIZE || h < MIN_NODE_SIZE) return
-        const shapeBox = clampToLimits({ x: r.minX, y: r.minY, w, h, rotation: 0 })
+        //
+        // Lines are judged on their LENGTH rather than on both sides: a
+        // perfectly horizontal line has zero height and is a completely normal
+        // thing to draw, but the box test would throw it away.
+        if (d.tool === 'line' || d.tool === 'arrow') {
+          if (Math.hypot(w, h) < MIN_NODE_SIZE) return
+        } else if (w < MIN_NODE_SIZE || h < MIN_NODE_SIZE) {
+          return
+        }
+        const isLine = d.tool === 'line' || d.tool === 'arrow'
+
+        // An axis-aligned line gets a real box to live in, centred on the
+        // stroke, and records which axis it runs along so the renderer draws
+        // through the middle instead of corner to corner. See LINE_MIN_EXTENT.
+        let boxX = r.minX
+        let boxY = r.minY
+        let boxW = w
+        let boxH = h
+        let axis: 'diagonal' | 'horizontal' | 'vertical' = 'diagonal'
+        if (isLine) {
+          if (h < LINE_MIN_EXTENT) {
+            axis = 'horizontal'
+            boxY = r.minY - (LINE_MIN_EXTENT - h) / 2
+            boxH = LINE_MIN_EXTENT
+          } else if (w < LINE_MIN_EXTENT) {
+            axis = 'vertical'
+            boxX = r.minX - (LINE_MIN_EXTENT - w) / 2
+            boxW = LINE_MIN_EXTENT
+          }
+        }
+
+        const shapeBox = clampToLimits({
+          x: boxX,
+          y: boxY,
+          w: boxW,
+          h: boxH,
+          rotation: 0,
+        })
+        // Which way a DIAGONAL stroke runs. A box cannot express it, so it is
+        // recorded from the direction the drag actually went — see
+        // NodeProps.diagonal.
+        const swne = Boolean(finishedLine && finishedLine.to.y < finishedLine.from.y)
         void createTracked({
           type: 'shape',
           x: shapeBox.x,
@@ -1010,7 +1591,18 @@ export default function InfiniteCanvas({
           w: shapeBox.w,
           h: shapeBox.h,
           z: nextZ(),
-          props: { shape: d.tool === 'ellipse' ? 'ellipse' : 'rect', stroke: colorRef.current },
+          props: isLine
+            ? {
+                shape: d.tool,
+                stroke: colorRef.current,
+                size: 2,
+                axis,
+                diagonal: swne ? 'swne' : 'nwse',
+              }
+            : {
+                shape: d.tool === 'ellipse' ? 'ellipse' : 'rect',
+                stroke: colorRef.current,
+              },
         })
         return
       }
@@ -1073,6 +1665,95 @@ export default function InfiniteCanvas({
     [canEdit, canvasPoint, placeTextual]
   )
 
+  // ---------------------------------------------------------------------------
+  // File drop.
+  //
+  // Drag events are a separate stream from pointer events, so none of this
+  // interacts with the gesture handling above — a file drag never produces a
+  // pointerdown, and the canvas never sees it as a marquee.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * A file dropped just OUTSIDE the canvas must not navigate the page.
+   *
+   * The default browser action for a file drop is to open it, which replaces
+   * the whole app with the image and tears down the room session, any
+   * in-progress recording, and the undo stack. The canvas fills most of the
+   * screen but not all of it — the chrome bands above and below it are live
+   * targets, and a drop landing a few pixels off is an easy miss.
+   *
+   * preventDefault only, never stopPropagation: this listener sits at the end
+   * of the bubble path, so a real drop target that handled the event has
+   * already done its work. All this does is stop the browser's fallback.
+   */
+  useEffect(() => {
+    const swallow = (e: DragEvent) => {
+      if (!Array.from(e.dataTransfer?.types ?? []).includes('Files')) return
+      e.preventDefault()
+    }
+    window.addEventListener('dragover', swallow)
+    window.addEventListener('drop', swallow)
+    return () => {
+      window.removeEventListener('dragover', swallow)
+      window.removeEventListener('drop', swallow)
+    }
+  }, [])
+
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      if (!canEdit || !isFileDrag(e)) return
+      e.preventDefault()
+      dragDepthRef.current += 1
+      setDropActive(true)
+    },
+    [canEdit]
+  )
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!canEdit || !isFileDrag(e)) return
+      // Both required. Without preventDefault the browser refuses the drop and
+      // navigates to the file instead, replacing the canvas with the image.
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    },
+    [canEdit]
+  )
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setDropActive(false)
+  }, [])
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!canEdit || !isFileDrag(e)) return
+      e.preventDefault()
+      dragDepthRef.current = 0
+      setDropActive(false)
+      const files = Array.from(e.dataTransfer.files ?? [])
+      if (files.length === 0) return
+      // Where the pointer actually released, so the image lands under the
+      // cursor rather than at some default position.
+      void placeImageFiles(files, toCanvas(viewportRef.current, screenPoint(e)))
+    },
+    [canEdit, placeImageFiles, screenPoint]
+  )
+
+  /** Picker fallback: places at the middle of what is currently on screen. */
+  const handlePickFiles = useCallback(
+    (files: File[]) => {
+      const centre = toCanvas(viewportRef.current, {
+        x: size.w / 2,
+        y: size.h / 2,
+      })
+      void placeImageFiles(files, centre)
+    },
+    [placeImageFiles, size.h, size.w]
+  )
+
   const zoomFit = useCallback(() => {
     const bounds = unionBounds(nodesRef.current.map(aabbOf))
     if (!bounds || size.w === 0) return
@@ -1123,8 +1804,45 @@ export default function InfiniteCanvas({
           }))
         : []
 
-    return { outlines, handles }
-  }, [canEdit, selectedNodes, soleSelected, viewport])
+    // Top-centre of the whole selection, in SCREEN space, for the floating
+    // action bar. Computed from the same rotated corners as the outline, so it
+    // tracks a tilted node instead of hovering off its unrotated rect.
+    // reduce, not Math.min(...spread): Cmd+A on a large canvas spreads four
+    // arguments per node, and a few thousand nodes exceeds the argument limit.
+    // unionBounds avoids the spread for the same reason.
+    let minX = Infinity
+    let maxX = -Infinity
+    let minY = Infinity
+    let maxY = -Infinity
+    for (const node of selectedNodes) {
+      for (const corner of cornersOf(node)) {
+        const p = toScreen(vp, corner)
+        if (p.x < minX) minX = p.x
+        if (p.x > maxX) maxX = p.x
+        if (p.y < minY) minY = p.y
+        if (p.y > maxY) maxY = p.y
+      }
+    }
+
+    // Clamped into the viewport, and flipped below the selection when there is
+    // no room above. Unclamped, a selection near the top put the bar off-screen
+    // and one near the left slid it under the tool rail — which renders later
+    // at the same z-index, so it won and the actions became unreachable.
+    const BAR_HALF_WIDTH = 150
+    const BAR_CLEARANCE = 56
+    const railEdge = TOOL_RAIL_RIGHT_EDGE + BAR_HALF_WIDTH
+    const above = minY > BAR_CLEARANCE
+    const anchor = {
+      x: Math.min(
+        Math.max((minX + maxX) / 2, railEdge),
+        Math.max(railEdge, size.w - BAR_HALF_WIDTH)
+      ),
+      y: above ? minY : maxY,
+      above,
+    }
+
+    return { outlines, handles, anchor }
+  }, [canEdit, selectedNodes, soleSelected, size.w, viewport])
 
   return (
     <div
@@ -1162,6 +1880,10 @@ export default function InfiniteCanvas({
       // and its nodes would stay suppressed for the life of the component.
       onLostPointerCapture={finishDrag}
       onDoubleClick={handleDoubleClick}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       {/* Grid. Painted as a background rather than as elements so it costs
           nothing per cell — an infinite canvas has an unbounded number of them.
@@ -1222,7 +1944,14 @@ export default function InfiniteCanvas({
               // props is replaced wholesale by the API, so the rest of it has to
               // be carried across explicitly — a sticky's fill lives there.
               const after = { props: { ...node.props, text: next } }
-              recordHistory([{ kind: 'update', id: node.id, before: { props: node.props }, after }])
+              recordHistory([
+                {
+                  kind: 'update',
+                  id: node.id,
+                  before: { props: node.props },
+                  after,
+                },
+              ])
               void trackAction(commitNode(node.id, after))
             }}
             onCancelEdit={() => {
@@ -1235,7 +1964,34 @@ export default function InfiniteCanvas({
         {/* The in-progress shape or stroke. Drawn in the same transformed layer
             as real nodes so it sits exactly where it will land, with no
             hand-off jump when the pointer comes up. */}
-        {draft?.rect && draft.tool !== 'ink' && (
+        {draft?.rect && (draft.tool === 'line' || draft.tool === 'arrow') && (
+          <svg
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              overflow: 'visible',
+              pointerEvents: 'none',
+            }}
+            width={1}
+            height={1}
+          >
+            {/* Drawn from where the press started to where the pointer is, NOT
+                corner to corner of the box — otherwise dragging up-left would
+                preview a line along the wrong diagonal from the one that
+                actually gets created. */}
+            <line
+              x1={draftLineRef.current?.from.x ?? draft.rect.minX}
+              y1={draftLineRef.current?.from.y ?? draft.rect.minY}
+              x2={draftLineRef.current?.to.x ?? draft.rect.maxX}
+              y2={draftLineRef.current?.to.y ?? draft.rect.maxY}
+              stroke={color}
+              strokeWidth={2}
+              strokeLinecap="round"
+            />
+          </svg>
+        )}
+        {draft?.rect && draft.tool !== 'ink' && draft.tool !== 'line' && draft.tool !== 'arrow' && (
           <div
             style={{
               position: 'absolute',
@@ -1249,9 +2005,41 @@ export default function InfiniteCanvas({
             }}
           />
         )}
+        {/* Uploads in flight, drawn in the transformed layer so they sit exactly
+            where the image will land and pan and zoom with everything else. */}
+        {pending.map((p) => (
+          <div
+            key={p.key}
+            style={{
+              position: 'absolute',
+              left: p.x,
+              top: p.y,
+              width: p.w,
+              height: p.h,
+              border: `2px dashed ${ROOM.accent}`,
+              borderRadius: 3,
+              background: `${ROOM.accent}0D`,
+              display: 'grid',
+              placeItems: 'center',
+              pointerEvents: 'none',
+              color: ROOM.accent,
+              fontSize: 13,
+              fontFamily: SANS_STACK,
+            }}
+          >
+            {p.progress > 0 ? `${Math.round(p.progress)}%` : 'Uploading…'}
+          </div>
+        ))}
+
         {draft?.tool === 'ink' && draft.points && draft.points.length > 1 && (
           <svg
-            style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              overflow: 'visible',
+              pointerEvents: 'none',
+            }}
             width={1}
             height={1}
           >
@@ -1271,7 +2059,12 @@ export default function InfiniteCanvas({
       <svg
         width={size.w}
         height={size.h}
-        style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'visible' }}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          overflow: 'visible',
+        }}
       >
         {selectionOverlay?.outlines.map((o) => (
           <polygon
@@ -1282,16 +2075,28 @@ export default function InfiniteCanvas({
             strokeWidth={1.5}
           />
         ))}
-        {soleSelected && canEdit && selectionOverlay?.handles.find((h) => h.handle === 'rotate') && (
-          <line
-            x1={toScreen(viewport, { x: soleSelected.x + soleSelected.w / 2, y: soleSelected.y }).x}
-            y1={toScreen(viewport, { x: soleSelected.x + soleSelected.w / 2, y: soleSelected.y }).y}
-            x2={selectionOverlay.handles.find((h) => h.handle === 'rotate')!.screen.x}
-            y2={selectionOverlay.handles.find((h) => h.handle === 'rotate')!.screen.y}
-            stroke={ROOM.accent}
-            strokeWidth={1}
-          />
-        )}
+        {soleSelected &&
+          canEdit &&
+          selectionOverlay?.handles.find((h) => h.handle === 'rotate') && (
+            <line
+              x1={
+                toScreen(viewport, {
+                  x: soleSelected.x + soleSelected.w / 2,
+                  y: soleSelected.y,
+                }).x
+              }
+              y1={
+                toScreen(viewport, {
+                  x: soleSelected.x + soleSelected.w / 2,
+                  y: soleSelected.y,
+                }).y
+              }
+              x2={selectionOverlay.handles.find((h) => h.handle === 'rotate')!.screen.x}
+              y2={selectionOverlay.handles.find((h) => h.handle === 'rotate')!.screen.y}
+              stroke={ROOM.accent}
+              strokeWidth={1}
+            />
+          )}
         {selectionOverlay?.handles.map(({ handle, screen }) => (
           <rect
             key={handle}
@@ -1303,7 +2108,9 @@ export default function InfiniteCanvas({
             fill={ROOM.wall}
             stroke={ROOM.accent}
             strokeWidth={1.5}
-            style={{ cursor: handleCursor(handle, soleSelected?.rotation ?? 0) }}
+            style={{
+              cursor: handleCursor(handle, soleSelected?.rotation ?? 0),
+            }}
           />
         ))}
         {marquee && (
@@ -1320,11 +2127,84 @@ export default function InfiniteCanvas({
         )}
       </svg>
 
+      {/* Drop target highlight. Drawn over everything, ignores the pointer so
+          it cannot swallow the drop it is advertising. */}
+      {dropActive && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 8,
+            border: `2px dashed ${ROOM.accent}`,
+            borderRadius: 12,
+            background: `${ROOM.accent}0A`,
+            pointerEvents: 'none',
+            display: 'grid',
+            placeItems: 'center',
+            color: ROOM.accent,
+            fontSize: 14,
+            fontWeight: 600,
+            zIndex: 3,
+          }}
+        >
+          Drop to add to this crit
+        </div>
+      )}
+
+      {/* The picker behind the rail's image button. Kept out of the toolbar so
+          that component stays free of file handling. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? [])
+          // Reset first: picking the same file twice in a row fires no change
+          // event otherwise, so the second attempt looks like nothing happened.
+          e.target.value = ''
+          if (files.length > 0) handlePickFiles(files)
+        }}
+      />
+
+      {/* Contextual actions. Hidden while a gesture is running — a bar that
+          follows a drag under the cursor is in the way, and its buttons would
+          be moving targets. */}
+      {canEdit && selectionOverlay && !marquee && !dragging && (
+        <CanvasSelectionBar
+          x={selectionOverlay.anchor.x}
+          y={selectionOverlay.anchor.y}
+          below={!selectionOverlay.anchor.above}
+          count={selectedNodes.length}
+          onAlign={(mode) => arrangeSelection({ align: mode })}
+          onDistribute={(mode) => arrangeSelection({ distribute: mode })}
+          onDuplicate={() => void duplicateSelection()}
+          onRestack={restackSelection}
+          onDelete={() => {
+            const ids = selectionRef.current
+            if (ids.length === 0) return
+            const removed = nodesRef.current.filter((n) => ids.includes(n.id))
+            if (removed.length > 0) {
+              recordHistory(removed.map((node): CanvasOp => ({ kind: 'delete', node })))
+            }
+            setSelection([])
+            ids.forEach((id) => void trackAction(deleteNode(id)))
+          }}
+        />
+      )}
+
       <CanvasToolbar
         tool={tool}
         onToolChange={setTool}
+        onPickImage={() => fileInputRef.current?.click()}
         color={color}
-        onColorChange={setColor}
+        onColorChange={(next) => {
+          setColor(next)
+          // Also restyles whatever is selected — the thing the old comment here
+          // claimed happened and did not. Picking a colour with objects
+          // selected means "make these that colour" in every canvas tool.
+          recolorSelection(next)
+        }}
         disabled={!canEdit}
         canUndo={canUndo}
         canRedo={canRedo}
@@ -1344,9 +2224,12 @@ export default function InfiniteCanvas({
       {!loading && nodes.length === 0 && canEdit && (
         <Overlay text="Double-click anywhere to add a note" subtle />
       )}
-      {error && (
+      {(error || uploadError) && (
         <button
-          onClick={clearError}
+          onClick={() => {
+            clearError()
+            setUploadError(null)
+          }}
           style={{
             position: 'absolute',
             left: 16,
@@ -1358,9 +2241,11 @@ export default function InfiniteCanvas({
             color: ROOM.redline,
             fontSize: 12,
             cursor: 'pointer',
+            maxWidth: 'min(420px, calc(100% - 32px))',
+            textAlign: 'left',
           }}
         >
-          {error} — dismiss
+          {error || uploadError} — dismiss
         </button>
       )}
     </div>
@@ -1432,7 +2317,9 @@ function ZoomBar({
         boxShadow: '0 2px 8px rgba(22,24,29,0.08)',
       }}
     >
-      <button style={btn} onClick={onZoomOut} title="Zoom out">−</button>
+      <button style={btn} onClick={onZoomOut} title="Zoom out">
+        −
+      </button>
       <button
         style={{ ...btn, width: 52, fontSize: 12, color: ROOM.ink2 }}
         onClick={onReset}
@@ -1440,8 +2327,17 @@ function ZoomBar({
       >
         {Math.round(zoom * 100)}%
       </button>
-      <button style={btn} onClick={onZoomIn} title="Zoom in">+</button>
-      <div style={{ width: 1, height: 18, background: ROOM.hairline, margin: '0 2px' }} />
+      <button style={btn} onClick={onZoomIn} title="Zoom in">
+        +
+      </button>
+      <div
+        style={{
+          width: 1,
+          height: 18,
+          background: ROOM.hairline,
+          margin: '0 2px',
+        }}
+      />
       <button style={{ ...btn, width: 34, fontSize: 11 }} onClick={onFit} title="Zoom to fit">
         Fit
       </button>

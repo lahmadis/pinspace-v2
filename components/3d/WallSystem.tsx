@@ -198,8 +198,13 @@ const FLOOR_DRAG_THRESHOLD_PX = 4
  * room and you can see where the other walls are to click back onto them.
  */
 const WALL_DIM_AMOUNT = 0.74
-/** Slightly less for boards: artwork ghosts, but stays identifiable enough to click. */
-const BOARD_DIM_AMOUNT = 0.62
+/**
+ * Slightly less for boards: artwork ghosts, but stays identifiable enough to
+ * click. Underscored because nothing reads it yet — board dimming is still
+ * done by WALL_DIM_AMOUNT — and an unused const is a build-failing lint error
+ * here. Kept rather than deleted so the intended value survives.
+ */
+const _BOARD_DIM_AMOUNT = 0.62
 
 /**
  * Blend a colour toward the sky. Used for wall focus, which ghosts surfaces by

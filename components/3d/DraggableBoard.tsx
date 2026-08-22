@@ -40,6 +40,18 @@ interface DraggableBoardProps {
   wallDimensions: { width: number; height: number }
   side?: 'front' | 'back'
   initialLocalPosition?: { x: number; y: number; width?: number; height?: number }
+  /**
+   * Increments when a position arrives from something other than a gesture —
+   * an undo or a redo.
+   *
+   * The sync effect below ignores incoming positions for two seconds after a
+   * drag, so that a slow save's echo cannot snap the board back. An undo lands
+   * inside exactly that window (it is what you press right after moving
+   * something), and was being swallowed: the data changed, the board did not
+   * move, and it only looked correct after leaving edit mode remounted it.
+   * A change in this number means "this one is deliberate, take it".
+   */
+  positionEpoch?: number
   onDragEnd: (boardId: string, localX: number, localY: number, width?: number, height?: number, side?: 'front' | 'back') => void
   /**
    * Pushed on corner-resize PATCH success so the parent can mirror the
@@ -148,6 +160,7 @@ export function DraggableBoard({
   wallDimensions,
   side = 'front',
   initialLocalPosition = { x: 0, y: 0 },
+  positionEpoch = 0,
   onDragEnd,
   onSizePersisted,
   onDelete: _onDelete,
@@ -259,10 +272,19 @@ export function DraggableBoard({
   
   // Track if we just finished dragging to avoid resetting position
   const justFinishedDragging = useRef(false)
+  /** Last epoch this board acted on; see the positionEpoch prop. */
+  const lastPositionEpochRef = useRef(positionEpoch)
   
  // Sync position when props change (but not right after we finished dragging)
 useEffect(() => {
-  if (justFinishedDragging.current) {
+  // An undo or redo overrides the post-drag hold. It is a deliberate external
+  // move, not the stale echo the hold exists to ignore, and it is pressed
+  // precisely when the hold is active. Clearing the flag as well as syncing
+  // matters: leaving it set would swallow the NEXT undo too.
+  const external = positionEpoch !== lastPositionEpochRef.current
+
+  if (!external && justFinishedDragging.current) {
+    devLog('[UNDO-DIAG] sync BLOCKED by post-drag hold', { board: board.id, positionEpoch })
     // 🎯 Keep the flag set for 2 seconds to give save time to complete
     const timer = setTimeout(() => {
       justFinishedDragging.current = false
@@ -270,25 +292,48 @@ useEffect(() => {
     }, 2000)
     return () => clearTimeout(timer)
   }
-  if (isResizing) return
-  
-  if (!isDragging) {
-    // Only sync if position actually changed from external source
-    const propsPos = initialLocalPosition
-    const currentPos = positionRef.current
-    
-    // Use a small epsilon for comparison (floating point tolerance)
-    const epsilon = 0.001
-    const xChanged = Math.abs(propsPos.x - currentPos.x) > epsilon
-    const yChanged = Math.abs(propsPos.y - currentPos.y) > epsilon
-    
-    if (xChanged || yChanged) {
-      devLog('📍 Syncing position from props:', propsPos)
-      positionRef.current = propsPos
-      setLocalPosition(propsPos)
-    }
+
+  // Still mid-gesture: leave WITHOUT consuming the epoch, so the undo is
+  // applied when the gesture ends rather than being marked as handled here and
+  // then swallowed by the post-gesture hold — which would lose it for good.
+  if (isResizing || isDragging) {
+    devLog('[UNDO-DIAG] sync deferred, gesture active', { board: board.id, isDragging, isResizing })
+    return
   }
-}, [initialLocalPosition.x, initialLocalPosition.y, isDragging, isResizing])
+
+  // Past every gate, so this run really will sync. Only now is the bump
+  // recorded, and the post-drag hold dropped: an undo is a deliberate external
+  // move, not the stale save echo that hold exists to ignore.
+  if (external) {
+    lastPositionEpochRef.current = positionEpoch
+    justFinishedDragging.current = false
+  }
+
+  // Only sync if position actually changed from external source
+  const propsPos = initialLocalPosition
+  const currentPos = positionRef.current
+
+  // Use a small epsilon for comparison (floating point tolerance)
+  const epsilon = 0.001
+  const xChanged = Math.abs(propsPos.x - currentPos.x) > epsilon
+  const yChanged = Math.abs(propsPos.y - currentPos.y) > epsilon
+
+  devLog('[UNDO-DIAG] sync effect', {
+    board: board.id,
+    external,
+    justFinishedDragging: justFinishedDragging.current,
+    isDragging,
+    isResizing,
+    props: { x: propsPos.x, y: propsPos.y },
+    current: { x: currentPos.x, y: currentPos.y },
+    willSync: xChanged || yChanged,
+  })
+  if (xChanged || yChanged) {
+    devLog('📍 Syncing position from props:', propsPos)
+    positionRef.current = propsPos
+    setLocalPosition(propsPos)
+  }
+}, [initialLocalPosition.x, initialLocalPosition.y, isDragging, isResizing, positionEpoch])
   
   devLog('🎨 [DraggableBoard] Rendering board:', board.id, 'at position:', localPosition)
   

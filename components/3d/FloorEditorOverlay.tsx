@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { calculateFloorBounds, getWallTransformResolved, getWallTransform } from '@/lib/wallLayout'
-import { makePlanProjection, type PlanBoundsLike } from '@/lib/room/planProjection'
+import { makePlanProjection } from '@/lib/room/planProjection'
 import { ROOM, MONO_STACK } from '@/lib/room/palette'
 import type { WallConfig, WallTransformOverride } from '@/lib/wallLayout'
 import type { FloorTable } from '@/types'

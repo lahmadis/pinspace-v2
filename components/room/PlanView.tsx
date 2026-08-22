@@ -23,6 +23,19 @@ interface PlanViewProps {
    * board is on.
    */
   onWallClick?: (wallIndex: number, side: 'front' | 'back') => void
+  /**
+   * Open the wall editor. Omit to hide the button — a viewer who cannot edit
+   * the room's configuration should not be shown a control that no-ops.
+   *
+   * These two live HERE, on the plan, rather than in a menu over the 3D view.
+   * The plan IS the room's layout seen from above: it is where you can already
+   * see the walls you would be reconfiguring and the floor you would be
+   * placing a model on. A hamburger over the 3D view asked you to hold that
+   * layout in your head while you edited it.
+   */
+  onReconfigureWalls?: () => void
+  /** Open the floor editor to add or position a 3D model. */
+  onPlaceModel?: () => void
 }
 
 const VIEW = 1000
@@ -88,6 +101,8 @@ export default function PlanView({
   onSelectStudent,
   onBoardClick,
   onWallClick,
+  onReconfigureWalls,
+  onPlaceModel,
 }: PlanViewProps) {
   const { segments, toPlan, scaleBar, labels, ticks, emptyWalls, dominantSide } = useMemo(() => {
     const segs = wallSegments(wallConfig)
@@ -231,8 +246,38 @@ export default function PlanView({
     return st ? new Set(st.boardIds) : null
   }, [selectedStudentId, students])
 
+  const canConfigure = Boolean(onReconfigureWalls || onPlaceModel)
+
   return (
     <div className="absolute inset-0 overflow-auto" style={{ background: ROOM.background }}>
+      {/* Room configuration, on the drawing it configures.
+          Absolutely positioned over the plan rather than inside the SVG: these
+          are DOM buttons with text, and scaling them with the viewBox would
+          shrink the labels as the plan zoomed to fit.
+          BOTTOM-left, not top-left. Every other corner is taken by chrome that
+          paints above this panel: the breadcrumb is fixed top-left at z-40 (it
+          covered these buttons entirely and ate their clicks), Share is fixed
+          top-right, and the roster is fixed right at top-20. The revision strip
+          is bottom-CENTRE, and this panel is already inset above it, so the
+          bottom-left corner is the one piece of clear space. */}
+      {canConfigure && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 16,
+            left: 16,
+            display: 'flex',
+            gap: 6,
+            zIndex: 1,
+          }}
+        >
+          {onReconfigureWalls && (
+            <PlanAction label="Reconfigure walls" onClick={onReconfigureWalls} />
+          )}
+          {onPlaceModel && <PlanAction label="Place 3D model" onClick={onPlaceModel} />}
+        </div>
+      )}
+
       <svg viewBox={`0 0 ${VIEW} ${VIEW}`} className="w-full h-full" role="img" aria-label="Space floor plan">
         {/* Floor field */}
         <rect x={0} y={0} width={VIEW} height={VIEW} fill={ROOM.background} />
@@ -382,5 +427,34 @@ export default function PlanView({
         </g>
       </svg>
     </div>
+  )
+}
+
+/**
+ * One plan-level action. Plain and quiet: the plan is a drawing, and these sit
+ * on top of it, so they should read as an overlay rather than compete with the
+ * linework.
+ */
+function PlanAction({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: '7px 12px',
+        borderRadius: 9,
+        border: `1px solid ${ROOM.hairline}`,
+        background: ROOM.wall,
+        color: ROOM.ink,
+        fontFamily: SANS_STACK,
+        fontSize: 12,
+        fontWeight: 600,
+        cursor: 'pointer',
+        boxShadow: '0 2px 8px rgba(22,24,29,0.08)',
+      }}
+      className="focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]/40"
+    >
+      {label}
+    </button>
   )
 }

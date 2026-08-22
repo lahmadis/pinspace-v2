@@ -4,7 +4,15 @@ import { ROOM, MONO_STACK } from '@/lib/room/palette'
 import type { RoomCameraPreset } from '@/lib/room/cameraViews'
 import RoomViewPresets from './RoomViewPresets'
 
-export type RoomView = 'room' | 'unfolded' | 'plan' | '2d' | 'canvas'
+/**
+ * The canvas is deliberately NOT here.
+ *
+ * An infinite canvas belongs to a desk crit, not to a space: the other four are
+ * readings of the same room and its boards, and a working surface with its own
+ * contents sitting alongside them made the strip mean two different things. It
+ * lives at /desk-crits/[id] instead.
+ */
+export type RoomView = 'room' | 'unfolded' | 'plan' | '2d'
 
 interface RevisionStripProps {
   view: RoomView
@@ -28,9 +36,6 @@ const VIEWS: Array<{ id: RoomView; label: string }> = [
   // side — a flat 2D read of the room — rather than "Archive", which sounds
   // like cold storage for old work.
   { id: '2d', label: '2D' },
-  // The infinite canvas. Last because it is the only segment that isn't a
-  // reading of the room's boards — it's a working surface of its own.
-  { id: 'canvas', label: 'Canvas' },
 ]
 
 /**

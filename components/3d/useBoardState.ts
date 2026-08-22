@@ -42,6 +42,21 @@ const fitAspectWithinBounds = (
 export function useBoardState(
   initialBoards: Board[],
   studioId: string,
+  /**
+   * Full room refetch. Now used on ONE path: a delete that failed.
+   *
+   * deleteBoard used to await this after every deletion — a dozen sequential
+   * queries to rediscover the one row it had just removed, on the
+   * most-felt interaction in the room. Local state and the boards realtime
+   * event already tell every client what happened, so on the happy path it was
+   * pure latency.
+   *
+   * It is still needed when a delete comes back as a failure, because that
+   * answer can be wrong: a request can commit server-side and still report an
+   * error (gateway timeout, a keepalive response that never arrives). Restoring
+   * the board then leaves a ghost that no realtime event will correct, since
+   * this client is the one that deleted it. See restoreAndReconcile.
+   */
   onRefresh: () => Promise<void>,
   // The wall + side the local user is actively editing in 2D, or null when not
   // in edit mode. While set, boardPositions is the SOLE source of truth for
@@ -91,10 +106,69 @@ export function useBoardState(
     activeEditSideRef.current = editContext?.side ?? 'front'
   }, [editContext?.wall, editContext?.side])
   
-  // Undo/redo: snapshot is serializable boardPositions for current wall
-  const undoStackRef = useRef<Array<[string, BoardPosition][]>>([])
-  const redoStackRef = useRef<Array<[string, BoardPosition][]>>([])
+  /**
+   * Undo/redo: a snapshot of boardPositions, TAGGED with the wall it describes.
+   *
+   * The tag is load-bearing now that undo writes to the server. A snapshot is
+   * an untagged `id -> {x,y,w,h}` map, and boardPositions is replaced wholesale
+   * on wall entry — so an undo taken on wall 0 and replayed on wall 1 used to
+   * wipe wall 1's live entries and, worse, would now PUT wall 0's coordinates
+   * onto whatever wall those boards currently sit on. While undo was
+   * local-only that was a glitch a refetch erased; persisted, it is silent
+   * position loss across a wall the user was not even looking at.
+   *
+   * Two defences, deliberately both: the stacks are cleared whenever the edited
+   * wall changes, and applySnapshot refuses a snapshot whose tag does not match
+   * the wall in hand. The clear is what normally keeps this from arising; the
+   * tag is what makes a missed clear harmless rather than destructive.
+   */
+  interface PositionSnapshot {
+    wall: number | null
+    side: 'front' | 'back'
+    entries: [string, BoardPosition][]
+  }
+  const undoStackRef = useRef<PositionSnapshot[]>([])
+  const redoStackRef = useRef<PositionSnapshot[]>([])
   const MAX_UNDO = 50
+
+  /**
+   * Boards removed locally whose DELETE has not landed yet.
+   *
+   * The parent still lists them for the length of the undo window, so without
+   * this the sync effect below puts them straight back the moment anything
+   * refreshes the parent's array.
+   */
+  const stagedDeleteIdsRef = useRef<Set<string>>(new Set())
+
+  /**
+   * Bumped whenever positions change from something OTHER than a live gesture —
+   * today, an undo or a redo.
+   *
+   * DraggableBoard ignores incoming position props for two seconds after a drag
+   * (justFinishedDragging), because a slow save's echo would otherwise snap the
+   * board back to where it started. An undo is the opposite case: an
+   * intentional external move that must win, and pressing Ctrl+Z immediately
+   * after a drag — which is when people press it — lands squarely inside that
+   * window. The board's data changed, the screen did not, and it only appeared
+   * to work after leaving edit mode remounted everything from the server.
+   *
+   * A counter rather than a flag: it has to be distinguishable from "the same
+   * external change again", and a number that only ever increases is the
+   * cheapest thing every consumer can compare against what it last saw.
+   */
+  const [positionEpoch, setPositionEpoch] = useState(0)
+
+  /**
+   * A snapshot only means anything on the wall it was taken from.
+   *
+   * Cleared on every change of edited wall or side — including leaving edit
+   * mode altogether, which is what stops a stale stack from being replayed
+   * against the 3D room later.
+   */
+  useEffect(() => {
+    undoStackRef.current = []
+    redoStackRef.current = []
+  }, [editContext?.wall, editContext?.side])
   
   // Keep refs in sync with latest state
   useEffect(() => {
@@ -148,6 +222,19 @@ export function useBoardState(
       } : parent
 
     initialBoards.forEach((parentBoard) => {
+      // A board the local user has just deleted is NOT re-added, however fresh
+      // the parent's copy looks. The parent keeps listing it until the DELETE
+      // lands, so any refetch inside the undo window — someone else's upload,
+      // a reorder, another user's edit — would otherwise put it back on the
+      // wall seconds after the user removed it. See stagedDeleteIdsRef.
+      if (stagedDeleteIdsRef.current.has(parentBoard.id)) {
+        // Drop the upload hold too. Returning without this leaves a dead entry
+        // for a board that was uploaded and then deleted inside its own hold
+        // window — harmless, but it accumulates for the life of the session.
+        optimisticBoardUntilRef.current.delete(parentBoard.id)
+        return
+      }
+
       const existing = boardMap.get(parentBoard.id)
       const parentHasPosition = hasValidPosition(parentBoard)
       const existingHasPosition = existing != null && hasValidPosition(existing)
@@ -356,17 +443,179 @@ export function useBoardState(
   const pushUndo = useCallback(() => {
     const current = boardPositionsRef.current
     if (current.size === 0) return
-    const snapshot = Array.from(current.entries())
+    // Tagged with the wall being edited, so it can never be replayed onto
+    // another one. See PositionSnapshot.
+    const snapshot: PositionSnapshot = {
+      wall: activeEditWallRef.current,
+      side: activeEditSideRef.current,
+      entries: Array.from(current.entries()),
+    }
     undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), snapshot]
     redoStackRef.current = []
   }, [])
 
   /**
-   * Restore boardPositions and sync boards array from a snapshot
+   * Write a set of positions to the server, with no local state change and no
+   * undo bookkeeping.
+   *
+   * The persistence half of updateBoardPosition, without the parts undo must
+   * not repeat: it does not pushUndo, does not touch boardPositions, and does
+   * not roll anything back locally — applySnapshot has already committed the
+   * state this is catching the server up to.
+   *
+   * Same skip rules and the same per-board write queue as the interactive path,
+   * so an undo racing a drag's own save commits in issue order rather than
+   * whichever response lands last.
    */
-  const applySnapshot = useCallback((snapshot: [string, BoardPosition][]) => {
-    const map = new Map(snapshot)
+  const persistPositions = useCallback(
+    async (entries: ReadonlyArray<{ boardId: string; pos: BoardPosition }>) => {
+      await Promise.all(
+        entries.map(async ({ boardId: rawBoardId, pos }) => {
+          // Resolved like the interactive path: a snapshot taken before an
+          // upload's temp→real swap still holds the temp key, and writing
+          // against that would 404 instead of moving the real board.
+          const boardId = resolveBoardId(rawBoardId)
+          const board = boardsRef.current.find(b => b.id === boardId)
+          if (!board) return
+
+          const boardWorkspaceId = board.workspaceId || board.studioId || ''
+          const shouldSkipPersistence =
+            boardId.startsWith('temp-') ||
+            boardId.startsWith('demo-') ||
+            boardId.startsWith('sample-') ||
+            boardWorkspaceId.startsWith('demo-') ||
+            boardWorkspaceId.startsWith('sample-') ||
+            boardWorkspaceId.startsWith('mock-')
+          if (shouldSkipPersistence) return
+
+          // The wall and side come from the board's own current position: an
+          // undo restores where a board WAS on this wall, never which wall it
+          // is on, so inventing either here could move a board between walls.
+          const wallIndex = board.position?.wallIndex
+          if (wallIndex === undefined || wallIndex === null) return
+          const side = board.position?.side ?? 'front'
+
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { position: _position, comments: _comments, ...boardWithoutPosition } = board
+
+          try {
+            const response = await enqueueBoardWrite(boardId, () =>
+              fetch('/api/boards', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                keepalive: true,
+                body: JSON.stringify({
+                  ...boardWithoutPosition,
+                  workspaceId: board.studioId,
+                  studioId: board.studioId,
+                  boardWidthIn: board.boardWidthIn,
+                  boardHeightIn: board.boardHeightIn,
+                  position: {
+                    wallIndex,
+                    x: normalizedToApi(pos.x),
+                    y: normalizedToApi(pos.y),
+                    width: decimalToApi(pos.width),
+                    height: decimalToApi(pos.height),
+                    side,
+                  },
+                }),
+              })
+            )
+            if (!response.ok) {
+              console.error('❌ [useBoardState] Undo/redo save failed', {
+                boardId,
+                status: response.status,
+              })
+              toast.error('Undo could not be saved. Reload before continuing.', { id: 'undo-save-failed' })
+            }
+          } catch (error) {
+            console.error('❌ [useBoardState] Undo/redo save threw', boardId, error)
+            toast.error('Undo could not be saved. Reload before continuing.', { id: 'undo-save-failed' })
+          }
+        })
+      )
+    },
+    [normalizedToApi, decimalToApi, resolveBoardId]
+  )
+
+  /**
+   * Restore boardPositions and sync boards array from a snapshot, AND WRITE IT.
+   *
+   * The write is the whole point, and it used to be missing. Undo set local
+   * state and stopped there, so the board slid back and then the next refetch —
+   * which fires after any board mutation, and on every reload — pulled the
+   * server's unchanged value and slid it forward again. Ctrl+Z looked like it
+   * worked for a second and then silently undid itself, which is worse than
+   * having no undo at all.
+   *
+   * Only CHANGED boards are written. A snapshot holds the whole wall, and
+   * PUTting every board on it for a one-board undo would be a dozen needless
+   * writes, each rebroadcast to everyone in the room.
+   *
+   * No pushUndo here: undo and redo move entries BETWEEN the two stacks
+   * themselves, and recording a fresh entry would both duplicate it and wipe
+   * the redo branch the user is standing in.
+   */
+  const applySnapshot = useCallback((snapshot: PositionSnapshot): boolean => {
+    // Refuse a snapshot from a different wall or side. Normally unreachable —
+    // the stacks are cleared on every wall change — but the cost of being
+    // wrong here is writing one wall's coordinates onto another's boards.
+    devLog('[UNDO-DIAG] applySnapshot', {
+      snapshotWall: snapshot.wall,
+      snapshotSide: snapshot.side,
+      currentWall: activeEditWallRef.current,
+      currentSide: activeEditSideRef.current,
+      entries: snapshot.entries.length,
+    })
+    if (
+      snapshot.wall !== activeEditWallRef.current ||
+      snapshot.side !== activeEditSideRef.current
+    ) {
+      devLog('↩️ [useBoardState] Discarding a snapshot from another wall/side', {
+        snapshotWall: snapshot.wall,
+        currentWall: activeEditWallRef.current,
+      })
+      return false
+    }
+
+    const before = boardPositionsRef.current
+    // MERGED over the current map, not a replacement.
+    //
+    // A snapshot only describes the boards that existed when it was taken. A
+    // board uploaded — or delete-restored — since then has a live entry that a
+    // wholesale replace would drop, quietly excluding it from persistPositions
+    // and from every later snapshot. Snapshot entries win for the ids they
+    // cover; anything newer is left alone.
+    // Snapshot entries for boards that no longer exist are dropped: a board
+    // deleted since the snapshot was taken would otherwise get its position
+    // entry resurrected here, orphaned from any board. persistPositions skips
+    // it (no matching board), so it writes nothing — it just lingers in the map
+    // and in every snapshot taken afterwards.
+    const live = snapshot.entries
+      // Retargeted temp->real first, like every other position write. A board
+      // uploaded, dragged, then swapped to its real id is held in the snapshot
+      // under the DEAD temp key: matching that raw against boardsRef finds
+      // nothing, so the undo silently skipped exactly the board most likely to
+      // be the one being undone.
+      .map(([id, pos]) => [resolveBoardId(id), pos] as [string, BoardPosition])
+      .filter(
+        ([id]) => boardsRef.current.some(b => b.id === id) && !stagedDeleteIdsRef.current.has(id)
+      )
+    const map = new Map([...before, ...live])
+
     setBoardPositions(map)
+    // Written SYNCHRONOUSLY, not left to the mirroring effect.
+    //
+    // That effect is passive, and Ctrl+Z on key-repeat fires far faster than it
+    // flushes on a loaded 3D frame. The second undo would then read this ref as
+    // the state before the FIRST one: it would push a duplicate onto the redo
+    // stack, and the `before` diff below would compare against the wrong map
+    // and filter out boards that genuinely changed — leaving them unwritten.
+    // That is the "undo doesn't stick" bug this whole change exists to fix,
+    // coming back in through the diff. Three other functions in this file
+    // (replaceTempBoard, applyBoardSizeLocal, applyBoardLinkLocal) already
+    // write their refs eagerly for exactly this reason.
+    boardPositionsRef.current = map
     setBoards(prev => prev.map(b => {
       const pos = map.get(b.id)
       if (!pos || !b.position) return b
@@ -381,27 +630,72 @@ export function useBoardState(
         }
       }
     }))
-  }, [normalizedToApi, decimalToApi])
+
+    const moved: Array<{ boardId: string; pos: BoardPosition }> = []
+    for (const [boardId, pos] of map) {
+      const prior = before.get(boardId)
+      if (
+        prior &&
+        prior.x === pos.x &&
+        prior.y === pos.y &&
+        prior.width === pos.width &&
+        prior.height === pos.height
+      ) {
+        continue
+      }
+      moved.push({ boardId, pos })
+    }
+    devLog('[UNDO-DIAG] applySnapshot applying', {
+      moved: moved.map((m) => ({ id: m.boardId, x: m.pos.x, y: m.pos.y })),
+      mapSize: map.size,
+    })
+    if (moved.length > 0) void persistPositions(moved)
+    // Tell the boards to take this position even if they think they just
+    // finished a drag. See positionEpoch.
+    setPositionEpoch((n) => n + 1)
+    return true
+  }, [normalizedToApi, decimalToApi, persistPositions, resolveBoardId])
+
+  /** The state we are leaving, tagged the same way, so redo can return to it. */
+  const currentSnapshot = useCallback(
+    (): PositionSnapshot => ({
+      wall: activeEditWallRef.current,
+      side: activeEditSideRef.current,
+      entries: Array.from(boardPositionsRef.current.entries()),
+    }),
+    []
+  )
 
   const undo = useCallback(() => {
     const stack = undoStackRef.current
+    devLog('[UNDO-DIAG] undo pressed', { stackDepth: stack.length })
     if (stack.length === 0) return
-    const current = Array.from(boardPositionsRef.current.entries())
-    redoStackRef.current = [...redoStackRef.current, current]
+    const current = currentSnapshot()
     const snapshot = stack[stack.length - 1]
     undoStackRef.current = stack.slice(0, -1)
-    applySnapshot(snapshot)
-  }, [applySnapshot])
+    // History is only consumed if the snapshot was actually applied. A refusal
+    // that still popped would drain the undo stack on key-repeat and fill redo
+    // with copies of the present — losing real history to a guard that exists
+    // to protect it.
+    if (!applySnapshot(snapshot)) {
+      undoStackRef.current = stack
+      return
+    }
+    redoStackRef.current = [...redoStackRef.current, current]
+  }, [applySnapshot, currentSnapshot])
 
   const redo = useCallback(() => {
     const stack = redoStackRef.current
     if (stack.length === 0) return
-    const current = Array.from(boardPositionsRef.current.entries())
-    undoStackRef.current = [...undoStackRef.current, current]
+    const current = currentSnapshot()
     const snapshot = stack[stack.length - 1]
     redoStackRef.current = stack.slice(0, -1)
-    applySnapshot(snapshot)
-  }, [applySnapshot])
+    if (!applySnapshot(snapshot)) {
+      redoStackRef.current = stack
+      return
+    }
+    undoStackRef.current = [...undoStackRef.current, current]
+  }, [applySnapshot, currentSnapshot])
 
   /**
    * Update board position (handles both local state and API save)
@@ -789,16 +1083,113 @@ export function useBoardState(
   /**
    * Delete a board
    */
-  const deleteBoard = useCallback(async (boardId: string) => {
+  /**
+   * Take a board off the wall LOCALLY and hand back the way to put it back.
+   *
+   * Split from the network call so a delete can be undone. Board deletion
+   * destroys the storage objects server-side (see the cascade in
+   * /api/boards DELETE), so a board cannot be restored once the request has
+   * gone — the only honest undo is one that happens BEFORE it does. Staging
+   * locally and committing on a delay gives exactly that window, and the worst
+   * case if the commit never runs is a board that survives, which is the safe
+   * direction.
+   */
+  const stageBoardDelete = useCallback((boardId: string): (() => void) => {
+    const removedBoard = boardsRef.current.find(b => b.id === boardId)
+    const removedPosition = boardPositionsRef.current.get(boardId)
+
+    // Remembered for the whole window, so the parent-sync effect below does not
+    // put this board straight back.
+    //
+    // The parent's array still holds it until the DELETE lands, and ANY parent
+    // refetch during those seconds — someone else's upload, a reorder, another
+    // user's edit — re-runs the sync and resurrects it. A resurrected board can
+    // then be selected and deleted a second time, which is how one board ends
+    // up with two pending deletes and a 404 that used to resurrect it for good.
+    stagedDeleteIdsRef.current = new Set(stagedDeleteIdsRef.current).add(boardId)
+
+    setBoards(prev => prev.filter(b => b.id !== boardId))
+    setBoardPositions(prev => {
+      const newMap = new Map(prev)
+      newMap.delete(boardId)
+      return newMap
+    })
+
+    return () => {
+      // Cleared first and unconditionally: the board is no longer staged for
+      // deletion whether or not there is anything to put back, and leaving the
+      // id in the set would keep the parent-sync effect filtering it forever.
+      const next = new Set(stagedDeleteIdsRef.current)
+      next.delete(boardId)
+      stagedDeleteIdsRef.current = next
+
+      if (!removedBoard) return
+      // Guarded against double-restore: an undo and a failed commit can both
+      // reach for this, and appending twice would duplicate the board.
+      setBoards(prev => (prev.some(b => b.id === boardId) ? prev : [...prev, removedBoard]))
+      if (removedPosition) {
+        setBoardPositions(prev => {
+          const newMap = new Map(prev)
+          newMap.set(boardId, removedPosition)
+          return newMap
+        })
+      }
+    }
+  }, [])
+
+  /**
+   * Send the delete for a board already staged by stageBoardDelete.
+   *
+   * `restore` is the closure that function returned; it runs if the server
+   * refuses, putting the board back where it was.
+   */
+  const commitBoardDelete = useCallback(async (boardId: string, restore: () => void) => {
     devLog('🗑️ [useBoardState] Deleting board:', boardId)
-    
+    /** Stop filtering this id once the server has spoken, whatever it said. */
+    const unstage = () => {
+      const next = new Set(stagedDeleteIdsRef.current)
+      next.delete(boardId)
+      stagedDeleteIdsRef.current = next
+    }
+    /**
+     * Put the board back, then check whether it should actually be there.
+     *
+     * A DELETE can commit server-side and still fail here — a gateway timeout,
+     * a keepalive request whose response never arrives, a non-JSON error body.
+     * Restoring on those puts a board on screen that no longer exists, and
+     * nothing corrects it: no realtime DELETE is coming, because the client
+     * that issued it is this one. The refetch this hook used to run after
+     * EVERY delete happened to cover that; it is now run only here, on the one
+     * path where local state might be wrong.
+     */
+    const restoreAndReconcile = () => {
+      restore()
+      void onRefresh().catch(() => {})
+    }
     try {
       const response = await fetch(`/api/boards?boardId=${boardId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        // keepalive so a delete flushed on pagehide or unmount actually leaves.
+        // Without it the request is cancelled with the document and the board
+        // silently comes back on the next load — which is the safe direction,
+        // but it made the undo window's flush a no-op and contradicted the
+        // comment in StudioRoom that justifies it. Every other write in this
+        // hook already sets this.
+        keepalive: true,
       })
-      
+
       const data = await response.json()
-      
+
+      // 404 means the row is already gone — a retry, or a second delete of the
+      // same board. That is success, not failure: restoring here would put a
+      // board back on screen that no longer exists anywhere, and no realtime
+      // event is coming to correct it.
+      if (response.status === 404) {
+        devLog('🗑️ [useBoardState] Board already gone:', boardId)
+        unstage()
+        return true
+      }
+
       if (!response.ok) {
         if (response.status === 403) {
           toast.error(`You can only delete boards in workspaces you're a member of${data.ownerName ? `. This board belongs to ${data.ownerName}.` : '.'}`)
@@ -807,28 +1198,42 @@ export function useBoardState(
         } else {
           toast.error(data.error || 'Failed to delete board')
         }
+        restoreAndReconcile()
         return false
       }
-      
-      // Remove from local state
-      setBoards(prev => prev.filter(b => b.id !== boardId))
-      setBoardPositions(prev => {
-        const newMap = new Map(prev)
-        newMap.delete(boardId)
-        return newMap
-      })
-      
-      // Refresh from server
-      await onRefresh()
-      
+
+      // NO refetch on the happy path. The local removal above is already correct for this user,
+      // and everyone else learns from the boards realtime DELETE event, which
+      // the studio page applies inline. The full GET this used to await reads
+      // the whole room — a dozen sequential queries — to discover one thing we
+      // already knew.
       devLog('✅ [useBoardState] Board deleted successfully')
+      // Unstaged only AFTER the row is really gone. From here the parent's own
+      // refetch will stop returning it, so the filter has nothing left to do.
+      unstage()
       return true
     } catch (error) {
       console.error('❌ [useBoardState] Delete failed:', error)
       toast.error('Failed to delete board')
+      restoreAndReconcile()
       return false
     }
   }, [onRefresh])
+
+  /**
+   * Stage and commit in one go, with no undo window.
+   *
+   * The original single-call shape, kept for every caller that deletes without
+   * offering a way back — Clear Wall, and the wall-removal path, both of which
+   * confirm first and delete in bulk.
+   */
+  const deleteBoard = useCallback(
+    async (boardId: string) => {
+      const restore = stageBoardDelete(boardId)
+      return commitBoardDelete(boardId, restore)
+    },
+    [stageBoardDelete, commitBoardDelete]
+  )
   
   /**
    * Add a temporary board (for optimistic uploads)
@@ -1128,11 +1533,14 @@ export function useBoardState(
     applyBoardLinkLocal,
     applyBoardTitleLocal,
     deleteBoard,
+    stageBoardDelete,
+    commitBoardDelete,
     addTempBoard,
     replaceTempBoard,
     removeTempBoard,
     undo,
     redo,
+    positionEpoch,
     // Expose conversion functions for upload logic
     normalizedToApi,
     apiToNormalized,

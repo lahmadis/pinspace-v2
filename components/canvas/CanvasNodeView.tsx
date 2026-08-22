@@ -28,7 +28,32 @@ export interface NodeProps extends InkProps {
   text?: string
   fill?: string
   stroke?: string
-  shape?: 'rect' | 'ellipse'
+  shape?: 'rect' | 'ellipse' | 'line' | 'arrow'
+  /**
+   * Which diagonal a line runs along.
+   *
+   * A line is stored as a BOX, and a box cannot say whether the stroke goes
+   * top-left→bottom-right or bottom-left→top-right. Without this, dragging a
+   * line upward and one downward produced identical rectangles and both drew
+   * the same way. 'nwse' is the default because it matches a drag down-right,
+   * which is how most lines get made.
+   */
+  diagonal?: 'nwse' | 'swne'
+  /**
+   * Which way a line runs: along its box's diagonal, or straight across it.
+   *
+   * A dead-horizontal drag produces a box with ZERO height. That box cannot be
+   * clicked (pointInNode needs the pointer exactly on the line) and does not
+   * even render, because an outer <svg> with a zero dimension is skipped by the
+   * spec. So an axis-aligned line is stored with a real thickness and drawn
+   * through the MIDDLE of that box rather than corner to corner — which is also
+   * what keeps it straight after a resize.
+   */
+  axis?: 'diagonal' | 'horizontal' | 'vertical'
+  /** Image nodes — see lib/canvas/imageNode.ts for the full shape. */
+  url?: string
+  thumbUrl?: string
+  name?: string
 }
 
 export const STICKY_COLORS = ['#FFE8A3', '#FFD5C2', '#D6E4FF', '#D9F2E3', '#EADCF8']
@@ -101,7 +126,18 @@ export default function CanvasNodeView({
     )
   }
 
+  if (node.type === 'image') {
+    return <ImageNode props={props} frame={frame} />
+  }
+
   if (node.type === 'shape') {
+    // Lines and arrows are shape VARIANTS rather than their own node type: the
+    // type list is fixed by migration 036's CHECK, and a line is a box with a
+    // stroke drawn corner to corner. Same geometry, same handles, same resize —
+    // only the paint differs, which is exactly what props are for.
+    if (props.shape === 'line' || props.shape === 'arrow') {
+      return <LineNode node={node} props={props} frame={frame} />
+    }
     return (
       <div
         style={{
@@ -213,6 +249,14 @@ function TextEditor({
         // Every key stops here while typing, or the canvas would read Delete as
         // "remove the selected node" and V as "switch to the select tool".
         e.stopPropagation()
+        // The canvas also claims some Cmd/Ctrl combos the BROWSER acts on.
+        // stopPropagation keeps them from the canvas but not from the browser,
+        // so Cmd+D inside a sticky opened the bookmark dialog. These are the
+        // ones the canvas owns; everything else (Cmd+C, Cmd+V, Cmd+A) is left
+        // native on purpose, because that is what you want while typing.
+        if ((e.metaKey || e.ctrlKey) && ['d', ']', '['].includes(e.key.toLowerCase())) {
+          e.preventDefault()
+        }
         if (e.key === 'Escape') {
           e.preventDefault()
           finish(false)
@@ -246,5 +290,156 @@ function TextEditor({
       }}
       placeholder={sticky ? 'Type a note' : 'Type'}
     />
+  )
+}
+
+/**
+ * An uploaded image on the canvas.
+ *
+ * Its own component because it needs state — a load failure has to be
+ * remembered — and CanvasNodeView's other branches are all pure.
+ */
+function ImageNode({
+  props,
+  frame,
+}: {
+  props: NodeProps
+  frame: React.CSSProperties
+}) {
+  // The thumbnail, not the full upload — see ImageNodeProps.thumbUrl for why.
+  const src = props.thumbUrl || props.url
+  // Keyed on the URL so a node that gets a new image is given a fresh chance.
+  // A plain boolean would latch: once one src had failed, the node would keep
+  // claiming to be missing even after a redo relinked it to something valid.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
+  const failed = Boolean(src) && failedSrc === src
+
+  // A node whose image 404s. Reachable for real: the orphan-cleanup script can
+  // reclaim an object that an undo left unreferenced, and a redo afterwards
+  // relinks the node to bytes that are gone. The browser's broken-image glyph
+  // in the middle of a crit board says nothing useful, so this does.
+  const missing = !src || failed
+
+  return (
+    <div style={{ ...frame, overflow: 'hidden', borderRadius: 3 }}>
+      {missing ? (
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'grid',
+            placeItems: 'center',
+            padding: 8,
+            textAlign: 'center',
+            background: ROOM.hairline,
+            color: ROOM.ink2,
+            fontFamily: SANS_STACK,
+            fontSize: 12,
+          }}
+        >
+          {props.name ? `${props.name} is missing` : 'Image unavailable'}
+        </div>
+      ) : (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={src}
+          alt={props.name || 'Image on the canvas'}
+          draggable={false}
+          onError={() => setFailedSrc(src)}
+          style={{
+            width: '100%',
+            height: '100%',
+            // `contain`, not `cover` or `fill`. The node is created at the
+            // picture's own aspect ratio, so all three agree until someone
+            // free-resizes — and at that point cover silently crops the work
+            // and fill distorts it. Letterboxing is the only one of the three
+            // that never lies about what the image is.
+            objectFit: 'contain',
+            display: 'block',
+            // The browser's native image drag-ghost would fight the canvas's
+            // own pointer gestures. Hit-testing is geometric (topmostAt over
+            // the node array), so this does not affect selecting the node.
+            pointerEvents: 'none',
+            userSelect: 'none',
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * A straight line or an arrow, drawn corner to corner inside its box.
+ *
+ * SVG rather than a rotated div: a div would need its own rotation on top of
+ * the node's, and the two would fight the moment someone rotated the node
+ * itself. Drawing inside the box means resize and rotate work exactly as they
+ * do for every other shape, with no special cases in the transform code.
+ */
+function LineNode({
+  node,
+  props,
+  frame,
+}: {
+  node: CanvasNode
+  props: NodeProps
+  frame: React.CSSProperties
+}) {
+  const stroke = props.stroke || ROOM.ink
+  const width = props.size ?? 2
+  // A zero extent would give the viewBox a zero dimension and divide by zero
+  // when the SVG scales — the same trap MIN_INK_EXTENT guards for ink.
+  const w = Math.max(MIN_INK_EXTENT, node.w)
+  const h = Math.max(MIN_INK_EXTENT, node.h)
+  const swne = props.diagonal === 'swne'
+  // Axis-aligned lines run through the centre of their padded box; diagonal
+  // ones still run corner to corner. See NodeProps.axis.
+  const axis = props.axis ?? 'diagonal'
+  const x1 = axis === 'vertical' ? w / 2 : 0
+  const x2 = axis === 'vertical' ? w / 2 : w
+  const y1 = axis === 'horizontal' ? h / 2 : axis === 'vertical' ? 0 : swne ? h : 0
+  const y2 = axis === 'horizontal' ? h / 2 : axis === 'vertical' ? h : swne ? 0 : h
+
+  // Unique per node: two arrows on one canvas sharing a marker id would make
+  // the second silently reuse the first's colour.
+  const headId = `arrowhead-${node.id}`
+
+  return (
+    <div style={{ ...frame, pointerEvents: 'none' }}>
+      {/* w/h, not node.w/node.h: a zero on the outer element disables rendering
+          outright, so a line saved by an older build with a degenerate box
+          still draws. */}
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block', overflow: 'visible' }}>
+        {props.shape === 'arrow' && (
+          <defs>
+            {/* userSpaceOnUse so the head keeps its size when the box is
+                stretched — a strokeWidth-relative marker on a
+                preserveAspectRatio="none" viewBox comes out sheared. */}
+            <marker
+              id={headId}
+              markerUnits="userSpaceOnUse"
+              markerWidth={width * 5}
+              markerHeight={width * 5}
+              refX={width * 4}
+              refY={width * 2.5}
+              orient="auto"
+            >
+              <path d={`M 0 0 L ${width * 5} ${width * 2.5} L 0 ${width * 5} z`} fill={stroke} />
+            </marker>
+          </defs>
+        )}
+        <line
+          x1={x1}
+          y1={y1}
+          x2={x2}
+          y2={y2}
+          stroke={stroke}
+          strokeWidth={width}
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+          markerEnd={props.shape === 'arrow' ? `url(#${headId})` : undefined}
+        />
+      </svg>
+    </div>
   )
 }

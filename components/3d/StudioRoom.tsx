@@ -17,7 +17,6 @@ import RosterPanel from '@/components/room/RosterPanel'
 import UnfoldedView from '@/components/room/UnfoldedView'
 import PlanView from '@/components/room/PlanView'
 import TwoDView from '@/components/room/TwoDView'
-import RoomCanvasPanel from '@/components/canvas/RoomCanvasPanel'
 import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 import RevisionStrip, { type RoomView } from '@/components/room/RevisionStrip'
 import { deriveRoomStudents, type RoomStudent } from '@/lib/room/students'
@@ -27,6 +26,7 @@ import { DraggableText } from './DraggableText'
 import { WallDropZone } from '@/components/3d/WallDropZone'
 import type { WallTextItem } from '@/lib/wallLayout'
 import type { WallConfigWriter } from '@/lib/wallConfigWriter'
+import { enqueueBoardWrite } from '@/lib/boardPositionWriteQueue'
 import RightCommentPanel from '@/components/RightCommentPanel'
 import LightboxModal from '@/components/LightboxModal'
 import { useBoardState } from './useBoardState'
@@ -46,17 +46,23 @@ import { getBoardSizeInches } from '@/lib/boardDimensions'
  */
 const REVISION_STRIP_CLEARANCE = 116
 /**
- * Top inset for the canvas panel.
+ * How long a deleted board can be brought back with Ctrl+Z.
  *
- * The breadcrumb (top-4 left-4), PresenceBar (top-4 left-1/2) and the toolbar
- * (top-4 right-4) all sit at z-40 in one band across the top of the viewport.
- * The other flat views tolerate that because their content is centred, but a
- * canvas is a working surface you pan under the cursor: anything painted over
- * it also intercepts the pointer, so the top strip would be a dead zone you
- * could drop a note into but never grab again. Clearing the band gives the
- * canvas an honest rect.
+ * The board vanishes immediately either way — this only holds the request that
+ * makes it permanent. Long enough to notice a mistake and reach for undo, short
+ * enough that the delete still feels like it happened. See handleBoardDelete
+ * for why an undo window is the only kind of delete-undo possible here.
  */
-const CANVAS_TOP_CLEARANCE = 72
+const DELETE_UNDO_WINDOW_MS = 6000
+
+/** A delete that has been applied locally but not yet sent. */
+interface PendingBoardDelete {
+  boardId: string
+  timer: ReturnType<typeof setTimeout>
+  restore: () => void
+  /** For the toast, captured before the board leaves local state. */
+  name: string
+}
 
 interface WallDimensions {
   height: number
@@ -118,6 +124,14 @@ interface StudioRoomProps {
   onFloorEditorOpenChange?: (open: boolean) => void
   /** 'tables' = place tables/models, 'walls' = move/rotate walls. */
   floorEditorMode?: 'tables' | 'walls'
+  /**
+   * Ask the page to switch the floor editor's mode.
+   *
+   * The mode is owned up there (it survives the editor closing), so the plan's
+   * two actions have to request it rather than set it. Without this, opening
+   * the editor from the plan would reuse whichever mode was last used.
+   */
+  onFloorEditorModeChange?: (mode: 'tables' | 'walls') => void
   /** Called when user updates wall positions/rotations in floor editor (walls mode). */
   /**
    * Local wall-config change. Persists via the page's debounced autosave unless
@@ -222,6 +236,7 @@ function SceneContent({
   editingWallBaseRotation,
   editingWallDimensions,
   onBoardPositionChange,
+  positionEpoch,
   onBoardSizePersisted,
   onBoardDelete,
   draggingFromSidebar,
@@ -263,6 +278,8 @@ function SceneContent({
   editingWallBaseRotation: number
   editingWallDimensions: WallDimensions | null
   onBoardPositionChange: (boardId: string, localX: number, localY: number, width?: number, height?: number) => void
+  /** Bumped by an undo/redo so boards accept the new position immediately. */
+  positionEpoch: number
   /** Mirrors a confirmed (server-acked) absolute size (inches) back into useBoardState.boards so post-edit-mode rendering sees it. */
   onBoardSizePersisted: (boardId: string, widthIn: number, heightIn: number) => void
   onBoardDelete: (boardId: string) => void
@@ -526,6 +543,7 @@ function SceneContent({
                   wallDimensions={editingWallDimensions}
                   side={editingWallSide}
                   initialLocalPosition={localPos}
+                  positionEpoch={positionEpoch}
                   onDragEnd={onBoardPositionChange}
                   onSizePersisted={onBoardSizePersisted}
                   onDelete={onBoardDelete}
@@ -764,7 +782,7 @@ export default function StudioRoom(props: StudioRoomProps) {
   // Phase 4 roster. Derived from the boards already in state — no extra fetch.
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
 
-  // Which of the three room views is showing. Room is the orbit-capable 3D
+  // Which of the the flat room views is showing. Room is the orbit-capable 3D
   // Canvas; Unfolded and Plan are pure DOM/CSS, so switching to either from
   // Room unmounts WebGL, and switching back remounts it.
   const [roomView, setRoomView] = useState<RoomView>('room')
@@ -861,6 +879,11 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [compareBoardIds, setCompareBoardIds] = useState<string[]>([])
   const shiftPressedRef = useRef(false)
   
+  /** Deletes applied locally, waiting out their undo window. */
+  const pendingDeletesRef = useRef<PendingBoardDelete[]>([])
+  /** Late-bound flushPendingDeletes, for callers declared above it. */
+  const flushPendingDeletesRef = useRef<() => Promise<void>>(async () => {})
+
   // Keep a ref to the latest placedBoards3D to avoid stale closure issues
   const placedBoards3DRef = useRef(placedBoards3D)
   useEffect(() => {
@@ -907,11 +930,15 @@ export default function StudioRoom(props: StudioRoomProps) {
     applyBoardLinkLocal,
     applyBoardTitleLocal,
     deleteBoard,
+    stageBoardDelete,
+    commitBoardDelete,
     addTempBoard,
     replaceTempBoard,
     removeTempBoard,
     undo,
     redo,
+    positionEpoch,
+    apiToNormalized,
   } = useBoardState(
     props.boards,
     props.studioId,
@@ -1043,7 +1070,20 @@ export default function StudioRoom(props: StudioRoomProps) {
       expectedBoardCount: number,
     ): Promise<{ ok: boolean; message?: string; liveBoardCount?: number }> => {
       const roomId = props.studioId
+      // Settle any held deletes BEFORE the count below is judged against the
+      // server's. See flushPendingDeletes.
+      //
+      // Through a ref because that function is declared further down this
+      // component; naming it in this callback's dependency list would read it
+      // before initialization. It is assigned once after mount and this path
+      // is only reachable by user interaction.
       try {
+        // Inside the try: the caller (FloorEditorOverlay) wraps this in
+        // try/finally with no catch, so a rejection escaping here would leave
+        // its confirm dialog open with no way forward. It cannot reject today —
+        // commitBoardDelete swallows everything — which is exactly the kind of
+        // thing that stops being true quietly.
+        await flushPendingDeletesRef.current()
         const res = await fetch('/api/boards/reindex-after-wall-delete', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -1863,24 +1903,395 @@ export default function StudioRoom(props: StudioRoomProps) {
   )
 
 
-  const handleBoardDelete = useCallback(async (boardId: string) => {
-    try {
-      // Use centralized hook so local state + positions stay in sync
-      const success = await deleteBoard(boardId)
-      if (!success) return
+  /**
+   * Delete a board, with a window to take it back.
+   *
+   * Everything local happens NOW — the board leaves the wall on the same frame
+   * as the keypress — and the request that makes it permanent is held for a few
+   * seconds. Ctrl+Z inside that window cancels it and the board comes back.
+   *
+   * It has to work this way round. The DELETE endpoint destroys the board's
+   * storage objects along with the row, so once it has run there is nothing
+   * left to restore from: an undo AFTER the fact would need the image
+   * re-uploaded, and the browser no longer has the bytes. A delay is the only
+   * point at which "undo a delete" can mean anything.
+   *
+   * Failing to fire is the safe failure. If the timer never runs — the tab is
+   * closed, the page navigates — the board survives, which beats deleting
+   * something the user was still deciding about. flushPendingDeletes covers the
+   * ordinary exits anyway.
+   */
+  const handleBoardDelete = useCallback(
+    (boardId: string) => {
+      const board = localBoards.find(b => b.id === boardId)
+      const placed = placedBoards3DRef.current.get(boardId)
 
-      // Remove from placedBoards3D immediately so it disappears in 2D edit view
+      // Local removal first, and synchronously — this is what makes it instant.
+      const restoreBoard = stageBoardDelete(boardId)
       setPlacedBoards3D(prev => {
         const newMap = new Map(prev)
         newMap.delete(boardId)
         placedBoards3DRef.current = newMap
         return newMap
       })
-    } catch (error) {
-      console.error('Error deleting board:', error)
-      toast.error('Failed to delete board')
-    }
-  }, [deleteBoard])
+
+      const restore = () => {
+        restoreBoard()
+        if (placed) {
+          setPlacedBoards3D(prev => {
+            const newMap = new Map(prev)
+            newMap.set(boardId, placed)
+            placedBoards3DRef.current = newMap
+            return newMap
+          })
+        }
+      }
+
+      const timer = setTimeout(() => {
+        pendingDeletesRef.current = pendingDeletesRef.current.filter(p => p.boardId !== boardId)
+        void commitBoardDelete(boardId, restore)
+      }, DELETE_UNDO_WINDOW_MS)
+
+      pendingDeletesRef.current = [
+        ...pendingDeletesRef.current,
+        { boardId, timer, restore, name: board?.title || 'Board' },
+      ]
+    },
+    [localBoards, stageBoardDelete, commitBoardDelete]
+  )
+
+  /**
+   * Cancel the most recent delete that hasn't gone out yet.
+   *
+   * Returns whether it did anything, so the Ctrl+Z handler can fall through to
+   * position undo when there is no delete waiting.
+   */
+  const undoPendingDelete = useCallback((): boolean => {
+    const pending = pendingDeletesRef.current
+    if (pending.length === 0) return false
+    const last = pending[pending.length - 1]
+    clearTimeout(last.timer)
+    pendingDeletesRef.current = pending.slice(0, -1)
+    last.restore()
+    toast.success(`${last.name} restored`)
+    return true
+  }, [])
+
+  /* ------------------------------------------------------------------ *
+   * Unfolded-view editing
+   *
+   * The developed surface can now be rearranged, with the same commands as
+   * 2D wall edit: drag to move, arrows to nudge, a corner to resize, Delete
+   * to remove, Ctrl+Z / Ctrl+Y to take it back.
+   *
+   * It keeps its OWN move history rather than sharing useBoardState's.
+   * That stack records positions only — "where this board was", never "which
+   * wall it was on" — because in wall edit there is exactly one wall in hand
+   * and the question cannot arise. Unfolded shows every wall at once and its
+   * whole point is that you can drag a sheet from one to another, so undoing
+   * through that stack would restore a board's x and y while leaving it on the
+   * wall it was dragged to. Recording the wall alongside the position is what
+   * makes Ctrl+Z here mean what it looks like it means.
+   * ------------------------------------------------------------------ */
+
+  /**
+   * One reversible unfolded edit.
+   *
+   * A union rather than just a position, because the surface has two kinds of
+   * change and Ctrl+Z has to undo whichever one actually happened. When resize
+   * was missing from this stack, undoing a resize silently teleported the sheet
+   * to an older POSITION instead — the toolbar promised undo and delivered a
+   * different edit.
+   */
+  type UnfoldedEdit =
+    | {
+        kind: 'move'
+        boardId: string
+        wallIndex: number
+        /** Normalised -0.5..0.5, the form updateBoardPosition takes. */
+        x: number
+        y: number
+        side: 'front' | 'back'
+      }
+    | { kind: 'size'; boardId: string; widthIn: number; heightIn: number }
+
+  /**
+   * Indirection so undo can replay a resize.
+   *
+   * handleUnfoldedBoardResize is defined below applyUnfoldedEdit and depends on
+   * it transitively, so naming it directly would be a temporal-dead-zone crash
+   * at render (the deps array is evaluated before the later const exists).
+   */
+  const unfoldedResizeRef = useRef<
+    ((boardId: string, widthIn: number, heightIn: number, record?: boolean) => void) | null
+  >(null)
+
+  const unfoldedUndoRef = useRef<UnfoldedEdit[]>([])
+  const unfoldedRedoRef = useRef<UnfoldedEdit[]>([])
+  const UNFOLDED_MAX_UNDO = 50
+
+  /** Where a board is right now, in the form the undo stack stores. */
+  const unfoldedMoveSnapshot = useCallback(
+    (boardId: string): UnfoldedEdit | null => {
+      const board = localBoards.find((b) => b.id === boardId)
+      const pos = board?.position
+      if (!pos || pos.wallIndex == null) return null
+      return {
+        kind: 'move',
+        boardId,
+        wallIndex: pos.wallIndex,
+        x: apiToNormalized(pos.x),
+        y: apiToNormalized(pos.y),
+        side: (pos.side as 'front' | 'back') || 'front',
+      }
+    },
+    [localBoards, apiToNormalized]
+  )
+
+  /** What size a board is right now, for the same purpose. */
+  const unfoldedSizeSnapshot = useCallback(
+    (boardId: string): UnfoldedEdit | null => {
+      const board = localBoards.find((b) => b.id === boardId)
+      if (!board) return null
+      const { widthIn, heightIn } = getBoardSizeInches(board)
+      return { kind: 'size', boardId, widthIn, heightIn }
+    },
+    [localBoards]
+  )
+
+  const pushUnfoldedEdit = useCallback((entry: UnfoldedEdit) => {
+    unfoldedUndoRef.current = [
+      ...unfoldedUndoRef.current.slice(-(UNFOLDED_MAX_UNDO - 1)),
+      entry,
+    ]
+    unfoldedRedoRef.current = []
+  }, [])
+
+  /** Replay one entry, in whichever direction it is being replayed. */
+  const applyUnfoldedEdit = useCallback(
+    (entry: UnfoldedEdit) => {
+      if (entry.kind === 'move') {
+        void updateBoardPosition(
+          entry.boardId, entry.wallIndex, entry.x, entry.y, undefined, undefined, entry.side
+        )
+      } else {
+        // record:false — the caller has already moved this entry between the
+        // undo and redo stacks; recording again would push a duplicate and
+        // clear the redo stack the caller just wrote to.
+        unfoldedResizeRef.current?.(entry.boardId, entry.widthIn, entry.heightIn, false)
+      }
+    },
+    [updateBoardPosition]
+  )
+
+  /**
+   * Arrow-key nudges are coalesced into ONE undo entry per run.
+   *
+   * A held arrow key repeats at the OS rate, and every repeat used to push its
+   * own snapshot — about two seconds of holding filled the 50-entry stack, so
+   * Ctrl+Z could no longer reach anything from before the nudge and instead
+   * walked back through the nudge one inch at a time. A run of nudges on one
+   * board is a single edit; only the position it started from is worth keeping.
+   */
+  const nudgeRunRef = useRef<{ boardId: string; at: number } | null>(null)
+  const NUDGE_RUN_MS = 700
+
+  const handleUnfoldedBoardMove = useCallback(
+    (
+      boardId: string,
+      wallIndex: number,
+      x: number,
+      y: number,
+      side: 'front' | 'back',
+      source: 'drag' | 'nudge' | 'place' = 'drag'
+    ) => {
+      const now = Date.now()
+      const run = nudgeRunRef.current
+      const continuesRun =
+        source === 'nudge' && run?.boardId === boardId && now - run.at < NUDGE_RUN_MS
+      nudgeRunRef.current = source === 'nudge' ? { boardId, at: now } : null
+
+      // A board being placed for the first time has no prior position, so
+      // there is nothing to go back to and nothing is pushed. Undoing an ADD
+      // would be a delete, which is a different operation with its own window.
+      if (!continuesRun) {
+        const prior = unfoldedMoveSnapshot(boardId)
+        if (prior) pushUnfoldedEdit(prior)
+      }
+      void updateBoardPosition(boardId, wallIndex, x, y, undefined, undefined, side)
+    },
+    [unfoldedMoveSnapshot, pushUnfoldedEdit, updateBoardPosition]
+  )
+
+  /** The state an entry is being undone FROM, so redo can return to it. */
+  const unfoldedCurrent = useCallback(
+    (entry: UnfoldedEdit): UnfoldedEdit | null =>
+      entry.kind === 'move' ? unfoldedMoveSnapshot(entry.boardId) : unfoldedSizeSnapshot(entry.boardId),
+    [unfoldedMoveSnapshot, unfoldedSizeSnapshot]
+  )
+
+  const handleUnfoldedUndo = useCallback(() => {
+    // Deletes first, same order as the 3D room: the thing you just did is the
+    // thing Ctrl+Z should take back, and a held delete is always more recent
+    // than anything still on the edit stack.
+    if (undoPendingDelete()) return
+    const stack = unfoldedUndoRef.current
+    if (stack.length === 0) return
+    const entry = stack[stack.length - 1]
+    const current = unfoldedCurrent(entry)
+    unfoldedUndoRef.current = stack.slice(0, -1)
+    if (current) unfoldedRedoRef.current = [...unfoldedRedoRef.current, current]
+    // A fresh run, so the next nudge starts its own undo entry rather than
+    // being folded into the one just undone.
+    nudgeRunRef.current = null
+    applyUnfoldedEdit(entry)
+  }, [undoPendingDelete, unfoldedCurrent, applyUnfoldedEdit])
+
+  const handleUnfoldedRedo = useCallback(() => {
+    const stack = unfoldedRedoRef.current
+    if (stack.length === 0) return
+    const entry = stack[stack.length - 1]
+    const current = unfoldedCurrent(entry)
+    unfoldedRedoRef.current = stack.slice(0, -1)
+    if (current) unfoldedUndoRef.current = [...unfoldedUndoRef.current, current]
+    nudgeRunRef.current = null
+    applyUnfoldedEdit(entry)
+  }, [unfoldedCurrent, applyUnfoldedEdit])
+
+  /**
+   * Resize a sheet from the unfolded view.
+   *
+   * Size is absolute inches on the board record, not a fraction of the wall,
+   * so this is the PATCH the lightbox's size picker uses rather than the
+   * position PUT — passing inches through updateBoardPosition would write the
+   * legacy percentage fields, which nothing reads for size any more, and the
+   * sheet would snap back on the next load.
+   */
+  const handleUnfoldedBoardResize = useCallback(
+    (boardId: string, widthIn: number, heightIn: number, record = true) => {
+      const board = localBoards.find((b) => b.id === boardId)
+      const pos = board?.position
+      if (!board || !pos || pos.wallIndex == null) return
+
+      if (record) {
+        const prior = unfoldedSizeSnapshot(boardId)
+        if (prior) pushUnfoldedEdit(prior)
+      }
+
+      const priorW = board.boardWidthIn
+      const priorH = board.boardHeightIn
+      applyBoardSizeLocal(boardId, widthIn, heightIn)
+
+      const isMockBoard =
+        boardId.startsWith('temp-') || boardId.startsWith('demo-') || boardId.startsWith('sample-')
+      if (isMockBoard) return
+
+      // Same per-board queue as every other board write, so a resize and a move
+      // for the same sheet can't land out of order.
+      enqueueBoardWrite(boardId, () =>
+        fetch(`/api/boards/${boardId}/position`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({
+            wallIndex: pos.wallIndex,
+            x: pos.x,
+            y: pos.y,
+            boardWidthIn: widthIn,
+            boardHeightIn: heightIn,
+            side: pos.side || 'front',
+          }),
+        })
+      )
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        })
+        .catch((err) => {
+          console.error('❌ [StudioRoom] Unfolded resize failed:', err)
+          // Put the size back rather than leaving the screen claiming a change
+          // that never saved. Boards with no stored inches had none to restore,
+          // so those keep the optimistic value until the next load corrects it.
+          if (priorW != null && priorH != null) applyBoardSizeLocal(boardId, priorW, priorH)
+          toast.error('Could not resize that board.')
+        })
+    },
+    [localBoards, applyBoardSizeLocal, unfoldedSizeSnapshot, pushUnfoldedEdit]
+  )
+
+  useEffect(() => {
+    unfoldedResizeRef.current = handleUnfoldedBoardResize
+  }, [handleUnfoldedBoardResize])
+
+  /** Boards in this room that aren't on a wall yet — what the + button offers. */
+  const unplacedBoards = useMemo(
+    () => localBoards.filter((b) => b.position?.wallIndex == null),
+    [localBoards]
+  )
+
+  // Leaving the unfolded view ends its history, for the same reason wall edit
+  // clears its own: a stack of moves is only meaningful inside the session that
+  // made them, and replaying one later would move boards the user is no longer
+  // looking at.
+  useEffect(() => {
+    if (roomView === 'unfolded') return
+    unfoldedUndoRef.current = []
+    unfoldedRedoRef.current = []
+  }, [roomView])
+
+
+  /**
+   * Send every held delete immediately.
+   *
+   * Leaving the room, closing the tab, or leaving edit mode all end the window
+   * — the user has moved on, and a delete that quietly evaporates because they
+   * navigated is its own kind of surprise. commitBoardDelete uses a keepalive
+   * fetch, so these survive the page going away.
+   */
+  const flushPendingDeletes = useCallback(async () => {
+    const pending = pendingDeletesRef.current
+    if (pending.length === 0) return
+    pendingDeletesRef.current = []
+    // Awaitable, because callers that COUNT boards have to wait. Removing a
+    // wall sends the number of boards it expects to find, derived from local
+    // state — which is short by every board still inside its undo window. The
+    // server re-counts and 409s on a mismatch, so deleting a board and then
+    // removing its wall failed with "this wall changed while you were
+    // working". Settling the deletes first makes the two counts agree.
+    await Promise.all(pending.map((entry) => {
+      clearTimeout(entry.timer)
+      return commitBoardDelete(entry.boardId, entry.restore)
+    }))
+  }, [commitBoardDelete])
+
+  useEffect(() => {
+    flushPendingDeletesRef.current = flushPendingDeletes
+  }, [flushPendingDeletes])
+
+  // Listener and unmount-flush kept in SEPARATE effects with no dependencies.
+  //
+  // Combined, the cleanup ran on any change of flushPendingDeletes — stable
+  // today, so unmount-only in practice, but a future dependency would silently
+  // start committing held deletes on re-render. Reading through the ref makes
+  // that structurally impossible rather than true by luck.
+  useEffect(() => {
+    const onHide = () => void flushPendingDeletesRef.current()
+    window.addEventListener('pagehide', onHide)
+    return () => window.removeEventListener('pagehide', onHide)
+  }, [])
+
+  useEffect(() => () => void flushPendingDeletesRef.current(), [])
+
+  /**
+   * Leaving 2D edit mode also ends the window.
+   *
+   * Deletes only happen in edit mode, and Ctrl+Z for them is only reachable
+   * there — so once the user has left, the window is time they cannot use.
+   * Holding the request past that point just widens the gap in which the
+   * parent's board list and the database disagree.
+   */
+  useEffect(() => {
+    if (editingWall === null) void flushPendingDeletesRef.current()
+  }, [editingWall])
 
   const handleClearWall = useCallback(async () => {
     if (editingWall === null || editingWallSide == null) return
@@ -2092,26 +2503,37 @@ export default function StudioRoom(props: StudioRoomProps) {
         return
       }
 
-      // The Canvas tab owns its own keyboard entirely. These are BOARD
-      // shortcuts, and the 3D room isn't even rendered here — Cmd+Z would
-      // rewind board positions invisibly, so the user presses it again, and
-      // again. Cmd+C is worse: it preventDefaults unconditionally and then
-      // no-ops outside wall editing, which kills native copy on a surface
-      // whose whole point is text and notes.
-      if (roomView === 'canvas') return
+      // The unfolded view runs its own keyboard handler, on this same window.
+      // preventDefault does not stop a sibling listener on the same target, so
+      // without this both fire: one Ctrl+Z called undoPendingDelete() twice and
+      // brought back TWO deleted boards, and Escape cleared two selections.
+      // Unfolded owns these keys while it is up.
+      if (roomView === 'unfolded' && editingWall === null) return
 
       // Ctrl/Cmd+Z = undo, Ctrl/Cmd+Y = redo, Ctrl/Cmd+C = copy, Ctrl/Cmd+V
       // = paste. metaKey covers Cmd on macOS; the browser's native `paste`
       // event already fires on Cmd+V, so Cmd+V is handled by the window
       // listener below — we only handle Cmd+C here.
       if (e.ctrlKey || e.metaKey) {
-        if (e.key === 'z') {
+        // `e.key` is 'Z' with Shift held, so lowercase it — otherwise
+        // Cmd+Shift+Z, which is redo everywhere on macOS, silently did nothing.
+        const key = e.key.toLowerCase()
+        if (key === 'z' && !e.shiftKey) {
           e.preventDefault()
-          undo()
-        } else if (e.key === 'y') {
+          // A held delete is the most recent thing that happened, so it is what
+          // Ctrl+Z means. Only when there is none does this fall through to
+          // undoing a move or resize.
+          //
+          // Position undo is gated on edit mode. It writes to the server now,
+          // and the snapshot stack describes ONE wall's 2D layout — outside
+          // edit mode there is no wall in hand, and pressing Ctrl+Z while
+          // simply standing in the room would push a stale layout back to the
+          // database. Harmless when undo was local-only; not any more.
+          if (!undoPendingDelete() && editingWall !== null) undo()
+        } else if ((key === 'y' || (key === 'z' && e.shiftKey)) && editingWall !== null) {
           e.preventDefault()
           redo()
-        } else if (e.key === 'c') {
+        } else if (key === 'c') {
           e.preventDefault()
           // Delegates to handleCopy (which copies the whole selection) rather
           // than re-implementing a single-board copy inline, as it used to —
@@ -2149,7 +2571,7 @@ export default function StudioRoom(props: StudioRoomProps) {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedBoardId, editingWall, localBoards, handleBoardDelete, commentPanelBoard, undo, redo, handleCopy, clearBoardSelection, roomView])
+  }, [selectedBoardId, editingWall, roomView, localBoards, handleBoardDelete, commentPanelBoard, undo, redo, undoPendingDelete, handleCopy, clearBoardSelection])
 
   const [isDragOver, setIsDragOver] = useState(false)
   const dragCounterRef = useRef(0)
@@ -2399,10 +2821,8 @@ export default function StudioRoom(props: StudioRoomProps) {
       )}
 
       {/* Hidden in the 2D view, which is itself a list of everyone — a floating
-          roster there would both duplicate it and sit on top of the grid — and
-          on the canvas, where it would cover the working surface and swallow
-          pointer gestures meant for it. */}
-      {editingWall === null && roomView !== '2d' && roomView !== 'canvas' && (
+          roster there would both duplicate it and sit on top of the grid. */}
+      {editingWall === null && roomView !== '2d' && (
         <RosterPanel
           students={roomStudents}
           selectedStudentId={selectedStudentId}
@@ -2419,6 +2839,19 @@ export default function StudioRoom(props: StudioRoomProps) {
             selectedStudentId={selectedStudentId}
             onSelectStudent={handleSelectStudent}
             onBoardClick={handleLightboxOpen}
+            // Same gate the wall-edit board tools use. A viewer who cannot
+            // change boards is never offered the Edit toggle at all, rather
+            // than being offered it and told no when they try to save.
+            canEdit={isWorkspaceMember}
+            onBoardMove={handleUnfoldedBoardMove}
+            onBoardResize={handleUnfoldedBoardResize}
+            onBoardDelete={handleBoardDelete}
+            onUndo={handleUnfoldedUndo}
+            onRedo={handleUnfoldedRedo}
+            unplacedBoards={unplacedBoards}
+            onPlaceBoard={(board, wallIndex, x, y) =>
+              handleUnfoldedBoardMove(board.id, wallIndex, x, y, 'front', 'place')
+            }
           />
         </div>
       )}
@@ -2433,6 +2866,25 @@ export default function StudioRoom(props: StudioRoomProps) {
             onSelectStudent={handleSelectStudent}
             onBoardClick={handleLightboxOpen}
             onWallClick={handlePlanWallClick}
+            // Same gate the hamburger's items carried: opening either editor
+            // is what writes the wall-config blob, and offering it to someone
+            // whose writes would no-op is a trap. Undefined hides the button.
+            onReconfigureWalls={
+              props.canEditWalls && !props.isArchived
+                ? () => {
+                    props.onFloorEditorModeChange?.('walls')
+                    setFloorEditorOpen(true)
+                  }
+                : undefined
+            }
+            onPlaceModel={
+              props.canEditWalls && !props.isArchived
+                ? () => {
+                    props.onFloorEditorModeChange?.('tables')
+                    setFloorEditorOpen(true)
+                  }
+                : undefined
+            }
           />
         </div>
       )}
@@ -2450,20 +2902,6 @@ export default function StudioRoom(props: StudioRoomProps) {
             onSelectStudent={(student) => setSelectedStudentId(student.id)}
             onClearSelection={() => setSelectedStudentId(null)}
             onBoardClick={handleLightboxOpen}
-          />
-        </div>
-      )}
-
-      {editingWall === null && roomView === 'canvas' && (
-        <div
-          className="fixed inset-0 z-20"
-          style={{ top: CANVAS_TOP_CLEARANCE, bottom: REVISION_STRIP_CLEARANCE }}
-        >
-          <RoomCanvasPanel
-            roomId={props.roomId ?? null}
-            // Archived spaces are readable but frozen, same rule the wall
-            // editor uses.
-            canEdit={!props.isArchived}
           />
         </div>
       )}
@@ -2556,6 +2994,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             editingWallBaseRotation={editingWallBaseRotation}
             editingWallDimensions={editingWallDimensions}
             onBoardPositionChange={handleBoardPositionChange}
+            positionEpoch={positionEpoch}
             onBoardSizePersisted={applyBoardSizeLocal}
             onBoardDelete={handleBoardDelete}
             draggingFromSidebar={draggingFromSidebar}

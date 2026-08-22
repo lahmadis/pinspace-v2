@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { isSuperadmin } from '@/lib/auth/superadmin'
+import { getVerifiedUser } from '@/lib/auth/requireAdmin'
 import { resolveGuestToken, getGuestTokenFromRequest } from '@/lib/auth/guestToken'
 import { MAX_CANVAS_PAYLOAD_BYTES } from '@/lib/canvas/types'
 
@@ -33,8 +34,18 @@ export * from '@/lib/canvas/types'
  */
 
 export interface CanvasAccess {
-  /** The canvas's room, resolved server-side — never taken from the client. */
-  roomId: string
+  /**
+   * The canvas's room, resolved server-side — never taken from the client.
+   *
+   * NULL for a PERSONAL canvas (migration 038), which has no room at all. The
+   * node routes copy this straight onto canvas_nodes.room_id, and that column
+   * is what 036's SELECT policies pivot on — so a personal node carries NULL
+   * there and matches none of them, which is correct: those policies grant
+   * workspace members access, and a personal canvas has no members.
+   */
+  roomId: string | null
+  /** The canvas's personal owner, when it has one. NULL for a room canvas. */
+  ownerId: string | null
   /** Identity to stamp on rows this request writes. */
   authorId: string | null
   guestTokenId: string | null
@@ -74,14 +85,126 @@ export async function resolveCanvasAccess(
   // accepting it from the client is load-bearing: migration 036's SELECT
   // policies pivot on canvas_nodes.room_id, so a node written with a mismatched
   // room_id would become visible to the wrong workspace.
+  // `*`, not a column list naming owner_id.
+  //
+  // owner_id arrives with migration 038, and migrations here are applied by
+  // hand — so there is a window where this code is running against a database
+  // that does not have the column yet. PostgREST answers a named-but-missing
+  // column with 42703, which surfaces as a null row and would 404 EVERY canvas
+  // route, room canvases included. A star select just yields undefined for the
+  // absent field, which the branch below reads as "not personal" and falls
+  // through to the room path that already worked.
   const { data: canvas } = await db
     .from('canvases')
-    .select('id, room_id')
+    .select('*')
     .eq('id', canvasId)
     .maybeSingle()
 
   if (!canvas) return { ok: false, status: 404, error: 'Canvas not found' }
-  return resolveRoomCanvasAccess(request, canvas.room_id as string)
+
+  // Migration 038 guarantees exactly one anchor, so this is a clean either/or
+  // rather than a precedence question. Personal first only because it is the
+  // cheaper check — no joins.
+  const ownerId = canvas.owner_id as string | null
+  if (ownerId) return resolvePersonalCanvasAccess(ownerId)
+
+  // Both anchors null should be impossible — 038's CHECK requires exactly one.
+  // Treated as not-found rather than passed through, because the room resolver
+  // would query `rooms` for a null id and return a 404 by accident; a canvas
+  // that is reachable by nobody is genuinely gone, and saying so here keeps
+  // that from reading as a bug in the room lookup.
+  const roomId = canvas.room_id as string | null
+  if (!roomId) return { ok: false, status: 404, error: 'Canvas not found' }
+
+  return resolveRoomCanvasAccess(request, roomId)
+}
+
+/**
+ * A canvas that belongs to one person: its owner, and nobody else.
+ *
+ * No members, no org, no guest tokens, no public path — and deliberately no
+ * superadmin either, which is the one place this is STRICTER than the room
+ * path. A superadmin can already reach any workspace's canvases; a desk crit's
+ * private notes are a different thing, and quietly extending an existing
+ * administrative reach over them is not a decision to make in passing. Add it
+ * when someone asks for it and can say why.
+ */
+async function resolvePersonalCanvasAccess(ownerId: string): Promise<CanvasAccessResult> {
+  const viewer = await resolveViewer()
+  if (!viewer.ok) return { ok: false, status: 403, error: 'Forbidden' }
+  // owner_id is TEXT and the uid is a uuid string — compared as strings, never
+  // joined. Same cast trap as workspaces.owner_id.
+  if (viewer.userId !== ownerId) return { ok: false, status: 403, error: 'Forbidden' }
+
+  return {
+    ok: true,
+    access: {
+      roomId: null,
+      ownerId,
+      authorId: viewer.userId,
+      guestTokenId: null,
+      updatedBy: viewer.userId,
+      canWrite: true,
+      authorName: viewer.authorName,
+    },
+  }
+}
+
+export type ViewerResult =
+  | { ok: true; userId: string; authorName: string }
+  | { ok: false; status: 403; error: string }
+
+/**
+ * The signed-in account and its display name, with no canvas in hand.
+ *
+ * The collection route needs this before a canvas exists — it is creating one —
+ * and the personal path needs it to compare against an owner. Factored out so
+ * the display-name resolution (server-side, capped) has exactly one definition;
+ * a second copy is how one route starts trusting a client-supplied name.
+ */
+export async function resolveViewer(): Promise<ViewerResult> {
+  // getVerifiedUser(), NOT getSession() — and deliberately unlike the room path
+  // a few lines below.
+  //
+  // getSession() decodes the auth cookie without re-verifying the JWT against
+  // GoTrue, so it yields an unverified `sub` claim. That is a reasonable trade
+  // for the room path, where the uid is only the key to a membership lookup: an
+  // attacker who could choose it would still have to choose one that belongs to
+  // the workspace. Here the uid IS the entire access check — `viewer.userId ===
+  // ownerId`, nothing else — so an unverified claim would be the whole gate,
+  // and the stated promise for a desk crit is that nobody else can read it.
+  //
+  // The cost is one GoTrue round trip per request that touches a personal
+  // canvas, which includes each node write. Per gesture, not per frame — a drag
+  // commits once on pointerup — and this is the surface to spend it on.
+  const verified = await getVerifiedUser()
+  if (!verified) return { ok: false, status: 403, error: 'Forbidden' }
+
+  // user_profiles.user_id is uuid and userId is the uuid string — an eq filter,
+  // never a join against a TEXT owner column.
+  const { data: profile } = await supabaseServiceRole()
+    .from('user_profiles')
+    .select('full_name')
+    .eq('user_id', verified.userId)
+    .maybeSingle()
+
+  return {
+    ok: true,
+    userId: verified.userId,
+    authorName: displayNameOf(profile?.full_name, verified.email),
+  }
+}
+
+/**
+ * Capped display name.
+ *
+ * author_name rides on every row a user writes, and REPLICA IDENTITY FULL
+ * rebroadcasts the whole row to every subscriber on each update — so a
+ * 300-character name is paid for repeatedly by everyone in the space rather
+ * than once by its owner.
+ */
+function displayNameOf(fullName: string | null | undefined, email: string | null | undefined): string {
+  return (fullName?.trim() || email?.split('@')[0] || 'Anonymous').slice(0, 80)
 }
 
 /**
@@ -115,6 +238,9 @@ export async function resolveRoomCanvasAccess(
       ok: true,
       access: {
         roomId,
+        // Guest tokens are scoped to a ROOM, so they can only ever reach a room
+        // canvas. A personal canvas is never resolved through this function.
+        ownerId: null,
         authorId: null,
         guestTokenId: guest.tokenId,
         updatedBy: guest.tokenId,
@@ -171,18 +297,13 @@ export async function resolveRoomCanvasAccess(
     .select('full_name')
     .eq('user_id', userId)
     .maybeSingle()
-  // Capped like the guest path: author_name rides on every row this user
-  // writes, and REPLICA IDENTITY FULL rebroadcasts the whole row to every
-  // subscriber on each update, so a 300-character display name is paid for
-  // repeatedly by everyone in the space rather than once by its owner.
-  const authorName = (
-    profile?.full_name?.trim() || session?.user?.email?.split('@')[0] || 'Anonymous'
-  ).slice(0, 80)
+  const authorName = displayNameOf(profile?.full_name, session?.user?.email)
 
   return {
     ok: true,
     access: {
       roomId,
+      ownerId: null,
       authorId: userId,
       guestTokenId: null,
       updatedBy: userId,

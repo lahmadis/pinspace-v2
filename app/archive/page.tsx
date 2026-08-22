@@ -20,7 +20,6 @@ const TYPE_LABEL: Record<DashboardWorkspace['type'], string> = {
 export default function ArchivePage() {
   const router = useRouter()
   const { status: authStatus, user } = useAuthSession()
-  const isLoaded = authStatus !== 'loading'
 
   const [workspaces, setWorkspaces] = useState<DashboardWorkspace[]>([])
   const [loading, setLoading] = useState(true)

@@ -20,7 +20,8 @@ export type CanvasNodeType = (typeof CANVAS_NODE_TYPES)[number]
 export interface CanvasNodeRow {
   id: string
   canvas_id: string
-  room_id: string
+  /** NULL on a personal canvas, which has no room (migration 038). */
+  room_id: string | null
   type: string
   x: number
   y: number
