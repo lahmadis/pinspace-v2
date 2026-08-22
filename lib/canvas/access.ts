@@ -2,6 +2,12 @@ import type { NextRequest } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { isSuperadmin } from '@/lib/auth/superadmin'
 import { resolveGuestToken, getGuestTokenFromRequest } from '@/lib/auth/guestToken'
+import { MAX_CANVAS_PAYLOAD_BYTES } from '@/lib/canvas/types'
+
+// Types and validators live in lib/canvas/types.ts, which imports nothing, so
+// the browser can share them without pulling next/server and the service-role
+// client into its bundle. Re-exported here so server code has one import.
+export * from '@/lib/canvas/types'
 
 /**
  * Who may read and write a canvas, resolved once and shared by every canvas
@@ -185,120 +191,6 @@ export async function resolveRoomCanvasAccess(
     },
   }
 }
-
-/** DB row shape for canvas_nodes, mirroring migration 036. */
-export interface CanvasNodeRow {
-  id: string
-  canvas_id: string
-  room_id: string
-  type: string
-  x: number
-  y: number
-  w: number
-  h: number
-  rotation: number
-  z: number
-  props: Record<string, unknown>
-  from_node_id: string | null
-  to_node_id: string | null
-  author_id: string | null
-  guest_token_id: string | null
-  author_name: string
-  updated_by: string
-  created_at: string
-  updated_at: string
-}
-
-export interface CanvasNode {
-  id: string
-  canvasId: string
-  type: string
-  x: number
-  y: number
-  w: number
-  h: number
-  rotation: number
-  z: number
-  props: Record<string, unknown>
-  fromNodeId: string | null
-  toNodeId: string | null
-  authorId: string | null
-  authorName: string
-  updatedBy: string
-  createdAt: string
-  updatedAt: string
-}
-
-export function transformNode(n: CanvasNodeRow): CanvasNode {
-  return {
-    id: n.id,
-    canvasId: n.canvas_id,
-    type: n.type,
-    x: n.x,
-    y: n.y,
-    w: n.w,
-    h: n.h,
-    rotation: n.rotation,
-    z: n.z,
-    props: n.props ?? {},
-    fromNodeId: n.from_node_id,
-    toNodeId: n.to_node_id,
-    authorId: n.author_id,
-    authorName: n.author_name,
-    updatedBy: n.updated_by,
-    createdAt: n.created_at,
-    updatedAt: n.updated_at,
-  }
-}
-
-/** Types migration 036's CHECK constraint accepts. Kept in sync by hand. */
-export const CANVAS_NODE_TYPES = ['sticky', 'text', 'image', 'ink', 'shape', 'frame', 'connector'] as const
-export type CanvasNodeType = (typeof CANVAS_NODE_TYPES)[number]
-
-/**
- * Geometry bounds matching the CHECK constraints in migration 036.
- *
- * Validated here as well as in the database so a bad value returns 400 rather
- * than a 500 from a constraint violation. NOT redundant with the DB check —
- * that one is the guarantee, this one is the error message.
- *
- * `Number.isFinite` is what actually rejects NaN and Infinity in JS; the DB
- * relies on a bounded range instead, because Postgres treats NaN as equal to
- * itself and greater than every real number.
- */
-export const CANVAS_COORD_LIMIT = 1e7
-
-export function isValidGeometry(v: unknown): v is number {
-  return typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < CANVAS_COORD_LIMIT
-}
-
-/**
- * `z` is an INTEGER column, so finiteness alone isn't enough — 3e9 is finite,
- * survives Math.trunc, and then fails in Postgres as "integer out of range",
- * turning a bad request into a 500. A million layers is far past any real
- * stacking need.
- */
-export const CANVAS_Z_LIMIT = 1e6
-
-export function isValidZ(v: unknown): v is number {
-  return typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= CANVAS_Z_LIMIT
-}
-
-/** props is JSONB, which happily accepts "str", 42 and [] — none of which the
- *  client's Record<string, unknown> type can represent. */
-export function isValidProps(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v)
-}
-
-/**
- * Body size ceiling, matching board_traces' 1 MB.
- *
- * `props` carries ink point lists, so an unbounded body is not theoretical.
- * canvas_nodes is published with REPLICA IDENTITY FULL, which means every row
- * that lands is broadcast in full to every subscriber — an oversized node is
- * amplified across the whole room rather than costing only the writer.
- */
-export const MAX_CANVAS_PAYLOAD_BYTES = 1024 * 1024
 
 export type CappedBody =
   | { ok: true; body: Record<string, unknown> }
