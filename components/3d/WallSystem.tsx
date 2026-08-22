@@ -221,11 +221,14 @@ const GROUND_COLOR = '#C3CDDE'
  *  footprint (the room's opaque floor/walls occlude it directly underneath).
  *  Minor lines every foot, a heavier line every 10 feet — the same
  *  cell/section convention any CAD or level-editor grid uses. */
-// Lines have to carry against GROUND_COLOR (#C3CDDE) from a long way off. The
-// first values sat only a few percent darker than the ground and read as
-// almost nothing on screen; these are a real step down in lightness.
-const GRID_CELL_COLOR = '#93A3C0'
-const GRID_SECTION_COLOR = '#5E76A2'
+// Lines have to carry against GROUND_COLOR (#C3CDDE) without turning the ground
+// into a drawing of its own. The foot lines do the visible work; the ten-foot
+// lines are a light structural beat, and are told apart by WEIGHT rather than
+// darkness (sectionThickness is nearly twice cellThickness below). An earlier
+// pass made the ten-foot lines much darker and they read as the loudest thing
+// in an otherwise pale room.
+const GRID_CELL_COLOR = '#9BAAC6'
+const GRID_SECTION_COLOR = '#8CA0C2'
 
 /**
  * The three stacked horizontal planes, top to bottom: the room's floor plate,
