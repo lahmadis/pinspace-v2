@@ -24,6 +24,7 @@ import {
   clampToLimits,
   handleCursor,
   hitHandle,
+  MIN_NODE_SIZE,
   nodesInRect,
   rectFromPoints,
   resizeNode,
@@ -37,7 +38,8 @@ import {
   type TransformHandle,
 } from '@/lib/canvas/geometry'
 import { useCanvasNodes } from '@/hooks/useCanvasNodes'
-import type { CanvasNode } from '@/lib/canvas/types'
+import CanvasToolbar, { INK_COLORS, type CanvasTool } from './CanvasToolbar'
+import CanvasNodeView, { MIN_INK_EXTENT, STICKY_COLORS, pathFromPoints } from './CanvasNodeView'
 
 /**
  * The infinite canvas surface.
@@ -79,9 +81,31 @@ const DRAG_THRESHOLD_PX = 3
 const GRID = 40
 
 const STICKY_SIZE = 180
-const STICKY_COLORS = ['#FFE8A3', '#FFD5C2', '#D6E4FF', '#D9F2E3', '#EADCF8']
+const TEXT_W = 260
+const TEXT_H = 44
+/** Default stroke weight, in canvas units. */
+const INK_SIZE = 3
+/**
+ * Ink is sampled per pointermove, which on a high-rate mouse is far denser than
+ * the stroke needs. Samples closer together than this many SCREEN pixels are
+ * dropped: props ships over realtime as a full row on every write, so an
+ * unfiltered stroke is both a fatter payload and a slower path to render.
+ * Screen pixels, not canvas units — the same hand movement should sample the
+ * same way at any zoom.
+ */
+const INK_MIN_STEP_PX = 2
+/**
+ * Hard cap on points in one stroke.
+ *
+ * props travels as a full row on every realtime write, and the API refuses a
+ * body over 1 MB — which a stroke would only reach after minutes of unbroken
+ * drawing, but reaching it would fail the whole stroke AFTER it was drawn.
+ * Stopping quietly at the cap costs the tail of an implausibly long line;
+ * failing costs all of it.
+ */
+const INK_MAX_POINTS = 4000
 
-type DragMode = 'pan' | 'move' | 'resize' | 'rotate' | 'marquee'
+type DragMode = 'pan' | 'move' | 'resize' | 'rotate' | 'marquee' | 'create'
 
 interface DragState {
   mode: DragMode
@@ -125,11 +149,19 @@ export default function InfiniteCanvas({
   const [marquee, setMarquee] = useState<Bounds | null>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [spaceHeld, setSpaceHeld] = useState(false)
+  const [tool, setTool] = useState<CanvasTool>('select')
+  const [color, setColor] = useState<string>(INK_COLORS[0])
+  /** Node whose text is being edited inline. */
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
+  /** In-progress shape or stroke, before it becomes a node. */
+  const [draft, setDraft] = useState<{ tool: CanvasTool; rect?: Bounds; points?: Point[] } | null>(null)
   /** Draw a focus ring only when focus arrived from the keyboard. The container
    *  is focusable for its key handlers, so suppressing the ring outright would
    *  leave keyboard users with no indication of where they are. */
   const [keyboardFocus, setKeyboardFocus] = useState(false)
   const pointerFocusRef = useRef(false)
+  /** A click-to-place is in flight; see placeTextual. */
+  const placingRef = useRef(false)
   /** Cursor for whatever is under the pointer while nothing is being dragged. */
   const [hoverCursor, setHoverCursor] = useState<string>('default')
 
@@ -145,6 +177,27 @@ export default function InfiniteCanvas({
   const viewportRef = useRef(viewport)
   const nodesRef = useRef(nodes)
   const selectionRef = useRef(selection)
+  /**
+   * The draft, written synchronously by the pointer handlers.
+   *
+   * NOT mirrored from state by an effect: finishDrag reads this during a
+   * discrete pointerup, which can run before a continuous setDraft from the
+   * final pointermove has flushed — so mirroring would drop the last ink
+   * sample, or commit a rect one frame stale. State exists only to render the
+   * preview.
+   */
+  const draftRef = useRef<{ tool: CanvasTool; rect?: Bounds; points?: Point[] } | null>(null)
+  const toolRef = useRef(tool)
+  const colorRef = useRef(color)
+  useEffect(() => {
+    toolRef.current = tool
+    // Hover feedback is skipped while a tool is armed, so whatever was under
+    // the pointer last would flash back for a frame on returning to select.
+    setHoverCursor('default')
+  }, [tool])
+  useEffect(() => {
+    colorRef.current = color
+  }, [color])
   useEffect(() => {
     viewportRef.current = viewport
   }, [viewport])
@@ -184,6 +237,78 @@ export default function InfiniteCanvas({
   const canvasPoint = useCallback(
     (e: { clientX: number; clientY: number }): Point => toCanvas(viewportRef.current, screenPoint(e)),
     [screenPoint]
+  )
+
+  /**
+   * Put focus back on the canvas after an inline editor closes.
+   *
+   * The textarea unmounts on commit, and focus falls to <body> — every canvas
+   * shortcut then does nothing until the user clicks the surface again, which
+   * reads as the keyboard having broken.
+   */
+  const refocus = useCallback(() => {
+    // Deferred a frame so the editor has unmounted first — focusing the
+    // container synchronously fires focusout on a textarea that is still
+    // mounted, which React turns back into a commit.
+    requestAnimationFrame(() => {
+      const el = containerRef.current
+      if (!el) return
+      const active = document.activeElement
+      // Only reclaim focus that fell to nothing. If the user clicked from a
+      // note straight into a comment box or the chat, that is where they meant
+      // to be, and yanking it back mid-transition is worse than losing the
+      // shortcuts.
+      if (active && active !== document.body && !el.contains(active)) return
+      el.focus({ preventScroll: true })
+    })
+  }, [])
+
+  /** One above the current top, so a new object lands on top of the pile. */
+  const nextZ = useCallback(() => nodesRef.current.reduce((max, n) => Math.max(max, n.z), 0) + 1, [])
+
+  /**
+   * Place a sticky or text node and open it for typing straight away.
+   *
+   * Awaits the create so the caret lands on the SERVER's row rather than the
+   * optimistic one — the ids match (the client generates them), but the row
+   * that comes back carries the resolved author name, and editing the
+   * pre-response copy would write that placeholder back out.
+   */
+  const placeTextual = useCallback(
+    async (type: 'sticky' | 'text', at: Point) => {
+      // dragRef is deliberately not set for a click-to-place, so the
+      // one-gesture-at-a-time guard does not cover this path — and the tool
+      // stays armed until setTool runs AFTER the await. Without this latch a
+      // double-click, a fast second click or a second finger lands inside the
+      // round trip and places a second node. For 'text' that orphan is an
+      // invisible box that still hit-tests and blocks clicks beneath it.
+      if (placingRef.current) return
+      placingRef.current = true
+      try {
+        const w = type === 'sticky' ? STICKY_SIZE : TEXT_W
+        const h = type === 'sticky' ? STICKY_SIZE : TEXT_H
+        const node = await createNode({
+          type,
+          x: at.x - w / 2,
+          y: at.y - h / 2,
+          w,
+          h,
+          z: nextZ(),
+          props:
+            type === 'sticky'
+              ? { text: '', fill: STICKY_COLORS[nodesRef.current.length % STICKY_COLORS.length] }
+              : { text: '', color: colorRef.current },
+        })
+        if (node) {
+          setSelection([node.id])
+          setEditingNodeId(node.id)
+        }
+        setTool('select')
+      } finally {
+        placingRef.current = false
+      }
+    },
+    [createNode, nextZ]
   )
 
   // ---------------------------------------------------------------------------
@@ -235,6 +360,15 @@ export default function InfiniteCanvas({
         e.preventDefault()
         return
       }
+      // A live tool is the first thing Escape should put down, before the
+      // selection — that ordering is what every canvas app does.
+      if (e.key === 'Escape' && toolRef.current !== 'select') {
+        e.stopPropagation()
+        setTool('select')
+        draftRef.current = null
+        setDraft(null)
+        return
+      }
       if (e.key === 'Escape') {
         // Only swallow Escape when there is a selection to clear. With nothing
         // selected it must keep bubbling — the studio page uses Escape to leave
@@ -256,6 +390,19 @@ export default function InfiniteCanvas({
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
         e.preventDefault()
         setSelection(nodesRef.current.map((n) => n.id))
+        return
+      }
+      // Single-letter tool switches, and only without a modifier — otherwise
+      // Cmd+S would put down a sticky on the way to the browser's save dialog.
+      if (canEdit && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        const key = e.key.toLowerCase()
+        const picked = ({ v: 'select', s: 'sticky', t: 'text', r: 'rect', o: 'ellipse', p: 'ink' } as const)[
+          key as 'v' | 's' | 't' | 'r' | 'o' | 'p'
+        ]
+        if (picked) {
+          e.preventDefault()
+          setTool(picked)
+        }
       }
     },
     [canEdit, deleteNode]
@@ -306,6 +453,44 @@ export default function InfiniteCanvas({
       if (wantsPan) {
         dragRef.current = {
           mode: 'pan',
+          pointerId: e.pointerId,
+          startScreen: screen,
+          startCanvas: canvas,
+          startViewport: vp,
+          originals: new Map(),
+          moved: false,
+        }
+        return
+      }
+
+      // A drawing tool takes the gesture before any hit test — with the pen
+      // armed, clicking a node must draw over it, not select it.
+      const activeTool = toolRef.current
+      if (canEdit && activeTool !== 'select') {
+        // Close any open editor first. Its blur would otherwise commit AFTER
+        // the new node exists, writing the old text into whatever is selected
+        // by then.
+        setEditingNodeId(null)
+
+        if (activeTool === 'sticky' || activeTool === 'text') {
+          void placeTextual(activeTool, canvas)
+          return
+        }
+
+        setSelection([])
+        const startDraft = {
+          tool: activeTool,
+          rect: { minX: canvas.x, minY: canvas.y, maxX: canvas.x, maxY: canvas.y },
+          points: activeTool === 'ink' ? [canvas] : undefined,
+        }
+        // Written to the ref FIRST and synchronously. finishDrag reads the ref
+        // during a discrete pointerup, which can run before a continuous
+        // setDraft from the last pointermove has flushed — so the ref is the
+        // source of truth and the state exists only to drive the preview.
+        draftRef.current = startDraft
+        setDraft(startDraft)
+        dragRef.current = {
+          mode: 'create',
           pointerId: e.pointerId,
           startScreen: screen,
           startCanvas: canvas,
@@ -390,7 +575,7 @@ export default function InfiniteCanvas({
         moved: false,
       }
     },
-    [beginGesture, canEdit, screenPoint, soleSelected, spaceHeld]
+    [beginGesture, canEdit, placeTextual, screenPoint, soleSelected, spaceHeld]
   )
 
   const handlePointerMove = useCallback(
@@ -403,6 +588,7 @@ export default function InfiniteCanvas({
       // means they can't carry their own :hover cursor — the container has to
       // do it, using the same hit test the pointerdown path uses.
       if (!drag) {
+        if (toolRef.current !== 'select') return
         const vpNow = viewportRef.current
         const at = toCanvas(vpNow, screen)
         let next = 'default'
@@ -423,7 +609,13 @@ export default function InfiniteCanvas({
       const dxScreen = screen.x - drag.startScreen.x
       const dyScreen = screen.y - drag.startScreen.y
 
-      if (!drag.moved && Math.hypot(dxScreen, dyScreen) < DRAG_THRESHOLD_PX) return
+      // The threshold exists to tell a sloppy click from a drag. A drawing
+      // gesture has no such ambiguity — the press already committed to drawing —
+      // and swallowing the first few pixels makes every stroke open with a
+      // straight jump from where the pen went down.
+      if (drag.mode !== 'create' && !drag.moved && Math.hypot(dxScreen, dyScreen) < DRAG_THRESHOLD_PX) {
+        return
+      }
       drag.moved = true
 
       if (drag.mode === 'pan') {
@@ -435,6 +627,29 @@ export default function InfiniteCanvas({
       // gesture began. Using the live viewport would let a simultaneous zoom
       // change the delta under the drag.
       const canvas = toCanvas(drag.startViewport, screen)
+
+      if (drag.mode === 'create') {
+        const prev = draftRef.current
+        if (!prev) return
+        let next = prev
+        if (prev.tool === 'ink') {
+          const pts = prev.points ?? []
+          const last = pts[pts.length - 1]
+          // The minimum step is a SCREEN distance converted to canvas units, not
+          // a fixed canvas distance: a fixed one filters nothing when zoomed out
+          // and throws away most of the stroke when zoomed in, so the same
+          // gesture draws smooth or visibly polygonal depending on zoom.
+          const minStep = screenToCanvasLength(drag.startViewport, INK_MIN_STEP_PX)
+          if (last && Math.hypot(canvas.x - last.x, canvas.y - last.y) < minStep) return
+          if (pts.length >= INK_MAX_POINTS) return
+          next = { ...prev, points: [...pts, canvas] }
+        } else {
+          next = { ...prev, rect: rectFromPoints(drag.startCanvas, canvas) }
+        }
+        draftRef.current = next
+        setDraft(next)
+        return
+      }
 
       if (drag.mode === 'marquee') {
         const rect = rectFromPoints(drag.startCanvas, canvas)
@@ -494,6 +709,78 @@ export default function InfiniteCanvas({
         // Already released by the browser. Nothing to undo.
       }
 
+      if (drag.mode === 'create') {
+        const d = draftRef.current
+        draftRef.current = null
+        setDraft(null)
+        // The pen stays armed — drawing is repetitive, and disarming after
+        // every stroke would mean re-picking it for each line. Shapes drop back
+        // to select, since placing one is usually followed by adjusting it.
+        if (d?.tool !== 'ink') setTool('select')
+        if (!d) return
+
+        if (d.tool === 'ink') {
+          const pts = d.points ?? []
+          if (pts.length < 2) return
+          // The stroke's own bounding box becomes the node, padded by the stroke
+          // weight on each side so the line isn't clipped at the edges by its
+          // own thickness. That padding is also what guarantees a non-zero
+          // extent for a perfectly straight stroke — MIN_INK_EXTENT below is
+          // the belt to its braces, and the one that matters when rendering a
+          // row written by some earlier version.
+          // Points are stored relative to that box and the box size
+          // is stored alongside them, so a later resize SCALES the stroke
+          // rather than cropping it (see CanvasNodeView's viewBox).
+          const pad = INK_SIZE
+          const minX = Math.min(...pts.map((p) => p.x)) - pad
+          const minY = Math.min(...pts.map((p) => p.y)) - pad
+          const maxX = Math.max(...pts.map((p) => p.x)) + pad
+          const maxY = Math.max(...pts.map((p) => p.y)) + pad
+          // A perfectly straight horizontal stroke has zero height, which would
+          // put a 0 in the viewBox and divide by zero when it scales.
+          const bw = Math.max(MIN_INK_EXTENT, maxX - minX)
+          const bh = Math.max(MIN_INK_EXTENT, maxY - minY)
+          const inkBox = clampToLimits({ x: minX, y: minY, w: bw, h: bh, rotation: 0 })
+          void createNode({
+            type: 'ink',
+            x: inkBox.x,
+            y: inkBox.y,
+            w: inkBox.w,
+            h: inkBox.h,
+            z: nextZ(),
+            props: {
+              points: pts.map((p) => [
+                Number((p.x - minX).toFixed(2)),
+                Number((p.y - minY).toFixed(2)),
+              ]),
+              bw,
+              bh,
+              color: colorRef.current,
+              size: INK_SIZE,
+            },
+          })
+          return
+        }
+
+        const r = d.rect
+        if (!r) return
+        const w = r.maxX - r.minX
+        const h = r.maxY - r.minY
+        // A click with a shape tool is a miss, not a zero-size shape.
+        if (w < MIN_NODE_SIZE || h < MIN_NODE_SIZE) return
+        const shapeBox = clampToLimits({ x: r.minX, y: r.minY, w, h, rotation: 0 })
+        void createNode({
+          type: 'shape',
+          x: shapeBox.x,
+          y: shapeBox.y,
+          w: shapeBox.w,
+          h: shapeBox.h,
+          z: nextZ(),
+          props: { shape: d.tool === 'ellipse' ? 'ellipse' : 'rect', stroke: colorRef.current },
+        })
+        return
+      }
+
       const ids = [...drag.originals.keys()]
       if (ids.length === 0) return
 
@@ -525,7 +812,7 @@ export default function InfiniteCanvas({
 
       endGesture(ids)
     },
-    [commitNode, endGesture]
+    [commitNode, createNode, endGesture, nextZ]
   )
 
   // ---------------------------------------------------------------------------
@@ -534,23 +821,23 @@ export default function InfiniteCanvas({
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       if (!canEdit) return
+      // With a tool armed, pointerdown already handled this. Placing a sticky
+      // here too would mean two quick clicks with the pen also drop a note.
+      if (toolRef.current !== 'select') return
       const canvas = canvasPoint(e)
-      if (topmostAt(nodesRef.current, canvas)) return
-      const topZ = nodesRef.current.reduce((max, n) => Math.max(max, n.z), 0)
-      void createNode({
-        type: 'sticky',
-        x: canvas.x - STICKY_SIZE / 2,
-        y: canvas.y - STICKY_SIZE / 2,
-        w: STICKY_SIZE,
-        h: STICKY_SIZE,
-        z: topZ + 1,
-        props: {
-          text: '',
-          color: STICKY_COLORS[nodesRef.current.length % STICKY_COLORS.length],
-        },
-      })
+      const hit = topmostAt(nodesRef.current, canvas)
+      if (hit) {
+        // Double-click into text is the universal "edit this" gesture. Ink and
+        // shapes have no text to edit, so they keep their selection instead.
+        if (hit.type === 'sticky' || hit.type === 'text') {
+          setSelection([hit.id])
+          setEditingNodeId(hit.id)
+        }
+        return
+      }
+      void placeTextual('sticky', canvas)
     },
-    [canEdit, canvasPoint, createNode]
+    [canEdit, canvasPoint, placeTextual]
   )
 
   const zoomFit = useCallback(() => {
@@ -576,7 +863,9 @@ export default function InfiniteCanvas({
   // Render.
   // ---------------------------------------------------------------------------
 
-  const cursor = spaceHeld ? 'grab' : hoverCursor
+  // A drawing tool overrides hover feedback entirely: with the pen armed, what
+  // is under the pointer no longer decides what a press will do.
+  const cursor = spaceHeld ? 'grab' : tool !== 'select' ? 'crosshair' : hoverCursor
 
   const selectionOverlay = useMemo(() => {
     if (selectedNodes.length === 0) return null
@@ -670,8 +959,70 @@ export default function InfiniteCanvas({
         }}
       >
         {nodes.map((node) => (
-          <NodeView key={node.id} node={node} />
+          <CanvasNodeView
+            key={node.id}
+            node={node}
+            isEditing={node.id === editingNodeId}
+            onCommitText={(text) => {
+              setEditingNodeId(null)
+              refocus()
+              const next = text.trim()
+              // A text node with nothing in it is invisible but still hit-tests
+              // over its whole box, silently blocking clicks on anything under
+              // it. A sticky is a visible object, so an empty one is kept.
+              if (!next && node.type === 'text') {
+                void deleteNode(node.id)
+                return
+              }
+              // Blur fires on every exit, including one that changed nothing.
+              // Writing anyway would rebroadcast the full row to the room for a
+              // click-in-click-out — the same no-op guard the geometry commit
+              // makes in finishDrag.
+              if (next === ((node.props as { text?: string }).text ?? '')) return
+              // props is replaced wholesale by the API, so the rest of it has to
+              // be carried across explicitly — a sticky's fill lives there.
+              void commitNode(node.id, { props: { ...node.props, text: next } })
+            }}
+            onCancelEdit={() => {
+              setEditingNodeId(null)
+              refocus()
+            }}
+          />
         ))}
+
+        {/* The in-progress shape or stroke. Drawn in the same transformed layer
+            as real nodes so it sits exactly where it will land, with no
+            hand-off jump when the pointer comes up. */}
+        {draft?.rect && draft.tool !== 'ink' && (
+          <div
+            style={{
+              position: 'absolute',
+              left: draft.rect.minX,
+              top: draft.rect.minY,
+              width: draft.rect.maxX - draft.rect.minX,
+              height: draft.rect.maxY - draft.rect.minY,
+              border: `2px solid ${color}`,
+              borderRadius: draft.tool === 'ellipse' ? '50%' : 4,
+              pointerEvents: 'none',
+            }}
+          />
+        )}
+        {draft?.tool === 'ink' && draft.points && draft.points.length > 1 && (
+          <svg
+            style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }}
+            width={1}
+            height={1}
+          >
+            <path
+              d={pathFromPoints(draft.points.map((p) => [p.x, p.y]))}
+              fill="none"
+              stroke={color}
+              strokeWidth={INK_SIZE}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
       </div>
 
       {/* Screen-space overlay: outlines, handles, marquee. */}
@@ -727,6 +1078,14 @@ export default function InfiniteCanvas({
         )}
       </svg>
 
+      <CanvasToolbar
+        tool={tool}
+        onToolChange={setTool}
+        color={color}
+        onColorChange={setColor}
+        disabled={!canEdit}
+      />
+
       <ZoomBar
         zoom={viewport.zoom}
         onZoomIn={() => zoomBy(1.2)}
@@ -757,48 +1116,6 @@ export default function InfiniteCanvas({
         >
           {error} — dismiss
         </button>
-      )}
-    </div>
-  )
-}
-
-/**
- * One node.
- *
- * Positioned in CANVAS units inside the transformed layer, so nothing here
- * knows about zoom. Rotation is applied about the centre to match the geometry
- * module's convention — any other transform-origin would make hit-testing and
- * rendering disagree the moment a node is rotated.
- */
-function NodeView({ node }: { node: CanvasNode }) {
-  const props = node.props as { text?: string; color?: string }
-  const isSticky = node.type === 'sticky'
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: node.x,
-        top: node.y,
-        width: node.w,
-        height: node.h,
-        transform: `rotate(${node.rotation}rad)`,
-        transformOrigin: 'center center',
-        background: isSticky ? props.color || STICKY_COLORS[0] : ROOM.wall,
-        border: isSticky ? 'none' : `1px solid ${ROOM.hairline}`,
-        borderRadius: isSticky ? 2 : 4,
-        boxShadow: isSticky ? '0 1px 3px rgba(22,24,29,0.12)' : 'none',
-        padding: 12,
-        overflow: 'hidden',
-        color: ROOM.ink,
-        fontSize: 15,
-        lineHeight: 1.35,
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-      }}
-    >
-      {props.text || (
-        <span style={{ color: ROOM.ink2 }}>{node.type === 'sticky' ? '' : node.type}</span>
       )}
     </div>
   )
