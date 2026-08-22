@@ -25,6 +25,15 @@ import {
  */
 
 export interface CanvasNodeInput {
+  /**
+   * Reuse a specific id instead of minting one.
+   *
+   * Only undo needs this: restoring a deleted node under its ORIGINAL id is
+   * what keeps a further redo, and any op still on the stack referring to it,
+   * pointing at the same object. A fresh id would make the second Cmd+Z in a
+   * row address a row that no longer exists.
+   */
+  id?: string
   type: CanvasNodeType
   x: number
   y: number
@@ -243,7 +252,8 @@ export function useCanvasNodes(canvasId: string | null, guestToken?: string | nu
       // The id is generated HERE so the object can render and be selected before
       // the round trip finishes, and so a retry of a dropped response conflicts
       // rather than creating a duplicate. Same contract as boards and traces.
-      const id = crypto.randomUUID()
+      // An undo restoring a deleted node supplies the original id instead.
+      const id = input.id ?? crypto.randomUUID()
       const now = new Date().toISOString()
       const optimistic: CanvasNode = {
         id,
@@ -267,14 +277,36 @@ export function useCanvasNodes(canvasId: string | null, guestToken?: string | nu
         createdAt: now,
         updatedAt: now,
       }
-      setNodes((prev) => sortNodes([...prev, optimistic]))
+      // An id already in the list is REPLACED, not appended.
+      //
+      // Normally impossible — a minted uuid collides with nothing. It becomes
+      // reachable through undo: a failed DELETE rolls its node back into the
+      // list while the history still holds the delete op, so restoring it
+      // would put a second copy of the same id in the array. React would key
+      // them identically, and the rollback below would then remove both.
+      //
+      // Captured from `prev` inside the updater, NOT from nodesRef: that ref
+      // is mirrored by an effect and so lags a commit, and it lags it in
+      // exactly the window this guards — a failed delete's rollback and the
+      // undo's create in the same tick. Reading the stale ref would report
+      // nothing displaced while the filter below removed the node anyway, so a
+      // second failure would drop a row that still exists on the server. The
+      // assignment is an idempotent read, which is what makes it safe under
+      // StrictMode's double invocation.
+      let displaced: CanvasNode | undefined
+      setNodes((prev) => {
+        displaced = prev.find((n) => n.id === id)
+        return sortNodes([...prev.filter((n) => n.id !== id), optimistic])
+      })
       markInflight(id, 1)
 
       try {
         const res = await fetch(`/api/canvases/${canvasId}/nodes`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({ id, ...input }),
+          // `id` LAST: input may now carry its own, and an absent-but-declared
+          // optional would spread `id: undefined` over a good one.
+          body: JSON.stringify({ ...input, id }),
         })
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to create')
         const { node } = await res.json()
@@ -283,8 +315,13 @@ export function useCanvasNodes(canvasId: string | null, guestToken?: string | nu
         return node as CanvasNode
       } catch (err) {
         // Roll the optimistic node back out rather than leaving a ghost that
-        // looks saved and vanishes on the next reload.
-        setNodes((prev) => prev.filter((n) => n.id !== id))
+        // looks saved and vanishes on the next reload. If this create replaced
+        // a node that was already there, put that one back — dropping it would
+        // make a failed write destructive.
+        setNodes((prev) => {
+          const without = prev.filter((n) => n.id !== id)
+          return displaced ? sortNodes([...without, displaced]) : without
+        })
         setError((err as Error).message)
         return null
       } finally {

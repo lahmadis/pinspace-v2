@@ -41,12 +41,20 @@ export default function CanvasToolbar({
   color,
   onColorChange,
   disabled,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
 }: {
   tool: CanvasTool
   onToolChange: (tool: CanvasTool) => void
   color: string
   onColorChange: (color: string) => void
   disabled?: boolean
+  canUndo?: boolean
+  canRedo?: boolean
+  onUndo?: () => void
+  onRedo?: () => void
 }) {
   if (disabled) return null
 
@@ -102,9 +110,9 @@ export default function CanvasToolbar({
 
       <div style={{ height: 1, background: ROOM.hairline, margin: '4px 6px' }} />
 
-      {/* Colour applies to whatever gets drawn next, and to the current
-          selection if there is one — same as every canvas tool people have
-          used before this one. */}
+      {/* Colour for whatever gets drawn NEXT. It does not restyle the current
+          selection — recolouring an existing node is a separate gesture and
+          does not exist yet. */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, padding: '2px 4px 4px' }}>
         {INK_COLORS.map((c) => (
           <button
@@ -125,6 +133,69 @@ export default function CanvasToolbar({
           />
         ))}
       </div>
+
+      <div style={{ height: 1, background: ROOM.hairline, margin: '2px 6px 4px' }} />
+
+      {/* Undo and redo. Duplicated from the keyboard rather than left to it:
+          the shortcuts only fire while the canvas surface itself holds focus,
+          and this is also the only thing on screen that says whether there is
+          anything left to undo. */}
+      <div style={{ display: 'flex', gap: 2 }}>
+        <HistoryButton
+          glyph="↺"
+          label="Undo"
+          shortcut="⌘Z / Ctrl+Z"
+          enabled={!!canUndo}
+          onClick={onUndo}
+        />
+        <HistoryButton
+          glyph="↻"
+          label="Redo"
+          shortcut="⇧⌘Z / Ctrl+Y"
+          enabled={!!canRedo}
+          onClick={onRedo}
+        />
+      </div>
     </div>
+  )
+}
+
+function HistoryButton({
+  glyph,
+  label,
+  shortcut,
+  enabled,
+  onClick,
+}: {
+  glyph: string
+  label: string
+  shortcut: string
+  enabled: boolean
+  onClick?: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      // Disabled rather than hidden, so the pair keeps the rail the same width
+      // whatever the stacks hold.
+      disabled={!enabled}
+      title={`${label} (${shortcut})`}
+      aria-label={label}
+      style={{
+        width: 36,
+        height: 30,
+        display: 'grid',
+        placeItems: 'center',
+        border: 'none',
+        borderRadius: 8,
+        background: 'transparent',
+        color: enabled ? ROOM.ink2 : ROOM.hairline,
+        fontSize: 15,
+        lineHeight: 1,
+        cursor: enabled ? 'pointer' : 'default',
+      }}
+    >
+      {glyph}
+    </button>
   )
 }
