@@ -182,9 +182,12 @@ export const ROOM_SKY_COLOR = ROOM_SKY
 
 /**
  * Pixels of pointer travel above which a floor click is treated as the end of an
- * orbit drag rather than a click. Mirrors DRAG_THRESHOLD_PX in WallSurface.tsx —
- * the floor is the largest drag surface in the room, so without this every orbit
- * that happens to release over the floor would dismiss wall focus.
+ * orbit drag rather than a click. Mirrors DRAG_THRESHOLD_PX in WallSurface.tsx.
+ *
+ * Used by the clickable owner name plates. NOT by the floor click any more —
+ * that only fires while a wall is focused, and focus switches orbit off, so
+ * there is no drag for it to be the tail of; guarding it could only reject a
+ * real click on the main way out of a locked camera.
  */
 const FLOOR_DRAG_THRESHOLD_PX = 4
 
@@ -438,12 +441,15 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
         rotation={[-Math.PI / 2, 0, 0]}
         receiveShadow
         onClick={(e) => {
-          // Only meaningful while something is focused; otherwise stay out of
-          // the way so a stray floor click can't swallow an orbit gesture.
+          // Only bound while a wall is focused; otherwise stay out of the way so
+          // a stray floor click can't swallow an orbit gesture.
+          //
+          // No drag-threshold guard, deliberately. Focus switches OrbitControls
+          // off, so there is no orbit for a click to be the tail of — the guard
+          // could only ever reject a real click that wandered a few pixels. That
+          // matters here because this is the main way out of a state where the
+          // camera is locked: a rejected click leaves the user feeling stuck.
           if (!onFloorClick) return
-          // Same guard WallSurface uses: a click that ended a drag was an orbit,
-          // not a click, and must not dismiss focus.
-          if (e.delta > FLOOR_DRAG_THRESHOLD_PX) return
           e.stopPropagation()
           onFloorClick()
         }}

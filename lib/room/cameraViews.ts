@@ -188,7 +188,10 @@ export function getHeadOnPose(
  * read-only wall focus, which has only an index and a side to go on.
  *
  * Returns null when the wall index isn't in the config (stale focus state after
- * a wall is deleted), so callers can no-op rather than fly somewhere arbitrary.
+ * a wall is deleted). A caller must treat that as "focus did not take" and NOT
+ * hold the camera — CameraController tracks this in `focusPoseArmed`, because
+ * disabling orbit on an unresolved focus leaves the camera locked on a stale
+ * target.
  */
 export function getWallFocusPose(
   wallConfig: WallConfig,

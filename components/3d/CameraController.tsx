@@ -143,9 +143,11 @@ interface CameraControllerProps {
   wallConfig?: WallConfig | null
   /**
    * Wall being framed head-on WITHOUT entering edit mode — the read-only focus
-   * state. Unlike `editingWall` this does not lock orbit: the camera flies
-   * square-on, then you're free to look around while the other walls stay
-   * dimmed. Ignored while `editingWall` is set, which outranks it.
+   * state. Holds the camera square-on the way edit mode does — OrbitControls is
+   * switched off for the duration, because a head-on view you drift off at the
+   * first mouse move isn't one. The difference from `editingWall` is only that
+   * nothing here is editable. Ignored while `editingWall` is set, which
+   * outranks it.
    */
   focusedWall?: FocusedWall | null
   /** Latest "fly to this preset" request; see PresetRequest. */
@@ -193,6 +195,15 @@ export function CameraController({
   // Preset requests and wall focus each fire once per change, not per render.
   const lastHandledPresetKey = useRef<number>(-1)
   const prevFocusedWallKey = useRef<string | null>(null)
+  /**
+   * True only once the focus effect has resolved a pose and aimed
+   * `targetTarget` at it. The frame loop must gate the camera hold on THIS, not
+   * on `focusedWall != null` — a focus request that can't resolve (wall deleted,
+   * wallConfig not loaded yet) would otherwise disable orbit and pin the camera
+   * on a stale target, which on a surface that never enters edit mode is the
+   * zero vector: locked, staring at the world origin.
+   */
+  const focusPoseArmed = useRef(false)
   const pendingAnimation = useRef(false)
   const targetTarget = useRef(new THREE.Vector3())
   const shouldNotifyOnComplete = useRef(false)
@@ -342,30 +353,50 @@ export function CameraController({
   }, [presetRequest, editingWall, camera])
 
   /**
-   * Fly head-on to a focused wall (read-only focus, not edit mode). Unlike edit
-   * mode this does not lock orbit afterwards — see the controls.enabled line in
-   * the frame loop, which is intentionally left keyed on editingWall alone.
+   * Fly head-on to a focused wall — the same framing edit mode uses, and, since
+   * it's the same gesture, held the same way: the frame loop keeps the camera
+   * pinned and OrbitControls off for as long as focus lasts. Read-only, so you
+   * get the square-on view of the wall without the editing UI.
    *
-   * Clearing focus deliberately does NOT fly the camera back: orbit stays live
-   * while focused, so the user may have moved somewhere on purpose, and yanking
-   * them away on exit would fight that. Exiting just restores the dimming.
+   * Clearing focus deliberately does NOT fly the camera back. It leaves you
+   * looking at the wall you asked for, with control handed back — flying you
+   * somewhere else on exit would be a second unrequested camera move.
    */
   useEffect(() => {
+    // editingWall is part of the key, not just a guard below, so that any future
+    // path which sets it WITHOUT clearing focus still re-runs this effect and
+    // disarms. Relying on the guard alone made correctness conventional — it
+    // held only because the one enter-edit path happens to clear focus first —
+    // and the bug that convention hid (camera pinned to a stale target with
+    // orbit off, after exiting edit) is invisible until someone hits it.
     const key = focusedWall
-      ? `${focusedWall.wallIndex}:${focusedWall.side}:${focusedWall.nonce ?? 0}`
+      ? `${focusedWall.wallIndex}:${focusedWall.side}:${focusedWall.nonce ?? 0}:${editingWall ?? 'none'}`
       : null
     if (key === prevFocusedWallKey.current) return
     prevFocusedWallKey.current = key
 
-    if (!focusedWall || !wallConfig || editingWall !== null) return
+    if (!focusedWall || !wallConfig || editingWall !== null) {
+      focusPoseArmed.current = false
+      return
+    }
 
     const pose = getWallFocusPose(wallConfig, focusedWall.wallIndex, focusedWall.side)
-    if (!pose) return // wall was deleted out from under a stale focus
+    if (!pose) {
+      // Wall deleted out from under a stale focus. Leave the camera alone
+      // rather than holding it on a wall that isn't there.
+      focusPoseArmed.current = false
+      return
+    }
+
+    // The frame loop re-aims at this every frame while focus holds, so it has
+    // to be the focused wall's centre and not whatever edit mode last set.
+    targetTarget.current.copy(pose.target)
 
     const controls = getControls(orbitControlsRef)
     const fromTarget = controls ? controls.target.clone() : pose.target.clone()
     const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : ROOM_DEFAULT_FOV
     beginSwoosh(camera.position.clone(), fromTarget, pose.position, pose.target, fromFov, pose.fov, false)
+    focusPoseArmed.current = true
     // wallConfig intentionally omitted, same reason as the preset effect above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusedWall, editingWall, camera])
@@ -463,7 +494,18 @@ export function CameraController({
     // isFollowing and re-enables input on the next frame — no stuck-disabled
     // state). The presenter cursor (B.3.1) is passive observation and does NOT
     // suppress the presenter's own controls.
-    controls.enabled = editingWall === null && !isAnimating.current && !isFollowing
+    //
+    // Wall focus holds the camera too. Flying square-on and then letting the
+    // very next mouse move drift off-axis isn't "head-on", it's a brief glance
+    // at head-on — and the point of the gesture is to READ the wall. Leaving
+    // focus (Escape, a floor click, or Exit focus) hands control straight back.
+    // Gated on the armed ref rather than the prop, and excluding follow mode:
+    // a follower whose camera is being lerped to the presenter's pose must not
+    // also have its aim overridden, or position follows while orientation
+    // doesn't.
+    const holdingFocus = focusPoseArmed.current && editingWall === null && !isFollowing
+    controls.enabled =
+      editingWall === null && !holdingFocus && !isAnimating.current && !isFollowing
     const c = controls as { enableDamping?: boolean }
     c.enableDamping = false
     controls.update()
@@ -474,7 +516,7 @@ export function CameraController({
       restoreOnNextFrame.current = false
     }
 
-    if (editingWall !== null && !isAnimating.current) {
+    if ((editingWall !== null || holdingFocus) && !isAnimating.current) {
       camera.lookAt(targetTarget.current)
       camera.up.set(0, 1, 0)
       camera.updateProjectionMatrix()

@@ -53,12 +53,13 @@ export default function RoomViewPresets({ onPreset, isFocused = false, onExitFoc
       {isFocused && onExitFocus && (
         <>
           <span aria-hidden className="w-px self-stretch my-1" style={{ background: ROOM.hairline }} />
-          {/* Focus can also be left with Escape or by clicking the floor, but
-              neither is discoverable — this is the visible way out. */}
+          {/* Focus holds the camera square-on, so this is the visible way to get
+              it back — Escape and a floor click do the same but neither is
+              discoverable. */}
           <button
             type="button"
             onClick={onExitFocus}
-            title="Show every wall again (Esc)"
+            title="Release the camera and show every wall again (Esc)"
             className="px-4 py-1.5 rounded-full text-[10px] uppercase tracking-[0.16em] transition-opacity hover:opacity-90"
             style={{ fontFamily: MONO_STACK, background: ROOM.accent, color: ROOM.wall, fontWeight: 700 }}
           >

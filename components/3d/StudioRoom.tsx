@@ -761,9 +761,10 @@ export default function StudioRoom(props: StudioRoomProps) {
   }, [])
 
   /**
-   * Wall focus — camera square-on to one wall with every other wall ghosted.
-   * Distinct from `editingWall`: focus is read-only and leaves orbit live, so
-   * it's reachable on archived rooms and by users who can't edit walls.
+   * Wall focus — camera held square-on to one wall with every other wall
+   * ghosted. Same framing and same camera hold as edit mode; the difference is
+   * that nothing is editable, which is why it's reachable on archived spaces
+   * and by users who can't edit walls.
    */
   const [focusedWall, setFocusedWall] = useState<FocusedWall | null>(null)
   const [presetRequest, setPresetRequest] = useState<PresetRequest | null>(null)
@@ -1331,6 +1332,13 @@ export default function StudioRoom(props: StudioRoomProps) {
     // its own head-on camera and passes editingWall as the un-dimmed wall.
     // Deliberately NOT also setting focusedWall: it would outlive the edit
     // session and leave the room ghosted after exiting back to the overview.
+    //
+    // Any focus already running is cleared, because the two are alternative
+    // answers to "which wall am I looking at" and edit mode owns the camera
+    // while it's on. Leaving one set meant that arriving from a Plan-view wall
+    // click, editing, then exiting would fly to the saved overview pose and
+    // then immediately be re-aimed back at the wall with orbit off.
+    setFocusedWall(null)
     // Belt-and-suspenders prefetch for users who double-click without hovering
     // (touch, fast clickers, keyboard). Idempotent — handleWallHover early-
     // returns for already-prefetched walls.
