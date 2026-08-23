@@ -10,7 +10,6 @@ import { isPermanentFailure, unavailableMessage } from '@/lib/transcription/type
 import { fitPlacedSize, isCanvasImage, readImageSize, rejectionReason } from '@/lib/canvas/imageNode'
 import { critChipDate } from '@/lib/desk/zones'
 import type { DeskZone } from '@/lib/desk/zones'
-import DeskToolRail, { type DeskTool } from '@/components/desk/DeskToolRail'
 import CritColumn from '@/components/desk/CritColumn'
 
 /**
@@ -20,7 +19,7 @@ import CritColumn from '@/components/desk/CritColumn'
  * separate "desk" record — you have one desk and this page is it, which is why
  * the header counts crits rather than naming a desk.
  *
- * The tool rail acts on the FOCUSED column. Writes go straight to the API
+ * Each card carries its own actions. Writes go straight to the API
  * rather than through the focused column's hooks, because those hooks live
  * inside the column component and there is no legal way to reach into one from
  * here. The column is told to reload by a per-crit nonce instead.
@@ -36,12 +35,11 @@ export default function DeskPage() {
   const { upload } = useDirectUpload()
   const speech = useSpeechTranscription()
 
-  const [tool, setTool] = useState<DeskTool>('select')
   const [activeCritId, setActiveCritId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
-  /** Per-crit reload nonce; see the note on the tool rail above. */
+  /** Per-crit reload nonce; see the note above. */
   const [refreshKeys, setRefreshKeys] = useState<Record<string, number>>({})
   /** The crit currently being recorded into, if any. */
   const [recordingCritId, setRecordingCritId] = useState<string | null>(null)
@@ -332,30 +330,6 @@ export default function DeskPage() {
 
   // ---------------------------------------------------------------------------
 
-  const runTool = useCallback(
-    (picked: DeskTool) => {
-      setTool(picked)
-      if (picked === 'select') return
-      if (!activeCritId) {
-        setProblem('Make a crit first, then pick a tool.')
-        return
-      }
-      // Note and Next steps open an inline composer on the focused column
-      // rather than a window.prompt. Once a browser shows "prevent this page
-      // from creating additional dialogs" and the user ticks it, prompt()
-      // returns null forever and both tools go silently dead for the session —
-      // and a prompt cannot take a multi-line note anyway.
-      if (picked === 'note') setComposer({ critId: activeCritId, kind: 'note' })
-      if (picked === 'steps') setComposer({ critId: activeCritId, kind: 'step' })
-      if (picked === 'voice') toggleRecording(activeCritId)
-      if (picked === 'pin' || picked === 'photo') {
-        pickZoneRef.current = picked === 'pin' ? 'shared' : 'private'
-        fileInputRef.current?.click()
-      }
-    },
-    [activeCritId, toggleRecording]
-  )
-
   const submitComposer = useCallback(
     async (text: string) => {
       if (!composer) return
@@ -452,17 +426,6 @@ export default function DeskPage() {
       )}
 
       <div className="flex-1 flex min-h-0">
-        <DeskToolRail
-          active={tool}
-          recording={listening}
-          onPick={runTool}
-          // Voice stays live during an upload: `busy` used to disable the whole
-          // rail, which made Stop unreachable while a photo was uploading even
-          // though the recording carried on.
-          disabled={busy !== null}
-          keepEnabled={listening ? ['voice'] : undefined}
-        />
-
         {/* ---------------- the crits ---------------- */}
         <div ref={scrollerRef} className="flex-1 overflow-x-auto overflow-y-auto p-6">
           {loading && crits.length === 0 ? (
@@ -508,6 +471,21 @@ export default function DeskPage() {
                         : null
                     }
                     onOpen={() => router.push(`/desk-crits/${crit.id}`)}
+                    onPin={() => {
+                      setActiveCritId(crit.id)
+                      pickZoneRef.current = 'shared'
+                      fileInputRef.current?.click()
+                    }}
+                    onPhoto={() => {
+                      setActiveCritId(crit.id)
+                      pickZoneRef.current = 'private'
+                      fileInputRef.current?.click()
+                    }}
+                    onNote={() => setComposer({ critId: crit.id, kind: 'note' })}
+                    onStep={() => setComposer({ critId: crit.id, kind: 'step' })}
+                    onToggleRecording={() => toggleRecording(crit.id)}
+                    recording={listening && recordingCritId === crit.id}
+                    busy={busy !== null && activeCritId === crit.id}
                     composer={composer?.critId === crit.id ? composer.kind : null}
                     onComposerSubmit={submitComposer}
                     onComposerCancel={() => setComposer(null)}

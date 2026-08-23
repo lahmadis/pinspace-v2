@@ -1,7 +1,18 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Loader2, Maximize2, Sparkles, Trash2 } from 'lucide-react'
+import {
+  Check,
+  ImageIcon,
+  ListChecks,
+  Loader2,
+  Maximize2,
+  Mic,
+  Pin,
+  Sparkles,
+  StickyNote,
+  Trash2,
+} from 'lucide-react'
 import { useCanvasNodes } from '@/hooks/useCanvasNodes'
 import { useCritTranscript } from '@/hooks/useCritTranscript'
 import { useCritSummary } from '@/hooks/useCritSummary'
@@ -30,6 +41,13 @@ export default function CritColumn({
   onComposerSubmit,
   onComposerCancel,
   onOpen,
+  onPin,
+  onPhoto,
+  onNote,
+  onStep,
+  onToggleRecording,
+  recording = false,
+  busy = false,
 }: {
   crit: DeskCrit
   /** The crit the tool rail is pointed at. */
@@ -46,6 +64,23 @@ export default function CritColumn({
   /** Open this crit at working size. The card is the overview; that is where
    *  boards get laid out, drawn over and annotated. */
   onOpen?: () => void
+  /**
+   * Per-card actions.
+   *
+   * These used to live on a tool rail down the left of the board, which acted
+   * on whichever column was "focused". That indirection existed only because
+   * the rail was shared — you had to click a column, then click a tool, and
+   * hope the right one was armed. On the card the target is unambiguous.
+   */
+  onPin?: () => void
+  onPhoto?: () => void
+  onNote?: () => void
+  onStep?: () => void
+  onToggleRecording?: () => void
+  /** Whether THIS crit is the one being recorded into. */
+  recording?: boolean
+  /** An upload is in flight for this crit. */
+  busy?: boolean
 }) {
   // realtime off: see the option's note. A personal crit has one viewer, and
   // the board reloads this column through refreshKey after its own writes.
@@ -197,7 +232,14 @@ export default function CritColumn({
 
       {/* ---------------- shared with prof ---------------- */}
       <div className="px-5">
-        <SectionLabel>Shared with prof</SectionLabel>
+        <div className="flex items-center justify-between gap-2">
+          <SectionLabel>Shared with prof</SectionLabel>
+          {onPin && (
+            <CardAction onClick={onPin} disabled={busy} icon={<Pin className="w-3 h-3" />}>
+              Pin work
+            </CardAction>
+          )}
+        </div>
         <div className="rounded-xl border border-[#16181D]/8 bg-[#F7F9FC] p-3 min-h-[132px]">
           {nodesLoading && shared.length === 0 ? (
             <div className="flex items-center gap-2 text-xs text-[#8A8FA0] h-[108px]">
@@ -225,7 +267,26 @@ export default function CritColumn({
 
       {/* ---------------- only you ---------------- */}
       <div className="px-5 pt-4 pb-5 space-y-3">
-        <SectionLabel>Only you</SectionLabel>
+        <div className="flex items-center justify-between gap-2">
+          <SectionLabel>Only you</SectionLabel>
+          <div className="flex items-center gap-1">
+            {onNote && (
+              <CardAction onClick={onNote} icon={<StickyNote className="w-3 h-3" />}>
+                Note
+              </CardAction>
+            )}
+            {onStep && (
+              <CardAction onClick={onStep} icon={<ListChecks className="w-3 h-3" />}>
+                Step
+              </CardAction>
+            )}
+            {onPhoto && (
+              <CardAction onClick={onPhoto} disabled={busy} icon={<ImageIcon className="w-3 h-3" />}>
+                Ref
+              </CardAction>
+            )}
+          </div>
+        </div>
 
         {notes.map(({ node, props }) =>
           node.type === 'image' ? (
@@ -281,11 +342,30 @@ export default function CritColumn({
             <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0]">
               Voice note
             </span>
-            {transcript.segments.length > 0 && (
-              <span className="text-[11px] text-[#8A8FA0]">
-                {transcript.segments.length} clip{transcript.segments.length === 1 ? '' : 's'}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {transcript.segments.length > 0 && (
+                <span className="text-[11px] text-[#8A8FA0]">
+                  {transcript.segments.length} clip{transcript.segments.length === 1 ? '' : 's'}
+                </span>
+              )}
+              {onToggleRecording && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleRecording()
+                  }}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold ${
+                    recording
+                      ? 'bg-[#D64545] text-white'
+                      : 'bg-[#16181D]/6 text-[#5A5E6B] hover:bg-[#16181D]/10'
+                  }`}
+                >
+                  <Mic className="w-3 h-3" />
+                  {recording ? 'Stop' : 'Record'}
+                </button>
+              )}
+            </div>
           </div>
           {transcript.segments.length === 0 && !liveTranscript ? (
             <p className="text-xs text-[#8A8FA0]">Nothing recorded yet.</p>
@@ -551,5 +631,35 @@ function InlineComposer({
         </span>
       </div>
     </div>
+  )
+}
+
+/** A small action in a card section header. */
+function CardAction({
+  children,
+  icon,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode
+  icon: React.ReactNode
+  onClick: () => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      // The card's own onClick focuses the column; a header action must not
+      // also do that, or every action reads as "you also selected this".
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-[#5A5E6B] hover:bg-[#16181D]/6 disabled:text-[#B6BAC6] disabled:hover:bg-transparent"
+    >
+      {icon}
+      {children}
+    </button>
   )
 }

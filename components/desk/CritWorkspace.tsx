@@ -484,9 +484,16 @@ export default function CritWorkspace({ canvasId }: { canvasId: string }) {
         return
       }
       void commitCallout()
+      // Trace and callout mark up ONE sheet, so they need one open. They used
+      // to be disabled until you opened one yourself, which meant the button
+      // did nothing at all when you pressed it — it read as broken rather than
+      // as a precondition. Pressing it now opens the sheet for you.
+      if ((next === 'trace' || next === 'callout') && !focused && sheets.length > 0) {
+        setFocusedId(sheets[0].id)
+      }
       setTool(next)
     },
-    [commitCallout]
+    [commitCallout, focused, sheets]
   )
 
   return (
@@ -511,7 +518,7 @@ export default function CritWorkspace({ canvasId }: { canvasId: string }) {
         </div>
         <div className="space-y-1">
           {TOOLS.map((t) => {
-            const inert = Boolean(t.needsSheet && !focused)
+            const inert = Boolean(t.needsSheet && sheets.length === 0)
             const isActive = tool === t.id && !inert
             const isBusy = busy === t.id
             return (
@@ -521,7 +528,7 @@ export default function CritWorkspace({ canvasId }: { canvasId: string }) {
                 disabled={inert || Boolean(busy)}
                 onClick={() => pickTool(t.id)}
                 aria-pressed={isActive}
-                title={inert ? 'Open a sheet first — these mark up one sheet at a time' : t.label}
+                title={inert ? 'Pin some work first — these mark up a sheet' : t.label}
                 className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-left transition-colors ${
                   isActive
                     ? 'bg-[#16181D] text-white'
