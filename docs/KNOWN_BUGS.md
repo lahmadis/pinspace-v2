@@ -193,6 +193,15 @@ carries `vectorEffect="non-scaling-stroke"`, which reinterprets width in outer
 pixel space. A width in viewBox units drew a 0.004px hairline — invisible,
 while the rows saved perfectly, so trace looked like it did nothing.
 
+**The callout composer opens on CLICK, never on pointerdown.** Opening it on
+pointerdown destroyed it inside the same gesture: the textarea mounts and
+autofocuses mid-click, then the remainder of that click moves focus away and
+fires `onBlur`, which committed an empty draft and closed the composer. Nothing
+appeared, so the button read as dead — twice. Two guards now, because either
+alone leaves the trap armed: it opens on click, and blur only commits when
+there is actually text. Trace stays on pointerdown, which is correct — it needs
+the press to start a drag.
+
 **Trace and callout open a sheet rather than sitting disabled.** They mark up
 one sheet, so they need one open — but gating them behind that as a disabled
 button meant pressing them did nothing at all, which reads as broken rather
