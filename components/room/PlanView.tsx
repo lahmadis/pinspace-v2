@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import { Grid2x2, Box } from 'lucide-react'
 import type { Board } from '@/types'
 import { ROOM, MONO_STACK, SANS_STACK } from '@/lib/room/palette'
 import { wallSegments, planBounds, type WallConfigLike } from '@/lib/room/planGeometry'
@@ -266,15 +267,63 @@ export default function PlanView({
             position: 'absolute',
             bottom: 16,
             left: 16,
-            display: 'flex',
-            gap: 6,
             zIndex: 1,
+            width: 208,
+            background: ROOM.wall,
+            border: `1px solid ${ROOM.hairline}`,
+            borderRadius: 12,
+            boxShadow: '0 4px 16px rgba(22,24,29,0.10)',
+            overflow: 'hidden',
           }}
         >
-          {onReconfigureWalls && (
-            <PlanAction label="Reconfigure walls" onClick={onReconfigureWalls} />
-          )}
-          {onPlaceModel && <PlanAction label="Place 3D model" onClick={onPlaceModel} />}
+          <div
+            style={{
+              padding: '9px 12px 7px',
+              fontFamily: MONO_STACK,
+              fontSize: 9.5,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              color: ROOM.ink2,
+              borderBottom: `1px solid ${ROOM.hairline}`,
+            }}
+          >
+            Edit room
+          </div>
+          <div style={{ padding: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {onReconfigureWalls && (
+              <PlanAction
+                label="Reconfigure walls"
+                icon={<Grid2x2 size={14} strokeWidth={2} />}
+                onClick={onReconfigureWalls}
+              />
+            )}
+            {onPlaceModel && (
+              <PlanAction
+                label="Place 3D model"
+                icon={<Box size={14} strokeWidth={2} />}
+                onClick={onPlaceModel}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* A room with no walls yet draws an empty sheet, which says nothing
+          about what to do next. The plan IS the wall editor's front door, so
+          the empty state points at it rather than leaving a blank page. */}
+      {segments.length === 0 && (
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"
+          style={{ gap: 6, padding: 24 }}
+        >
+          <p style={{ fontFamily: SANS_STACK, fontSize: 14, fontWeight: 600, color: ROOM.ink }}>
+            No walls yet
+          </p>
+          <p style={{ fontFamily: MONO_STACK, fontSize: 11, color: ROOM.ink2, textAlign: 'center' }}>
+            {onReconfigureWalls
+              ? 'Use Reconfigure walls, bottom left, to lay out the room.'
+              : 'Nobody has laid out this room yet.'}
+          </p>
         </div>
       )}
 
@@ -435,25 +484,38 @@ export default function PlanView({
  * on top of it, so they should read as an overlay rather than compete with the
  * linework.
  */
-function PlanAction({ label, onClick }: { label: string; onClick: () => void }) {
+function PlanAction({
+  label,
+  icon,
+  onClick,
+}: {
+  label: string
+  icon: React.ReactNode
+  onClick: () => void
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       style={{
-        padding: '7px 12px',
-        borderRadius: 9,
-        border: `1px solid ${ROOM.hairline}`,
-        background: ROOM.wall,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 9,
+        width: '100%',
+        padding: '8px 9px',
+        borderRadius: 8,
+        border: 'none',
+        background: 'transparent',
         color: ROOM.ink,
         fontFamily: SANS_STACK,
-        fontSize: 12,
+        fontSize: 12.5,
         fontWeight: 600,
         cursor: 'pointer',
-        boxShadow: '0 2px 8px rgba(22,24,29,0.08)',
+        textAlign: 'left',
       }}
-      className="focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]/40"
+      className="hover:bg-[#16181D]/[0.055] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]/40"
     >
+      <span style={{ color: ROOM.ink2, display: 'flex', flexShrink: 0 }}>{icon}</span>
       {label}
     </button>
   )
