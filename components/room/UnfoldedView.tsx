@@ -463,25 +463,69 @@ export default function UnfoldedView({
           Developed Surface · {wallConfig.walls.length} walls
         </span>
         <span className="text-[10px] tracking-[0.14em] opacity-60" style={{ fontFamily: MONO_STACK, color: ROOM.ink }}>
-          {editing ? 'drag to move · ← → ↑ ↓ to nudge · del to DELETE · ⌘Z undo' : '← → to step students'}
+          {/* The editing shortcuts live in the bottom-left panel now, beside
+              the toggle that turns them on. Repeating them here would put the
+              same text in two places, and this end of the band is the half the
+              breadcrumb covers anyway. */}
+          ← → to step students
         </span>
-        {canEdit && (
+      </div>
+
+      {/* Bottom-left, matching the Plan view's "Edit room" panel.
+          Not in the header band above: that band is the top of a
+          `fixed inset-0 z-20` container, and BOTH its ends are painted over by
+          z-40 chrome — the breadcrumb at top-4 left-4 and Share at top-4
+          right-4. A control there is not just cramped, it is unclickable.
+          Bottom-left is the one corner nothing else claims (the revision strip
+          is bottom-centre and this container is already inset above it). */}
+      {canEdit && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 16,
+            left: 16,
+            zIndex: 2,
+            background: ROOM.wall,
+            border: `1px solid ${editing ? ROOM.accent : ROOM.hairline}`,
+            borderRadius: 12,
+            boxShadow: '0 4px 16px rgba(22,24,29,0.10)',
+            overflow: 'hidden',
+          }}
+        >
           <button
             type="button"
             onClick={() => setEditing((v) => !v)}
-            className="ml-auto flex items-center gap-1.5 px-2.5 py-1 text-[10px] uppercase tracking-[0.14em]"
+            className="flex items-center gap-2 px-3 py-2.5 text-[11px] uppercase tracking-[0.14em] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]/40"
             style={{
               fontFamily: MONO_STACK,
+              fontWeight: 700,
               color: editing ? '#FFFFFF' : ROOM.ink,
               background: editing ? ROOM.accent : 'transparent',
-              border: `1px solid ${editing ? ROOM.accent : ROOM.hairline}`,
+              cursor: 'pointer',
+              border: 'none',
             }}
           >
-            <Pencil className="w-3 h-3" />
-            {editing ? 'Editing' : 'Edit'}
+            <Pencil className="w-3.5 h-3.5" />
+            {editing ? 'Editing walls' : 'Edit layout'}
           </button>
-        )}
-      </div>
+          {editing && (
+            <p
+              className="px-3 pb-2.5 pt-2"
+              style={{
+                fontFamily: MONO_STACK,
+                fontSize: 10,
+                lineHeight: 1.5,
+                color: ROOM.ink2,
+                maxWidth: 210,
+                borderTop: `1px solid ${ROOM.hairline}`,
+              }}
+            >
+              Drag a sheet to move it, even onto another wall. Arrows nudge,
+              Del deletes, ⌘Z undoes.
+            </p>
+          )}
+        </div>
+      )}
 
       <div ref={scrollRef} className="flex-1 overflow-x-auto overflow-y-auto">
         <div className="flex items-end" style={{ padding: `${PLATE_BAND_H + 24}px 32px ${TITLE_BLOCK_H + 40}px` }}>
