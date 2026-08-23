@@ -171,10 +171,33 @@ picture rather than the orphans. Any other path that deletes an image node must
 do the same, or the marks survive their picture: unreachable, undeletable, and
 still counted.
 
-**Trace width is in PIXELS.** The overlay's viewBox is 0..1 and the polyline
+**The pen palette is shared; the storage is not.** `lib/trace/pens.ts` holds
+the four colours and two weights, imported by BOTH the lightbox and the crit
+workspace. This was a deliberate call (confirmed with the user): the two
+annotation implementations cannot share storage without turning crit work into
+`boards` rows — which would mean a migration, hiding a workspace from every
+listing, and desk crits inheriting the boards access model (members and
+superadmin) in place of their owner-only guarantee. They can share what the pen
+looks like, and that is the part a user would notice drifting.
+
+**Weights are stored as a FRACTION of the board, in both places.** The lightbox
+draws to a canvas and multiplies by the rendered size. The crit workspace
+strokes an SVG with `vectorEffect="non-scaling-stroke"`, which reinterprets
+width in outer pixel space, so it converts with `tracePx(fraction, boxW)` at
+paint time and observes its own box with a ResizeObserver. Passing the stored
+fraction straight through drew a 0.004px hairline — invisible, while the rows
+saved perfectly, so trace looked like it did nothing.
+
+**Trace width is in PIXELS at paint time only.** The overlay's viewBox is 0..1 and the polyline
 carries `vectorEffect="non-scaling-stroke"`, which reinterprets width in outer
 pixel space. A width in viewBox units drew a 0.004px hairline — invisible,
 while the rows saved perfectly, so trace looked like it did nothing.
+
+**Trace and callout open a sheet rather than sitting disabled.** They mark up
+one sheet, so they need one open — but gating them behind that as a disabled
+button meant pressing them did nothing at all, which reads as broken rather
+than as a precondition. They now focus the first sheet and arm themselves, and
+only go inert when nothing is pinned.
 
 **The stage box is sized by `aspect-ratio`, not by the image.** It has to be
 exactly the picture, because every mark is a percentage of it. It previously

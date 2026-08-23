@@ -22,11 +22,10 @@ import { Download, ExternalLink } from 'lucide-react'
 // collapsing to the one blue accent — but pulled into the same muted
 // warm-paper/cool-blue family as the rest of the room instead of bright
 // saturated primaries. Red matches ROOM.redline (lib/room/palette.ts).
-const TRACE_COLORS = ['#C2452D', '#B08430', '#4E9F8F', '#3B6EF6']
-const TRACE_WIDTHS: Array<{ label: string; value: number }> = [
-  { label: 'Thin', value: 0.004 },
-  { label: 'Thick', value: 0.01 },
-]
+// Shared with the desk crit workspace, which draws over work too. The two
+// store their marks differently and always will; the pen should still be the
+// same pen. See lib/trace/pens.ts.
+import { TRACE_COLORS, TRACE_WIDTHS } from '@/lib/trace/pens'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 
 interface LightboxModalProps {

@@ -10,6 +10,7 @@ import {
   Loader2,
   ArrowLeft,
   Trash2,
+  Undo2,
   X,
 } from 'lucide-react'
 import { useCanvasNodes } from '@/hooks/useCanvasNodes'
@@ -25,6 +26,7 @@ import {
   readImageSize,
   rejectionReason,
 } from '@/lib/canvas/imageNode'
+import { TRACE_COLORS, TRACE_WIDTHS, tracePx } from '@/lib/trace/pens'
 import type { CanvasNode } from '@/lib/canvas/types'
 
 /**
@@ -71,20 +73,17 @@ const TOOLS: ToolDef[] = [
   },
 ]
 
-const TRACE_COLOR = '#C2452D'
 /**
- * Pen width in CSS PIXELS, not viewBox units.
+ * Stroke weight is stored as a FRACTION of the sheet, the same as the lightbox,
+ * and converted to pixels only at paint time.
  *
- * The overlay's viewBox is 0..1, so a width expressed in user units would be a
- * fraction of the sheet — and `vectorEffect="non-scaling-stroke"` below
- * reinterprets width in the outer pixel space, cancelling that scale. Setting
- * 0.004 with non-scaling-stroke drew a 0.004px hairline: invisible, while the
- * rows saved perfectly, so trace looked like it silently did nothing.
- *
- * Pixels are also the right unit for a pen. It should stay the same thickness
- * whether the sheet is small or full-bleed, the way a real marker does.
+ * The overlay is an SVG whose viewBox is 0..1 with
+ * `vectorEffect="non-scaling-stroke"`, which reinterprets stroke-width in outer
+ * pixel space. Passing the stored fraction straight through drew a 0.004px
+ * hairline — invisible, while the rows saved perfectly, so trace looked like it
+ * silently did nothing. `tracePx` is the conversion, and it needs the sheet's
+ * rendered width, which is why the stage measures itself.
  */
-const TRACE_WIDTH = 3
 /** A drag shorter than this was a tap, not a mark. */
 const MIN_STROKE_POINTS = 3
 
@@ -115,6 +114,8 @@ export default function CritWorkspace({ canvasId }: { canvasId: string }) {
     null
   )
   const [stroke, setStroke] = useState<number[][] | null>(null)
+  const [penColor, setPenColor] = useState<string>(TRACE_COLORS[0])
+  const [penWidth, setPenWidth] = useState<number>(TRACE_WIDTHS[0].value)
 
   /** Ref and state together, always — see draftRef. */
   const setDraft = useCallback((next: { nx: number; ny: number; text: string } | null) => {
@@ -283,11 +284,11 @@ export default function CritWorkspace({ canvasId }: { canvasId: string }) {
         // in a stroke-local bbox, these are 0..1 against the sheet. Same name,
         // different space, would be a trap.
         pts,
-        color: TRACE_COLOR,
-        size: TRACE_WIDTH,
+        color: penColor,
+        size: penWidth,
       },
     })
-  }, [focused, createNode])
+  }, [focused, createNode, penColor, penWidth])
 
   const commitCallout = useCallback(async () => {
     // Taken, not read: whichever of Enter / blur / the next click gets here
@@ -607,6 +608,10 @@ export default function CritWorkspace({ canvasId }: { canvasId: string }) {
               marks={focusedMarks}
               tool={tool}
               stroke={stroke}
+              penColor={penColor}
+              penWidth={penWidth}
+              onPenColor={setPenColor}
+              onPenWidth={setPenWidth}
               draftCallout={draftCallout}
               stageRef={stageRef}
               onBack={() => {
@@ -837,6 +842,10 @@ function FocusedSheet({
   marks,
   tool,
   stroke,
+  penColor,
+  penWidth,
+  onPenColor,
+  onPenWidth,
   draftCallout,
   stageRef,
   onBack,
@@ -853,6 +862,10 @@ function FocusedSheet({
   marks: Annotation[]
   tool: WorkTool
   stroke: number[][] | null
+  penColor: string
+  penWidth: number
+  onPenColor: (c: string) => void
+  onPenWidth: (w: number) => void
   draftCallout: { nx: number; ny: number; text: string } | null
   stageRef: React.RefObject<HTMLDivElement>
   onBack: () => void
@@ -868,6 +881,25 @@ function FocusedSheet({
   const strokes = marks.filter((m) => m.node.type === 'ink')
   const callouts = marks.filter((m) => m.node.type === 'sticky')
   const drawing = tool === 'trace' || tool === 'callout'
+
+  /**
+   * The sheet's rendered width, for converting stored fractional pen weights
+   * into the pixels the SVG strokes in. Observed rather than measured once:
+   * the box changes with the window and with the tab panel opening beneath it,
+   * and a stale width would draw every stroke at the wrong weight.
+   */
+  const [boxW, setBoxW] = useState(0)
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    setBoxW(el.getBoundingClientRect().width)
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width
+      if (typeof w === 'number') setBoxW(w)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [stageRef, sheet.id])
 
   return (
     <div className="h-full flex flex-col">
@@ -888,15 +920,72 @@ function FocusedSheet({
             {tool === 'trace' ? 'Drag to draw' : 'Click where the note goes'}
           </span>
         )}
+        {/* The pen, laid out like the lightbox's: four colours, two weights,
+            undo, clear. Same palette module, so the red is the same red. */}
+        {tool === 'trace' && (
+          <div className="ml-auto flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              {TRACE_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => onPenColor(c)}
+                  aria-label={`Pen colour ${c}`}
+                  aria-pressed={penColor === c}
+                  className={`w-5 h-5 rounded-full transition-transform hover:scale-110 ${
+                    penColor === c ? 'ring-2 ring-offset-1 ring-[#16181D]' : ''
+                  }`}
+                  style={{ background: c }}
+                />
+              ))}
+            </div>
+            <div className="flex items-center rounded-lg bg-[#16181D]/6 p-0.5">
+              {TRACE_WIDTHS.map((w) => (
+                <button
+                  key={w.label}
+                  type="button"
+                  onClick={() => onPenWidth(w.value)}
+                  aria-pressed={penWidth === w.value}
+                  className={`px-2 py-1 rounded text-[10px] font-bold ${
+                    penWidth === w.value ? 'bg-white text-[#16181D] shadow-sm' : 'text-[#5A5E6B]'
+                  }`}
+                >
+                  {w.label}
+                </button>
+              ))}
+            </div>
+            {strokes.length > 0 && (
+              <button
+                type="button"
+                // Newest by createdAt, not last in the array: the list comes
+                // back in whatever order the API gives, so "last" is not
+                // reliably the one just drawn.
+                onClick={() => {
+                  const newest = [...strokes].sort((a, b) =>
+                    a.node.createdAt < b.node.createdAt ? 1 : -1
+                  )[0]
+                  if (newest) onDeleteMark(newest.node.id)
+                }}
+                title="Undo the last stroke"
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-semibold text-[#5A5E6B] hover:bg-[#16181D]/6"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+                Undo
+              </button>
+            )}
+          </div>
+        )}
         {strokes.length > 0 && (
           <button
             type="button"
             onClick={() => strokes.forEach((m) => onDeleteMark(m.node.id))}
             title="Remove every trace stroke on this sheet"
-            className="ml-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-[#5A5E6B] hover:bg-[#16181D]/6"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-[#5A5E6B] hover:bg-[#16181D]/6 ${
+              tool === 'trace' ? '' : 'ml-auto'
+            }`}
           >
             <Trash2 className="w-3.5 h-3.5" />
-            Clear trace
+            Clear
           </button>
         )}
       </div>
@@ -941,15 +1030,14 @@ function FocusedSheet({
             className="absolute inset-0 w-full h-full pointer-events-none"
           >
             {strokes.map((m) => (
-              <StrokePath key={m.node.id} node={m.node} />
+              <StrokePath key={m.node.id} node={m.node} boxW={boxW} />
             ))}
             {stroke && stroke.length > 1 && (
               <polyline
                 points={stroke.map(([x, y]) => `${x},${y}`).join(' ')}
                 fill="none"
-                stroke={TRACE_COLOR}
-                strokeWidth={TRACE_WIDTH}
-                // px, because of non-scaling-stroke — see TRACE_WIDTH.
+                stroke={penColor}
+                strokeWidth={tracePx(penWidth, boxW)}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
@@ -1029,7 +1117,7 @@ function FocusedSheet({
   )
 }
 
-function StrokePath({ node }: { node: CanvasNode }) {
+function StrokePath({ node, boxW }: { node: CanvasNode; boxW: number }) {
   const pts = node.props?.pts
   if (!Array.isArray(pts) || pts.length < MIN_STROKE_POINTS) return null
   const d = (pts as number[][])
@@ -1039,8 +1127,8 @@ function StrokePath({ node }: { node: CanvasNode }) {
     <polyline
       points={d}
       fill="none"
-      stroke={String(node.props?.color ?? TRACE_COLOR)}
-      strokeWidth={Number(node.props?.size ?? TRACE_WIDTH)}
+      stroke={String(node.props?.color ?? TRACE_COLORS[0])}
+      strokeWidth={tracePx(Number(node.props?.size ?? TRACE_WIDTHS[0].value), boxW)}
       strokeLinecap="round"
       strokeLinejoin="round"
       vectorEffect="non-scaling-stroke"
