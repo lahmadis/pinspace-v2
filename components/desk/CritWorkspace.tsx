@@ -331,16 +331,37 @@ export default function CritWorkspace({ canvasId }: { canvasId: string }) {
         setStroke([p])
         return
       }
-      if (tool === 'callout') {
-        const p = normalisedPoint(e)
-        if (!p) return
-        // Save the one already open before opening another, or placing a
-        // second callout silently discards the first one's text.
-        if (draftRef.current) void commitCallout()
-        setDraft({ nx: p[0], ny: p[1], text: '' })
-      }
+      // Callout is deliberately NOT handled here — see onStageClick.
     },
-    [focused, tool, normalisedPoint, commitCallout, setDraft]
+    [focused, tool, normalisedPoint]
+  )
+
+  /**
+   * Place a callout. On CLICK, not pointerdown.
+   *
+   * Opening it on pointerdown destroyed it within the same gesture: the
+   * textarea mounts and autofocuses mid-click, then the rest of that click
+   * moves focus away, firing onBlur — which committed an empty draft and closed
+   * the composer. The bubble never appeared, so the button looked dead. By
+   * click time focus has settled and the composer survives being opened.
+   */
+  const onStageClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (!focused || tool !== 'callout') return
+      const el = stageRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      if (r.width === 0 || r.height === 0) return
+      // Save the one already open before opening another, or placing a second
+      // callout silently discards the first one's text.
+      if (draftRef.current) void commitCallout()
+      setDraft({
+        nx: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
+        ny: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)),
+        text: '',
+      })
+    },
+    [focused, tool, commitCallout, setDraft]
   )
 
   const onStagePointerMove = useCallback(
@@ -621,6 +642,7 @@ export default function CritWorkspace({ canvasId }: { canvasId: string }) {
                 setTool('select')
               }}
               onPointerDown={onStagePointerDown}
+              onClick={onStageClick}
               onPointerMove={onStagePointerMove}
               onPointerUp={() => void commitStroke()}
               onPointerCancel={clearStroke}
@@ -850,6 +872,7 @@ function FocusedSheet({
   stageRef,
   onBack,
   onPointerDown,
+  onClick,
   onPointerMove,
   onPointerUp,
   onPointerCancel,
@@ -870,6 +893,7 @@ function FocusedSheet({
   stageRef: React.RefObject<HTMLDivElement>
   onBack: () => void
   onPointerDown: (e: React.PointerEvent) => void
+  onClick: (e: React.MouseEvent) => void
   onPointerMove: (e: React.PointerEvent) => void
   onPointerUp: () => void
   onPointerCancel: () => void
@@ -1008,6 +1032,7 @@ function FocusedSheet({
             touchAction: drawing ? 'none' : undefined,
           }}
           onPointerDown={onPointerDown}
+          onClick={onClick}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           // Cancel ABORTS. Routing it to commit meant a stroke interrupted by
@@ -1093,6 +1118,7 @@ function FocusedSheet({
                   value={draftCallout.text}
                   onChange={(e) => onDraftChange(e.target.value)}
                   onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => {
                     // Enter commits; Shift+Enter is a newline. isComposing
                     // guards an IME candidate selection, which also sends Enter.
@@ -1103,7 +1129,13 @@ function FocusedSheet({
                     if (e.key === 'Escape') onDraftCancel()
                     e.stopPropagation()
                   }}
-                  onBlur={onDraftCommit}
+                  // Only commit on blur when there is something to save. A
+                  // stray blur on an EMPTY draft used to close the composer,
+                  // which is how opening it on pointerdown killed it. Leaving
+                  // it open is recoverable; vanishing is not.
+                  onBlur={() => {
+                    if (draftCallout.text.trim()) onDraftCommit()
+                  }}
                   rows={2}
                   placeholder="What about this?"
                   className="w-56 px-2 py-1.5 rounded-lg border border-[#3B6EF6] bg-white text-[12px] text-[#16181D] outline-none resize-none shadow-lg"
