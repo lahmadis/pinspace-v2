@@ -145,16 +145,57 @@ All narrow, all in failure or edge paths. `app/desk-crits/page.tsx` unless noted
 - `CritColumn.tsx` — the ⌘ glyph in the composer hint is hardcoded, so Windows
   users see ⌘ rather than Ctrl.
 
-## 8. OPEN — "Trace over" is not built
+## 8. DONE — trace and callouts are built, on canvas nodes not boards
 
-The tool is in the rail, disabled, with the reason in its tooltip. It needs an
-annotation layer over pinned work. The decision recorded at the time: pinned
-work is a `canvas_nodes` image, NOT a `boards` row, because reusing boards
-means making `boards.workspace_id` nullable and reworking all four of its
-workspace-pivoting RLS policies. If trace-over and callouts become important,
-that is the fork to reconsider — 8 users already have several personal
-workspaces and 3 have none, so "just use their personal workspace" is not a
-well-defined shortcut.
+The fork recorded here has been resolved in favour of **canvas nodes**, not
+`boards`. Reusing boards would have meant making `boards.workspace_id` nullable
+and reworking all four of its workspace-pivoting RLS policies, and "just use
+their personal workspace" is not well defined — 8 users have several and 3 have
+none.
+
+So a mark is its own node with `props.onNodeId` pointing at the sheet it sits
+on, and coordinates **normalised 0..1 against that sheet**:
+
+| Mark | `type` | Key props |
+|---|---|---|
+| Trace stroke | `ink` | `onNodeId`, `pts` (0..1 pairs), `color`, `size` |
+| Callout | `sticky` | `onNodeId`, `callout: true`, `nx`, `ny`, `text` |
+
+Both types were already in migration 036's CHECK and `props` is JSON, so this
+needed **no migration**.
+
+**Marks do not cascade in the database.** `props.onNodeId` is JSON, not a
+foreign key, so nothing enforces it. `CritColumn.removeSheet` sweeps a sheet's
+marks before deleting the sheet — marks FIRST, so a half-failure leaves the
+picture rather than the orphans. Any other path that deletes an image node must
+do the same, or the marks survive their picture: unreachable, undeletable, and
+still counted.
+
+**Trace width is in PIXELS.** The overlay's viewBox is 0..1 and the polyline
+carries `vectorEffect="non-scaling-stroke"`, which reinterprets width in outer
+pixel space. A width in viewBox units drew a 0.004px hairline — invisible,
+while the rows saved perfectly, so trace looked like it did nothing.
+
+**The stage box is sized by `aspect-ratio`, not by the image.** It has to be
+exactly the picture, because every mark is a percentage of it. It previously
+shrink-wrapped an `<img>` capped at a hardcoded `calc(100vh-260px)` — a number
+that knew nothing about the tab panel below, so opening the transcript (which
+Record does automatically) shrank the container ~224px while the image's cap
+did not, and every mark shifted. Do not reintroduce a hardcoded viewport cap.
+
+**`pts`, deliberately not `points`.** The canvas's `points` meant pixels in a
+stroke-local bbox; these are fractions of the sheet. Same name for two spaces
+would be a trap.
+
+**Anything reading a crit's nodes must skip `onNodeId` nodes.** They are marks
+on a sheet, not content. `CritColumn` learned this the hard way: a callout is a
+`sticky`, so before the guard it rendered on the desk card as a loose note torn
+out of its picture.
+
+**What this does NOT share with the 3D space.** LightboxModal's trace and
+callouts are keyed to `boards.id` and their own API routes; none of that is
+reused here. The two implementations now have to be kept in step by hand — if
+callouts gain a feature in the lightbox, it does not appear in a crit.
 
 ---
 
@@ -175,6 +216,24 @@ that instead of `localBoards`.
 Narrow in practice — it needs two presses inside about 16ms, and a resize is a
 mouse gesture whose undo is a single press — which is why it is written down
 rather than fixed under time pressure. **Do not fix it by adding a delay.**
+
+---
+
+## 10. OPEN — the whole canvas UI is dead code
+
+`/desk-crits/[id]` stopped mounting `InfiniteCanvas`; the space's canvas tab was
+removed earlier. Nothing routable reaches any of it now:
+
+- `components/canvas/InfiniteCanvas.tsx`
+- `components/canvas/RoomCanvasPanel.tsx` (referenced by nothing at all)
+- `components/canvas/CanvasToolbar.tsx`, `CanvasSelectionBar.tsx`
+- `hooks/useCanvasHistory.ts`, `lib/canvas/history.ts`, `lib/canvas/arrange.ts`
+
+**Do not delete blindly.** `components/canvas/CanvasNodeView.tsx` is still live
+— `CritColumn` imports its `NodeProps` type — and the `canvas_nodes` table, its
+API routes and `hooks/useCanvasNodes.ts` are all load-bearing for desk crits.
+Only the drawing-surface UI above is unreachable. Left in place pending a call
+on whether the canvas comes back.
 
 ---
 

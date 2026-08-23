@@ -72,12 +72,43 @@ export default function CritColumn({
     }
   }, [refreshKey, reloadNodes, reloadTranscript, reloadSummary])
 
+  /**
+   * Delete a pinned sheet AND every mark made on it.
+   *
+   * There is no FK cascade for this — a mark points at its sheet through
+   * `props.onNodeId`, which is JSON, not a reference the database enforces. So
+   * the sweep has to happen here. Without it the marks survive their picture:
+   * nothing renders them (the workspace keys them to a sheet that is gone) and
+   * nothing can delete them, but the counter below still promises they are
+   * there to see.
+   */
+  const removeSheet = useCallback(
+    async (sheetId: string) => {
+      const marks = nodes.filter(
+        (n) => (n.props as { onNodeId?: unknown })?.onNodeId === sheetId
+      )
+      // Marks first. If the sheet went and this failed halfway, the leftovers
+      // would be exactly the orphans this exists to prevent.
+      for (const mark of marks) await deleteNode(mark.id)
+      await deleteNode(sheetId)
+    },
+    [nodes, deleteNode]
+  )
+
   const { shared, notes, drawings } = useMemo(() => {
     const sharedNodes: Array<{ node: (typeof nodes)[number]; props: NodeProps }> = []
     const privateNotes: Array<{ node: (typeof nodes)[number]; props: NodeProps }> = []
     let drawingCount = 0
     for (const node of nodes) {
       const props = node.props as NodeProps
+      // Marks made in the crit workspace — trace strokes and callouts — carry
+      // the id of the sheet they sit on. They are not content of their own:
+      // without this a callout (a sticky) rendered on the card as a loose note
+      // torn out of its picture, and a page of trace read as a pile of them.
+      if (typeof (node.props as { onNodeId?: unknown })?.onNodeId === 'string') {
+        drawingCount += 1
+        continue
+      }
       // A column can only draw the kinds it has a card for. The canvas surface
       // this replaced also wrote ink, shapes, frames and connectors, and those
       // fell through to the note branch — which reads props.text, so an old
@@ -184,7 +215,7 @@ export default function CritColumn({
                   key={node.id}
                   name={props.name}
                   src={props.thumbUrl || props.url}
-                  onRemove={() => void deleteNode(node.id)}
+                  onRemove={() => void removeSheet(node.id)}
                 />
               ))}
             </div>
@@ -239,8 +270,8 @@ export default function CritColumn({
 
         {drawings > 0 && (
           <p className="text-[11px] text-[#8A8FA0] italic">
-            {drawings} drawn item{drawings === 1 ? '' : 's'} from the old canvas aren&rsquo;t shown
-            here yet.
+            {drawings} mark{drawings === 1 ? '' : 's'} on the work — open the crit to see
+            {drawings === 1 ? ' it' : ' them'}.
           </p>
         )}
 

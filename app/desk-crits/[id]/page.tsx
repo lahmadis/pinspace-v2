@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
-import InfiniteCanvas from '@/components/canvas/InfiniteCanvas'
+import CritWorkspace from '@/components/desk/CritWorkspace'
 import { useAuthSession } from '@/hooks/useAuthSession'
 
 /**
@@ -11,12 +11,13 @@ import { useAuthSession } from '@/hooks/useAuthSession'
  *
  * The desk board is a row of CARDS: each one an overview of a crit, enough to
  * see what you pinned and what you still have to do. This is the same crit at
- * working size, on the canvas surface, so pinned boards can be laid out, drawn
- * over and annotated the way they can in the 3D space.
+ * working size: the tool rail on the left, the pinned sheets laid out, and the
+ * transcript in a tab along the bottom.
  *
- * It is the same canvas the space used to carry, mounted against a personal
- * crit instead of a room — which is why that code was kept when the route was
- * dropped rather than deleted.
+ * This used to mount the infinite canvas. It no longer does. A crit is a
+ * handful of sheets you talk over, not an unbounded whiteboard, and putting
+ * them at free-floating coordinates in a space you had to pan around meant
+ * hunting for your own work. See CritWorkspace for what replaced it.
  */
 export default function CritWorkspacePage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -113,9 +114,8 @@ export default function CritWorkspacePage({ params }: { params: { id: string } }
             onKeyDown={(e) => {
               if (e.key === 'Enter') void commitTitle()
               if (e.key === 'Escape') setEditingTitle(false)
-              // The canvas binds single-letter tool shortcuts to its container.
-              // This input is a sibling, so they would not fire anyway — this
-              // keeps that true if the header ever moves inside the canvas.
+              // Kept from when the canvas bound single-letter tool shortcuts:
+              // cheap insurance if the header ever moves inside the workspace.
               e.stopPropagation()
             }}
             className="text-sm font-bold text-[#16181D] bg-white border border-[#3B6EF6]/40 rounded-lg px-2.5 py-1.5 outline-none min-w-0 w-64"
@@ -140,7 +140,7 @@ export default function CritWorkspacePage({ params }: { params: { id: string } }
             Rendering it while the title fetch is in flight would fire the node
             load against an id that may 403, and surface that as an error
             banner on a surface the user never got to see. */}
-        {state === 'ready' && <InfiniteCanvas canvasId={params.id} canEdit />}
+        {state === 'ready' && <CritWorkspace canvasId={params.id} />}
       </div>
     </div>
   )
