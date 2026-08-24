@@ -2,7 +2,7 @@
 
 **Last updated: May 7, 2026**
 
-This Privacy Policy explains how PinSpace ("we," "us," or "our") collects, uses, and protects your information when you use the PinSpace website and services (the "Service"). PinSpace is operated by Sarah Lahmadi, an individual doing business as PinSpace.
+This Privacy Policy explains how pinspace ("we," "us," or "our") collects, uses, and protects your information when you use the pinspace website and services (the "Service"). pinspace is operated by Sarah Lahmadi, an individual doing business as pinspace.
 
 By using the Service, you agree to this Privacy Policy.
 
@@ -10,7 +10,7 @@ By using the Service, you agree to this Privacy Policy.
 
 ### Information you give us
 - **Account information.** When you sign up, we collect your email address, name, and a password (if you set one).
-- **Profile information.** During onboarding, we collect your role (student, faculty, or professional), academic year (if applicable), major or department, age range, and how you heard about PinSpace. This information helps us understand who uses PinSpace and improve the Service.
+- **Profile information.** During onboarding, we collect your role (student, faculty, or professional), academic year (if applicable), major or department, age range, and how you heard about pinspace. This information helps us understand who uses pinspace and improve the Service.
 - **Content you upload.** Images, 3D models, comments, and other materials you upload to the Service.
 - **Communications.** If you email us, we receive your message and any information you include in it.
 
@@ -22,7 +22,7 @@ By using the Service, you agree to this Privacy Policy.
 
 ### Information from third parties
 - **Authentication providers.** When you sign in, our authentication partner (Supabase) handles your login credentials. We receive your verified email address and a unique user identifier.
-- **Institutional information.** If your school or firm has an arrangement with PinSpace, your institution may share information about your membership (such as confirming you are a student at that institution).
+- **Institutional information.** If your school or firm has an arrangement with pinspace, your institution may share information about your membership (such as confirming you are a student at that institution).
 
 ## 2. How We Use Your Information
 
@@ -42,15 +42,15 @@ We do not sell your personal information.
 We share your information only as follows:
 
 - **With other users you authorize.** Content you upload to a workspace is visible to other members of that workspace. Content you publish publicly is visible to anyone who can access the relevant page.
-- **With your institution.** If your school or firm has an arrangement with PinSpace, administrators at your institution may have access to information about your activity within institutional workspaces.
-- **With service providers.** We use third-party services to operate PinSpace, including:
+- **With your institution.** If your school or firm has an arrangement with pinspace, administrators at your institution may have access to information about your activity within institutional workspaces.
+- **With service providers.** We use third-party services to operate pinspace, including:
   - Supabase (database, authentication, file storage)
   - Vercel (web hosting)
   - Sentry (error monitoring)
   - Resend (transactional email)
   These providers process your information on our behalf and are bound by their own privacy and security obligations.
 - **For legal reasons.** We may disclose your information if required by law, subpoena, or court order, or if we believe disclosure is necessary to protect rights, property, or safety.
-- **In connection with a business transaction.** If PinSpace is involved in a merger, acquisition, or sale of assets, your information may be transferred as part of that transaction. We will notify you before your information becomes subject to a different privacy policy.
+- **In connection with a business transaction.** If pinspace is involved in a merger, acquisition, or sale of assets, your information may be transferred as part of that transaction. We will notify you before your information becomes subject to a different privacy policy.
 
 ## 4. Cookies
 
@@ -73,22 +73,22 @@ Depending on where you live, you may have the following rights regarding your pe
 To exercise any of these rights, email slahmadi04@gmail.com. We will respond within the timeframe required by law (typically 30 to 45 days).
 
 ### For California residents (CCPA/CPRA)
-California residents have additional rights, including the right to know what categories of personal information we collect, the right to request deletion, and the right to opt out of the sale or sharing of personal information. PinSpace does not sell or share personal information for cross-context behavioral advertising.
+California residents have additional rights, including the right to know what categories of personal information we collect, the right to request deletion, and the right to opt out of the sale or sharing of personal information. pinspace does not sell or share personal information for cross-context behavioral advertising.
 
 ### For users in the European Economic Area, United Kingdom, and Switzerland (GDPR/UK GDPR)
 The legal bases for processing your information are: (a) your consent (such as when you create an account), (b) performance of a contract (providing the Service), (c) compliance with legal obligations, and (d) our legitimate interests in operating and improving the Service.
 
-You have the right to lodge a complaint with your local data protection authority. PinSpace does not have a designated EU representative; if you have questions, please email slahmadi04@gmail.com.
+You have the right to lodge a complaint with your local data protection authority. pinspace does not have a designated EU representative; if you have questions, please email slahmadi04@gmail.com.
 
 ## 7. Student Data
 
-PinSpace is designed for use in educational settings, and some users are students. We treat student data with care and take reasonable steps to protect it.
+pinspace is designed for use in educational settings, and some users are students. We treat student data with care and take reasonable steps to protect it.
 
-If your school has officially adopted PinSpace, your school may be subject to laws like FERPA (in the United States) regarding student records. In those cases, PinSpace acts as a service provider to your school and follows your school's instructions regarding the handling of student information. Your school's privacy policy may also apply to your use of PinSpace.
+If your school has officially adopted pinspace, your school may be subject to laws like FERPA (in the United States) regarding student records. In those cases, pinspace acts as a service provider to your school and follows your school's instructions regarding the handling of student information. Your school's privacy policy may also apply to your use of pinspace.
 
 ## 8. Children Under 13
 
-PinSpace is not intended for children under 13. We do not knowingly collect personal information from children under 13. If we learn that we have collected information from a child under 13, we will delete it. If you believe a child under 13 has given us information, please email slahmadi04@gmail.com.
+pinspace is not intended for children under 13. We do not knowingly collect personal information from children under 13. If we learn that we have collected information from a child under 13, we will delete it. If you believe a child under 13 has given us information, please email slahmadi04@gmail.com.
 
 ## 9. Security
 
@@ -98,7 +98,7 @@ If we discover a security incident affecting your information, we will notify yo
 
 ## 10. International Data Transfers
 
-PinSpace is operated from the United States. If you use the Service from outside the United States, your information will be transferred to and processed in the United States and other countries where our service providers operate. By using the Service, you consent to this transfer.
+pinspace is operated from the United States. If you use the Service from outside the United States, your information will be transferred to and processed in the United States and other countries where our service providers operate. By using the Service, you consent to this transfer.
 
 ## 11. Changes to This Privacy Policy
 

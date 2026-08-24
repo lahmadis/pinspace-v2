@@ -1,67 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  :root {
-    color-scheme: light;
-    --color-canvas: 255 243 204;
-    --color-paper: 255 252 240;
-    --color-surface-muted: 244 238 220;
-    --color-ink: 11 11 11;
-    --color-text-secondary: 79 74 62;
-    --color-text-muted: 107 100 85;
-    --color-text-dim: 138 130 113;
-    --color-border: 220 213 190;
-    --color-border-light: 235 228 207;
-    --color-primary: 255 200 0;
-    --color-primary-hover: 232 181 0;
-    --color-primary-muted: 255 231 143;
-    --color-secondary: 20 112 92;
-    --color-secondary-hover: 15 87 72;
-    --color-forest: 10 47 40;
-    --color-success: 23 128 94;
-    --color-warning: 179 111 0;
-    --color-danger: 180 51 43;
-    --color-focus: 20 112 92;
-    --radius-sm: 10px;
-    --radius-md: 14px;
-    --radius-lg: 20px;
-    --radius-pill: 999px;
-    --shadow-soft: 0 10px 30px rgb(10 47 40 / 0.10);
-    --shadow-raised: 0 18px 50px rgb(10 47 40 / 0.16);
-    --motion-fast: 140ms;
-    --motion-standard: 220ms;
-    --motion-slow: 360ms;
-  }
-
-  * {
-    border-color: rgb(var(--color-border));
-  }
-
-  html {
-    background: rgb(var(--color-canvas));
-  }
-
   body {
     @apply bg-background text-text-primary font-sans antialiased;
     overflow-x: hidden;
-    min-height: 100vh;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold;
-    letter-spacing: -0.025em;
-  }
-
-  :focus-visible {
-    outline: 3px solid rgb(var(--color-focus));
-    outline-offset: 3px;
-  }
-
-  ::selection {
-    color: rgb(var(--color-ink));
-    background: rgb(var(--color-primary));
   }
 
   /* Edge/IE render their own reveal + clear buttons inside password and text
@@ -93,7 +43,7 @@
 
 @layer components {
   .glass {
-    @apply bg-background-card/80 backdrop-blur-sm border border-border;
+    @apply bg-white/60 backdrop-blur-sm border border-border;
   }
 
   .smooth-transition {
@@ -200,26 +150,15 @@
 
 /* Network container styling */
 .network-canvas {
-  background: linear-gradient(145deg, #0A2F28 0%, #103F35 50%, #0A2F28 100%);
+  background: linear-gradient(145deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
 }
 
 .network-canvas::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at 30% 20%, rgb(255 200 0 / 0.10) 0%, transparent 50%),
-              radial-gradient(ellipse at 70% 80%, rgb(20 112 92 / 0.16) 0%, transparent 50%),
-              radial-gradient(ellipse at 50% 50%, rgb(255 252 240 / 0.04) 0%, transparent 50%);
+  background: radial-gradient(ellipse at 30% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+              radial-gradient(ellipse at 70% 80%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
+              radial-gradient(ellipse at 50% 50%, rgba(16, 185, 129, 0.04) 0%, transparent 50%);
   pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
 }

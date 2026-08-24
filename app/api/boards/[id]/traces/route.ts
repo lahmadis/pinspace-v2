@@ -229,7 +229,7 @@ export async function PUT(
     }
     const roomId = board.room_id as string | null
     if (!roomId) {
-      return NextResponse.json({ error: 'Board has no room' }, { status: 404 })
+      return NextResponse.json({ error: 'Board has no space' }, { status: 404 })
     }
 
     // Identity: guest token (canTrace + room match) OR session (owner/member/superadmin).

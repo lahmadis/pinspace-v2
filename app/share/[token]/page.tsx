@@ -7,27 +7,12 @@ import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 import { Board, FloorTable } from '@/types'
-import WallSystem from '@/components/3d/WallSystem'
+import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from '@/components/3d/WallSystem'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
-import { SceneErrorBoundary } from '@/components/3d/SceneErrorBoundary'
-import { ENGINE_PALETTE } from '@/components/3d/enginePalette'
 import LightboxModal from '@/components/LightboxModal'
 import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
-import { Button } from '@/components/ui'
-import {
-  PublicModelDialog,
-  PublicStatusScreen,
-  PublicStudioEmpty,
-  PublicStudioHeader,
-  PublicStudioInstructions,
-  PublicStudioNavigator,
-} from '@/components/public/PublicStudioShell'
-
-const PINSPACE_FOREST_SCENE_COLOR = ENGINE_PALETTE.forestScene
-const MEDIA_KEY_LIGHT_COLOR = ENGINE_PALETTE.paper
-const MEDIA_GROUND_LIGHT_COLOR = ENGINE_PALETTE.groundLight
 
 interface WallDimensions {
   height: number
@@ -144,6 +129,15 @@ function ShareViewCameraControls({ wallConfig }: { wallConfig: WallConfig | null
         makeDefault
         position={[cameraX, cameraHeight, cameraZ]}
         fov={50}
+        // See StudioRoom's camera: a 0.1 near plane leaves only inches of
+        // depth precision at full zoom-out, which makes WallSystem's stacked
+        // floor/grid/ground planes flicker. Nothing is ever within 5 inches
+        // of the camera here either.
+        near={5}
+        // maxDistance below can exceed three.js's default far of 2000 on a
+        // large room, which clips boards away as you zoom out. Same formula
+        // StudioRoom uses.
+        far={maxDistance + maxWallWidthInches * layoutFactor + 1000}
       />
     </>
   )
@@ -265,7 +259,7 @@ export default function SharePage() {
   }, [token])
 
   useEffect(() => {
-    document.title = roomName ? `${roomName} – pinspace` : 'Shared Studio – pinspace'
+    document.title = roomName ? `${roomName} – pinspace` : 'Shared Space – pinspace'
   }, [roomName])
 
   const handleBoardClick = (board: Board) => {
@@ -296,52 +290,107 @@ export default function SharePage() {
 
   if (loadState === 'loading') {
     return (
-      <PublicStatusScreen status="loading" title="Loading shared studio" description="Preparing the room and its boards." />
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#3B6EF6' }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-white/20 border-t-white mx-auto mb-4" />
+          <p className="text-white/90 font-medium">Loading space…</p>
+        </div>
+      </div>
     )
   }
 
   if (loadState === 'not-found') {
     return (
-      <PublicStatusScreen status="error" title="Link unavailable" description="This link is invalid, expired, or no longer available." />
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#E7ECF5' }}>
+        <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
+          <div className="text-6xl mb-4">🔗</div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Link not found</h2>
+          <p className="text-gray-600">This share link is invalid or has been revoked.</p>
+        </div>
+      </div>
     )
   }
 
   if (loadState === 'error') {
     return (
-      <PublicStatusScreen
-        status="error"
-        title="Studio could not be loaded"
-        description="The shared studio is temporarily unavailable."
-        action={<Button type="button" onClick={() => window.location.reload()}>Try again</Button>}
-      />
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#E7ECF5' }}>
+        <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
+          <div className="text-6xl mb-4">😕</div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Something went wrong</h2>
+          <p className="text-gray-600 mb-6">We had trouble loading this space.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-6 py-3 bg-[#3B6EF6] text-white rounded-lg hover:bg-[#2F5CD6] transition-colors font-medium"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
     )
   }
 
   return (
-    <main className="relative h-[100dvh] w-full overflow-hidden bg-pinspace-forest">
-      <PublicStudioHeader roomName={roomName} modeLabel="View only" boardCount={boards.length} />
-      <PublicStudioNavigator
-        boards={boards.map(({ id, title }) => ({ id, title }))}
-        models={tables.flatMap((table) => table.modelUrl ? [{ id: table.id, url: table.modelUrl }] : [])}
-        onOpenBoard={(id) => {
-          const board = boards.find((candidate) => candidate.id === id)
-          if (board) handleBoardClick(board)
-        }}
-        onOpenModel={setModelViewerUrl}
-      />
-      <PublicStudioInstructions>
-        Select a board to view it. Select a table or model to open its 3D view. Use Browse studio content for keyboard access.
-      </PublicStudioInstructions>
-      {boards.length === 0 && <PublicStudioEmpty title="No boards in this studio yet" description="There is nothing to view here right now." />}
+    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#E7ECF5' }}>
+      {/* Flat, neutral field matching ROOM_SKY_COLOR — see the comment on the
+          equivalent wrapper in app/studio/[id]/page.tsx for why the previous
+          pulsing indigo blur orbs were removed rather than recolored. */}
 
-      <PublicModelDialog modelUrl={modelViewerUrl} onClose={() => setModelViewerUrl(null)}>
-        {modelViewerUrl && <ModelViewer modelUrl={modelViewerUrl} />}
-      </PublicModelDialog>
+      <div className="fixed top-4 left-4 z-40 flex items-center gap-2.5">
+        <a
+          href="/"
+          className="px-5 py-2.5 bg-[#3B6EF6] hover:bg-[#2F5CD6] text-white rounded-xl shadow-lg shadow-[#3B6EF6]/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
+        >
+          pinspace
+        </a>
+        {roomName && (
+          <div
+            className="px-3 py-2 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 text-sm font-medium max-w-[40vw] sm:max-w-xs truncate"
+            title={roomName}
+          >
+            {roomName}
+          </div>
+        )}
+      </div>
 
-      <SceneErrorBoundary resetKey={token}>
+      <div className="fixed top-4 right-4 z-40">
+        <div className="px-4 py-2.5 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 font-medium text-sm flex items-center gap-2">
+          <div className="w-2 h-2 bg-[#3B6EF6] rounded-full animate-pulse" />
+          <span>View Mode</span>
+          <span className="opacity-80">• {boards.length} boards</span>
+        </div>
+      </div>
+
+      <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10 bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full shadow-lg border border-gray-200">
+        <p className="text-sm text-gray-700">
+          <span className="font-semibold">💬 Click boards</span> to view
+          <span className="mx-3 text-gray-400">•</span>
+          <span className="font-semibold">🖱️ Click table/model</span> for 3D view
+          <span className="mx-3 text-gray-400">•</span>
+          <span className="font-semibold">Drag</span> to rotate camera
+        </p>
+      </div>
+
+      {modelViewerUrl && (
+        <div className="fixed inset-0 z-50 bg-slate-900/90 flex flex-col">
+          <div className="flex items-center justify-between p-3 bg-white/10 border-b border-white/20">
+            <span className="text-white font-medium">3D Model</span>
+            <button
+              type="button"
+              onClick={() => setModelViewerUrl(null)}
+              className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium transition-colors"
+            >
+              Close
+            </button>
+          </div>
+          <div className="flex-1 min-h-0">
+            <ModelViewer modelUrl={modelViewerUrl} />
+          </div>
+        </div>
+      )}
+
       <Canvas
-        aria-label="Shared 3D studio"
         shadows
+        dpr={[1, 2]}
         className="w-full h-full"
         gl={{
           shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap },
@@ -349,28 +398,40 @@ export default function SharePage() {
           premultipliedAlpha: false,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
-        style={{ background: PINSPACE_FOREST_SCENE_COLOR }}
+        style={{ background: ROOM_SKY_COLOR }}
       >
-        <color attach="background" args={[PINSPACE_FOREST_SCENE_COLOR]} />
+        {/* Must match ROOM_SKY_COLOR/getRoomFogParams — see the comment on
+            those exports in components/3d/WallSystem.tsx. */}
+        <color attach="background" args={[ROOM_SKY_COLOR]} />
+        {wallConfig && (() => {
+          const { fogNear, fogFar } = getRoomFogParams(wallConfig)
+          return <fog attach="fog" args={[ROOM_SKY_COLOR, fogNear, fogFar]} />
+        })()}
         <ambientLight intensity={0.5} />
+        {/* Key light. Matches the editor (see StudioRoom): the old [15,20,10]
+            sat BELOW the top of a 96" wall with a frustum too small to contain
+            a default room, so shadows truncated at a hard line partway across
+            the floor — and the same room looked different here than in the
+            editor. */}
         <directionalLight
-          position={[15, 20, 10]}
+          position={[400, 700, 300]}
           intensity={1.2}
           castShadow
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
-          shadow-camera-far={500}
-          shadow-camera-left={-200}
-          shadow-camera-right={200}
-          shadow-camera-top={200}
-          shadow-camera-bottom={-200}
+          shadow-camera-near={1}
+          shadow-camera-far={2500}
+          shadow-camera-left={-700}
+          shadow-camera-right={700}
+          shadow-camera-top={700}
+          shadow-camera-bottom={-700}
           shadow-bias={-0.0001}
         />
         <directionalLight position={[-10, 12, -8]} intensity={0.5} />
         <directionalLight position={[0, 25, 0]} intensity={0.4} />
-        <directionalLight position={[-8, 10, -12]} intensity={0.3} color={MEDIA_KEY_LIGHT_COLOR} />
-        <directionalLight position={[8, 10, 12]} intensity={0.3} color={MEDIA_KEY_LIGHT_COLOR} />
-        <hemisphereLight args={[MEDIA_KEY_LIGHT_COLOR, MEDIA_GROUND_LIGHT_COLOR, 0.3]} />
+        <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
+        <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
+        <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
 
         {wallConfig && (
           <WallSystem
@@ -393,7 +454,6 @@ export default function SharePage() {
 
         <ShareViewCameraControls wallConfig={wallConfig} />
       </Canvas>
-      </SceneErrorBoundary>
 
       <LightboxModal
         board={selectedBoard}
@@ -411,6 +471,6 @@ export default function SharePage() {
         isEditMode={false}
         currentUserRole={null}
       />
-    </main>
+    </div>
   )
 }

@@ -7,10 +7,10 @@ import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { PDFTextureMaterial } from './PDFTexture'
 import { useBoardTexture } from './useBoardTexture'
-import { useBoardCompositeTexture } from './useBoardCompositeTexture'
 import { useDisposableGeometry } from './useDisposableGeometry'
 import VideoBadge from './VideoBadge'
-import { ENGINE_PALETTE } from './enginePalette'
+import { ROOM_SKY } from '@/lib/room/palette'
+import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 
 interface BoardThumbnailProps {
   board: Board
@@ -20,7 +20,6 @@ interface BoardThumbnailProps {
   onClick?: (board: Board) => void
   isHighlighted?: boolean
   onHover?: (hovered: boolean) => void // Callback when board hover state changes
-  refreshNonce?: number
   /**
    * Hide the callout-count badge. The badge is an <Html> DOM overlay living
    * OUTSIDE the canvas at z-index 60; the panels that cover the room (the
@@ -31,9 +30,29 @@ interface BoardThumbnailProps {
    * board, its texture, and every other overlay render exactly as before.
    */
   suppressCountBadge?: boolean
+  /**
+   * Wall focus: this board is on a wall that isn't the focused one, so it should
+   * recede. Still clickable — you can open a ghosted board directly rather than
+   * having to leave focus first — it just stops competing for attention.
+   */
+  dimmed?: boolean
 }
 
 const BOARD_THICKNESS = 0.08
+
+/**
+ * Wall-focus ghosting for a board's material.
+ *
+ * `map` textures are multiplied by `color`, and a multiply can only ever darken
+ * — so tinting alone would push a de-emphasised board toward black, making it
+ * heavier and MORE conspicuous than the boards it's receding behind. Instead
+ * pair a gentle multiply (drains contrast) with an emissive wash in the sky
+ * colour (lifts the whole quad toward the background), which reads as fading
+ * into the room rather than falling into shadow. No transparency involved, so
+ * there's no depth-sort order to get wrong between overlapping boards.
+ */
+const BOARD_DIM_MULTIPLY = '#D7DEEB'
+const BOARD_DIM_WASH = 0.5
 
 // Skeleton material used only on the very first load (no prior texture exists).
 // Transparent + low opacity so the wall shows through (reads as "loading" rather than "empty gray plate");
@@ -50,12 +69,12 @@ function BoardSkeletonMaterial({ hovered, isHighlighted }: { hovered: boolean; i
   return (
     <meshStandardMaterial
       ref={matRef}
-      color={ENGINE_PALETTE.paper}
+      color="#ffffff"
       transparent
       opacity={0.24}
       roughness={0.85}
       metalness={0.0}
-      emissive={isHighlighted || hovered ? ENGINE_PALETTE.selection : ENGINE_PALETTE.black}
+      emissive={isHighlighted || hovered ? '#3B6EF6' : '#000000'}
       emissiveIntensity={0}
       depthWrite={false}
     />
@@ -66,25 +85,31 @@ function BoardImageMaterial({
   texture,
   hovered,
   isHighlighted,
+  dimmed,
 }: {
   texture: THREE.Texture
   hovered: boolean
   isHighlighted?: boolean
+  dimmed?: boolean
 }) {
+  // While ghosted the board ignores hover/highlight emphasis — lighting up a
+  // board the user is deliberately looking away from defeats the point — and
+  // washes toward the sky instead. See BOARD_DIM_* above.
   return (
     <meshStandardMaterial
       map={texture}
+      color={dimmed ? BOARD_DIM_MULTIPLY : '#ffffff'}
       roughness={0.7}
       metalness={0.0}
-      emissive={isHighlighted || hovered ? ENGINE_PALETTE.selection : ENGINE_PALETTE.black}
-      emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
+      emissive={dimmed ? ROOM_SKY : (isHighlighted || hovered ? '#3B6EF6' : '#000000')}
+      emissiveIntensity={dimmed ? BOARD_DIM_WASH : (isHighlighted ? 0.3 : (hovered ? 0.12 : 0))}
       depthWrite={true}
       depthTest={true}
     />
   )
 }
 
-export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted, onHover, refreshNonce = 0, suppressCountBadge }: BoardThumbnailProps) {
+export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted, onHover, suppressCountBadge, dimmed = false }: BoardThumbnailProps) {
   const [hovered, setHovered] = useState(false)
   const meshRef = useRef<THREE.Mesh>(null)
   const uploaderName =
@@ -109,12 +134,10 @@ export default function BoardThumbnail({ board, position, width, height, onClick
     imageUrl.startsWith('blob:')
   )) && !isPDF
 
-  // Composite texture loading — blends base board image with trace lines overlay
-  const { texture, isInitialLoad } = useBoardCompositeTexture(
-    board.id,
-    hasValidImage ? imageUrl : null,
-    refreshNonce
-  )
+  // Imperative texture loading — never remounts the mesh on URL change, so the
+  // previous texture stays on screen until the new one resolves (no gray flash
+  // on optimistic → thumbnail → full transitions).
+  const { texture, isInitialLoad } = useBoardTexture(hasValidImage ? imageUrl : null)
 
   // Subtle animation on hover — skip when already at target to avoid per-frame writes on every board
   useFrame(() => {
@@ -160,7 +183,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
   // a board occludes the wall, so a double click there is never meant for it.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleDoubleClick = (e: any) => {
-    e.stopPropagation()
+    consumeDoubleClick(e)
   }
 
   // Board rotation (radians) applied as rotation.z about the board center —
@@ -190,7 +213,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
         {isPDF && imageUrl ? (
           <PDFTextureMaterial pdfUrl={imageUrl} hovered={isHovered} />
         ) : texture ? (
-          <BoardImageMaterial texture={texture} hovered={isHovered} isHighlighted={isHighlighted} />
+          <BoardImageMaterial texture={texture} hovered={isHovered} isHighlighted={isHighlighted} dimmed={dimmed} />
         ) : (
           // Show skeleton ONLY on the very first load (no prior texture available).
           // URL swaps after that keep the previous texture on screen via useBoardTexture.
@@ -198,11 +221,11 @@ export default function BoardThumbnail({ board, position, width, height, onClick
             <BoardSkeletonMaterial hovered={isHovered} isHighlighted={isHighlighted} />
           ) : (
             <meshStandardMaterial
-              color={hovered ? ENGINE_PALETTE.paperHover : ENGINE_PALETTE.paper}
+              color={dimmed ? BOARD_DIM_MULTIPLY : (hovered ? '#f8f8f8' : '#ffffff')}
               roughness={0.7}
               metalness={0.0}
-              emissive={isHighlighted || hovered ? ENGINE_PALETTE.selection : ENGINE_PALETTE.black}
-              emissiveIntensity={isHighlighted ? 0.3 : (hovered ? 0.12 : 0)}
+              emissive={dimmed ? ROOM_SKY : (isHighlighted || hovered ? '#3B6EF6' : '#000000')}
+              emissiveIntensity={dimmed ? BOARD_DIM_WASH : (isHighlighted ? 0.3 : (hovered ? 0.12 : 0))}
             />
           )
         )}
@@ -215,11 +238,13 @@ export default function BoardThumbnail({ board, position, width, height, onClick
             attach="geometry"
             args={[skeletonEdgeGeometry]}
           />
-          <lineBasicMaterial attach="material" color={ENGINE_PALETTE.guide} transparent opacity={0.5} />
+          <lineBasicMaterial attach="material" color="#8A8FA0" transparent opacity={0.5} />
         </lineSegments>
       )}
 
-      {/* Callout count badge — a pink marker at the top-right corner.
+      {/* Callout count badge — an accent marker at the top-right corner, the
+          same blue every other marker and active state in the app uses, so a
+          callout reads the same way regardless of which view you're in.
           Only rendered for viewers permitted to see callouts (the server omits
           the count for guests/public, so calloutCount is undefined for them) and
           only when at least one callout exists. NO distanceFactor: like a real UI
@@ -228,8 +253,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           room view — the whole point of a badge is to stay legible there). Still
           billboards to the camera (DOM overlay). pointerEvents:'none' so clicks
           pass through to the board and open the lightbox. Top-right corner — the
-          linkUrl VideoBadge sits top-LEFT, so the two never collide. No red /
-          pulse / animation — a quiet marker.
+          linkUrl VideoBadge sits top-LEFT, so the two never collide.
 
           suppressCountBadge hides it while a 2D panel is open over the room (the
           lightbox, or the floor-plan editor): this <Html> is a DOM overlay at
@@ -254,11 +278,12 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               height: '22px',
               padding: '0 6px',
               borderRadius: '11px',
-              // pink-500 — reads as a distinct callout marker rather than
-              // blending into the indigo hover/highlight frame (#6366f1). The
-              // white ring keeps it legible on BOTH the grey and white walls.
-              background: ENGINE_PALETTE.snap,
-              color: ENGINE_PALETTE.paper,
+              // The one accent blue, same as every other active/marker state in
+              // the app. Was the redline red, which stood out as the only warm
+              // colour left in the room. The white ring keeps it legible on
+              // BOTH the grey and white walls.
+              background: '#3B6EF6',
+              color: '#fff',
               fontSize: '13px',
               fontWeight: 600,
               lineHeight: 1,
@@ -285,7 +310,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
           style={{ pointerEvents: 'none' }}
         >
           <div style={{
-            background: 'rgba(0, 0, 0, 0.8)',
+            background: 'rgba(22, 24, 29, 0.85)',
             color: 'white',
             padding: '6px 12px',
             borderRadius: '6px',
@@ -307,13 +332,13 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               attach="geometry"
               args={[frameEdgeGeometry]}
             />
-            <lineBasicMaterial attach="material" color={ENGINE_PALETTE.selection} linewidth={3} />
+            <lineBasicMaterial attach="material" color="#3B6EF6" linewidth={3} />
           </lineSegments>
 
           <mesh position={[0, 0, -0.001]}>
             <planeGeometry args={[width + 0.1, height + 0.1]} />
             <meshBasicMaterial
-              color={ENGINE_PALETTE.selection}
+              color="#3B6EF6"
               transparent
               opacity={0.1}
             />

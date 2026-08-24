@@ -12,16 +12,27 @@ import { boardSizeInchesFromSource } from '@/lib/boardDimensions'
 // The rasterizer itself (lib/pdfToImage.ts, which pulls PDF.js) stays a dynamic
 // import below so it never lands in the main bundle.
 import { isAiFile, isPdfLike, stripRasterSourceExtension } from '@/lib/pdfUtils'
-import type { User } from '@supabase/supabase-js'
+import { cleanDisplayName } from '@/lib/displayName'
 
-const displayNameForUser = (user: User | null): string => {
-  const fullName = user?.user_metadata?.full_name
-  if (typeof fullName === 'string' && fullName.trim()) return fullName.trim()
-
-  const firstName = user?.user_metadata?.first_name
-  if (typeof firstName === 'string' && firstName.trim()) return firstName.trim()
-
-  return user?.email?.split('@')[0]?.trim() || ''
+/**
+ * Display name for the uploading user.
+ *
+ * This previously read `user.fullName` / `user.firstName`, which are CLERK
+ * fields. The app runs on Supabase auth, whose user object exposes `email` and
+ * `user_metadata` and has neither of those properties — so both were always
+ * undefined and every optimistic board was labelled 'Anonymous'.
+ */
+const uploaderDisplayName = (user: unknown): string => {
+  const u = (user ?? {}) as {
+    user_metadata?: { full_name?: unknown; first_name?: unknown; name?: unknown }
+    email?: unknown
+  }
+  return (
+    cleanDisplayName(u.user_metadata?.full_name) ||
+    cleanDisplayName(u.user_metadata?.name) ||
+    cleanDisplayName(u.user_metadata?.first_name) ||
+    cleanDisplayName(typeof u.email === 'string' ? u.email.split('@')[0] : '')
+  )
 }
 
 /**
@@ -66,7 +77,7 @@ interface UploadOptions {
    * resolved separately by the caller (the studio page tracks both in state).
    */
   workspaceId?: string | null
-  user: User | null
+  user: any
   editingWall: number | null
   editingWallDimensions: { width: number; height: number } | null
   editingWallSide?: 'front' | 'back'
@@ -143,7 +154,7 @@ const createTempBoard = (
   options: {
     studioId: string
     title: string
-    user: User | null
+    user: any
     blobUrl: string
     width: number
     height: number
@@ -156,8 +167,6 @@ const createTempBoard = (
     position?: { wallIndex: number; x: number; y: number; width: number; height: number; side?: 'front' | 'back' }
   }
 ): Board => {
-  const displayName = displayNameForUser(options.user)
-
   return {
     id: tempId,
     // Stable client-side key for React. Carries onto the real board in
@@ -167,9 +176,11 @@ const createTempBoard = (
     localId: tempId,
     studioId: options.studioId,
     title: options.title,
-    studentName: displayName,
+    studentName: uploaderDisplayName(options.user),
     ownerId: options.user?.id,
-    ownerName: displayName || 'Anonymous',
+    // Empty rather than 'Anonymous': an unknown name must render no plate at
+    // all, not a placeholder that then persists into the board row.
+    ownerName: uploaderDisplayName(options.user),
     thumbnailUrl: options.blobUrl,
     fullImageUrl: options.blobUrl,
     uploadedAt: new Date(),
@@ -388,7 +399,7 @@ const uploadFile = async (
   try {
     const { storagePath, thumbnailPath } = await directUpload(file)
 
-    const clerkName = displayNameForUser(options.user)
+    const clerkName = uploaderDisplayName(options.user)
     const boardPayload = {
       workspaceId: options.workspaceId,
       roomId: options.roomId,
@@ -550,6 +561,10 @@ const uploadPDF = async (
     throw err
   }
 
+  // Calculate grid layout
+  const cols = Math.ceil(Math.sqrt(pages.length))
+  const rows = Math.ceil(pages.length / cols)
+
   if (pages.length === 1) {
     // Single-page PDFs upload fast and the temp-board → swap UX already
     // gives instant feedback. Drop the progress toast now that we know N=1.
@@ -641,7 +656,7 @@ const uploadPDF = async (
     try {
       const { storagePath, thumbnailPath } = await directUpload(page.imageFile, { skipMainCompression: true })
 
-      const clerkName = displayNameForUser(options.user)
+      const clerkName = uploaderDisplayName(options.user)
       const boardPayload = {
         workspaceId: options.workspaceId,
         roomId: options.roomId,
@@ -931,3 +946,4 @@ export const useBoardUpload = (options: UploadOptions) => {
 
   return { handleUpload, uploadFileDirect, uploadFilesDirect }
 }
+

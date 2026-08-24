@@ -20,7 +20,7 @@ async function requireRoomOwner(
     .select('id, workspace_id')
     .eq('id', roomId)
     .maybeSingle()
-  if (!room) return { ok: false, status: 404, error: 'Room not found' }
+  if (!room) return { ok: false, status: 404, error: 'Space not found' }
   const { data: ws } = await admin
     .from('workspaces')
     .select('owner_id')

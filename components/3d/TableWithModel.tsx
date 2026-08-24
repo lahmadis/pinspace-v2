@@ -7,7 +7,7 @@ import * as THREE from 'three'
 import type { FloorTable } from '@/types'
 import { useRhino3dm } from '@/components/3d/useRhino3dm'
 import { useStlLoader } from '@/components/3d/useStlLoader'
-import { ENGINE_PALETTE } from './enginePalette'
+import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 
 function is3dm(url: string) {
   return url.toLowerCase().endsWith('.3dm')
@@ -24,7 +24,7 @@ function isModelUrlLoadable(url: string): boolean {
 }
 
 const TABLE_TOP_MARGIN = 0.5 // inches – minimal gap so model fills table
-const MODEL_COLOR = ENGINE_PALETTE.paper
+const MODEL_COLOR = '#ffffff' // white
 const EMISSIVE_BASE = 0.2
 const EMISSIVE_HOVER = 0.45
 
@@ -177,8 +177,8 @@ export default function TableWithModel({ table, onTableClick }: TableWithModelPr
   // handleClick's stopPropagation does nothing for dblclick — without this, a
   // double click on a table would open the model viewer AND drop edit mode
   // behind it. Swallow unconditionally: the table occludes the wall.
-  const handleDoubleClick = (e: { stopPropagation: () => void }) => {
-    e.stopPropagation()
+  const handleDoubleClick = (e: { stopPropagation: () => void; nativeEvent?: { stopPropagation: () => void } }) => {
+    consumeDoubleClick(e)
   }
 
   const handlePointerOver = (e: { stopPropagation: () => void }) => {
@@ -206,7 +206,7 @@ export default function TableWithModel({ table, onTableClick }: TableWithModelPr
       {/* Table pedestal */}
       <mesh castShadow receiveShadow position={[0, TABLE_HEIGHT / 2, 0]}>
         <boxGeometry args={[table.width, TABLE_HEIGHT, table.depth]} />
-        <meshStandardMaterial color={ENGINE_PALETTE.wallMain} roughness={0.9} metalness={0} />
+        <meshStandardMaterial color="#D8DEFF" roughness={0.9} metalness={0} />
       </mesh>
 
       {hasModel && (
@@ -214,7 +214,7 @@ export default function TableWithModel({ table, onTableClick }: TableWithModelPr
           fallback={
             <mesh position={[0, TABLE_HEIGHT + 2, 0]}>
               <boxGeometry args={[4, 4, 4]} />
-              <meshStandardMaterial color={ENGINE_PALETTE.modelWire} wireframe />
+              <meshStandardMaterial color="#888" wireframe />
             </mesh>
           }
         >

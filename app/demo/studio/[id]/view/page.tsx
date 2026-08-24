@@ -10,7 +10,7 @@ import DemoBanner from '@/components/DemoBanner'
 import Loading from '@/components/Loading'
 import { getStudioById, getBoardsByStudio, transformDemoBoard, type DemoStudio } from '@/lib/mockData'
 import { Board } from '@/types'
-import WallSystem from '@/components/3d/WallSystem'
+import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from '@/components/3d/WallSystem'
 import { CameraController } from '@/components/3d/CameraController'
 import { addDemoParam } from '@/lib/demoMode'
 
@@ -25,6 +25,7 @@ export default function DemoStudioRoomPage() {
   const [editingWall] = useState<number | null>(null)
   const orbitControlsRef = useRef<unknown>(null)
 
+  // Default wall config for demo (4 walls, 8ft × 10ft each)
   const wallConfig = {
     walls: [
       { width: 10, height: 8 },
@@ -45,8 +46,6 @@ export default function DemoStudioRoomPage() {
     
     const demoBoards = getBoardsByStudio(studioId).map(transformDemoBoard) as Board[]
     
-    // Demo data is synchronously derived from the selected route identity.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStudio({
       id: demoStudio.id,
       name: demoStudio.name,
@@ -62,21 +61,21 @@ export default function DemoStudioRoomPage() {
   }
 
   if (loading) {
-    return <Loading message="Loading demo studio..." />
+    return <Loading message="Loading demo space..." />
   }
 
   if (!studio) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-text-muted">Studio not found</p>
+        <p className="text-text-muted">Space not found</p>
       </div>
     )
   }
 
   return (
-    <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-gradient-to-br from-background to-background-lighter">
+    <div className="relative w-full h-screen overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100">
       {/* Demo Banner */}
-      <DemoBanner inline
+      <DemoBanner 
         message={`Demo: ${studio.name} • ${studio.instructor}`}
       />
 
@@ -85,41 +84,39 @@ export default function DemoStudioRoomPage() {
         initial={{ y: -100, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.5 }}
-        className="relative z-40 flex shrink-0 flex-col items-stretch gap-2 bg-background-light/90 px-3 py-2 shadow-sm backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4"
+        className="fixed top-16 left-0 right-0 z-40 px-6 py-4 flex items-center justify-between bg-white/80 backdrop-blur-sm shadow-sm"
       >
-        <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+        <div className="flex items-center gap-4">
           <button
-            type="button"
             onClick={() => router.push('/demo')}
-            aria-label="Back to demo network"
-            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-pinspace transition-colors hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="p-2 hover:bg-background-lighter rounded-lg transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
           </button>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold text-text-primary sm:text-xl">{studio.name}</h1>
-            <p className="truncate text-xs text-text-muted sm:text-sm">{studio.instructor} • {boards.length} boards</p>
+          <div>
+            <h1 className="text-xl font-semibold text-text-primary">{studio.name}</h1>
+            <p className="text-sm text-text-muted">{studio.instructor} • {boards.length} boards</p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:gap-3">
+        <div className="flex items-center gap-3">
           <Link 
             href={addDemoParam('/', true)}
-            className="inline-flex min-h-11 flex-1 items-center justify-center rounded-pinspace border border-border bg-background-light/90 px-3 py-2 text-sm font-semibold text-text-primary shadow-lg backdrop-blur-sm transition-colors hover:bg-background-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none"
+            className="bg-white/90 hover:bg-white text-gray-900 px-4 py-2 rounded-lg font-semibold shadow-lg border border-gray-200 transition-colors backdrop-blur-sm"
           >
             ← Back home
           </Link>
           <a
-            href={`/demo/studio/${studioId}`}
-            className="inline-flex min-h-11 flex-1 items-center justify-center rounded-pinspace border border-border bg-background-lighter px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-background-light hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none sm:px-4"
+            href={`/demo/studio/${studioId}/view`}
+            className="px-4 py-2 bg-background-lighter hover:bg-background-light text-text-secondary hover:text-text-primary rounded-lg text-sm transition-colors border border-border"
           >
-            Edit Mode
+            View Mode
           </a>
           <button
             onClick={handleUpload}
-            className="min-h-11 flex-1 rounded-pinspace bg-primary px-3 py-2 text-sm font-semibold text-pinspace-ink transition-colors hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none sm:px-4"
+            className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg text-sm transition-colors"
           >
             Add Board (Demo)
           </button>
@@ -127,36 +124,59 @@ export default function DemoStudioRoomPage() {
       </motion.header>
 
       {/* 3D Canvas */}
-      <div className="min-h-0 w-full flex-1">
+      <div className="w-full h-full pt-32">
         <Canvas
           shadows
+          dpr={[1, 2]}
           gl={{ antialias: true, alpha: false }}
-          style={{ background: 'rgb(var(--color-primary-muted))' }}
+          style={{ background: ROOM_SKY_COLOR }}
         >
-          <PerspectiveCamera makeDefault position={[0, 60, 120]} fov={35} />
+          {/* Must match ROOM_SKY_COLOR/getRoomFogParams — see the comment on
+              those exports in components/3d/WallSystem.tsx. No scene.background
+              override elsewhere in this file, so the Canvas style above is
+              actually what wins here — still set explicitly for consistency
+              with the other room-viewing surfaces. */}
+          <color attach="background" args={[ROOM_SKY_COLOR]} />
+          {(() => {
+            const { fogNear, fogFar } = getRoomFogParams(wallConfig)
+            return <fog attach="fog" args={[ROOM_SKY_COLOR, fogNear, fogFar]} />
+          })()}
+          <PerspectiveCamera makeDefault position={[0, 60, 120]} fov={35} near={5} far={2000} />
+
           <ambientLight intensity={0.6} />
+          {/* Matches the editor's key light — see StudioRoom. A low light with a
+              small shadow frustum truncates shadows partway across the floor. */}
           <directionalLight
-            position={[10, 20, 10]}
+            position={[400, 700, 300]}
             intensity={1.2}
             castShadow
             shadow-mapSize-width={2048}
             shadow-mapSize-height={2048}
-            shadow-camera-far={200}
-            shadow-camera-left={-100}
-            shadow-camera-right={100}
-            shadow-camera-top={100}
-            shadow-camera-bottom={-100}
+            shadow-camera-near={1}
+            shadow-camera-far={2500}
+            shadow-camera-left={-700}
+            shadow-camera-right={700}
+            shadow-camera-top={700}
+            shadow-camera-bottom={-700}
+            shadow-bias={-0.0001}
           />
-          <hemisphereLight args={['white', 'darkslategray', 0.4]} />
+          <hemisphereLight args={['#ffffff', '#8888aa', 0.4]} />
+
           <Suspense fallback={null}>
             <WallSystem
               boards={boards}
               wallConfig={wallConfig}
               editingWall={editingWall}
-              onBoardClick={(board) => console.log('Board clicked:', board.title)}
-              onWallDoubleClick={(wallIndex) => console.log('Wall double-clicked:', wallIndex)}
+              onBoardClick={(board) => {
+                console.log('Board clicked:', board.title)
+              }}
+              onWallDoubleClick={(wallIndex) => {
+                // View mode - no edit functionality
+                console.log('Wall double-clicked:', wallIndex)
+              }}
             />
           </Suspense>
+
           <CameraController
             orbitControlsRef={orbitControlsRef}
             editingWall={editingWall}
@@ -164,9 +184,13 @@ export default function DemoStudioRoomPage() {
             wallRotation={0}
             wallDimensions={null}
           />
-          {editingWall === null && (
-            <OrbitControls ref={orbitControlsRef as React.RefObject<import('three-stdlib').OrbitControls>} enableDamping={false} dampingFactor={0} />
-          )}
+
+          {editingWall === null && <OrbitControls ref={orbitControlsRef as React.RefObject<import('three-stdlib').OrbitControls>} enableDamping={false} dampingFactor={0}
+            // Bounded like every other room surface. Unbounded (the three.js
+            // defaults of 0 and Infinity) let the camera dolly into the near
+            // plane at one end and past the far plane at the other, clipping
+            // the room away in both directions.
+            minDistance={60} maxDistance={900} />}
         </Canvas>
       </div>
 
@@ -178,12 +202,12 @@ export default function DemoStudioRoomPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 1 }}
-          className="fixed bottom-6 right-6 bg-background-light/95 backdrop-blur-sm rounded-xl shadow-xl p-4 max-w-xs border border-border"
+          className="fixed bottom-6 right-6 bg-white/95 backdrop-blur-sm rounded-xl shadow-xl p-4 max-w-xs border border-border"
         >
           <h3 className="font-semibold text-sm mb-2">💡 Demo Tips</h3>
-          <ul className="text-xs text-text-secondary space-y-1.5">
-            <li>• Click a wall to enter edit mode</li>
-            <li>• Drag boards to rearrange (changes not saved)</li>
+          <ul className="text-xs text-gray-600 space-y-1.5">
+            {/* No edit mode on this page — onWallDoubleClick is a no-op here,
+                so promising one sent people clicking at nothing. */}
             <li>• Click boards to view comments</li>
             <li>• Use mouse to rotate and zoom</li>
           </ul>

@@ -1,90 +1,238 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { notFound, useParams } from 'next/navigation'
-import { Maximize2, Minimize2, Network } from 'lucide-react'
-import BubbleNetwork, { type BubbleNode } from '@/components/network/BubbleNetwork'
-import { NetworkShimmerCanvas } from '@/components/network/NetworkShimmer'
-import { Button, Card, EmptyState, StatusState } from '@/components/ui'
+import { notFound } from 'next/navigation'
+import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
 
-const DEPARTMENTS: Record<string, string> = {
-  'aerospace-engineering': 'Aerospace Engineering', architecture: 'Architecture',
-  'civil-engineering': 'Civil Engineering', 'electrical-engineering': 'Electrical Engineering',
-  'industrial-design': 'Industrial Design', 'interior-design': 'Interior Design',
-  'mechanical-engineering': 'Mechanical Engineering', 'robotics-engineering': 'Robotics Engineering',
-}
-const YEARS: Record<string, { label: string; number: number | 'Masters' }> = {
-  'year-1': { label: 'Year 1', number: 1 }, 'year-2': { label: 'Year 2', number: 2 },
-  'year-3': { label: 'Year 3', number: 3 }, 'year-4': { label: 'Year 4', number: 4 },
-  masters: { label: 'Masters', number: 'Masters' },
+const DEPT_MAP: Record<string, { name: string; color: string; accent: string }> = {
+  'aerospace-engineering': { name: 'Aerospace Engineering', color: '#0ea5e9', accent: 'text-sky-600' },
+  'architecture': { name: 'Architecture', color: '#6366f1', accent: 'text-indigo-600' },
+  'civil-engineering': { name: 'Civil Engineering', color: '#14b8a6', accent: 'text-teal-600' },
+  'electrical-engineering': { name: 'Electrical Engineering', color: '#eab308', accent: 'text-yellow-600' },
+  'industrial-design': { name: 'Industrial Design', color: '#f59e0b', accent: 'text-orange-600' },
+  'interior-design': { name: 'Interior Design', color: '#10b981', accent: 'text-emerald-600' },
+  'mechanical-engineering': { name: 'Mechanical Engineering', color: '#ef4444', accent: 'text-red-600' },
+  'robotics-engineering': { name: 'Robotics Engineering', color: '#8b5cf6', accent: 'text-violet-600' },
 }
 
-type LoadState = 'loading' | 'ok' | 'error'
+const YEAR_MAP: Record<string, { label: string; num: number }> = {
+  'year-1': { label: 'Year 1', num: 1 },
+  'year-2': { label: 'Year 2', num: 2 },
+  'year-3': { label: 'Year 3', num: 3 },
+  'year-4': { label: 'Year 4', num: 4 },
+  'masters': { label: 'Masters', num: 5 },
+}
 
-export default function YearPage() {
-  const params = useParams<{ department: string; year: string }>()
-  const departmentName = DEPARTMENTS[params.department]
-  const year = YEARS[params.year]
+const YEAR_COLORS: Record<string, string> = {
+  'Year 1': '#3B82F6',
+  'Year 2': '#60A5FA',
+  'Year 3': '#8B5CF6',
+  'Year 4': '#A78BFA',
+  'Masters': '#EC4899',
+}
+
+export default function YearPage({ params }: { params: { department: string; year: string } }) {
+  const deptMeta = DEPT_MAP[params.department]
+  const yearInfo = YEAR_MAP[params.year]
+
   const [nodes, setNodes] = useState<BubbleNode[]>([])
-  const [loadState, setLoadState] = useState<LoadState>('loading')
+  const [studioCount, setStudioCount] = useState(0)
   const [isFullScreen, setIsFullScreen] = useState(false)
 
-  const loadStudios = useCallback(async () => {
-    if (!departmentName || !year) return
-    await Promise.resolve()
-    setLoadState('loading')
-    try {
-      const response = await fetch(`/api/workspaces/public?department=${encodeURIComponent(departmentName)}&year=${encodeURIComponent(year.label)}`, { cache: 'no-store' })
-      if (!response.ok) throw new Error('Programme year request failed')
-      const data = await response.json()
-      const studios: { id: string; name: string; memberCount?: number; members?: unknown[]; studioId?: string; instructor?: string; semester?: string }[] = data.workspaces || []
-      setNodes(studios.map((studio) => ({ id: studio.id, name: studio.name, label: studio.name, count: studio.memberCount ?? studio.members?.length ?? 0, memberCount: studio.memberCount ?? studio.members?.length ?? 0, url: `/studio/${studio.studioId || studio.id}/view`, color: 'rgb(var(--color-primary))', radius: 65, instructor: studio.instructor, semester: studio.semester, year: year.number })))
-      setLoadState('ok')
-    } catch (error) { console.error(error); setLoadState('error') }
-  }, [departmentName, year])
-  // The effect starts an external request; loading state is part of that request lifecycle.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadStudios() }, [loadStudios])
+  const yearLabel = yearInfo?.label ?? ''
+  const yearNum = yearInfo?.num ?? 0
 
-  if (!departmentName || !year) return notFound()
-  const openNode = (node: BubbleNode) => { if (node.url) window.location.href = node.url }
+  useEffect(() => {
+    if (!deptMeta || !yearInfo) return
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/workspaces/public?department=${encodeURIComponent(deptMeta.name)}&year=${encodeURIComponent(yearLabel)}`, { cache: 'no-store' })
+        if (!res.ok) return
+        const data = await res.json()
+        const studios: { id: string; name: string; memberCount?: number; members?: unknown[]; studioId?: string; instructor?: string; semester?: string }[] = data.workspaces || []
+        setStudioCount(studios.length)
+        setNodes(studios.map((studio) => ({
+          id: studio.id,
+          label: studio.name,
+          name: studio.name,
+          count: studio.memberCount ?? studio.members?.length ?? 0,
+          memberCount: studio.memberCount ?? studio.members?.length ?? 0,
+          url: `/studio/${studio.studioId || studio.id}/view`,
+          color: YEAR_COLORS[yearLabel] || deptMeta.color,
+          radius: 65,
+          // Relationship data
+          instructor: studio.instructor,
+          semester: studio.semester,
+          year: yearNum,
+        })))
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    load()
+  }, [deptMeta?.name, deptMeta?.color, yearLabel, yearNum])
 
+  if (!deptMeta) return notFound()
+  if (!yearInfo) return notFound()
+
+  const handleClick = (node: BubbleNode) => {
+    if (node.url) window.location.href = node.url
+  }
+
+  // Full screen mode
   if (isFullScreen) {
     return (
-      <div className="min-h-screen overflow-hidden bg-pinspace-forest text-white">
-        <header className="fixed inset-x-0 top-0 z-40 flex min-h-20 flex-wrap items-center gap-3 border-b border-white/15 bg-pinspace-forest/95 px-4 py-3 backdrop-blur-md sm:px-6">
-          <Button type="button" variant="ghost" className="border-white/20 text-white hover:bg-white/10" onClick={() => setIsFullScreen(false)}><Minimize2 className="h-4 w-4" aria-hidden="true" />Exit full screen</Button>
-          <div className="min-w-0 border-l border-white/20 pl-4"><h1 className="break-words text-xl font-bold">{departmentName} · {year.label}</h1><p className="text-xs text-white/70">{nodes.length} {nodes.length === 1 ? 'studio' : 'studios'}</p></div>
+      <div className="min-h-screen bg-slate-900">
+        {/* Floating Header */}
+        <header className="fixed top-0 left-0 right-0 z-40 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-md">
+          <div className="max-w-full px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setIsFullScreen(false)}
+                className="flex items-center gap-2 text-sm text-slate-300 hover:text-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Exit Full Screen
+              </button>
+              <div className="h-5 w-px bg-slate-600" />
+              <div>
+                <h1 className="text-lg font-semibold text-white">{deptMeta.name} - {yearLabel}</h1>
+                <p className="text-xs text-slate-400">{studioCount} studios</p>
+              </div>
+            </div>
+            
+            <Link 
+              href="/my-boards" 
+              className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors"
+            >
+              My Boards
+            </Link>
+          </div>
         </header>
-        <BubbleNetwork nodes={nodes} onNodeClick={openNode} fullScreen headerHeight={80} />
+
+        {/* Full Canvas Bubble Network */}
+        <BubbleNetwork 
+          nodes={nodes} 
+          onNodeClick={handleClick}
+          fullScreen={true}
+          headerHeight={73}
+        />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-background text-text-primary">
-      <header className="border-b border-border bg-background-light">
-        <div className="mx-auto max-w-[96rem] px-4 py-6 sm:px-6">
-          <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm"><Link href="/explore" className="min-h-11 content-center rounded-pinspace px-2 font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Explore</Link><span aria-hidden="true">/</span><Link href={`/explore/${params.department}`} className="min-h-11 content-center rounded-pinspace px-2 font-semibold text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">{departmentName}</Link><span aria-hidden="true">/</span><span>{year.label}</span></nav>
-          <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div><p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Programme year</p><h1 className="mt-1 break-words text-3xl font-black sm:text-5xl">{departmentName} · {year.label}</h1><p className="mt-2 text-text-secondary">{nodes.length} {nodes.length === 1 ? 'published studio' : 'published studios'}</p></div>
-            <div className="flex flex-wrap gap-3">
-              <Link href="/my-boards" className="inline-flex min-h-11 items-center rounded-pinspace border border-border bg-background px-4 py-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">My boards</Link>
-              <Button type="button" variant="secondary" onClick={() => setIsFullScreen(true)} disabled={loadState !== 'ok' || nodes.length === 0}><Maximize2 className="h-4 w-4" aria-hidden="true" />Full screen</Button>
-            </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
+      <header className="border-b border-gray-200 bg-white/90 backdrop-blur-sm sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link href={`/explore/${params.department}`} className="text-sm text-gray-600 hover:text-gray-900">← Back</Link>
+            <div className="text-sm text-gray-500">/</div>
+            <div className="text-sm font-semibold text-gray-900">{deptMeta.name}</div>
+            <div className="text-sm text-gray-500">/</div>
+            <div className="text-sm font-semibold text-gray-900">{yearLabel}</div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsFullScreen(true)}
+              className="text-sm px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+              Full Screen
+            </button>
+          <Link href="/my-boards" className="text-sm px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50">My Boards</Link>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-[96rem] gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <section aria-label={`${departmentName} ${year.label} studio network`} className="min-h-[34rem] overflow-hidden rounded-pinspace-lg border border-border bg-pinspace-forest sm:min-h-[40rem]">
-          {loadState === 'loading' ? <NetworkShimmerCanvas title={`Loading ${departmentName} ${year.label}...`} />
-            : loadState === 'error' ? <div className="flex min-h-[34rem] items-center justify-center p-4"><StatusState status="error" title="Could not load studios" description="Try the request again." action={<Button type="button" onClick={() => void loadStudios()}>Try again</Button>} className="w-full max-w-lg" /></div>
-              : nodes.length === 0 ? <div className="flex min-h-[34rem] items-center justify-center p-4"><EmptyState title="No studios published yet" description={`There are no published ${year.label} ${departmentName} studios.`} icon={<Network className="h-8 w-8" aria-hidden="true" />} className="w-full max-w-lg" /></div>
-                : <BubbleNetwork nodes={nodes} onNodeClick={openNode} />}
-        </section>
-        <aside><Card><p className="font-mono text-xs uppercase tracking-[0.16em] text-accent">Network summary</p><h2 className="mt-2 text-xl font-bold">{year.label}</h2><dl className="mt-4 flex justify-between gap-4 text-sm"><dt>Studios</dt><dd className="font-bold">{nodes.length}</dd></dl><p className="mt-4 text-sm text-text-secondary">The directory in the network includes names and metadata so discovery never depends on colour or position alone.</p></Card></aside>
+      <main className="max-w-7xl mx-auto px-6 py-12 grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <div className="lg:col-span-3 space-y-8">
+          <div>
+            <p className={`text-sm font-semibold uppercase ${deptMeta.accent}`}>Explore / {deptMeta.name} / {yearLabel}</p>
+            <h1 className="text-3xl font-bold text-gray-900 mt-1">{deptMeta.name} - {yearLabel}</h1>
+            <p className="text-gray-600 mt-2">{studioCount} {studioCount === 1 ? 'studio' : 'studios'}</p>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden" style={{ height: 600 }}>
+            {studioCount === 0 ? (
+              <div className="h-full flex items-center justify-center">
+                <div className="text-center p-10">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                  </div>
+                  <p className="text-gray-500">No studios published in {yearLabel} {deptMeta.name} yet</p>
+                </div>
+              </div>
+            ) : (
+              <BubbleNetwork nodes={nodes} onNodeClick={handleClick} />
+            )}
+          </div>
+
+          {/* Interaction hints */}
+          {studioCount > 0 && (
+            <div className="flex flex-wrap gap-4 text-xs text-gray-500">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+                </svg>
+                <span>Click bubbles to enter studio</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+                </svg>
+                <span>Drag to pan, scroll to zoom</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+                <span>Hover to see connections</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <aside className="space-y-4">
+          <div className="bg-white rounded-2xl shadow p-6 border border-gray-100">
+            <div className={`text-sm font-semibold uppercase ${deptMeta.accent}`}>{deptMeta.name} Program</div>
+            <h3 className="text-xl font-bold text-gray-900 mt-1">{yearLabel}</h3>
+            <p className="text-gray-600 text-sm mt-1">WIT Design Network</p>
+            <div className="mt-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Spaces</span>
+                <span className="text-gray-900 font-semibold">{studioCount}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Connection Legend */}
+          <div className="bg-white rounded-2xl shadow p-6 border border-gray-100">
+            <h4 className="text-sm font-semibold text-gray-900 mb-3">Connection Types</h4>
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-0.5 bg-blue-500 rounded" />
+                <span className="text-gray-600">Same Instructor</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(90deg, #8B5CF6, #8B5CF6 3px, transparent 3px, transparent 6px)' }} />
+                <span className="text-gray-600">Same Year</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(90deg, #10B981, #10B981 4px, transparent 4px, transparent 8px)' }} />
+                <span className="text-gray-600">Same Semester</span>
+              </div>
+            </div>
+            <p className="mt-4 text-xs text-gray-400">Hover over a studio bubble to see its connections to other studios.</p>
+          </div>
+        </aside>
       </main>
     </div>
   )

@@ -237,6 +237,7 @@ export default function ModelViewer({ modelUrl }: ModelViewerProps) {
       <SceneErrorBoundary resetKey={modelUrl}>
       <Canvas
         shadows
+        dpr={[1, 2]}
         gl={{ antialias: true }}
         camera={{ position: [3, 2, 3], fov: 50 }}
         style={{ background: ENGINE_PALETTE.wallMain }}

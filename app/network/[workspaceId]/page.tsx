@@ -1,48 +1,194 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import NetworkRouteShell from '@/components/discovery/NetworkRouteShell'
-import { type BubbleNode } from '@/components/network/BubbleNetwork'
-import { StatusState } from '@/components/ui'
+import { ArrowLeft } from 'lucide-react'
+import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
 import { useAuthSession } from '@/hooks/useAuthSession'
 
-interface PersonalRoom { id: string; name: string; boardCount: number }
-interface WorkspaceData { id: string; name: string }
+interface PersonalRoom {
+  id: string
+  name: string
+  boardCount: number
+}
+
+interface WorkspaceData {
+  id: string
+  name: string
+}
+
 type LoadState = 'loading' | 'ok' | 'not-found' | 'error'
 
 function WorkspaceNetworkInner() {
-  const { workspaceId } = useParams<{ workspaceId: string }>()
+  const params = useParams()
+  const workspaceId = params.workspaceId as string
   const router = useRouter()
   const { status: authStatus } = useAuthSession()
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null)
   const [nodes, setNodes] = useState<BubbleNode[]>([])
   const [loadState, setLoadState] = useState<LoadState>('loading')
 
-  useEffect(() => { if (authStatus === 'unauthenticated') router.push('/sign-in') }, [authStatus, router])
-  const load = useCallback(async () => {
-    if (authStatus !== 'authenticated' || !workspaceId) return
-    await Promise.resolve()
-    setLoadState('loading')
-    try {
-      const response = await fetch(`/api/network/personal/${workspaceId}`, { cache: 'no-store' })
-      if (response.status === 404) { setLoadState('not-found'); return }
-      if (!response.ok) throw new Error('Workspace network request failed')
-      const data = await response.json()
-      setWorkspace(data.workspace as WorkspaceData)
-      const rooms: PersonalRoom[] = data.rooms ?? []
-      setNodes(rooms.map((room) => ({ id: room.id, name: room.name, label: room.name, count: room.boardCount, url: `/studio/${room.id}/view`, color: 'rgb(var(--color-primary))' })))
-      setLoadState('ok')
-    } catch (error) { console.error(error); setLoadState('error') }
-  }, [authStatus, workspaceId])
-  // The effect starts an external request; loading state is part of that request lifecycle.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void load() }, [load])
+  const headerRef = useRef<HTMLElement>(null)
+  const [headerHeight, setHeaderHeight] = useState(57)
 
-  return <NetworkRouteShell title={workspace?.name ?? 'Workspace network'} eyebrow="Workspace discovery" countLabel={nodes.length === 1 ? 'studio' : 'studios'} backHref="/network" backLabel="Your network" nodes={nodes} loadState={authStatus === 'loading' ? 'loading' : loadState} loadingTitle="Loading workspace network" errorTitle="Could not load this workspace" errorDescription="We had trouble loading this workspace. Try again." notFoundTitle="This network is unavailable" notFoundDescription="We could not find this workspace or you do not have access." emptyTitle="No studios here yet" emptyDescription="Add spaces to this workspace and they will appear in the network." emptyAction={<Link href={`/workspace/${workspaceId}`} className="inline-flex min-h-11 items-center rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 font-semibold text-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Add spaces</Link>} headerAction={workspace && <Link href={`/workspace/${workspaceId}`} className="inline-flex min-h-11 items-center rounded-pinspace border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Manage spaces</Link>} onRetry={() => void load()} onNodeClick={(node) => { if (node.url) router.push(node.url) }} />
+  useEffect(() => {
+    if (authStatus === 'unauthenticated') router.push('/sign-in')
+  }, [authStatus, router])
+
+  useEffect(() => {
+    const el = headerRef.current
+    if (!el) return
+    const update = () => setHeaderHeight(el.offsetHeight)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (authStatus !== 'authenticated' || !workspaceId) return
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/network/personal/${workspaceId}`, { cache: 'no-store' })
+        if (res.status === 404) { setLoadState('not-found'); return }
+        if (!res.ok) { setLoadState('error'); return }
+        const data = await res.json()
+        setWorkspace(data.workspace as WorkspaceData)
+        const rooms: PersonalRoom[] = data.rooms ?? []
+        setNodes(
+          rooms.map((r) => ({
+            id: r.id,
+            name: r.name,
+            label: r.name,
+            count: r.boardCount,
+            url: `/studio/${r.id}/view`,
+            color: '#6366f1',
+          }))
+        )
+        setLoadState('ok')
+      } catch (e) {
+        console.error(e)
+        setLoadState('error')
+      }
+    }
+    load()
+  }, [authStatus, workspaceId])
+
+  const handleNodeClick = (node: BubbleNode) => {
+    if (node.url) router.push(node.url)
+  }
+
+  if (authStatus === 'loading' || loadState === 'loading') {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
+      </div>
+    )
+  }
+
+  if (loadState === 'not-found' || loadState === 'error') {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center px-6">
+        <div className="text-center max-w-sm">
+          <h2 className="text-xl font-semibold text-white mb-2">
+            {loadState === 'not-found'
+              ? "This network doesn't exist or isn't yours"
+              : 'Something went wrong'}
+          </h2>
+          <p className="text-slate-400 text-sm mb-6">
+            {loadState === 'not-found'
+              ? "We couldn't find this space or you don't have access to it."
+              : 'We had trouble loading this workspace. Try again.'}
+          </p>
+          <Link
+            href="/network"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
+          >
+            ← Back to your network
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-900">
+      <header
+        ref={headerRef}
+        className="fixed top-0 left-0 right-0 z-40 border-b border-slate-700/50 bg-slate-900/90 backdrop-blur-md"
+      >
+        <div className="max-w-full px-4 md:px-6 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 min-w-0">
+            <Link
+              href="/network"
+              className="flex items-center gap-2 text-slate-300 hover:text-white transition-colors text-sm shrink-0"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Your network
+            </Link>
+            <div className="h-5 w-px bg-slate-600 shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold text-white truncate">{workspace?.name ?? '…'}</h1>
+              <p className="text-xs text-slate-400">
+                {nodes.length} {nodes.length === 1 ? 'studio' : 'studios'}
+              </p>
+            </div>
+          </div>
+          {workspace && (
+            <Link
+              href={`/workspace/${workspaceId}`}
+              className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors shrink-0"
+            >
+              Manage spaces
+            </Link>
+          )}
+        </div>
+      </header>
+
+      {nodes.length === 0 ? (
+        <div className="min-h-screen flex items-center justify-center px-6">
+          <div className="text-center max-w-sm">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-800 mb-4">
+              <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-white mb-2">No studios here yet</h2>
+            <p className="text-slate-400 text-sm mb-6">
+              Add spaces to this workspace and they&apos;ll appear as bubbles in the network.
+            </p>
+            <Link
+              href={`/workspace/${workspaceId}`}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
+            >
+              Add spaces
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <BubbleNetwork
+          nodes={nodes}
+          onNodeClick={handleNodeClick}
+          fullScreen
+          headerHeight={headerHeight}
+        />
+      )}
+    </div>
+  )
 }
 
 export default function WorkspaceNetworkPage() {
-  return <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-pinspace-forest px-4"><StatusState status="loading" title="Loading workspace network" /></main>}><WorkspaceNetworkInner /></Suspense>
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600" />
+        </div>
+      }
+    >
+      <WorkspaceNetworkInner />
+    </Suspense>
+  )
 }

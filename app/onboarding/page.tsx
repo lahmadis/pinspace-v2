@@ -3,9 +3,6 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthSession } from '@/hooks/useAuthSession'
-import { safeRedirectPath } from '@/lib/security/safeRedirect'
-import { AuthLoading, AuthShell, fieldLabelClass } from '@/components/auth/AuthShell'
-import { Button, Input, Select, StatusState } from '@/components/ui'
 
 const ROLES = ['Student', 'Faculty', 'Professional (working at a firm)', 'Independent Creator'] as const
 const ROLE_TO_VALUE: Record<string, 'student' | 'faculty' | 'professional' | null> = {
@@ -27,9 +24,7 @@ function OnboardingContent() {
   const [hasProfile, setHasProfile] = useState<boolean | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [institutionId, setInstitutionId] = useState<string | null>(() =>
-    typeof window !== 'undefined' ? sessionStorage.getItem('pinspace_institution_id') : null,
-  )
+  const [institutionId, setInstitutionId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
@@ -41,7 +36,7 @@ function OnboardingContent() {
     how_heard: '',
   })
 
-  const redirectTo = safeRedirectPath(searchParams?.get('redirect'))
+  const redirectTo = searchParams?.get('redirect') || '/dashboard'
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
@@ -50,7 +45,11 @@ function OnboardingContent() {
   }, [authStatus, router])
 
   useEffect(() => {
-    if (institutionId) return
+    const stored = sessionStorage.getItem('pinspace_institution_id')
+    if (stored) {
+      setInstitutionId(stored)
+      return
+    }
     const slug = searchParams?.get('institution')
     if (!slug) return
     fetch('/api/institutions', { cache: 'no-store' })
@@ -60,7 +59,7 @@ function OnboardingContent() {
         if (inst) setInstitutionId(inst.id)
       })
       .catch(() => {})
-  }, [institutionId, searchParams])
+  }, [searchParams])
 
   useEffect(() => {
     if (!user?.id) return
@@ -96,175 +95,178 @@ function OnboardingContent() {
       ? (formData.major === 'Other' ? (formData.major_other.trim() || null) : (formData.major || null))
       : null
     setSubmitting(true)
-    try {
-      const res = await fetch('/api/user-profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          full_name: `${formData.first_name.trim()} ${formData.last_name.trim()}`.trim() || null,
-          role,
-          age_range: formData.age_range || null,
-          year,
-          major,
-          how_heard: formData.how_heard || null,
-          organization_id: institutionId || null,
-        }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setError(data.error || data.details || 'Failed to save')
-        return
-      }
-      sessionStorage.removeItem('pinspace_institution_id')
-      router.replace(redirectTo)
-    } catch {
-      setError('We could not save your profile. Please try again.')
-    } finally {
-      setSubmitting(false)
+    const res = await fetch('/api/user-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        full_name: `${formData.first_name.trim()} ${formData.last_name.trim()}`.trim() || null,
+        role,
+        age_range: formData.age_range || null,
+        year,
+        major,
+        how_heard: formData.how_heard || null,
+        organization_id: institutionId || null,
+      }),
+    })
+    setSubmitting(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setError(data.error || data.details || 'Failed to save')
+      return
     }
+    sessionStorage.removeItem('pinspace_institution_id')
+    router.replace(redirectTo)
   }
 
-  if (!isLoaded || !user || hasProfile === null) {
-    return <AuthLoading label="Preparing your profile" />
+  if (!isLoaded || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-200 border-t-indigo-600" />
+      </div>
+    )
   }
 
   if (hasProfile === true) {
-    return <AuthLoading label="Opening your workspace" />
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-200 border-t-indigo-600" />
+      </div>
+    )
   }
 
   return (
-    <AuthShell
-      eyebrow="Step 3 of 3"
-      title="Welcome to pinspace"
-      description="Tell us a little about your practice. Required fields are marked; the rest is optional and used for community insights."
-      wide
-    >
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-gray-200">
+        <h1 className="text-2xl font-bold text-gray-900 mb-1">Welcome to pinspace</h1>
+        <p className="text-sm text-gray-500 mb-6">Quick info to help us understand our community (used for stats only).</p>
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="min-w-0">
-              <label htmlFor="first-name" className={fieldLabelClass}>First name <span aria-hidden="true">*</span></label>
-              <Input
-                id="first-name"
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">First name <span className="text-red-500">*</span></label>
+              <input
                 type="text"
                 value={formData.first_name}
                 onChange={(e) => setFormData((p) => ({ ...p, first_name: e.target.value }))}
                 placeholder="Jane"
-                autoComplete="given-name"
                 required
-                aria-invalid={error.includes('First and last name') || undefined}
-                aria-describedby={error ? 'onboarding-error' : undefined}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
             </div>
-            <div className="min-w-0">
-              <label htmlFor="last-name" className={fieldLabelClass}>Last name <span aria-hidden="true">*</span></label>
-              <Input
-                id="last-name"
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Last name <span className="text-red-500">*</span></label>
+              <input
                 type="text"
                 value={formData.last_name}
                 onChange={(e) => setFormData((p) => ({ ...p, last_name: e.target.value }))}
                 placeholder="Smith"
-                autoComplete="family-name"
                 required
-                aria-invalid={error.includes('First and last name') || undefined}
-                aria-describedby={error ? 'onboarding-error' : undefined}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
             </div>
           </div>
           <div>
-            <label htmlFor="community-role" className={fieldLabelClass}>I am a <span aria-hidden="true">*</span></label>
-            <Select
-              id="community-role"
+            <label className="block text-sm font-medium text-gray-700 mb-1">I am a</label>
+            <select
               value={formData.role}
               onChange={(e) => setFormData((p) => ({ ...p, role: e.target.value }))}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               required
-              aria-describedby={error ? 'onboarding-error' : undefined}
             >
               <option value="">Select…</option>
               {ROLES.map((r) => (
                 <option key={r} value={r}>{r}</option>
               ))}
-            </Select>
+            </select>
           </div>
           <div>
-            <label htmlFor="age-range" className={fieldLabelClass}>Age range</label>
-            <Select
-              id="age-range"
+            <label className="block text-sm font-medium text-gray-700 mb-1">Age range</label>
+            <select
               value={formData.age_range}
               onChange={(e) => setFormData((p) => ({ ...p, age_range: e.target.value }))}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
               <option value="">Optional</option>
               {AGE_RANGES.map((r) => (
                 <option key={r} value={r}>{r}</option>
               ))}
-            </Select>
+            </select>
           </div>
           {formData.role === 'Student' && (
           <div>
-            <label htmlFor="study-year" className={fieldLabelClass}>Year</label>
-            <Select
-              id="study-year"
+            <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+            <select
               value={formData.year}
               onChange={(e) => setFormData((p) => ({ ...p, year: e.target.value }))}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
               <option value="">Select year</option>
               {YEARS.map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}
-            </Select>
+            </select>
           </div>
           )}
           {(formData.role === 'Student' || formData.role === 'Faculty') && (
           <div>
-            <label htmlFor="major-program" className={fieldLabelClass}>Major / program</label>
-            <Select
-              id="major-program"
+            <label className="block text-sm font-medium text-gray-700 mb-1">Major / Program</label>
+            <select
               value={formData.major}
               onChange={(e) => setFormData((p) => ({ ...p, major: e.target.value }))}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
               <option value="">Select major</option>
               {MAJORS.map((m) => (
                 <option key={m} value={m}>{m}</option>
               ))}
-            </Select>
+            </select>
             {formData.major === 'Other' && (
-              <div className="mt-3">
-              <label htmlFor="major-other" className={fieldLabelClass}>Specify your major</label>
-              <Input
-                id="major-other"
+              <input
                 type="text"
                 value={formData.major_other}
                 onChange={(e) => setFormData((p) => ({ ...p, major_other: e.target.value }))}
                 placeholder="Specify your major"
+                className="mt-2 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
-              </div>
             )}
           </div>
           )}
           <div>
-            <label htmlFor="how-heard" className={fieldLabelClass}>How did you hear about pinspace?</label>
-            <Select
-              id="how-heard"
+            <label className="block text-sm font-medium text-gray-700 mb-1">How did you hear about pinspace?</label>
+            <select
               value={formData.how_heard}
               onChange={(e) => setFormData((p) => ({ ...p, how_heard: e.target.value }))}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
               <option value="">Optional</option>
               {HOW_HEARD.map((h) => (
                 <option key={h} value={h}>{h}</option>
               ))}
-            </Select>
+            </select>
           </div>
-          {error && <StatusState id="onboarding-error" status="error" title={error} />}
-          <Button type="submit" loading={submitting} className="w-full">
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
+          >
             {submitting ? 'Saving…' : 'Continue'}
-          </Button>
+          </button>
         </form>
-    </AuthShell>
+      </div>
+    </div>
   )
 }
 
 export default function OnboardingPage() {
   return (
-    <Suspense fallback={<AuthLoading label="Preparing your profile" />}>
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 mx-auto mb-4" />
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    }>
       <OnboardingContent />
     </Suspense>
   )

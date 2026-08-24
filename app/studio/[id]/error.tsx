@@ -3,9 +3,6 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { Button } from '@/components/ui'
-import { PublicStatusScreen } from '@/components/public/PublicStudioShell'
-
 export default function StudioError({
   error,
   reset,
@@ -20,18 +17,29 @@ export default function StudioError({
   }, [error])
 
   return (
-    <PublicStatusScreen
-      status="error"
-      title="Studio failed to load"
-      description="The 3D studio is unavailable. Your browser may not support WebGL, or the room data may be temporarily unavailable."
-      action={(
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Button type="button" onClick={reset}>Try again</Button>
-          <Button type="button" variant="ghost" onClick={() => router.push('/dashboard')}>
+    <div className="min-h-screen flex items-center justify-center bg-[#E7ECF5]">
+      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full mx-4 text-center">
+        <div className="text-4xl mb-4">⚠️</div>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Space failed to load</h2>
+        <p className="text-gray-600 mb-6 text-sm">
+          Something went wrong loading the 3D space. This can happen if your browser
+          doesn&apos;t support WebGL, or if the space data is corrupted.
+        </p>
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={reset}
+            className="w-full px-4 py-2 bg-[#3B6EF6] text-white rounded-lg hover:bg-[#2F5CD6] transition-colors font-medium"
+          >
+            Try again
+          </button>
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+          >
             Back to dashboard
-          </Button>
+          </button>
         </div>
-      )}
-    />
+      </div>
+    </div>
   )
 }

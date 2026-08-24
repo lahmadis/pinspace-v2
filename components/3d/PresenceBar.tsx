@@ -1,7 +1,5 @@
 'use client'
 
-import { ENGINE_PALETTE } from './enginePalette'
-
 /**
  * Tier 1 presence indicator: shows initials/avatars of OTHER members currently
  * in the same room (the current user is excluded). Fed by the
@@ -20,11 +18,29 @@ export interface PresentUser {
   joinedAt?: number
 }
 
-/** Deterministic avatar color from a user id, so a given user is always the same hue. */
+/**
+ * Deterministic avatar color from a user id, so a given user is always the
+ * same hue. Also feeds the presenter's laser-pointer color (CameraController).
+ * Muted/harmonized set rather than pure-saturated primaries (the previous
+ * palette put unmixed indigo/pink/amber/green/red side by side, which reads
+ * as a totally different, louder design language than the rest of the room)
+ * — still eight genuinely distinct hues, spread roughly every 30-40° around
+ * the color wheel (165/255/28/336/95/205/285/225) so adjacent slots don't
+ * collapse into "which one was that again." Deliberately excludes the exact
+ * accent blue (#3B6EF6, ~221°) even though blue-family hues are otherwise
+ * fair game — reusing it here would make a presence dot/laser color
+ * indistinguishable from the app's own active-selection highlight. Shares
+ * this palette with getAvatarColor in components/LightboxModal.tsx (same
+ * values, expressed as Tailwind arbitrary classes there instead of raw hex)
+ * so a person's color feels consistent across both surfaces even though the
+ * two hash different inputs (user id here, display name there) and so won't
+ * always land on the same slot for the same person.
+ */
 export function colorFor(userId: string): string {
+  const palette = ['#4E9F8F', '#8A7BD8', '#E0935A', '#C2708A', '#7FA06B', '#5B93C7', '#9C7BAE', '#6B7FA6']
   let hash = 0
   for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) >>> 0
-  return ENGINE_PALETTE.collaborator[hash % ENGINE_PALETTE.collaborator.length]
+  return palette[hash % palette.length]
 }
 
 /**
@@ -73,18 +89,18 @@ export default function PresenceBar({
 
   return (
     <div
-      className="fixed left-1/2 top-[max(0.75rem,env(safe-area-inset-top))] z-40 flex max-w-[calc(100vw-7rem)] -translate-x-1/2 items-center gap-2 overflow-hidden rounded-pinspace border border-border/40 bg-primary-dark/80 px-3 py-2 shadow-[var(--shadow-raised)] backdrop-blur-md motion-reduce:transition-none"
+      className="fixed top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/15 backdrop-blur-md rounded-xl shadow-lg border border-white/20"
       role="status"
-      aria-label={`${others.length} other ${others.length === 1 ? 'person' : 'people'} editing this room`}
+      aria-label={`${others.length} other ${others.length === 1 ? 'person' : 'people'} editing this space`}
     >
-      <div className="flex shrink-0 -space-x-2">
+      <div className="flex -space-x-2">
         {shown.map((u) => {
           const display = friendlyName(u.fullName)
           return (
             <div
               key={u.userId}
               title={display}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-semibold text-white ring-2 ring-background-light/60"
+              className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white ring-2 ring-white/40"
               style={{ backgroundColor: colorFor(u.userId) }}
             >
               {initialsFor(display)}
@@ -92,12 +108,12 @@ export default function PresenceBar({
           )
         })}
         {overflow > 0 && (
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-text-secondary text-[11px] font-semibold text-white ring-2 ring-background-light/60">
+          <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white bg-gray-500 ring-2 ring-white/40">
             +{overflow}
           </div>
         )}
       </div>
-      <span className="hidden truncate text-xs font-medium text-background-light sm:inline">
+      <span className="text-white/90 text-xs font-medium hidden sm:inline">
         {others.length === 1 ? 'is also here' : 'are also here'}
       </span>
     </div>

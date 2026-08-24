@@ -1,4 +1,4 @@
-// Core data types for PinSpace
+// Core data types for pinspace
 
 export interface School {
   id: string

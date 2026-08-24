@@ -61,7 +61,7 @@ export async function PATCH(request: NextRequest) {
       .select('workspace_id')
       .eq('id', roomId)
       .maybeSingle()
-    if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+    if (!room) return NextResponse.json({ error: 'Space not found' }, { status: 404 })
 
     const { data: ws } = await admin
       .from('workspaces')

@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { useMemo, useState } from 'react'
 import { ThreeEvent } from '@react-three/fiber'
-import { ENGINE_PALETTE } from './enginePalette'
+import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 
 // R3F reports `delta` on click-family events: pixels travelled since the last
 // pointerdown. The browser already refuses to fire dblclick when the two clicks
@@ -15,9 +15,8 @@ interface WallSurfaceProps {
   wallDimensions: { width: number; height: number } // feet
   side: 'front' | 'back'
   /**
-   * Fires on DOUBLE click only — a single click on a wall is deliberately inert
-   * so it stays free for orbit/drag. Wired to R3F's onDoubleClick, which maps to
-   * the native dblclick event, so double-click timing is the browser's (and thus
+   * Fires on DOUBLE click. Wired to R3F's onDoubleClick, which maps to the
+   * native dblclick event, so double-click timing is the browser's (and thus
    * the platform's) rather than a hand-rolled timer.
    */
   onSurfaceDoubleClick: (params: {
@@ -35,8 +34,9 @@ interface WallSurfaceProps {
 }
 
 /**
- * Invisible plane representing one wall face (front/back), activated by DOUBLE
- * click. Geometry is axis-aligned in local space; parent group handles
+ * Invisible plane representing one wall face (front/back). Double click enters
+ * wall-edit mode; single click is swallowed rather than ignored (see
+ * handleClick). Geometry is axis-aligned in local space; parent group handles
  * rotation/position.
  */
 export function WallSurface({
@@ -57,8 +57,26 @@ export function WallSurface({
   // Optional hover outline (very light)
   const [hovered, setHovered] = useState(false)
 
-  const handleDoubleClick = (e: ThreeEvent<MouseEvent>) => {
+  /**
+   * Absorbs single clicks without doing anything with them.
+   *
+   * The wall plane is invisible, so without this a click on a wall raycasts
+   * straight through to whatever sits behind it — a board mounted on the REVERSE
+   * face (its box geometry is hit from behind, opening that board's lightbox), or
+   * the floor, whose click handler exits wall focus. Clicking a wall would then
+   * do something arbitrary that depends on what happens to be on the other side.
+   *
+   * This used to be a side effect of the wall-selection handler that lived here;
+   * that feature is gone, the absorbing is still needed.
+   */
+  const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
+  }
+
+  const handleDoubleClick = (e: ThreeEvent<MouseEvent>) => {
+    // Entering/switching edit mode is a real action, so it must not ALSO reach
+    // the canvas wrapper's exit-edit-mode handler.
+    consumeDoubleClick(e)
     // Ignore a double click that ended a drag — that gesture was an orbit.
     if (e.delta > DRAG_THRESHOLD_PX) return
     // Local coordinates on the plane: x,y in plane space (centered)
@@ -78,6 +96,7 @@ export function WallSurface({
     <mesh
       position={[0, 0, zOffset]}
       rotation={[0, 0, 0]}
+      onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       onPointerOver={() => {
         setHovered(true)
@@ -89,7 +108,7 @@ export function WallSurface({
       <meshBasicMaterial
         transparent
         opacity={0.01}
-        color={hovered && visibleOutline ? ENGINE_PALETTE.wallOutline : ENGINE_PALETTE.black}
+        color={hovered && visibleOutline ? '#4b5563' : '#000000'}
         side={THREE.DoubleSide}
         depthWrite={false}
       />

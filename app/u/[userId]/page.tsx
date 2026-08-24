@@ -1,11 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ExternalLink, Images } from 'lucide-react'
-import { Button, Card, Dialog, EmptyState, Select, Skeleton, StatusState } from '@/components/ui'
 
 type PortfolioBoard = {
   id: string
@@ -28,163 +26,184 @@ type Profile = {
   role: string | null
 }
 
-type LoadState = 'loading' | 'ok' | 'error'
-
 export default function PortfolioPage() {
   const params = useParams()
   const userId = params.userId as string
+
   const [boards, setBoards] = useState<PortfolioBoard[]>([])
   const [profile, setProfile] = useState<Profile | null>(null)
   const [ownerName, setOwnerName] = useState<string | null>(null)
-  const [loadState, setLoadState] = useState<LoadState>('loading')
+  const [loading, setLoading] = useState(true)
   const [selectedBoard, setSelectedBoard] = useState<PortfolioBoard | null>(null)
-  const [filterStudio, setFilterStudio] = useState('all')
+  const [filterStudio, setFilterStudio] = useState<string>('all')
 
-  const loadProfile = useCallback(async () => {
-    await Promise.resolve()
-    setLoadState('loading')
-    try {
-      const response = await fetch(`/api/users/${userId}/boards`)
-      if (!response.ok) throw new Error('Portfolio request failed')
-      const data = await response.json()
-      setBoards(data.boards || [])
-      setProfile(data.profile || null)
-      setOwnerName(data.ownerName || null)
-      setLoadState('ok')
-    } catch (error) {
-      console.error(error)
-      setLoadState('error')
-    }
+  useEffect(() => {
+    fetch(`/api/users/${userId}/boards`)
+      .then((r) => r.json())
+      .then((data) => {
+        setBoards(data.boards || [])
+        setProfile(data.profile || null)
+        setOwnerName(data.ownerName || null)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
   }, [userId])
 
-  // The effect starts an external request; loading state is part of that request lifecycle.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadProfile() }, [loadProfile])
+  const displayName = profile?.full_name || ownerName || 'Student'
 
-  if (loadState === 'loading') {
+  const uniqueStudios = Array.from(
+    new Map(boards.map((b) => [b.studioId, b.studioName])).entries()
+  )
+
+  const filtered = filterStudio === 'all' ? boards : boards.filter((b) => b.studioId === filterStudio)
+
+  if (loading) {
     return (
-      <div className="min-h-screen overflow-x-hidden bg-background text-text-primary">
-        <header className="sticky top-0 z-20 border-b border-border bg-background-light/95 backdrop-blur-md">
-          <div className="mx-auto flex min-h-16 max-w-[96rem] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-            <Link href="/explore" className="inline-flex min-h-11 items-center rounded-pinspace px-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">← Explore</Link>
-            <span className="font-mono text-xs uppercase tracking-[0.16em] text-text-secondary">Public portfolio</span>
-          </div>
-        </header>
-
-        <main className="mx-auto max-w-[96rem] px-4 py-8 sm:px-6 sm:py-12" role="status" aria-label="Loading portfolio">
-          <span className="sr-only">Loading portfolio</span>
-          <header className="mb-10 max-w-3xl space-y-3">
-            <Skeleton className="h-16 w-16 rounded-full" />
-            <Skeleton className="h-4 w-28 rounded-md" />
-            <Skeleton className="h-10 w-64 rounded-md" />
-            <Skeleton className="h-4 w-48 rounded-md" />
-          </header>
-
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {[0, 1, 2, 3, 4, 5].map((idx) => (
-              <Card key={idx} className="overflow-hidden p-0">
-                <Skeleton className="aspect-[4/3] w-full rounded-none" />
-                <div className="p-4 space-y-2">
-                  <Skeleton className="h-5 w-3/4 rounded-md" />
-                  <Skeleton className="h-4 w-1/2 rounded-md" />
-                </div>
-              </Card>
-            ))}
-          </div>
-        </main>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600" />
       </div>
     )
   }
 
-  if (loadState === 'error') {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-background px-4">
-        <StatusState status="error" title="Could not load this portfolio" description="The profile may be unavailable. Try again in a moment." action={<Button type="button" onClick={() => void loadProfile()}>Try again</Button>} className="w-full max-w-lg" />
-      </main>
-    )
-  }
-
-  const displayName = profile?.full_name || ownerName || 'Student'
-  const uniqueStudios = Array.from(new Map(boards.map((board) => [board.studioId, board.studioName])).entries())
-  const filtered = filterStudio === 'all' ? boards : boards.filter((board) => board.studioId === filterStudio)
-
   return (
-    <div className="min-h-screen overflow-x-hidden bg-background text-text-primary">
-      <header className="sticky top-0 z-20 border-b border-border bg-background-light/95 backdrop-blur-md">
-        <div className="mx-auto flex min-h-16 max-w-[96rem] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <Link href="/explore" className="inline-flex min-h-11 items-center rounded-pinspace px-2 text-sm font-semibold text-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">← Explore</Link>
-          <span className="font-mono text-xs uppercase tracking-[0.16em] text-text-secondary">Public portfolio</span>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-20">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <Link href="/explore" className="text-sm text-gray-500 hover:text-gray-800 transition-colors">
+            ← pinspace
+          </Link>
+          <span className="text-xs text-gray-400">Student Portfolio</span>
         </div>
       </header>
 
-      <main className="mx-auto max-w-[96rem] px-4 py-8 sm:px-6 sm:py-12">
-        <header className="mb-10 max-w-3xl">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-border bg-primary text-2xl font-bold text-pinspace-ink" aria-hidden="true">{displayName.charAt(0).toUpperCase()}</div>
-          <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Published work</p>
-          <h1 className="mt-2 break-words text-3xl font-black tracking-tight sm:text-5xl">{displayName}</h1>
-          <p className="mt-3 break-words text-sm text-text-secondary">
-            {[profile?.year, profile?.major, `${boards.length} ${boards.length === 1 ? 'board' : 'boards'}`].filter(Boolean).join(' · ')}
-          </p>
-        </header>
+      <main className="max-w-6xl mx-auto px-6 py-12">
+        {/* Profile hero */}
+        <div className="mb-10">
+          <div className="w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center text-2xl font-bold text-indigo-600 mb-4">
+            {displayName.charAt(0).toUpperCase()}
+          </div>
+          <h1 className="text-3xl font-bold text-gray-900">{displayName}</h1>
+          <div className="flex flex-wrap items-center gap-3 mt-2">
+            {profile?.year && (
+              <span className="text-sm text-gray-500">{profile.year}</span>
+            )}
+            {profile?.major && (
+              <>
+                <span className="text-gray-300">·</span>
+                <span className="text-sm text-gray-500">{profile.major}</span>
+              </>
+            )}
+            <span className="text-gray-300">·</span>
+            <span className="text-sm text-gray-500">{boards.length} board{boards.length !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
 
         {boards.length === 0 ? (
-          <EmptyState title="No public boards yet" description="Boards from published studios will appear here." icon={<Images className="h-8 w-8" aria-hidden="true" />} />
+          <div className="text-center py-20 text-gray-400">
+            <p className="text-lg font-medium">No public boards yet</p>
+            <p className="text-sm mt-1">Boards from published studios will appear here.</p>
+          </div>
         ) : (
           <>
+            {/* Studio filter */}
             {uniqueStudios.length > 1 && (
-              <div className="mb-8 max-w-sm">
-                <label htmlFor="portfolio-studio-filter" className="mb-2 block text-sm font-semibold">Filter by studio</label>
-                <Select id="portfolio-studio-filter" value={filterStudio} onChange={(event) => setFilterStudio(event.target.value)}>
-                  <option value="all">All studios</option>
-                  {uniqueStudios.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-                </Select>
+              <div className="flex items-center gap-2 flex-wrap mb-8">
+                <button
+                  onClick={() => setFilterStudio('all')}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                    filterStudio === 'all'
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  All Studios
+                </button>
+                {uniqueStudios.map(([id, name]) => (
+                  <button
+                    key={id}
+                    onClick={() => setFilterStudio(id)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                      filterStudio === id
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    {name}
+                  </button>
+                ))}
               </div>
             )}
 
-            {filtered.length === 0 ? (
-              <EmptyState title="No boards match this filter" description="Choose another studio to continue browsing." />
-            ) : (
-              <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {filtered.map((board) => (
-                  <li key={board.id} className="min-w-0">
-                    <button
-                      type="button"
-                      aria-label={`Open ${board.title}`}
-                      onClick={() => setSelectedBoard(board)}
-                      className="group block w-full overflow-hidden rounded-pinspace-lg border border-border bg-background-light text-left shadow-[var(--shadow-soft)] transition-[transform,border-color] hover:-translate-y-0.5 hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transform-none"
-                    >
-                      <span className="relative block w-full overflow-hidden bg-background-lighter">
-                        <Image src={board.thumbnailUrl} alt="" width={600} height={board.aspectRatio ? Math.round(600 / board.aspectRatio) : 400} className="h-auto w-full object-cover motion-safe:transition-transform motion-safe:duration-300 group-hover:scale-[1.02]" unoptimized />
-                      </span>
-                      <span className="block p-4">
-                        <span className="block break-words text-sm font-bold">{board.title}</span>
-                        <span className="mt-1 block break-words text-xs text-text-secondary">{board.studioName}</span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {/* Board grid */}
+            <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
+              {filtered.map((board) => (
+                <div
+                  key={board.id}
+                  className="break-inside-avoid cursor-pointer group"
+                  onClick={() => setSelectedBoard(board)}
+                >
+                  <div className="overflow-hidden rounded-xl bg-white border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="relative w-full overflow-hidden bg-gray-100">
+                      <Image
+                        src={board.thumbnailUrl}
+                        alt={board.title}
+                        width={600}
+                        height={board.aspectRatio ? Math.round(600 / board.aspectRatio) : 400}
+                        className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-300"
+                        unoptimized
+                      />
+                    </div>
+                    <div className="p-3">
+                      <p className="text-sm font-medium text-gray-900 truncate">{board.title}</p>
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">{board.studioName}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </>
         )}
       </main>
 
-      <Dialog
-        open={Boolean(selectedBoard)}
-        onOpenChange={(open) => { if (!open) setSelectedBoard(null) }}
-        title={selectedBoard?.title ?? 'Board preview'}
-        description={selectedBoard ? [selectedBoard.studioName, selectedBoard.networkMetadata?.year, selectedBoard.academicYear].filter(Boolean).join(' · ') : undefined}
-        className="max-w-4xl"
-      >
-        {selectedBoard && (
-          <>
-            <Image src={selectedBoard.fullImageUrl} alt={selectedBoard.title} width={1200} height={800} className="max-h-[65vh] h-auto w-full rounded-pinspace object-contain" unoptimized />
-            <Link href={`/studio/${selectedBoard.studioId}/view`} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 text-sm font-semibold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
-              View studio <ExternalLink className="h-4 w-4" aria-hidden="true" />
-            </Link>
-          </>
-        )}
-      </Dialog>
+      {/* Lightbox */}
+      {selectedBoard && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setSelectedBoard(null)}
+        >
+          <div className="relative max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setSelectedBoard(null)}
+              className="absolute -top-10 right-0 text-white/70 hover:text-white text-sm"
+            >
+              Close ✕
+            </button>
+            <Image
+              src={selectedBoard.fullImageUrl}
+              alt={selectedBoard.title}
+              width={1200}
+              height={800}
+              className="w-full h-auto rounded-xl object-contain max-h-[80vh]"
+              unoptimized
+            />
+            <div className="mt-3 text-white">
+              <p className="font-semibold">{selectedBoard.title}</p>
+              <p className="text-sm text-white/60 mt-0.5">
+                {selectedBoard.studioName}
+                {selectedBoard.networkMetadata?.year && ` · ${selectedBoard.networkMetadata.year}`}
+                {selectedBoard.academicYear && ` · ${selectedBoard.academicYear}`}
+              </p>
+              <Link
+                href={`/studio/${selectedBoard.studioId}/view`}
+                className="inline-block mt-3 text-xs px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+              >
+                View studio →
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

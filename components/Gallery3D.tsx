@@ -2,16 +2,16 @@
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Text, Html } from '@react-three/drei'
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Board } from '@/types'
 import { useRouter } from 'next/navigation'
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, RotateCcw, RotateCw, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import WallSystem from './3d/WallSystem'
 import LightboxModal from './LightboxModal'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
-import { Button, EmptyState, StatusState } from '@/components/ui'
+import { ROOM_FONT_3D } from '@/lib/room/palette'
 
 type Vec3 = { x: number; y: number; z: number }
 
@@ -64,38 +64,6 @@ const PITCH_MAX = 1.2
 // Entrance detection distance in inches
 const ENTRANCE_DISTANCE = 36 // 36 inches = 3 feet
 const DEFAULT_ROOM = { width: 20, depth: 15, height: 10 }
-
-// Three.js materials need concrete colour values rather than CSS variables.
-// These named 3D material values keep avatar and environment contrast stable.
-export const GALLERY_VISUAL_COLORS = {
-  avatar: '#FFC800',
-  forest: '#0A2F28',
-  green: '#14705C',
-  cream: '#FFF3CC',
-  quiet: '#6D766E',
-  ground: '#E6E0CC',
-  ink: '#181C1A',
-  ambientWarm: '#FFF3CC',
-  ambientCool: '#DDEBE5',
-  background: '#FAF8F0',
-  mapFloor: '#E8E3D5',
-  particle: '#B9C5BF',
-} as const
-
-const subscribeToReducedMotion = (onChange: () => void) => {
-  const query = window.matchMedia('(prefers-reduced-motion: reduce)')
-  query.addEventListener('change', onChange)
-  return () => query.removeEventListener('change', onChange)
-}
-
-const getReducedMotionSnapshot = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
-const getReducedMotionServerSnapshot = () => false
-
-const usePrefersReducedMotion = () => useSyncExternalStore(
-  subscribeToReducedMotion,
-  getReducedMotionSnapshot,
-  getReducedMotionServerSnapshot
-)
 
 const lerpAngle = (a: number, b: number, t: number) => {
   const diff = THREE.MathUtils.euclideanModulo(b - a + Math.PI, Math.PI * 2) - Math.PI
@@ -207,7 +175,7 @@ function Ground({ onHover }: { onHover: (hovered: boolean) => void }) {
     >
       <boxGeometry args={[FLOOR_SIZE, 0.5, FLOOR_SIZE]} />
       <meshStandardMaterial
-        color={GALLERY_VISUAL_COLORS.ground}
+        color="#d1d5db" // Darker gray for contrast with walls (which are typically white/light)
         roughness={0.95}
         metalness={0}
         polygonOffset
@@ -218,7 +186,7 @@ function Ground({ onHover }: { onHover: (hovered: boolean) => void }) {
   )
 }
 
-function Avatar({ position, color = GALLERY_VISUAL_COLORS.avatar, isWalking, heading, reducedMotion }: { position: Vec3; color?: string; isWalking: boolean; heading: number; reducedMotion: boolean }) {
+function Avatar({ position, color = '#6366f1', isWalking, heading }: { position: Vec3; color?: string; isWalking: boolean; heading: number }) {
   const groupRef = useRef<THREE.Group>(null)
   const bodyRef = useRef<THREE.Mesh>(null)
   
@@ -240,12 +208,12 @@ function Avatar({ position, color = GALLERY_VISUAL_COLORS.avatar, isWalking, hea
   
   useFrame((state) => {
     const t = state.clock.getElapsedTime()
-    const bob = isWalking && !reducedMotion ? Math.sin(t * 8) * 0.9 : 0 // Scale bob animation too
+    const bob = isWalking ? Math.sin(t * 8) * 0.9 : 0 // Scale bob animation too
     if (bodyRef.current) {
       bodyRef.current.position.y = BODY_Y + bob
     }
     if (groupRef.current) {
-      groupRef.current.rotation.y = reducedMotion ? heading : THREE.MathUtils.lerp(groupRef.current.rotation.y, heading, 0.2)
+      groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, heading, 0.2)
     }
   })
 
@@ -286,7 +254,7 @@ function Avatar({ position, color = GALLERY_VISUAL_COLORS.avatar, isWalking, hea
       {/* Soft shadow decal */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]} receiveShadow>
         <circleGeometry args={[0.35 * SCALE, 32]} />
-        <meshBasicMaterial color={GALLERY_VISUAL_COLORS.ink} opacity={0.18} transparent />
+        <meshBasicMaterial color="#000000" opacity={0.18} transparent />
       </mesh>
     </group>
   )
@@ -352,9 +320,10 @@ function StudioLabel({
   return (
     <group position={[0, y, z]}>
       <Text
+        font={ROOM_FONT_3D}
         fontSize={fontSize}
-        color={highlighted ? GALLERY_VISUAL_COLORS.avatar : GALLERY_VISUAL_COLORS.quiet}
-        outlineColor={highlighted ? GALLERY_VISUAL_COLORS.forest : GALLERY_VISUAL_COLORS.cream}
+        color={highlighted ? '#6366f1' : '#94a3b8'}
+        outlineColor={highlighted ? '#6366f1' : '#cbd5e1'}
         outlineWidth={highlighted ? 0.06 : 0.03}
         outlineOpacity={0.45}
         anchorX="center"
@@ -417,7 +386,7 @@ function StudioPlot({
       {/* Blue bounding rectangle outline - invisible (used for layout calculations only) */}
       <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
         <planeGeometry args={[boundingWidthInches, boundingDepthInches]} />
-        <meshBasicMaterial color={GALLERY_VISUAL_COLORS.green} wireframe opacity={0} transparent />
+        <meshBasicMaterial color="#3b82f6" wireframe opacity={0} transparent />
       </mesh>
       <StudioLabel
         name={studio.name}
@@ -705,7 +674,7 @@ function SceneContents({
             intensity={0.35}
             distance={216} // 216 inches = 18 feet
             penumbra={0.6}
-            color={i % 2 === 0 ? GALLERY_VISUAL_COLORS.ambientWarm : GALLERY_VISUAL_COLORS.ambientCool}
+            color={i % 2 === 0 ? '#c7d2fe' : '#e0f2fe'}
             shadow-bias={-0.0001}
           />
         )
@@ -758,11 +727,8 @@ function SceneContents({
 }
 
 export default function Gallery3D({ avatarColor, avatarPosition, department, year }: Gallery3DProps) {
-  const reducedMotion = usePrefersReducedMotion()
   const [studios, setStudios] = useState<GalleryStudio[]>([])
   const [loading, setLoading] = useState(false)
-  const [loadError, setLoadError] = useState(false)
-  const [retryRequest, setRetryRequest] = useState(0)
   const [avatarPos, setAvatarPos] = useState<Vec3>(avatarPosition ?? { x: 0, y: 0, z: 0 })
   const [avatarDir, setAvatarDir] = useState<number>(0)
   const [hoverFloor, setHoverFloor] = useState(false)
@@ -805,8 +771,6 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
         const state = JSON.parse(savedState)
         if (state.avatarPos) {
           avatarRef.current = state.avatarPos
-          // Restoring the persisted external session state is the purpose of this mount effect.
-          // eslint-disable-next-line react-hooks/set-state-in-effect
           setAvatarPos(state.avatarPos)
           // Restore camera state
           if (state.cameraYaw !== undefined) orbitRef.current.yaw = state.cameraYaw
@@ -831,22 +795,10 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
     setAvatarPos({ x: entrance.x, y: 0, z: entrance.z })
   }
 
-  const interact = useCallback(() => {
-    const currentNearbyBoard = nearbyBoardRef.current
-    if (currentNearbyBoard) {
-      sessionStorage.setItem('galleryState', JSON.stringify({
-        avatarPos: { ...avatarRef.current },
-        cameraYaw: orbitRef.current.yaw,
-        cameraPitch: orbitRef.current.pitch,
-        cameraRadius: orbitRef.current.radius,
-      }))
-      const studioId = currentNearbyBoard.studio.studioId || currentNearbyBoard.studio.id
-      router.push(`/studio/${studioId}/view?boardId=${currentNearbyBoard.board.id}&returnTo=gallery`)
-    } else if (promptStudio?.studio) {
-      const slug = promptStudio.studio.studioId || promptStudio.studio.id
-      router.push(`/studio/${slug}`)
-    }
-  }, [promptStudio, router])
+  const enterStudio = (studio: GalleryStudio) => {
+    const slug = studio.studioId || studio.id
+    router.push(`/studio/${slug}`)
+  }
 
   useEffect(() => {
     avatarRef.current = avatarPos
@@ -900,8 +852,7 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
           })
           router.push(`/studio/${studioId}/view?boardId=${currentNearbyBoard.board.id}&returnTo=gallery`)
         } else if (promptStudio?.studio) {
-          const slug = promptStudio.studio.studioId || promptStudio.studio.id
-          router.push(`/studio/${slug}`)
+          enterStudio(promptStudio.studio)
         }
       }
     }
@@ -917,7 +868,6 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
 
   useEffect(() => {
     const fetchStudios = async () => {
-      setLoadError(false)
       // Check for cached studios data first for instant loading
       const cachedData = sessionStorage.getItem('galleryStudiosCache')
       if (cachedData) {
@@ -1070,14 +1020,13 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
       } catch (err) {
         console.error(err)
         setStudios([])
-        setLoadError(true)
       } finally {
         setLoading(false)
       }
     }
 
     fetchStudios()
-  }, [department, retryRequest, year])
+  }, [department, year])
 
   useEffect(() => {
     if (!Object.values(moveKeysRef.current).some(Boolean)) {
@@ -1151,9 +1100,10 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
   }, [])
 
   return (
-    <div className="relative h-full w-full overflow-hidden" role="application" aria-label="Interactive 3D gallery">
+    <div className="relative w-full h-full">
       <Canvas
         shadows
+        dpr={[1, 2]}
         camera={{ position: [0, 60, 96], fov: 55 }} // 60" high, 96" away (8 feet) - scaled for 1 unit = 1 inch
         style={{ cursor: canvasCursor }}
         onContextMenu={(e) => e.preventDefault()}
@@ -1162,8 +1112,8 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
         onPointerUp={handleCanvasPointerUp}
         onPointerMove={handleCanvasPointerMove}
       >
-        <color attach="background" args={[GALLERY_VISUAL_COLORS.background]} />
-        <fog attach="fog" args={[GALLERY_VISUAL_COLORS.background, 480, 1680]} /> {/* Scaled: 40ft near, 140ft far */}
+        <color attach="background" args={['#f8fafc']} />
+        <fog attach="fog" args={['#f8fafc', 480, 1680]} /> {/* Scaled: 40ft near, 140ft far */}
         <SceneContents
           studios={studios}
           avatarPos={avatarPos}
@@ -1182,7 +1132,7 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
           onHover={(h) => setHoverFloor(h)}
         />
       {/* Avatar visual */}
-      <Avatar position={avatarPos} color={avatarColor} isWalking={isWalking} heading={avatarDir} reducedMotion={reducedMotion} />
+      <Avatar position={avatarPos} color={avatarColor} isWalking={isWalking} heading={avatarDir} />
       <CameraRig targetRef={avatarRef} orbitState={orbitRef} aimingRef={aimingRef} />
       <MovementController
         studios={studios}
@@ -1200,29 +1150,16 @@ export default function Gallery3D({ avatarColor, avatarPosition, department, yea
       />
       </Canvas>
       <Minimap studios={studios} avatarPos={avatarPos} />
-      {loading && <div className="absolute inset-0 z-20 flex items-center justify-center bg-background-light/75 p-4 backdrop-blur-sm"><StatusState status="loading" title="Loading gallery studios" description="Preparing rooms and board previews." /></div>}
-      {!loading && loadError && <div className="absolute inset-0 z-20 flex items-center justify-center bg-background-light/80 p-4 backdrop-blur-sm"><StatusState status="error" title="Could not load gallery studios" description="The 3D gallery is unavailable right now." action={<Button type="button" onClick={() => setRetryRequest((value) => value + 1)}>Try again</Button>} className="w-full max-w-lg" /></div>}
-      {!loading && !loadError && studios.length === 0 && <div className="absolute inset-0 z-20 flex items-center justify-center bg-background-light/80 p-4 backdrop-blur-sm"><EmptyState title="No studios found" description="No published studios match this gallery selection." className="w-full max-w-lg" /></div>}
-
-      {!loading && !loadError && studios.length > 0 && (
-        <aside aria-label="Gallery studio directory" className="absolute bottom-3 left-3 z-20 max-h-44 w-[min(20rem,calc(100%-7rem))] overflow-y-auto rounded-pinspace-lg border border-border bg-background-light/95 p-3 text-text-primary shadow-[var(--shadow-soft)] backdrop-blur-md sm:bottom-4 sm:left-4">
-          <h2 className="text-sm font-bold">Studio directory</h2>
-          <ul className="mt-2 space-y-1">
-            {studios.map((studio) => <li key={studio.id}><button type="button" onClick={() => teleportToStudio(studio)} className="min-h-11 w-full rounded-pinspace px-3 py-2 text-left hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><span className="block break-words text-sm font-semibold">{studio.name}</span><span className="block break-words text-xs text-text-secondary">{[studio.department, studio.year].filter(Boolean).join(' · ') || 'Published studio'}</span></button></li>)}
-          </ul>
-        </aside>
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-sm text-sm text-text-secondary">
+          Loading studios...
+        </div>
       )}
-
-      <div aria-label="Touch gallery controls" className="absolute bottom-3 right-3 z-30 grid grid-cols-3 gap-1 rounded-pinspace-lg border border-border bg-background-light/95 p-2 shadow-[var(--shadow-raised)] backdrop-blur-md" style={{ touchAction: 'none' }}>
-        <button type="button" aria-label="Rotate camera left" onClick={() => { orbitRef.current.yaw -= 0.18 }} className="flex h-11 w-11 items-center justify-center rounded-pinspace hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><RotateCcw className="h-4 w-4" aria-hidden="true" /></button>
-        <button type="button" aria-label="Move forward" onPointerDown={() => { moveKeysRef.current.forward = true }} onPointerUp={() => { moveKeysRef.current.forward = false }} onPointerCancel={() => { moveKeysRef.current.forward = false }} className="flex h-11 w-11 items-center justify-center rounded-pinspace bg-primary text-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><ArrowUp className="h-4 w-4" aria-hidden="true" /></button>
-        <button type="button" aria-label="Rotate camera right" onClick={() => { orbitRef.current.yaw += 0.18 }} className="flex h-11 w-11 items-center justify-center rounded-pinspace hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><RotateCw className="h-4 w-4" aria-hidden="true" /></button>
-        <button type="button" aria-label="Move left" onPointerDown={() => { moveKeysRef.current.left = true }} onPointerUp={() => { moveKeysRef.current.left = false }} onPointerCancel={() => { moveKeysRef.current.left = false }} className="flex h-11 w-11 items-center justify-center rounded-pinspace bg-primary text-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><ArrowLeft className="h-4 w-4" aria-hidden="true" /></button>
-        <button type="button" aria-label="Move backward" onPointerDown={() => { moveKeysRef.current.back = true }} onPointerUp={() => { moveKeysRef.current.back = false }} onPointerCancel={() => { moveKeysRef.current.back = false }} className="flex h-11 w-11 items-center justify-center rounded-pinspace bg-primary text-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><ArrowDown className="h-4 w-4" aria-hidden="true" /></button>
-        <button type="button" aria-label="Move right" onPointerDown={() => { moveKeysRef.current.right = true }} onPointerUp={() => { moveKeysRef.current.right = false }} onPointerCancel={() => { moveKeysRef.current.right = false }} className="flex h-11 w-11 items-center justify-center rounded-pinspace bg-primary text-pinspace-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><ArrowRight className="h-4 w-4" aria-hidden="true" /></button>
-        <button type="button" onClick={() => { jumpRequestRef.current = true }} className="col-span-1 min-h-11 rounded-pinspace text-xs font-semibold hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Jump</button>
-        <button type="button" onClick={interact} disabled={!nearbyBoard && !promptStudio} className="col-span-2 min-h-11 rounded-pinspace bg-accent px-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Open nearby</button>
-      </div>
+      {!loading && studios.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center bg-white/70 backdrop-blur-sm text-sm text-text-secondary">
+          No studios found for this selection.
+        </div>
+      )}
       
       {/* Lightbox modal for viewing and commenting on boards */}
       {selectedBoard && (
@@ -1371,13 +1308,10 @@ function MovementController({
   return null
 }
 
-export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avatarPos: Vec3 }) {
+function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avatarPos: Vec3 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const expandTriggerRef = useRef<HTMLButtonElement>(null)
-  const closeButtonRef = useRef<HTMLButtonElement>(null)
-  const wasExpandedRef = useRef(false)
   
   // Ensure component is mounted and container is in DOM before rendering Canvas
   useEffect(() => {
@@ -1391,55 +1325,14 @@ export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avat
     return () => cancelAnimationFrame(rafId)
   }, [])
   
-  // Treat the expanded map as a modal: move focus in, contain keyboard focus,
-  // close on Escape, and restore focus to the stable expand trigger.
+  // Close on ESC key
   useEffect(() => {
-    if (!isExpanded) {
-      if (wasExpandedRef.current) {
-        wasExpandedRef.current = false
-        expandTriggerRef.current?.focus()
-      }
-      return
+    if (!isExpanded) return
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsExpanded(false)
     }
-
-    wasExpandedRef.current = true
-    closeButtonRef.current?.focus()
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        setIsExpanded(false)
-        return
-      }
-      if (event.key !== 'Tab') return
-      const focusable = Array.from(
-        containerRef.current?.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]):not([aria-hidden="true"]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-        ) ?? []
-      )
-      if (focusable.length === 0) {
-        event.preventDefault()
-        containerRef.current?.focus()
-        return
-      }
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown)
-      document.body.style.overflow = previousOverflow
-    }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
   }, [isExpanded])
   
   // Calculate view size based on studio positions
@@ -1505,43 +1398,28 @@ export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avat
   return (
     <>
       {isExpanded && (
-        <div
-          aria-hidden="true"
-          className="fixed inset-0 z-40 bg-pinspace-forest/45 backdrop-blur-sm"
-          onMouseDown={() => setIsExpanded(false)}
+        <div 
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
+          onClick={() => setIsExpanded(false)}
         />
       )}
       <div 
         ref={containerRef}
-        role={isExpanded ? 'dialog' : undefined}
-        aria-modal={isExpanded ? 'true' : undefined}
-        aria-labelledby={isExpanded ? 'gallery-map-title' : undefined}
-        tabIndex={isExpanded ? -1 : undefined}
-        className={`absolute right-4 top-4 overflow-hidden rounded-pinspace-lg border border-border bg-background-light/95 shadow-[var(--shadow-raised)] backdrop-blur-sm transition-[width,height] duration-300 motion-reduce:transition-none ${
+        className={`absolute top-4 right-4 rounded-lg border border-primary/20 bg-white/90 shadow-lg backdrop-blur-sm overflow-hidden transition-all duration-300 ${
           isExpanded 
             ? 'w-[80vw] h-[80vh] max-w-5xl max-h-[90vh] z-50' 
-            : 'h-40 w-40'
+            : 'w-40 h-40 cursor-pointer hover:shadow-xl'
         }`}
+        onClick={() => !isExpanded && setIsExpanded(true)}
       >
-        <button
-          ref={expandTriggerRef}
-          type="button"
-          onClick={() => setIsExpanded(true)}
-          tabIndex={isExpanded ? -1 : 0}
-          aria-hidden={isExpanded ? 'true' : undefined}
-          className={`absolute inset-0 z-20 rounded-pinspace-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent ${isExpanded ? 'pointer-events-none opacity-0' : ''}`}
-          aria-label="Expand gallery map"
-        />
         {isExpanded && (
           <div className="absolute top-3 right-3 z-10">
             <button
-              ref={closeButtonRef}
-              type="button"
               onClick={(e) => {
                 e.stopPropagation()
                 setIsExpanded(false)
               }}
-              className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-border bg-background-light shadow-[var(--shadow-soft)] hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="w-10 h-10 rounded-lg bg-white hover:bg-gray-50 border-2 border-primary/30 flex items-center justify-center shadow-lg transition-all hover:scale-110"
               aria-label="Close minimap"
             >
               <X className="w-5 h-5 text-text-primary" />
@@ -1549,8 +1427,8 @@ export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avat
           </div>
         )}
         {isExpanded && (
-          <div className="absolute left-3 top-3 z-10 rounded-pinspace border border-border bg-background-light/95 px-3 py-1.5 shadow-[var(--shadow-soft)] backdrop-blur-sm">
-            <p id="gallery-map-title" className="text-xs font-semibold text-text-primary">Gallery Map</p>
+          <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur-sm rounded-lg px-3 py-1.5 border border-border shadow-md">
+            <p className="text-xs font-semibold text-text-primary">Gallery Map</p>
           </div>
         )}
         {isMounted && typeof window !== 'undefined' && (
@@ -1573,10 +1451,10 @@ export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avat
           >
             <MinimapCamera centerX={centerX} centerZ={centerZ} />
             <ambientLight intensity={0.6} />
-            <color attach="background" args={[GALLERY_VISUAL_COLORS.background]} />
+            <color attach="background" args={['#f8fafc']} />
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[centerX, 0, centerZ]} receiveShadow>
               <planeGeometry args={[viewSize, viewSize]} />
-              <meshBasicMaterial color={GALLERY_VISUAL_COLORS.mapFloor} />
+              <meshBasicMaterial color="#eef2ff" />
             </mesh>
 
             {studios.map((studio) => {
@@ -1589,12 +1467,12 @@ export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avat
                 <group key={studio.id}>
                   <mesh position={[pos.x, 0.2, pos.z]} rotation={[-Math.PI / 2, 0, 0]}>
                     <planeGeometry args={[widthInches, depthInches]} />
-                    <meshBasicMaterial color={GALLERY_VISUAL_COLORS.avatar} />
+                    <meshBasicMaterial color="#6366f1" />
                   </mesh>
                   {/* Border for better visibility */}
                   <lineSegments position={[pos.x, 0.21, pos.z]} rotation={[-Math.PI / 2, 0, 0]}>
                     <edgesGeometry args={[new THREE.PlaneGeometry(widthInches, depthInches)]} />
-                    <lineBasicMaterial color={GALLERY_VISUAL_COLORS.forest} linewidth={2} />
+                    <lineBasicMaterial color="#4f46e5" linewidth={2} />
                   </lineSegments>
                   <Html
                     position={[pos.x, isExpanded ? 1.5 : 1.2, pos.z]}
@@ -1604,20 +1482,20 @@ export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avat
                     zIndexRange={[10000, 0]}
                     transform
                   >
-                    <div className={`rounded border border-border bg-background-light/95 text-center shadow backdrop-blur-sm ${
+                    <div className={`bg-white/95 backdrop-blur-sm rounded border border-primary/20 shadow text-center ${
                       isExpanded 
                         ? 'px-2 py-1' 
                         : 'px-1 py-0.5'
                     }`} style={{ 
                       zIndex: 10000,
                       position: 'relative',
-                      backgroundColor: 'rgb(var(--color-paper) / 0.95)',
+                      backgroundColor: 'rgba(255, 255, 255, 0.95)',
                       fontSize: isExpanded ? '12px' : '10px',
                       lineHeight: '1.2',
                       whiteSpace: 'nowrap'
                     }}>
                       <div className="font-medium text-text-primary" style={{ 
-                        textShadow: '0 1px 2px rgb(var(--color-ink) / 0.1)',
+                        textShadow: '0 1px 2px rgba(0,0,0,0.1)',
                         fontWeight: 600
                       }}>
                         {studio.name}
@@ -1635,7 +1513,7 @@ export function Minimap({ studios, avatarPos }: { studios: GalleryStudio[]; avat
 
             <mesh position={[avatarPos.x, 0.4, avatarPos.z]}>
               <circleGeometry args={[0.8, 24]} />
-              <meshBasicMaterial color={GALLERY_VISUAL_COLORS.green} />
+              <meshBasicMaterial color="#6366f1" />
             </mesh>
           </Canvas>
         )}
@@ -1657,14 +1535,10 @@ function MinimapCamera({ centerX = 0, centerZ = 0 }: { centerX?: number; centerZ
 function Particles() {
   const positions = useMemo(() => {
     const arr = []
-    const pseudoRandom = (index: number) => {
-      const value = Math.sin(index * 12.9898) * 43758.5453
-      return value - Math.floor(value)
-    }
     for (let i = 0; i < 200; i++) {
-      arr.push((pseudoRandom(i * 3) - 0.5) * 80)
-      arr.push(pseudoRandom(i * 3 + 1) * 8 + 4)
-      arr.push((pseudoRandom(i * 3 + 2) - 0.5) * 80)
+      arr.push((Math.random() - 0.5) * 80)
+      arr.push(Math.random() * 8 + 4)
+      arr.push((Math.random() - 0.5) * 80)
     }
     return new Float32Array(arr)
   }, [])
@@ -1672,9 +1546,9 @@ function Particles() {
   return (
     <points>
       <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        <bufferAttribute attach="attributes-position" count={positions.length / 3} array={positions} itemSize={3} />
       </bufferGeometry>
-      <pointsMaterial size={0.12} color={GALLERY_VISUAL_COLORS.particle} transparent opacity={0.45} />
+      <pointsMaterial size={0.12} color="#cbd5e1" transparent opacity={0.45} />
     </points>
   )
 }
