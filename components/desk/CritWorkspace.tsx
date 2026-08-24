@@ -890,7 +890,7 @@ function FocusedSheet({
   onPenColor: (c: string) => void
   onPenWidth: (w: number) => void
   draftCallout: { nx: number; ny: number; text: string } | null
-  stageRef: React.RefObject<HTMLDivElement>
+  stageRef: React.RefObject<HTMLDivElement | null>
   onBack: () => void
   onPointerDown: (e: React.PointerEvent) => void
   onClick: (e: React.MouseEvent) => void

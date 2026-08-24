@@ -256,7 +256,7 @@ export async function resolveRoomCanvasAccess(
   // an ordinary content write, and using a different identity path here than
   // the trace route uses for the same act would be the inconsistency, not the
   // fix.
-  const supabase = supabaseServer()
+  const supabase = await supabaseServer()
   const { data: { session } } = await supabase.auth.getSession()
   const userId = session?.user?.id
   if (!userId) return { ok: false, status: 403, error: 'Forbidden' }

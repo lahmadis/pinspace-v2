@@ -120,7 +120,7 @@ function ExplorePageInner() {
           // Eager-prefetch first few studios so opening them is instant even without hover
           const toPrefetch = studios.filter((n) => n.url).slice(0, 5)
           for (const node of toPrefetch) {
-            prefetchStudioView(node.id, isDemo)
+            prefetchStudioView(node.id, isDemo, node.workspaceId ?? node.id)
             const path = node.url!.split('?')[0]
             router.prefetch(path)
           }
@@ -135,7 +135,7 @@ function ExplorePageInner() {
   const handleNodeHover = useCallback(
     (node: BubbleNode) => {
       if (!node.url) return
-      prefetchStudioView(node.id, isDemo)
+      prefetchStudioView(node.id, isDemo, node.workspaceId ?? node.id)
       const path = node.url.split('?')[0]
       router.prefetch(path)
     },

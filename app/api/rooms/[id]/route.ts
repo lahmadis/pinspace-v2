@@ -33,7 +33,7 @@ async function authorizeRoomMutation(
   | { ok: false; response: NextResponse }
 > {
   void request
-  const supabase = supabaseServer()
+  const supabase = await supabaseServer()
   const {
     data: { session },
     error: sessionError,
