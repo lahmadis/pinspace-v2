@@ -269,6 +269,68 @@ on whether the canvas comes back.
 
 ---
 
+## 11. OPEN — three test files deleted in the Next 16 merge, coverage not rewritten
+
+The merge (`7249452`) resolved three source files in favour of the Next 14
+branch, dropping exports and props that only the Next 16 base had. The base's
+tests for them came across intact, no longer compiled, and were deleted rather
+than left failing `npx tsc --noEmit`. **The implementations were deliberately
+left alone** — the merge's choice of source stands; only the orphaned tests
+went. All three are recoverable with `git show 7249452:<path>`.
+
+| Deleted test | Compiled against | Current source |
+|---|---|---|
+| `tests/boards/undo-persistence.test.ts` | `snapshotToPositionUpdates` exported from `components/3d/useBoardState.ts` | function is gone entirely |
+| `tests/components/discovery/GalleryMinimap.test.tsx` | named `Minimap` export from `components/Gallery3D.tsx` | still there at `Gallery3D.tsx:1311`, just not exported |
+| `tests/components/feedback-states.test.tsx` | `Loading` with `variant?: 'fullscreen' \| 'compact'` | `components/Loading.tsx` takes `message` only |
+
+**GalleryMinimap is the cheap one.** `Minimap` is live — rendered at
+`Gallery3D.tsx:1152`, declared at `1311` — and differs from the base's version
+by the `export` keyword and nothing else; the signatures are identical. The
+test's assertions also look close to the current markup (`aria-label="Close
+minimap"` at 1423, `Gallery Map` at 1431). Adding `export` and re-checking the
+focus-trap assertions may be the whole job. It covered: dialog role and
+`aria-modal="true"`, focus moving to Close on open, Tab and Shift+Tab both
+trapped inside, Escape closing the dialog and returning focus to the Expand
+trigger.
+
+**undo-persistence needs the behaviour back before the test.** It covered
+`snapshotToPositionUpdates` mapping an undo snapshot onto position updates while
+preserving each board's `wallIndex` and `side`, and dropping snapshot entries
+whose board no longer exists. Its third case asserted against the *source text*
+that restores route through
+`updateBoardPositionsBulk(updates, { recordUndo: false })` and surface a
+"Could not save every restored board position" toast on partial failure. The
+current file still has `updateBoardPositionsBulk` but **no `recordUndo` option
+at all**, so restoring an undo snapshot can still record a second undo entry.
+That is a real gap, not just a missing test — same undo surface as §1 and §9.
+
+**feedback-states lost nine tests that had nothing to do with the merge.** Only
+the first of its ten cases touched `Loading`. The other nine exercise components
+that are present and unchanged, and are the real loss here:
+
+- global error boundary renders and retries without leaking error detail (it
+  passed an error reading `DATABASE_PASSWORD=private` and asserted it is not shown)
+- `app/studio/[id]/error` and `app/studio/[id]/view/error` retry and back-navigation
+- toast live-region semantics, duplicate-ID updates, dismissal not stealing focus
+- toast timers cleaned up after auto-dismissal
+- offline and restored-online transitions announced without blocking actions
+- bottom toasts positioned above the measured offline notice and safe area
+- semantic PinSpace state tokens used rather than raw palette utilities
+- global dialog close targets at least 44px
+- `FeedbackButton` preventing duplicate submissions and announcing async progress
+
+Rewriting those nine is mostly copy-forward: recover the file, drop the
+`variant` rerender from the first case, and check what still passes.
+
+**The merge also dropped an accessible `Loading`.** The base's version had
+`role="status"`, `aria-live="polite"`, `aria-atomic="true"`, a
+`motion-reduce:animate-none` spinner and the `compact` variant. The current one
+has none of that, so the first test case was stale in more than just its
+`variant` line. Restoring it is a source change, out of scope for the deletion.
+
+---
+
 ## Accepted limits (working as intended — do not "fix" without reading why)
 
 **Board deletion destroys the image bytes.** `/api/boards` DELETE cascades to
