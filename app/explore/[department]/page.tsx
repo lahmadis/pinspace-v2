@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, Suspense } from 'react'
+import { use, useEffect, useMemo, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { notFound, useSearchParams, useRouter } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
@@ -416,10 +416,15 @@ function DepartmentPageInner({ params }: { params: { department: string } }) {
   )
 }
 
-export default function DepartmentPage({ params }: { params: { department: string } }) {
+export default function DepartmentPage({ params }: { params: Promise<{ department: string }> }) {
+  // Unwrapped HERE, not in the inner component: params is a Promise in Next 16,
+  // and the inner already has a local `params` of its own (a URLSearchParams it
+  // builds for the workspaces query). Resolving at the boundary keeps those two
+  // from ever having to share a name.
+  const resolved = use(params)
   return (
     <Suspense fallback={null}>
-      <DepartmentPageInner params={params} />
+      <DepartmentPageInner params={resolved} />
     </Suspense>
   )
 }

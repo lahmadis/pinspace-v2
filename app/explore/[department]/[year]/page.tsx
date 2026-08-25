@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
@@ -32,9 +32,11 @@ const YEAR_COLORS: Record<string, string> = {
   'Masters': '#EC4899',
 }
 
-export default function YearPage({ params }: { params: { department: string; year: string } }) {
-  const deptMeta = DEPT_MAP[params.department]
-  const yearInfo = YEAR_MAP[params.year]
+export default function YearPage({ params }: { params: Promise<{ department: string; year: string }> }) {
+  // See the note in app/desk-crits/[id]/page.tsx.
+  const { department, year } = use(params)
+  const deptMeta = DEPT_MAP[department]
+  const yearInfo = YEAR_MAP[year]
 
   const [nodes, setNodes] = useState<BubbleNode[]>([])
   const [studioCount, setStudioCount] = useState(0)
@@ -129,7 +131,7 @@ export default function YearPage({ params }: { params: { department: string; yea
       <header className="border-b border-gray-200 bg-white/90 backdrop-blur-sm sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href={`/explore/${params.department}`} className="text-sm text-gray-600 hover:text-gray-900">← Back</Link>
+            <Link href={`/explore/${department}`} className="text-sm text-gray-600 hover:text-gray-900">← Back</Link>
             <div className="text-sm text-gray-500">/</div>
             <div className="text-sm font-semibold text-gray-900">{deptMeta.name}</div>
             <div className="text-sm text-gray-500">/</div>

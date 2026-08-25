@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { use, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import CritWorkspace from '@/components/desk/CritWorkspace'
@@ -19,7 +19,10 @@ import { useAuthSession } from '@/hooks/useAuthSession'
  * them at free-floating coordinates in a space you had to pan around meant
  * hunting for your own work. See CritWorkspace for what replaced it.
  */
-export default function CritWorkspacePage({ params }: { params: { id: string } }) {
+export default function CritWorkspacePage({ params }: { params: Promise<{ id: string }> }) {
+  // Next 16 hands a page its params as a Promise; reading a property off it
+  // directly is deprecated and warns on every render.
+  const { id: critId } = use(params)
   const router = useRouter()
   const { status: authStatus } = useAuthSession()
 
@@ -37,7 +40,7 @@ export default function CritWorkspacePage({ params }: { params: { id: string } }
     const controller = new AbortController()
     ;(async () => {
       try {
-        const res = await fetch(`/api/canvases/${params.id}`, {
+        const res = await fetch(`/api/canvases/${critId}`, {
           cache: 'no-store',
           signal: controller.signal,
         })
@@ -54,7 +57,7 @@ export default function CritWorkspacePage({ params }: { params: { id: string } }
       }
     })()
     return () => controller.abort()
-  }, [params.id, authStatus])
+  }, [critId, authStatus])
 
   const commitTitle = useCallback(async () => {
     const next = draftTitle.trim()
@@ -63,7 +66,7 @@ export default function CritWorkspacePage({ params }: { params: { id: string } }
     const previous = title
     setTitle(next)
     try {
-      const res = await fetch(`/api/canvases/${params.id}`, {
+      const res = await fetch(`/api/canvases/${critId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: next }),
@@ -73,7 +76,7 @@ export default function CritWorkspacePage({ params }: { params: { id: string } }
       // Show the name the server actually holds, not the one it refused.
       setTitle(previous)
     }
-  }, [draftTitle, params.id, title])
+  }, [draftTitle, critId, title])
 
   if (state === 'missing') {
     return (
@@ -140,7 +143,7 @@ export default function CritWorkspacePage({ params }: { params: { id: string } }
             Rendering it while the title fetch is in flight would fire the node
             load against an id that may 403, and surface that as an error
             banner on a surface the user never got to see. */}
-        {state === 'ready' && <CritWorkspace canvasId={params.id} />}
+        {state === 'ready' && <CritWorkspace canvasId={critId} />}
       </div>
     </div>
   )

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import PasswordInput from '@/components/ui/PasswordInput'
@@ -50,7 +50,10 @@ function formatDate(iso: string) {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-export default function AdminInstructorPage({ params }: { params: { userId: string } }) {
+export default function AdminInstructorPage({ params }: { params: Promise<{ userId: string }> }) {
+  // See the note in app/desk-crits/[id]/page.tsx — params is a Promise in
+  // Next 16 and has to be unwrapped before any property read.
+  const { userId } = use(params)
   const [user, setUser] = useState<User | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
@@ -96,7 +99,7 @@ export default function AdminInstructorPage({ params }: { params: { userId: stri
     // fetch at a different admin route. No privilege is gained — everything
     // under /api/admin is admin-gated — but the page would then render another
     // endpoint's payload as if it were an instructor.
-    fetch(`/api/admin/instructors/${encodeURIComponent(params.userId)}`, { cache: 'no-store' })
+    fetch(`/api/admin/instructors/${encodeURIComponent(userId)}`, { cache: 'no-store' })
       .then(async (r) => {
         const data = await r.json().catch(() => ({}))
         if (!r.ok) throw new Error(data?.error || 'Failed to load instructor')
@@ -123,7 +126,7 @@ export default function AdminInstructorPage({ params }: { params: { userId: stri
 
   useEffect(() => {
     loadInstructor()
-  }, [isAdmin, params.userId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAdmin, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAdminSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
