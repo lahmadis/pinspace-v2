@@ -1,4 +1,6 @@
 # PinSpace (pinspace-v2) — Rules for Claude Code
+- The only branch this repo commits to is `sarah-main`. Verify with `git branch --show-current` before editing. Never create, rebase, or merge branches.
+- Base is Next 16 / React 19. Never change dependency versions.
 
 ## Hard rules — never violate
 - NEVER run `npm run build` locally. It hangs the Windows session. Push and let Vercel build.
@@ -10,7 +12,7 @@
 - Never run destructive/cleanup scripts with --apply without explicit user confirmation in the same session.
 
 ## Architecture conventions
-- Stack: Next.js 14 + TypeScript + Supabase + Three.js/React Three Fiber, deployed on Vercel. Email via Resend.
+- - Stack: Next.js 16 + React 19 + TypeScript + Supabase + Three.js/React Three Fiber (@react-three/fiber 9, drei 10), deployed on Vercel. Email via Resend.
 - RLS pattern: do NOT add new RLS policies. For reads that involve joined-but-not-owned workspaces, use supabaseServiceRole() and enforce access in app code (owner OR member OR org OR public). supabaseServer() silently filters those rows.
 - workspaces.owner_id is text; user_profiles.user_id is uuid. Joins between them need ::text casts.
 - Department lists must import from lib/constants/departments.ts — never define a local copy.
