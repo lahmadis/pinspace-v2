@@ -4,11 +4,7 @@ import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 import type { WallConfig } from '@/lib/wallLayout'
 import {
-  EASE_SWOOSH_REDIRECT,
-  EASE_SWOOSH_START,
-  MAX_SWOOSH_STEP_SECONDS,
   ROOM_DEFAULT_FOV,
-  SWOOSH_DURATION_SECONDS,
   getHeadOnPose,
   getPresetPose,
   getWallFocusPose,
@@ -173,35 +169,8 @@ export function CameraController({
   presetRequest = null,
 }: CameraControllerProps) {
   const { camera } = useThree()
-
-  /**
-   * prefers-reduced-motion, read live rather than at mount so toggling the OS
-   * setting takes effect without a reload. Seeded synchronously so a swoosh
-   * fired on the very first frame — before effects run — already respects it.
-   *
-   * This component renders nothing, so reading matchMedia during render can't
-   * cause a hydration mismatch.
-   */
-  // Lazily seeded: useRef's argument is not lazy, so probing matchMedia inline
-  // would allocate a MediaQueryList on every render (twice per pass under
-  // StrictMode) and discard all but the first. null = not yet probed.
-  const prefersReducedMotion = useRef<boolean | null>(null)
-  if (prefersReducedMotion.current === null) {
-    prefersReducedMotion.current =
-      typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-        ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        : false
-  }
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
-    prefersReducedMotion.current = query.matches
-    const onChange = (event: MediaQueryListEvent) => {
-      prefersReducedMotion.current = event.matches
-    }
-    query.addEventListener('change', onChange)
-    return () => query.removeEventListener('change', onChange)
-  }, [])
+  const SWOOSH_DURATION_SECONDS = 0.95
+  const MAX_SWOOSH_STEP_SECONDS = 1 / 45
 
   // Store the camera position before entering edit mode (so we can return to it)
   const savedCameraPosition = useRef<THREE.Vector3 | null>(null)
@@ -246,19 +215,8 @@ export function CameraController({
   const startTarget = useRef(new THREE.Vector3())
   const endPosition = useRef(new THREE.Vector3())
   const endTarget = useRef(new THREE.Vector3())
-  const startFov = useRef(ROOM_DEFAULT_FOV)
-  const endFov = useRef(ROOM_DEFAULT_FOV)
-  /**
-   * Which curve the in-flight move is using. Set per move rather than fixed,
-   * because a move that interrupts another one needs a different curve than one
-   * starting from rest — see beginSwoosh.
-   */
-  const swooshEasing = useRef(EASE_SWOOSH_START)
-  // Scratch vector for the per-frame target lerp. The frame loop used to
-  // allocate a fresh Vector3 here every frame, against this file's own
-  // no-per-frame-alloc convention; the resulting GC pressure showed up as
-  // exactly the kind of stutter the swoosh is supposed to avoid.
-  const swooshTargetVec = useRef(new THREE.Vector3())
+  const startFov = useRef(35)
+  const endFov = useRef(35)
 
   // When user releases mouse, OrbitControls still applies one frame of leftover delta.
   const restoreOnNextFrame = useRef(false)
@@ -288,26 +246,13 @@ export function CameraController({
     toFov: number,
     notifyOnComplete: boolean
   ) => {
-    // Redirect, never queue and never snap. Every caller passes the LIVE
-    // camera.position as `fromPosition`, so a second request mid-flight simply
-    // re-aims from wherever the camera actually is. What that alone doesn't fix
-    // is speed: replaying the from-rest curve would brake a moving camera to a
-    // stop and re-accelerate it. Switching to the redirect curve starts the new
-    // move at full speed instead, so the seam is invisible.
-    const interrupting = isAnimating.current
-    swooshEasing.current = interrupting ? EASE_SWOOSH_REDIRECT : EASE_SWOOSH_START
-
     startPosition.current.copy(fromPosition)
     startTarget.current.copy(fromTarget)
     endPosition.current.copy(toPosition)
     endTarget.current.copy(toTarget)
     startFov.current = fromFov
     endFov.current = toFov
-    // prefers-reduced-motion gets an instant cut, not a quicker swoosh. Seeding
-    // elapsed at the full duration makes the next frame land on t = 1, which
-    // applies the end pose exactly and fires onTransitionComplete through the
-    // normal path — no duplicate arrival logic to drift out of sync.
-    animationElapsedSeconds.current = prefersReducedMotion.current ? SWOOSH_DURATION_SECONDS : 0
+    animationElapsedSeconds.current = 0
     shouldNotifyOnComplete.current = notifyOnComplete
     isAnimating.current = true
   }
@@ -355,7 +300,7 @@ export function CameraController({
 
       const controls = getControls(orbitControlsRef)
       const fromTarget = controls ? controls.target.clone() : targetTarget.current.clone()
-      const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : ROOM_DEFAULT_FOV
+      const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : 35
       beginSwoosh(
         camera.position.clone(),
         fromTarget,
@@ -371,7 +316,7 @@ export function CameraController({
       const returnTarget = savedCameraTarget.current || defaultPose.target
       const controls = getControls(orbitControlsRef)
       const fromTarget = controls ? controls.target.clone() : defaultPose.target.clone()
-      const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : ROOM_DEFAULT_FOV
+      const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : 45
       beginSwoosh(
         camera.position.clone(),
         fromTarget,
@@ -477,14 +422,6 @@ export function CameraController({
     const controls = getControls(orbitControlsRef)
     if (!controls) return
 
-    // Captured before the swoosh block, which clears isAnimating on its final
-    // frame. The restore below has to know whether a swoosh owned the camera at
-    // any point during THIS frame, not whether one is still running by the time
-    // we reach it — otherwise an 'end' event landing in the last inter-frame gap
-    // gets applied on the very frame the swoosh lands, overwriting the arrival
-    // pose with the stale drag-release pose and leaving the camera stuck there.
-    const swooshOwnsCameraThisFrame = isAnimating.current
-
     if (listenerControlsRef.current !== controls) {
       // Remove from old instance if there was one
       if (listenerControlsRef.current && endHandlerRef.current) {
@@ -510,14 +447,12 @@ export function CameraController({
         SWOOSH_DURATION_SECONDS
       )
       const t = Math.min(animationElapsedSeconds.current / SWOOSH_DURATION_SECONDS, 1)
-      const easeT = swooshEasing.current(t)
+      const easeT = t < 0.5
+        ? 2 * t * t
+        : 1 - Math.pow(-2 * t + 2, 2) / 2
 
       camera.position.lerpVectors(startPosition.current, endPosition.current, easeT)
-      const currentTarget = swooshTargetVec.current.lerpVectors(
-        startTarget.current,
-        endTarget.current,
-        easeT
-      )
+      const currentTarget = new THREE.Vector3().lerpVectors(startTarget.current, endTarget.current, easeT)
       controls.target.copy(currentTarget)
       camera.lookAt(currentTarget)
       camera.up.set(0, 1, 0)
@@ -580,20 +515,9 @@ export function CameraController({
     c.enableDamping = false
     controls.update()
 
-    // Deliberately skipped on any frame a swoosh owned the camera. This restore
-    // exists to undo OrbitControls' one frame of leftover momentum after the
-    // user lets go; applied on top of a swoosh it would instead yank the camera
-    // back to the drag-release pose, either as a visible hitch mid-move or — on
-    // the arrival frame — as a permanent one, since nothing re-applies the end
-    // pose afterwards and orbit stays disabled under focus. Dropping the
-    // restore rather than deferring it is right: the swoosh is authoritative
-    // about where the camera goes, and there is no leftover momentum left to
-    // correct once it lands.
     if (restoreOnNextFrame.current) {
-      if (!swooshOwnsCameraThisFrame) {
-        camera.position.copy(positionOnEnd.current)
-        controls.target.copy(targetOnEnd.current)
-      }
+      camera.position.copy(positionOnEnd.current)
+      controls.target.copy(targetOnEnd.current)
       restoreOnNextFrame.current = false
     }
 
