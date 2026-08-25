@@ -112,7 +112,7 @@ async function authorizeRoomMutation(
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const body = await request.json().catch(() => ({}))
@@ -137,7 +137,7 @@ export async function PATCH(
     // Wall color is owner-OR-superadmin (never plain members). isNameOnlyRename
     // is false whenever wall color is present, so the member relaxation can't
     // leak to it.
-    const auth = await authorizeRoomMutation(request, params.id, {
+    const auth = await authorizeRoomMutation(request, (await params).id, {
       allowMembers: isNameOnlyRename,
       allowSuperadmin: wantsWallColor,
     })
@@ -190,7 +190,7 @@ export async function PATCH(
       const { error: updateError } = await admin
         .from('rooms')
         .update(updates)
-        .eq('id', params.id)
+        .eq('id', (await params).id)
       if (updateError) {
         console.error('Error updating room:', updateError)
         return NextResponse.json({ error: 'Failed to update space' }, { status: 500 })
@@ -200,7 +200,7 @@ export async function PATCH(
     const { data: updated } = await admin
       .from('rooms')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', (await params).id)
       .single()
 
     return NextResponse.json({ room: updated ?? room })
@@ -222,10 +222,10 @@ export async function PATCH(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await authorizeRoomMutation(request, params.id)
+    const auth = await authorizeRoomMutation(request, (await params).id)
     if (!auth.ok) return auth.response
     const { workspaceId } = auth
 
@@ -247,7 +247,7 @@ export async function DELETE(
     const { error: deleteError } = await admin
       .from('rooms')
       .delete()
-      .eq('id', params.id)
+      .eq('id', (await params).id)
     if (deleteError) {
       console.error('Error deleting room:', deleteError)
       return NextResponse.json({ error: 'Failed to delete space' }, { status: 500 })

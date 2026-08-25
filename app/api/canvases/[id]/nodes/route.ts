@@ -26,10 +26,10 @@ const MAX_CANVAS_NODES = 20000
 // GET /api/canvases/[id]/nodes — the whole canvas, in paint order.
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -59,7 +59,7 @@ export async function GET(
       const { data, error } = await db
         .from('canvas_nodes')
         .select('*')
-        .eq('canvas_id', params.id)
+        .eq('canvas_id', (await params).id)
         .order('z', { ascending: true })
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
@@ -85,7 +85,7 @@ export async function GET(
     // If we ever hit the ceiling, say so in the log rather than quietly serving
     // a partial canvas — the same silent-truncation trap the paging avoids.
     if (rows.length >= MAX_CANVAS_NODES) {
-      console.warn(`Canvas ${params.id} hit the ${MAX_CANVAS_NODES}-node read ceiling; result may be partial`)
+      console.warn(`Canvas ${(await params).id} hit the ${MAX_CANVAS_NODES}-node read ceiling; result may be partial`)
     }
 
     return NextResponse.json({ nodes: rows.map(transformNode) })
@@ -103,10 +103,10 @@ export async function GET(
 // conflicts rather than creating a second object.
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -176,7 +176,7 @@ export async function POST(
       const { data: found, error: endpointError } = await db
         .from('canvas_nodes')
         .select('id')
-        .eq('canvas_id', params.id)
+        .eq('canvas_id', (await params).id)
         .in('id', endpointIds)
 
       if (endpointError) {
@@ -201,7 +201,7 @@ export async function POST(
       .from('canvas_nodes')
       .insert({
         id,
-        canvas_id: params.id,
+        canvas_id: (await params).id,
         // From the canvas, never the request. See resolveCanvasAccess.
         room_id: access.roomId,
         type,
@@ -242,7 +242,7 @@ export async function POST(
           .from('canvas_nodes')
           .select('*')
           .eq('id', id)
-          .eq('canvas_id', params.id)
+          .eq('canvas_id', (await params).id)
           .maybeSingle()
         if (existing) {
           return NextResponse.json({ node: transformNode(existing as CanvasNodeRow) })

@@ -28,10 +28,10 @@ function transformSummary(row: Record<string, unknown>) {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -42,7 +42,7 @@ export async function GET(
     const { data, error } = await supabaseServiceRole()
       .from('canvas_summaries')
       .select('*')
-      .eq('canvas_id', params.id)
+      .eq('canvas_id', (await params).id)
       .maybeSingle()
 
     if (error) {
@@ -69,10 +69,10 @@ export async function GET(
 // read-then-branch that two tabs could both lose.
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -101,7 +101,7 @@ export async function PUT(
       .from('canvas_summaries')
       .upsert(
         {
-          canvas_id: params.id,
+          canvas_id: (await params).id,
           text: text.trim(),
           source: typeof source === 'string' && source.trim() ? source.trim().slice(0, 40) : 'manual',
           // updated_by: the upsert replaces the row, so this is the last writer

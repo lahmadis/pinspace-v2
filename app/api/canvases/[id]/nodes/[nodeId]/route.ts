@@ -63,10 +63,10 @@ async function explainMiss(canvasId: string, nodeId: string): Promise<NextRespon
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string; nodeId: string } }
+  { params }: { params: Promise<{ id: string; nodeId: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -129,8 +129,8 @@ export async function PATCH(
       supabaseServiceRole()
         .from('canvas_nodes')
         .update(patch)
-        .eq('id', params.nodeId)
-        .eq('canvas_id', params.id),
+        .eq('id', (await params).nodeId)
+        .eq('canvas_id', (await params).id),
       access
     )
       .select('*')
@@ -141,7 +141,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Failed to update canvas node' }, { status: 500 })
     }
     if (!data) {
-      return explainMiss(params.id, params.nodeId)
+      return explainMiss((await params).id, (await params).nodeId)
     }
 
     return NextResponse.json({ node: transformNode(data as CanvasNodeRow) })
@@ -153,10 +153,10 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string; nodeId: string } }
+  { params }: { params: Promise<{ id: string; nodeId: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -184,8 +184,8 @@ export async function DELETE(
       supabaseServiceRole()
         .from('canvas_nodes')
         .delete()
-        .eq('id', params.nodeId)
-        .eq('canvas_id', params.id),
+        .eq('id', (await params).nodeId)
+        .eq('canvas_id', (await params).id),
       access
     ).select('id')
 
@@ -199,7 +199,7 @@ export async function DELETE(
     // true while still refusing a guest who aimed at a node that IS there but
     // isn't theirs.
     if (!data || data.length === 0) {
-      const miss = await explainMiss(params.id, params.nodeId)
+      const miss = await explainMiss((await params).id, (await params).nodeId)
       if (miss.status === 403) return miss
     }
 

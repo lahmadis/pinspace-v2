@@ -24,10 +24,10 @@ function transformCanvas(row: Record<string, unknown>) {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -35,7 +35,7 @@ export async function GET(
     const { data, error } = await supabaseServiceRole()
       .from('canvases')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', (await params).id)
       .maybeSingle()
 
     if (error) {
@@ -75,10 +75,10 @@ function ownsPersonally(access: { ownerId: string | null; authorId: string | nul
 // visibility change dressed up as an edit.
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -102,7 +102,7 @@ export async function PATCH(
     const { data, error } = await supabaseServiceRole()
       .from('canvases')
       .update({ title: title.trim().slice(0, 200) })
-      .eq('id', params.id)
+      .eq('id', (await params).id)
       .select('*')
       .maybeSingle()
 
@@ -122,10 +122,10 @@ export async function PATCH(
 // DELETE — remove the canvas and, by cascade, every node on it.
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       // Idempotent on a missing canvas: a retry after a dropped response should
       // not surface an error for work that already succeeded. 403 still stands.
@@ -149,7 +149,7 @@ export async function DELETE(
     const { error } = await supabaseServiceRole()
       .from('canvases')
       .delete()
-      .eq('id', params.id)
+      .eq('id', (await params).id)
 
     if (error) {
       console.error('Error deleting canvas:', error)

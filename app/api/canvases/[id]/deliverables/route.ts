@@ -58,10 +58,10 @@ function transformDeliverable(row: Record<string, unknown>): DeliverableRow {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -75,7 +75,7 @@ export async function GET(
     const { data, error } = await supabaseServiceRole()
       .from('canvas_deliverables')
       .select('*')
-      .eq('canvas_id', params.id)
+      .eq('canvas_id', (await params).id)
       .order('position', { ascending: true })
       .order('created_at', { ascending: true })
       .order('id', { ascending: true })
@@ -104,10 +104,10 @@ export async function GET(
 // to hold. Removing a duplicate is one click; recovering a wiped list is not.
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -144,7 +144,7 @@ export async function POST(
     const { data: last, error: lastError, count } = await db
       .from('canvas_deliverables')
       .select('position', { count: 'exact' })
-      .eq('canvas_id', params.id)
+      .eq('canvas_id', (await params).id)
       .order('position', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -183,7 +183,7 @@ export async function POST(
       const detail = typeof record.detail === 'string' ? record.detail.trim() : ''
       const due = typeof record.due === 'string' ? record.due.trim() : ''
       rows.push({
-        canvas_id: params.id,
+        canvas_id: (await params).id,
         title: title.slice(0, MAX_DELIVERABLE_TITLE),
         // Empty string becomes NULL: the column is nullable to mean "no detail",
         // and an empty string would render as a blank second line.

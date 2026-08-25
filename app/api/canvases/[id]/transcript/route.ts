@@ -73,10 +73,10 @@ function transformSegment(row: Record<string, unknown>): TranscriptSegment {
 // GET — every segment of this crit, oldest first.
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -95,7 +95,7 @@ export async function GET(
     const { data, error } = await supabaseServiceRole()
       .from('canvas_transcripts')
       .select('*')
-      .eq('canvas_id', params.id)
+      .eq('canvas_id', (await params).id)
       .order('recorded_at', { ascending: false })
       // Total, so two segments sharing a timestamp — an autosave and a beacon
       // landing together — do not swap places between loads. Same reason the
@@ -114,7 +114,7 @@ export async function GET(
     const rows = data || []
     if (rows.length >= MAX_SEGMENTS) {
       console.warn(
-        `Canvas ${params.id} hit the ${MAX_SEGMENTS}-segment read cap; the oldest segments are omitted`
+        `Canvas ${(await params).id} hit the ${MAX_SEGMENTS}-segment read cap; the oldest segments are omitted`
       )
     }
 
@@ -134,10 +134,10 @@ export async function GET(
 // prevent.
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -192,7 +192,7 @@ export async function POST(
     const { data, error } = await supabaseServiceRole()
       .from('canvas_transcripts')
       .insert({
-        canvas_id: params.id,
+        canvas_id: (await params).id,
         text: text.trim(),
         source: (source as string) ?? 'web-speech',
         recorded_at: stamp,

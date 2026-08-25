@@ -36,10 +36,10 @@ function transformDeliverable(row: Record<string, unknown>) {
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string; deliverableId: string } }
+  { params }: { params: Promise<{ id: string; deliverableId: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -94,8 +94,8 @@ export async function PATCH(
     const { data, error } = await supabaseServiceRole()
       .from('canvas_deliverables')
       .update(patch)
-      .eq('id', params.deliverableId)
-      .eq('canvas_id', params.id)
+      .eq('id', (await params).deliverableId)
+      .eq('canvas_id', (await params).id)
       .select('*')
       .maybeSingle()
 
@@ -117,10 +117,10 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string; deliverableId: string } }
+  { params }: { params: Promise<{ id: string; deliverableId: string }> }
 ) {
   try {
-    const result = await resolveCanvasAccess(request, params.id)
+    const result = await resolveCanvasAccess(request, (await params).id)
     if (!result.ok) {
       // Idempotent on a canvas that is already gone.
       if (result.status === 404) return NextResponse.json({ ok: true })
@@ -134,8 +134,8 @@ export async function DELETE(
     const { error } = await supabaseServiceRole()
       .from('canvas_deliverables')
       .delete()
-      .eq('id', params.deliverableId)
-      .eq('canvas_id', params.id)
+      .eq('id', (await params).deliverableId)
+      .eq('canvas_id', (await params).id)
 
     if (error) {
       if (isMissingTable(error)) {
