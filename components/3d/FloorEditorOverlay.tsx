@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { calculateFloorBounds, getWallTransformResolved, getWallTransform } from '@/lib/wallLayout'
+import { calculateFloorBounds, getFloorRect, floorRectBounds, FLOOR_MIN_INCHES, getWallTransformResolved, getWallTransform } from '@/lib/wallLayout'
 import { makePlanProjection } from '@/lib/room/planProjection'
 import { ROOM, MONO_STACK } from '@/lib/room/palette'
 import type { WallConfig, WallTransformOverride } from '@/lib/wallLayout'
@@ -95,6 +95,26 @@ interface FloorEditorOverlayProps {
   viewWidth?: number
   viewHeight?: number
   padding?: number
+  /**
+   * Render inline instead of as a modal.
+   *
+   * Plan view IS this editor now — there is no "open the wall editor" button
+   * and nothing to dismiss — so the dimmed backdrop, the floating card and the
+   * close affordance all come off, and the drawing fills the tab. Pair it with
+   * viewWidth/viewHeight/padding matching PlanView so the geometry lands where
+   * the read-only plan drew it.
+   *
+   * `onSaveAndExit` still fires from the Save button; embedded callers should
+   * pass a handler that persists WITHOUT closing anything.
+   */
+  embedded?: boolean
+  /**
+   * Switch the grabbable layer, embedded only. Supplying it renders the
+   * Walls/Models toggle inside the editor's own control panel — the panel has
+   * to live bottom-left (every other corner is fixed chrome), and a separate
+   * floating toggle stacked against it just made two panels to dodge.
+   */
+  onModeChange?: (next: 'tables' | 'walls') => void
 }
 
 const VIEW_WIDTH = 700
@@ -208,6 +228,8 @@ export default function FloorEditorOverlay({
   viewWidth = VIEW_WIDTH,
   viewHeight = VIEW_HEIGHT,
   padding = PADDING,
+  embedded = false,
+  onModeChange,
 }: FloorEditorOverlayProps) {
   // Snapping is opt-in per gesture via Shift. Read live (not latched at
   // pointer-down) so it can be toggled mid-drag; `lastPointerRef` lets the
@@ -267,7 +289,59 @@ export default function FloorEditorOverlay({
     axisZ: number
   } | null>(null)
 
+  /**
+   * Floor move/resize. The floor is a surface you edit, not a by-product of
+   * where the walls happen to be, so it gets its own gesture rather than
+   * riding along with a wall's.
+   */
+  const [floorGesture, setFloorGesture] = useState<
+    { kind: 'move' } | { kind: 'resize'; corner: 'nw' | 'ne' | 'sw' | 'se' } | null
+  >(null)
+  const [floorStart, setFloorStart] = useState<{
+    startPx: number
+    startPy: number
+    rect: { centerX: number; centerZ: number; width: number; depth: number }
+  } | null>(null)
+
   const floorPlanRef = useRef<HTMLDivElement>(null)
+  /**
+   * Live pixel size of the canvas box, embedded only.
+   *
+   * The whole plan has to fit the tab with no scrolling, which means the canvas
+   * can't be a fixed square any more. It also can't just be stretched with CSS:
+   * every pointer handler maps client coords straight through this box's rect
+   * (`rect.left + centerPx`), which is only correct while ONE SVG UNIT IS ONE
+   * CSS PIXEL. So instead of scaling the drawing, we measure the box and hand
+   * its real size to both the viewBox and the projection — the viewBox then
+   * always equals the element's pixel size, the mapping stays identity, and
+   * preserveAspectRatio="none" has nothing left to distort.
+   *
+   * makePlanProjection already fits the room into whatever rectangle it's
+   * given (scale = min(sx, sz), then centres), so a non-square canvas needs no
+   * special-casing — the room just gets more margin on the long axis.
+   */
+  const [measuredPlan, setMeasuredPlan] = useState<{ w: number; h: number } | null>(null)
+  useEffect(() => {
+    if (!embedded) return
+    const el = floorPlanRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const apply = () => {
+      const r = el.getBoundingClientRect()
+      if (r.width > 0 && r.height > 0) {
+        setMeasuredPlan((prev) =>
+          // Round before comparing: sub-pixel layout jitter would otherwise
+          // re-render the whole editor on every scroll/zoom tick.
+          prev && Math.round(prev.w) === Math.round(r.width) && Math.round(prev.h) === Math.round(r.height)
+            ? prev
+            : { w: r.width, h: r.height }
+        )
+      }
+    }
+    apply()
+    const ro = new ResizeObserver(apply)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [embedded])
 
   // Undo/redo for walls mode
   const [undoHistory, setUndoHistory] = useState<WallConfig[]>([])
@@ -278,15 +352,35 @@ export default function FloorEditorOverlay({
   undoHistoryRef.current = undoHistory
   undoIndexRef.current = undoIndex
 
-  const bounds = calculateFloorBounds(wallConfig)
+  // The floor is its own surface now, so the drawing has to frame the UNION of
+  // the walls and the slab — either can extend past the other, and cropping
+  // whichever is bigger would hide exactly the thing you came here to drag.
+  const floorRect = getFloorRect(wallConfig)
+  const wallBounds = calculateFloorBounds(wallConfig)
+  const fb = floorRectBounds(floorRect)
+  const hasWalls = wallConfig.walls.length > 0 && Number.isFinite(wallBounds.minX)
+  const bounds = {
+    minX: hasWalls ? Math.min(wallBounds.minX, fb.minX) : fb.minX,
+    maxX: hasWalls ? Math.max(wallBounds.maxX, fb.maxX) : fb.maxX,
+    minZ: hasWalls ? Math.min(wallBounds.minZ, fb.minZ) : fb.minZ,
+    maxZ: hasWalls ? Math.max(wallBounds.maxZ, fb.maxZ) : fb.maxZ,
+  }
   const { minX, maxX, minZ, maxZ } = bounds
 
   // Uniform scale (px per inch) — same factor for X and Z so grid cells are square
   // One projection per render, from the canvas size this instance was given —
   // the modal uses its own 700x500, the Plan tab passes its own so the editor
   // draws at exactly the scale and position of the plan already on screen.
-  const proj = makePlanProjection(bounds, viewWidth, viewHeight, padding)
-  const { scale: uniformScale, offsetX: floorOffsetX, offsetY: floorOffsetY, usedWidth: floorUsedWidth, usedHeight: floorUsedHeight } = proj
+  // Embedded fills its box; the modal keeps its fixed canvas. Falls back to the
+  // prop until the first measurement lands, so the first paint is never 0-sized.
+  const planW = embedded ? measuredPlan?.w ?? viewWidth : viewWidth
+  const planH = embedded ? measuredPlan?.h ?? viewHeight : viewHeight
+
+  const proj = makePlanProjection(bounds, planW, planH, padding)
+  // Only the scale is needed now. The offset/used-size fields used to position
+  // the floor rect, back when the floor WAS this projection's bounds box; the
+  // slab is drawn from its own world rect through toPx instead.
+  const { scale: uniformScale } = proj
   // World-per-pixel conversion used in drag handlers
   const invScale = 1 / uniformScale
 
@@ -487,6 +581,50 @@ export default function FloorEditorOverlay({
   // drifted one.
   const applyPointerAt = useCallback(
     (clientX: number, clientY: number) => {
+      // ── Floor move / resize ──
+      // Independent of every wall: nothing here reads or writes a wall
+      // transform, which is the whole point — the slab and the walls are
+      // separate objects that may disagree.
+      if (floorGesture && floorStart && onWallConfigChange) {
+        const dX = (clientX - floorStart.startPx) * invScale
+        const dZ = (clientY - floorStart.startPy) * invScale
+        const r = floorStart.rect
+        // Shift snaps to the same 12" ruling the grid draws.
+        const snap = (v: number) =>
+          shiftHeldRef.current ? Math.round(v / GRID_INCHES) * GRID_INCHES : v
+
+        let next = r
+        if (floorGesture.kind === 'move') {
+          next = { ...r, centerX: snap(r.centerX + dX), centerZ: snap(r.centerZ + dZ) }
+        } else {
+          // Resize from a corner: the OPPOSITE corner is pinned, so the slab
+          // grows away from the anchor the way a marquee does.
+          const west = floorGesture.corner === 'nw' || floorGesture.corner === 'sw'
+          const north = floorGesture.corner === 'nw' || floorGesture.corner === 'ne'
+          const anchorX = west ? r.centerX + r.width / 2 : r.centerX - r.width / 2
+          const anchorZ = north ? r.centerZ + r.depth / 2 : r.centerZ - r.depth / 2
+          const movingX = snap((west ? r.centerX - r.width / 2 : r.centerX + r.width / 2) + dX)
+          const movingZ = snap((north ? r.centerZ - r.depth / 2 : r.centerZ + r.depth / 2) + dZ)
+          const width = Math.max(FLOOR_MIN_INCHES, Math.abs(movingX - anchorX))
+          const depth = Math.max(FLOOR_MIN_INCHES, Math.abs(movingZ - anchorZ))
+          // Re-derive the centre from the pinned anchor so hitting the minimum
+          // size stops the slab dead instead of letting it drift.
+          const signX = movingX >= anchorX ? 1 : -1
+          const signZ = movingZ >= anchorZ ? 1 : -1
+          next = {
+            centerX: anchorX + (signX * width) / 2,
+            centerZ: anchorZ + (signZ * depth) / 2,
+            width,
+            depth,
+          }
+        }
+
+        const nextConfig = { ...wallConfig, floor: next }
+        lastAppliedWallConfigRef.current = nextConfig
+        onWallConfigChange(nextConfig)
+        return
+      }
+
       // ── Wall drag (move) ──
       if (draggingWallIndex !== null && wallDragStart && onWallConfigChange) {
         const deltaPx = clientX - wallDragStart.startPx
@@ -642,6 +780,7 @@ export default function FloorEditorOverlay({
     [
       draggingWallIndex, wallDragStart, rotatingWallIndex, rotateStart,
       stretchingWallIndex, stretchStart, draggingTableId, dragStart,
+      floorGesture, floorStart,
       invScale, setTables, wallConfig, onWallConfigChange,
       ensureCustomTransforms,
     ]
@@ -664,7 +803,8 @@ export default function FloorEditorOverlay({
   // the same coordinates is idempotent.
   useEffect(() => {
     const gestureActive =
-      draggingWallIndex !== null || rotatingWallIndex !== null || stretchingWallIndex !== null
+      draggingWallIndex !== null || rotatingWallIndex !== null ||
+      stretchingWallIndex !== null || floorGesture !== null
     if (!gestureActive) return
     const onShiftToggle = (ev: KeyboardEvent) => {
       if (ev.key !== 'Shift') return
@@ -683,9 +823,18 @@ export default function FloorEditorOverlay({
       window.removeEventListener('keydown', onShiftToggle)
       window.removeEventListener('keyup', onShiftToggle)
     }
-  }, [draggingWallIndex, rotatingWallIndex, stretchingWallIndex, applyPointerAt])
+  }, [draggingWallIndex, rotatingWallIndex, stretchingWallIndex, floorGesture, applyPointerAt])
 
   const handlePointerUp = useCallback(() => {
+    if (mode === 'walls' && onWallConfigChange && floorGesture !== null) {
+      const configToPush = lastAppliedWallConfigRef.current ?? wallConfig
+      setUndoHistory((prev) => { const t = prev.slice(0, undoIndex + 1); t.push(configToPush); return t })
+      setUndoIndex((prev) => prev + 1)
+      lastAppliedWallConfigRef.current = null
+    }
+    setFloorGesture(null)
+    setFloorStart(null)
+
     if (mode === 'walls' && onWallConfigChange &&
       (draggingWallIndex !== null || rotatingWallIndex !== null || stretchingWallIndex !== null)) {
       const configToPush = lastAppliedWallConfigRef.current ?? wallConfig
@@ -717,7 +866,7 @@ export default function FloorEditorOverlay({
     // the SNAPPED geometry — the snap is not a preview overlay.
     setActiveSnapTarget(null)
     lastPointerRef.current = null
-  }, [mode, onWallConfigChange, draggingWallIndex, rotatingWallIndex, stretchingWallIndex, wallConfig, undoIndex])
+  }, [mode, onWallConfigChange, draggingWallIndex, rotatingWallIndex, stretchingWallIndex, floorGesture, wallConfig, undoIndex])
 
   // ── Wall interaction starters ─────────────────────────────────────────────
 
@@ -993,21 +1142,38 @@ export default function FloorEditorOverlay({
   })
 
   // ── Grid pattern coords ───────────────────────────────────────────────────
-  // World-aligned 12-inch grid lines, clipped to the actual floor rect.
+  // World-aligned 12-inch grid, across the WHOLE canvas rather than clipped to
+  // the floor. It used to stop at the floor rect, which quietly made the grid a
+  // drawing OF the floor — so the floor looked like the extent of the world and
+  // there was nowhere to put a wall that wasn't on it. As drafting paper the
+  // grid is the ground everything sits on, and the floor is just one object
+  // drawn on it.
+  //
+  // Extents come from the canvas corners through toWorld, not from `bounds`, so
+  // the ruling reaches the edges at any zoom instead of stopping where the
+  // geometry happens to end.
   const gridLines: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
   if (mode === 'walls') {
-    const startGridX = Math.ceil(minX / GRID_INCHES) * GRID_INCHES
-    const endGridX = Math.floor(maxX / GRID_INCHES) * GRID_INCHES
-    const startGridZ = Math.ceil(minZ / GRID_INCHES) * GRID_INCHES
-    const endGridZ = Math.floor(maxZ / GRID_INCHES) * GRID_INCHES
+    const [worldLeft, worldTop] = proj.toWorld(0, 0)
+    const [worldRight, worldBottom] = proj.toWorld(planW, planH)
+    const startGridX = Math.ceil(worldLeft / GRID_INCHES) * GRID_INCHES
+    const endGridX = Math.floor(worldRight / GRID_INCHES) * GRID_INCHES
+    const startGridZ = Math.ceil(worldTop / GRID_INCHES) * GRID_INCHES
+    const endGridZ = Math.floor(worldBottom / GRID_INCHES) * GRID_INCHES
 
-    for (let gx = startGridX; gx <= endGridX; gx += GRID_INCHES) {
-      const [px] = proj.toPx(gx, 0)
-      gridLines.push({ x1: px, y1: floorOffsetY, x2: px, y2: floorOffsetY + floorUsedHeight })
+    // Guard against a degenerate projection producing an unbounded loop.
+    const maxLines = 400
+    if ((endGridX - startGridX) / GRID_INCHES < maxLines) {
+      for (let gx = startGridX; gx <= endGridX; gx += GRID_INCHES) {
+        const [px] = proj.toPx(gx, 0)
+        gridLines.push({ x1: px, y1: 0, x2: px, y2: planH })
+      }
     }
-    for (let gz = startGridZ; gz <= endGridZ; gz += GRID_INCHES) {
-      const [, py] = proj.toPx(0, gz)
-      gridLines.push({ x1: floorOffsetX, y1: py, x2: floorOffsetX + floorUsedWidth, y2: py })
+    if ((endGridZ - startGridZ) / GRID_INCHES < maxLines) {
+      for (let gz = startGridZ; gz <= endGridZ; gz += GRID_INCHES) {
+        const [, py] = proj.toPx(0, gz)
+        gridLines.push({ x1: 0, y1: py, x2: planW, y2: py })
+      }
     }
   }
 
@@ -1015,58 +1181,125 @@ export default function FloorEditorOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className={
+        embedded
+          ? 'absolute inset-0 overflow-hidden'
+          : 'fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm'
+      }
+      style={embedded ? { background: ROOM.background } : undefined}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col"
-        style={{ width: VIEW_WIDTH + 48, maxHeight: '90vh' }}
+        className={
+          embedded
+            ? 'relative flex flex-col h-full'
+            : 'bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col'
+        }
+        style={embedded ? undefined : { width: VIEW_WIDTH + 48, maxHeight: '90vh' }}
       >
-        {/* Header */}
-        <div className="shrink-0 border-b border-gray-200">
-          <div className="flex items-center justify-between px-6 py-4">
-            <h2 className="text-lg font-semibold text-gray-900">
-              {mode === 'walls' ? 'Floor plan – reconfigure walls' : 'Floor plan – place tables'}
-            </h2>
-            <div className="flex items-center gap-2">
+        {/* Header. Embedded this is NOT a top bar: the top strip is taken by
+            fixed chrome on both sides (breadcrumb top-left at z-40, Share
+            top-right, roster below it), so the controls go bottom-left — the
+            one clear corner, and the same one the old plan panel used. */}
+        <div
+          className={
+            embedded
+              ? 'absolute bottom-4 left-4 z-10 w-[252px] rounded-xl bg-white border border-gray-200 shadow-[0_4px_16px_rgba(22,24,29,0.10)] overflow-hidden'
+              : 'shrink-0 border-b border-gray-200'
+          }
+        >
+          {embedded && (
+            <div className="px-3 pt-2.5 pb-1.5 text-[9.5px] font-semibold uppercase tracking-[0.18em] text-gray-400 border-b border-gray-100">
+              Edit room
+            </div>
+          )}
+          {embedded && onModeChange && (
+            <div className="flex gap-1 p-1.5 border-b border-gray-100">
+              {([
+                { key: 'walls' as const, label: 'Walls' },
+                { key: 'tables' as const, label: 'Models' },
+              ]).map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => onModeChange(key)}
+                  aria-pressed={mode === key}
+                  className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors ${
+                    mode === key
+                      ? 'bg-[#3B6EF6] text-white'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          <div
+            className={
+              embedded
+                ? 'flex flex-col gap-1.5 p-1.5'
+                : 'flex items-center justify-between px-6 py-4'
+            }
+          >
+            {/* Inline, the tab itself says where you are and the Walls/Models
+                toggle says which layer you're on, so a second title would just
+                repeat the chrome around it. */}
+            {embedded ? <span /> : (
+              <h2 className="text-lg font-semibold text-gray-900">
+                {mode === 'walls' ? 'Floor plan – reconfigure walls' : 'Floor plan – place tables'}
+              </h2>
+            )}
+            <div className={embedded ? 'flex flex-col gap-1.5' : 'flex items-center gap-2'}>
               {mode === 'tables' && (
                 <button
                   type="button"
                   onClick={handleAddTable}
-                  className="flex items-center gap-2 px-4 py-2 bg-[#3B6EF6] hover:bg-[#16181D] text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+                  className={`flex items-center justify-center gap-2 bg-[#3B6EF6] hover:bg-[#16181D] text-white transition-colors shadow-sm ${
+                    embedded ? 'rounded-lg px-3 py-1.5 text-xs font-semibold' : 'px-4 py-2 rounded-xl text-sm font-medium'
+                  }`}
                 >
                   <Plus className="w-4 h-4" />
                   Add table
                 </button>
               )}
+              {/* Walls autosave through onWallConfigChange; tables do not, so
+                  inline this stays an explicit Save rather than becoming a new
+                  debounced writer on the versioned wall-config blob. */}
               <button
                 type="button"
                 onClick={() => onSaveAndExit()}
-                className="px-4 py-2 bg-[#3B6EF6] hover:bg-[#16181D] text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+                className={`bg-[#3B6EF6] hover:bg-[#16181D] text-white transition-colors shadow-sm ${
+                  embedded ? 'rounded-lg px-3 py-1.5 text-xs font-semibold' : 'px-4 py-2 rounded-xl text-sm font-medium'
+                }`}
               >
-                Save & exit
+                {embedded ? 'Save' : 'Save & exit'}
               </button>
-              <button
-                type="button"
-                onClick={() => onSaveAndExit()}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
+              {!embedded && (
+                <button
+                  type="button"
+                  onClick={() => onSaveAndExit()}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5 text-gray-600" />
+                </button>
+              )}
             </div>
           </div>
 
           {mode === 'walls' && (
-            <div className="flex flex-wrap items-center gap-2 px-6 pb-4">
+            <div className={embedded ? 'flex flex-wrap items-center gap-1.5 p-1.5 pt-0' : 'flex flex-wrap items-center gap-2 px-6 pb-4'}>
               <button
                 type="button"
                 onClick={handleAddWall}
-                className="flex items-center gap-2 px-4 py-2 bg-[#3B6EF6] hover:bg-[#16181D] text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+                className={`flex items-center gap-2 bg-[#3B6EF6] hover:bg-[#16181D] text-white transition-colors shadow-sm ${
+                  embedded ? 'rounded-lg px-2.5 py-1.5 text-xs font-semibold' : 'px-4 py-2 rounded-xl text-sm font-medium'
+                }`}
               >
-                <Plus className="w-4 h-4" />
+                <Plus className={embedded ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
                 Add wall
               </button>
               {/* Remove-wall is delete-gated: hidden entirely for users who may
@@ -1078,11 +1311,13 @@ export default function FloorEditorOverlay({
                   type="button"
                   onClick={handleRemoveWall}
                   disabled={selectedWallIndex == null || wallConfig.walls.length <= 1}
-                  className="flex items-center gap-2 px-4 py-2 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 rounded-xl text-sm font-medium transition-colors shadow-sm"
+                  className={`flex items-center gap-2 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 transition-colors shadow-sm ${
+                    embedded ? 'rounded-lg px-2.5 py-1.5 text-xs font-semibold' : 'px-4 py-2 rounded-xl text-sm font-medium'
+                  }`}
                   title={selectedWallIndex == null ? 'Click a wall to select it first' : `Remove wall ${selectedWallIndex + 1}`}
                 >
-                  <Trash2 className="w-4 h-4" />
-                  Remove wall
+                  <Trash2 className={embedded ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+                  {embedded ? 'Remove' : 'Remove wall'}
                 </button>
               )}
 
@@ -1090,7 +1325,7 @@ export default function FloorEditorOverlay({
                   Type an exact value (decimal feet, e.g. 9.5); commits on blur /
                   Enter, clamped to 4–40 ft. Drag-to-stretch-width still works. */}
               {selectedWallIndex != null && selectedWallIndex < wallConfig.walls.length && (
-                <div className="flex items-center gap-2 ml-1 pl-3 border-l border-gray-200">
+                <div className={embedded ? 'flex items-center gap-1.5 w-full pt-1' : 'flex items-center gap-2 ml-1 pl-3 border-l border-gray-200'}>
                   <span className="text-xs font-medium text-gray-500">Wall {selectedWallIndex + 1}</span>
                   {([
                     { key: 'width' as const, label: 'W', value: wallWidthInput, set: setWallWidthInput },
@@ -1125,47 +1360,112 @@ export default function FloorEditorOverlay({
           )}
         </div>
 
-        <div className="p-6 overflow-auto">
-          <p className="text-sm text-gray-500 mb-4">
+        <div className={embedded ? 'flex-1 min-h-0 relative' : 'p-6 overflow-auto'}>
+          {/* Embedded hides the prose: the plan has to fit the tab, and this
+              paragraph is the one thing here that costs it height for nothing.
+              The toolbar above already carries the controls. */}
+          <p className={embedded ? 'hidden' : 'text-sm text-gray-500 mb-4'}>
             {mode === 'walls'
               ? 'Top-down view. Click a wall to select it. Drag walls to move, endpoint handles to resize, the circle handle on the front edge to rotate. Hold Shift while dragging to snap — 90° on rotate, to a neighbouring wall corner on move and resize. Ctrl+Z undo, Ctrl+Y redo.'
               : 'Top-down view. Drag tables to move. Click a table then "Add model" to place a 3D model on it.'}
           </p>
 
-          {/* Floor plan canvas */}
+          {/* Floor plan canvas. Embedded it fills the tab and is MEASURED
+              rather than CSS-scaled, so one SVG unit stays one CSS pixel and
+              every pointer handler's rect math keeps working — see
+              measuredPlan. The modal keeps its fixed square. */}
           <div
             ref={floorPlanRef}
-            className="relative rounded-lg overflow-hidden"
-            style={{ width: viewWidth, height: viewHeight }}
+            className={
+              embedded
+                ? 'absolute inset-0 overflow-hidden'
+                : 'relative rounded-lg overflow-hidden'
+            }
+            style={embedded ? undefined : { width: viewWidth, height: viewHeight }}
           >
             <svg
               className="absolute inset-0 w-full h-full"
-              viewBox={`0 0 ${viewWidth} ${viewHeight}`}
+              viewBox={`0 0 ${planW} ${planH}`}
               preserveAspectRatio="none"
               // The SVG itself never takes pointer events; the individual walls,
               // handles and tables opt back in. (This was a ternary with the
               // same value in both branches.)
               style={{ pointerEvents: 'none' }}
             >
-              {/* Floor background */}
-              <rect
-                x={floorOffsetX} y={floorOffsetY}
-                width={floorUsedWidth}
-                height={floorUsedHeight}
-                fill="#faf9f6"
-                stroke="#cbd5e1"
-                strokeWidth={1}
-              />
+              {/* The floor slab — a real object drawn ON the grid, not the
+                  extent of the world. It used to be `proj`'s bounds rect, which
+                  meant it was always exactly the walls' bounding box and could
+                  never be edited or disagreed with. */}
+              {(() => {
+                const [fx1, fy1] = proj.toPx(
+                  floorRect.centerX - floorRect.width / 2,
+                  floorRect.centerZ - floorRect.depth / 2,
+                )
+                const [fx2, fy2] = proj.toPx(
+                  floorRect.centerX + floorRect.width / 2,
+                  floorRect.centerZ + floorRect.depth / 2,
+                )
+                const editable = mode === 'walls'
+                return (
+                  <rect
+                    x={Math.min(fx1, fx2)}
+                    y={Math.min(fy1, fy2)}
+                    width={Math.abs(fx2 - fx1)}
+                    height={Math.abs(fy2 - fy1)}
+                    fill="#faf9f6"
+                    stroke={floorGesture ? '#3B6EF6' : '#cbd5e1'}
+                    strokeWidth={floorGesture ? 2 : 1.5}
+                    className={editable ? 'cursor-move' : ''}
+                    style={{ pointerEvents: editable ? 'all' : 'none' }}
+                    onPointerDown={editable ? (e) => {
+                      e.stopPropagation()
+                      setSelectedWallIndex(null)
+                      setFloorGesture({ kind: 'move' })
+                      setFloorStart({ startPx: e.clientX, startPy: e.clientY, rect: floorRect })
+                    } : undefined}
+                  />
+                )
+              })()}
 
-              {/* 12-inch grid */}
+              {/* 12-inch grid, drawn OVER the slab and running to the canvas
+                  edges — it's the drafting ruling the whole room sits on, so it
+                  must not stop where the floor does. */}
               {mode === 'walls' && gridLines.map((l, i) => (
                 <line
                   key={i}
                   x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
                   stroke="#e2e8f0"
                   strokeWidth={0.5}
+                  style={{ pointerEvents: 'none' }}
                 />
               ))}
+
+              {/* Floor corner handles. Drawn after the grid so they stay
+                  visible, and only in walls mode — models mode has its own
+                  selection and a second draggable object would fight it. */}
+              {mode === 'walls' && (['nw', 'ne', 'sw', 'se'] as const).map((corner) => {
+                const cx = floorRect.centerX + (corner === 'nw' || corner === 'sw' ? -1 : 1) * floorRect.width / 2
+                const cz = floorRect.centerZ + (corner === 'nw' || corner === 'ne' ? -1 : 1) * floorRect.depth / 2
+                const [hx, hy] = proj.toPx(cx, cz)
+                return (
+                  <rect
+                    key={corner}
+                    x={hx - 5} y={hy - 5} width={10} height={10}
+                    rx={2}
+                    fill="#ffffff"
+                    stroke="#3B6EF6"
+                    strokeWidth={1.5}
+                    className={corner === 'nw' || corner === 'se' ? 'cursor-nwse-resize' : 'cursor-nesw-resize'}
+                    style={{ pointerEvents: 'all' }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation()
+                      setSelectedWallIndex(null)
+                      setFloorGesture({ kind: 'resize', corner })
+                      setFloorStart({ startPx: e.clientX, startPy: e.clientY, rect: floorRect })
+                    }}
+                  />
+                )
+              })}
 
               {/* Wall polygons */}
               {wallGeometry.map(({ index, points, frontEdge }) => {

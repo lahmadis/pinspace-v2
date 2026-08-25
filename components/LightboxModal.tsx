@@ -3219,42 +3219,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
         </div>
       )}
 
-      {/* Navigation Hint (simplified in present mode). Fades out ~5s after open
-          (CSS animation, forwards); re-shows on board change / present toggle via
-          the remount key. Sits at bottom-3 so it clears the tool dock. The ESC
-          key handling itself is untouched. */}
-      <style>{`@keyframes lbHintFade { to { opacity: 0; visibility: hidden; } }`}</style>
-      <div
-        key={`${board.id}-${isPresentMode}`}
-        className="absolute bottom-3 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-slate-900/65 border border-white/10 backdrop-blur-md rounded-full text-white text-xs sm:text-sm pointer-events-none"
-        style={{ animation: 'lbHintFade 600ms ease 5s forwards' }}
-      >
-        {isPresentMode ? (
-          <>
-            Press <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">ESC</kbd> to exit present
-            {!isComparePresentMode && (hasPrev || hasNext) && (
-              <>
-                <span className="mx-2">•</span>
-                <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">←</kbd>
-                <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">→</kbd>
-                to change board
-              </>
-            )}
-          </>
-        ) : (
-          <>
-            Press <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">ESC</kbd> to close
-            {(hasPrev || hasNext) && (
-              <>
-                <span className="mx-2">•</span>
-                <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">←</kbd>
-                <kbd className="px-2 py-0.5 bg-white/20 rounded mx-1">→</kbd>
-                to navigate
-              </>
-            )}
-          </>
-        )}
-      </div>
+      {/* The keyboard hint bubble that used to sit here is gone. It restated
+          controls that are already on screen — a visible X and Exit-present
+          button, visible prev/next arrows — and did it as an overlay across the
+          bottom of the sheet, which in present mode is over the work itself.
+          ESC and the arrow keys still function; only the caption is gone. */}
     </div>
   )
 }

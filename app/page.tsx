@@ -69,7 +69,7 @@ function HomeInner() {
   const dashboardHref = user ? '/dashboard' : signInHref
 
   const content = (
-    <div className="min-h-screen relative overflow-x-hidden" style={{ background: 'linear-gradient(160deg, #F2F5FB 0%, #EDF1F9 55%, #F6F3EC 100%)' }}>
+    <div className="min-h-screen flex flex-col relative overflow-x-hidden" style={{ background: 'linear-gradient(160deg, #F2F5FB 0%, #EDF1F9 55%, #F6F3EC 100%)' }}>
       <DemoBanner />
 
       {/* Ambient blue glows */}
@@ -86,9 +86,14 @@ function HomeInner() {
 
       {/* Nav */}
       <div className="relative z-20 flex items-center justify-between px-6 sm:px-10 py-6">
-        <div className="flex items-center gap-2 text-[#16181D] font-extrabold text-xl tracking-tight">
-          <span className="w-7 h-7 rounded-lg bg-[#3B6EF6] text-white flex items-center justify-center text-xs">◉</span>
+        {/* Same lockup as the hero, just small — wordmark plus the blue
+            terminal dot, no badge. */}
+        <div className="text-[#16181D] font-extrabold text-xl tracking-[-0.045em]">
           pinspace
+          <span
+            aria-hidden="true"
+            className="inline-block align-baseline rounded-full bg-[#3B6EF6] w-[0.2em] h-[0.2em] ml-[0.06em]"
+          />
         </div>
 
         <div className="flex items-center gap-3">
@@ -126,33 +131,42 @@ function HomeInner() {
       </div>
 
       {/* Hero */}
-      <div className="relative z-10 px-4 pt-16 sm:pt-24 pb-24 sm:pb-32">
+      {/* flex-1 inside the page's flex column, so this takes exactly the space
+          left between nav and footer and centres in it — no min-height guess
+          and no magic offset for the nav's height, which changes between the
+          signed-in and signed-out button sets. Padding is symmetric so the
+          content sits on the true centre of that space rather than riding high. */}
+      <div className="relative z-10 flex-1 px-4 py-10 flex items-center justify-center">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8 }}
-          className="text-center"
+          className="w-full text-center"
         >
+          {/* The wordmark IS the logo here — no badge. Sized fluidly with vw
+              rather than breakpoint steps so it holds the same share of the
+              viewport (~40%) at every width, which is what makes it read as a
+              logo lockup instead of just large text. Onest 800 is already
+              loaded via globals.css. */}
           <motion.h1
-            className="flex items-center justify-center gap-4 sm:gap-5 text-6xl sm:text-7xl md:text-8xl font-extrabold leading-[0.98] tracking-[-0.03em] text-[#16181D]"
+            className="font-extrabold leading-[0.9] tracking-[-0.045em] text-[#16181D] text-[clamp(3.5rem,11vw,13rem)]"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.9, delay: 0.15 }}
           >
-            {/* Same lockup as the nav, scaled to hero size. The mark is sized in
-                em so it tracks the wordmark across the responsive type steps
-                instead of needing its own breakpoints. */}
+            pinspace
+            {/* Terminal period as a true circle rather than the font's own '.',
+                so it stays perfectly round and on-brand blue at any size. Sized
+                in em so it scales with the wordmark; baseline-aligned so it sits
+                exactly where a period would. */}
             <span
               aria-hidden="true"
-              className="shrink-0 rounded-[0.28em] bg-[#3B6EF6] text-white flex items-center justify-center w-[0.92em] h-[0.92em] text-[0.34em] shadow-[0_10px_30px_rgba(59,110,246,0.32)]"
-            >
-              ◉
-            </span>
-            pinspace
+              className="inline-block align-baseline rounded-full bg-[#3B6EF6] w-[0.2em] h-[0.2em] ml-[0.06em]"
+            />
           </motion.h1>
 
           <motion.p
-            className="mt-6 mx-auto max-w-xl text-lg sm:text-xl leading-relaxed text-[#5A5E6B]"
+            className="mt-5 mx-auto max-w-xl leading-relaxed text-[#5A5E6B] text-[clamp(1.05rem,1.9vw,1.6rem)]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.8, delay: 0.35 }}
@@ -180,16 +194,6 @@ function HomeInner() {
             </button>
           </motion.div>
 
-          <motion.div
-            className="flex flex-wrap justify-center gap-8 mt-8 text-[13px] font-semibold text-[#8A8FA0]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 0.65 }}
-          >
-            <span>✓ Free for students</span>
-            <span>✓ Join with a class code</span>
-            <span>✓ Works in the browser</span>
-          </motion.div>
         </motion.div>
       </div>
 
@@ -199,7 +203,9 @@ function HomeInner() {
         onEnter={handleEnterGallery}
       />
 
-      <footer className="relative z-10 border-t border-[#16181D]/10 bg-white/70 backdrop-blur-sm mt-24 sm:mt-32">
+      {/* No top margin: the hero's flex-1 already owns the space above, so a
+          margin here would just push the footer past the fold. */}
+      <footer className="relative z-10 border-t border-[#16181D]/10 bg-white/70 backdrop-blur-sm">
         <div className="max-w-5xl mx-auto px-4 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-[#8A8FA0]">
           <p>© {new Date().getFullYear()} pinspace</p>
           <nav className="flex gap-6">

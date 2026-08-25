@@ -4,6 +4,8 @@ export interface WallConfigLike {
   walls: Array<{ width: number; height: number }>
   layoutType: 'zigzag' | 'square' | 'linear' | 'lshape'
   customTransforms?: Array<{ x: number; z: number; rotationY: number }>
+  /** The floor slab, when the room has an explicit one. See getFloorRect. */
+  floor?: { centerX: number; centerZ: number; width: number; depth: number }
 }
 
 export interface WallSegment {

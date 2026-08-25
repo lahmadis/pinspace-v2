@@ -12,7 +12,7 @@ import RoomViewPresets from './RoomViewPresets'
  * contents sitting alongside them made the strip mean two different things. It
  * lives at /desk-crits/[id] instead.
  */
-export type RoomView = 'room' | 'unfolded' | 'plan' | '2d'
+export type RoomView = 'room' | 'unfolded' | 'plan' | '2d' | 'presentation'
 
 interface RevisionStripProps {
   view: RoomView
@@ -36,6 +36,9 @@ const VIEWS: Array<{ id: RoomView; label: string }> = [
   // side — a flat 2D read of the room — rather than "Archive", which sounds
   // like cold storage for old work.
   { id: '2d', label: '2D' },
+  // The room's running order. Last because it's the only tab about WHEN work
+  // is shown rather than where it hangs or whose it is.
+  { id: 'presentation', label: 'Presentation' },
 ]
 
 /**

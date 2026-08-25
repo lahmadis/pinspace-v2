@@ -6,11 +6,9 @@ import { Text, Grid } from '@react-three/drei'
 import { Board } from '@/types'
 import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
-import { getWallTransformResolved, calculateFloorBounds, type WallTextItem } from '@/lib/wallLayout'
+import { getWallTransformResolved, getFloorRect, type WallTextItem } from '@/lib/wallLayout'
 import { ROOM_SKY, ROOM_FONT_3D } from '@/lib/room/palette'
-import { studentKeyFor } from '@/lib/room/students'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
-import { cleanDisplayName } from '@/lib/displayName'
 
 interface WallDimensions {
   height: number
@@ -101,12 +99,6 @@ interface WallSystemProps {
    * that doesn't require finding a button or knowing the Escape shortcut.
    */
   onFloorClick?: () => void
-  /**
-   * Fires when an owner name plate above a bay is clicked, with the key that
-   * person's `RoomStudent.id` uses (see studentKeyFor). Opens their 2D archive.
-   * Omit to leave the plates inert, which is what the guest surfaces want.
-   */
-  onNamePlateClick?: (studentId: string) => void
 }
 
 // Wall surface + edge-shadow palette per color.
@@ -154,14 +146,15 @@ const WALL_PALETTES: Record<'grey' | 'white', {
  * lib/room/palette.ts: a second accent color competing with the blue one reads
  * as inconsistent, not as a deliberate second signal.
  *
- * `floor` is deliberately a full step darker than the walls (see the
- * WALL_PALETTES comment above on why the first recolor pass under-separated
- * these) — a gallery floor reading darker than its walls is what gives the
- * room a sense of standing IN a volume rather than everything being one flat
- * value.
+ * `floor` was previously a full step darker than the walls, on the reasoning
+ * that a gallery floor reading darker is what makes the room feel like a
+ * volume. It's white now by explicit request: the cool blue-grey read as
+ * indigo against the rest of the palette. Depth now comes from shading and
+ * the fog fade toward the horizon rather than from a value step, so if the
+ * room ever reads flat, that fog is the knob — not a re-tinted floor.
  */
 const ROOM_PALETTE = {
-  floor: '#B7C2D6',
+  floor: '#FFFFFF',
   ink: '#16181D',
   accent: '#3B6EF6',
 } as const
@@ -179,17 +172,6 @@ const ROOM_PALETTE = {
  * still read as distinct from the sky rather than blending into it.
  */
 export const ROOM_SKY_COLOR = ROOM_SKY
-
-/**
- * Pixels of pointer travel above which a floor click is treated as the end of an
- * orbit drag rather than a click. Mirrors DRAG_THRESHOLD_PX in WallSurface.tsx.
- *
- * Used by the clickable owner name plates. NOT by the floor click any more —
- * that only fires while a wall is focused, and focus switches orbit off, so
- * there is no drag for it to be the tail of; guarding it could only reject a
- * real click on the main way out of a locked camera.
- */
-const FLOOR_DRAG_THRESHOLD_PX = 4
 
 /**
  * Wall focus de-emphasis. How far an unfocused surface is pulled toward the sky
@@ -221,22 +203,29 @@ function dimTowardSky(hex: string, amount: number): string {
   return `#${new THREE.Color(hex).lerp(new THREE.Color(ROOM_SKY_COLOR), amount).getHexString()}`
 }
 
-// A touch lighter/more muted than the floor plinth — reads as the same
-// ground continuing outward, just further away, rather than a visibly
-// different material.
-const GROUND_COLOR = '#C3CDDE'
+// Reads as the same ground continuing outward, just further away. Now that
+// the floor plate is pure white this sits a hair BELOW it rather than above
+// (it used to be the lighter of the two), which keeps the room's own plinth
+// very slightly lifted off the world instead of the seam vanishing entirely.
+const GROUND_COLOR = '#F7F9FC'
 /** Horizon reference grid on the ground plane, outside the room's own
  *  footprint (the room's opaque floor/walls occlude it directly underneath).
  *  Minor lines every foot, a heavier line every 10 feet — the same
  *  cell/section convention any CAD or level-editor grid uses. */
-// Lines have to carry against GROUND_COLOR (#C3CDDE) without turning the ground
-// into a drawing of its own. The foot lines do the visible work; the ten-foot
-// lines are a light structural beat, and are told apart by WEIGHT rather than
+// Lines have to carry against GROUND_COLOR without turning the ground into a
+// drawing of its own. The foot lines do the visible work; the ten-foot lines
+// are a light structural beat, and are told apart by WEIGHT rather than
 // darkness (sectionThickness is nearly twice cellThickness below). An earlier
 // pass made the ten-foot lines much darker and they read as the loudest thing
 // in an otherwise pale room.
-const GRID_CELL_COLOR = '#9BAAC6'
-const GRID_SECTION_COLOR = '#8CA0C2'
+//
+// Lightened along with the ground: these were tuned against a mid-tone
+// #C3CDDE, and left as they were on a near-white ground the grid would be the
+// loudest thing in the scene — exactly the failure the note above describes.
+// Same ~11-point lightness gap below the ground as before, so the grid keeps
+// its old subtlety rather than its old hex.
+const GRID_CELL_COLOR = '#E1E7F0'
+const GRID_SECTION_COLOR = '#D3DBE8'
 
 /**
  * The three stacked horizontal planes, top to bottom: the room's floor plate,
@@ -277,88 +266,23 @@ const GROUND_Y = -8
  * WallSystem's ground plane below uses, from the same wallConfig.
  */
 export function getRoomFogParams(wallConfig: WallConfig): { fogNear: number; fogFar: number } {
-  const bounds = calculateFloorBounds(wallConfig)
-  const span = Math.max(bounds.floorWidth, bounds.floorDepth, 96)
+  // Must be getFloorRect, not the wall bounds: the doc above promises these are
+  // the same numbers the ground plane uses, and the ground plane keys off the
+  // slab. With an oversized floor the wall bounds would fog the horizon in too
+  // close and the slab's own edge would surface out of the haze.
+  const floorRect = getFloorRect(wallConfig)
+  const span = Math.max(floorRect.width, floorRect.depth, 96)
   return {
     fogNear: Math.max(800, span * 2),
     fogFar: Math.max(3000, span * 6),
   }
 }
 
-/**
- * Owner name plate sizing, in inches (1 world unit = 1 inch). 4" cap height
- * subtends roughly 2.4 degrees at the ~96" default camera distance, which reads
- * clearly from the far side of the room without crowding a 24" sheet.
- */
-const NAME_PLATE_SIZE_IN = 4
-/** Gap between the board's top edge and the baseline of its name plate. */
-const NAME_PLATE_GAP_IN = 1.75
-/** Vertical step when a plate has to move up to clear one already placed. */
-const NAME_PLATE_ROW_STEP_IN = NAME_PLATE_SIZE_IN * 1.35
-/**
- * Troika renders no true 600 weight for the default face, so the plates are
- * thickened with a same-colour outline instead. Purely optical — it does not
- * change the glyph metrics used for collision spans below.
- */
-const NAME_PLATE_OUTLINE_IN = NAME_PLATE_SIZE_IN * 0.045
-/** Mean glyph advance as a fraction of font size, for estimating plate width. */
-const NAME_PLATE_ADVANCE_RATIO = 0.55
 /** Breathing room between a selected bay's boards and its outline, in inches. */
 const BAY_FRAME_PADDING_IN = 3
 
-interface PlateLayoutInput {
-  key: string
-  centerX: number
-  baseY: number
-  label: string
-}
 
-/**
- * Assign each name plate a row offset so overlapping plates stack upward rather
- * than printing on top of each other.
- *
- * Two plates only conflict when their horizontal spans overlap AND they sit at
- * a similar height, so boards at genuinely different heights keep their natural
- * position. Processed left to right, which makes the result stable: the same
- * board set always produces the same rows, so nothing jitters between frames.
- */
-export function assignNamePlateRows(plates: PlateLayoutInput[]): Map<string, number> {
-  const rows = new Map<string, number>()
-  const placed: Array<{ minX: number; maxX: number; y: number }> = []
-  const ordered = [...plates].sort((a, b) => a.centerX - b.centerX || a.key.localeCompare(b.key))
-
-  for (const plate of ordered) {
-    const halfWidth = Math.max(
-      (plate.label.length * NAME_PLATE_SIZE_IN * NAME_PLATE_ADVANCE_RATIO) / 2,
-      NAME_PLATE_SIZE_IN,
-    )
-    const minX = plate.centerX - halfWidth
-    const maxX = plate.centerX + halfWidth
-
-    let row = 0
-    // Bounded so a pathological pile-up cannot spin; 12 rows is far past any
-    // realistic wall and still lands well inside the wall height.
-    while (row < 12) {
-      const y = plate.baseY + row * NAME_PLATE_ROW_STEP_IN
-      const clashes = placed.some(
-        (other) =>
-          minX < other.maxX &&
-          other.minX < maxX &&
-          Math.abs(y - other.y) < NAME_PLATE_ROW_STEP_IN * 0.9,
-      )
-      if (!clashes) break
-      row += 1
-    }
-
-    placed.push({ minX, maxX, y: plate.baseY + row * NAME_PLATE_ROW_STEP_IN })
-    rows.set(plate.key, row)
-  }
-
-  return rows
-}
-
-
-export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick, onNamePlateClick }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick }: WallSystemProps) {
 
   const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
   // Ghosted variants for wall focus. Memoized on the palette rather than
@@ -380,7 +304,11 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
   useEffect(() => () => { document.body.style.cursor = '' }, [])
 
   const getTransform = (index: number) => getWallTransformResolved(wallConfig, index)
-  const floorBounds = calculateFloorBounds(wallConfig)
+  // The slab you actually stand on. Explicit when the room has one, the walls'
+  // bounding box when it doesn't — so a room saved before floors were editable
+  // looks identical. The ground plane and horizon grid key off this too, since
+  // they exist to stop the slab reading as a floating platform.
+  const floorRect = getFloorRect(wallConfig)
 
   // groundSize just needs to clear fogFar by a healthy margin so its own
   // edge stays hidden in fog; the fog numbers themselves are computed by
@@ -388,9 +316,9 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
   // StudioRoom's <Canvas> (see that export's comment for why it can't live
   // here as JSX).
   const groundSize = useMemo(() => {
-    const span = Math.max(floorBounds.floorWidth, floorBounds.floorDepth, 96)
+    const span = Math.max(floorRect.width, floorRect.depth, 96)
     return Math.max(8000, span * 10)
-  }, [floorBounds.floorWidth, floorBounds.floorDepth])
+  }, [floorRect.width, floorRect.depth])
 
   // Reuses getRoomFogParams' own numbers (same wallConfig) purely so the grid
   // fades out at the same distance the scene fog does — two different fades
@@ -402,7 +330,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
       {/* Large ground plane the room sits on, so orbiting out past the floor's
           edge finds more ground (fading into fog) instead of empty background
           — the "floating platform" fix. */}
-      <mesh position={[floorBounds.floorCenterX, GROUND_Y, floorBounds.floorCenterZ]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <mesh position={[floorRect.centerX, GROUND_Y, floorRect.centerZ]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[groundSize, groundSize]} />
         <meshStandardMaterial color={GROUND_COLOR} roughness={0.95} metalness={0} fog />
       </mesh>
@@ -422,7 +350,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
           jitter in the shader's line test. fadeDistance alone (matched to the
           scene fog's fogFar) already controls how far out the grid reads. */}
       <Grid
-        position={[floorBounds.floorCenterX, GRID_Y, floorBounds.floorCenterZ]}
+        position={[floorRect.centerX, GRID_Y, floorRect.centerZ]}
         args={[10, 10]}
         cellSize={12}
         cellThickness={1}
@@ -442,7 +370,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
           nothing to see underneath it anyway — the camera can't go below the
           horizon (OrbitControls' maxPolarAngle). */}
       <mesh
-        position={[floorBounds.floorCenterX, FLOOR_Y, floorBounds.floorCenterZ]}
+        position={[floorRect.centerX, FLOOR_Y, floorRect.centerZ]}
         rotation={[-Math.PI / 2, 0, 0]}
         receiveShadow
         onClick={(e) => {
@@ -459,9 +387,9 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
           onFloorClick()
         }}
       >
-        <planeGeometry args={[floorBounds.floorWidth, floorBounds.floorDepth]} />
+        <planeGeometry args={[floorRect.width, floorRect.depth]} />
         <meshStandardMaterial
-          color={ROOM_PALETTE.floor} // cool neutral floor; never tinted toward the accent
+          color={ROOM_PALETTE.floor} // white; never tinted toward the accent
           roughness={0.9}
           metalness={0.0}
         />
@@ -491,56 +419,6 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
           return true
         })
 
-        // One plate per OWNER per side, not per board — a person with a dozen
-        // boards on one wall used to get a dozen repeats of their own name
-        // stamped above each sheet. Grouped by ownerId when present (falls
-        // back to the display name for legacy rows without one, which can
-        // only over-merge two different people who happen to share a
-        // display name — an acceptable, rare edge case), spanning the
-        // bounding box of every board in the group so the plate sits above
-        // the group's topmost sheet, centered on the group's horizontal span.
-        interface PlateGroup { key: string; studentId: string; label: string; side: 'front' | 'back'; minX: number; maxX: number; topY: number }
-        const plateGroups = new Map<string, PlateGroup>()
-        for (const board of boardsOnWall) {
-          if (!board.position) continue
-          const label = cleanDisplayName(board.ownerName) || cleanDisplayName(board.studentName)
-          if (!label) continue
-          const { widthIn, heightIn } = getBoardSizeInches(board)
-          if (!widthIn || !heightIn || widthIn <= 0 || heightIn <= 0) continue
-          const side: 'front' | 'back' = board.position.side === 'back' ? 'back' : 'front'
-          const identity = board.ownerId || label
-          const key = `${identity}|${side}`
-          const cx = ((board.position.x / 100) - 0.5) * transform.width
-          const cy = ((board.position.y / 100) - 0.5) * transform.height
-          const left = cx - widthIn / 2
-          const right = cx + widthIn / 2
-          const top = cy + heightIn / 2
-          const existing = plateGroups.get(key)
-          if (!existing) {
-            plateGroups.set(key, {
-              key,
-              // Must match RoomStudent.id so a plate click can resolve to the
-              // person the roster and the 2D archive know about.
-              studentId: studentKeyFor(board.ownerId, label),
-              label,
-              side,
-              minX: left,
-              maxX: right,
-              topY: top,
-            })
-          } else {
-            existing.minX = Math.min(existing.minX, left)
-            existing.maxX = Math.max(existing.maxX, right)
-            existing.topY = Math.max(existing.topY, top)
-          }
-        }
-        const plateInputs: PlateLayoutInput[] = Array.from(plateGroups.values()).map((g) => ({
-          key: g.key,
-          centerX: (g.minX + g.maxX) / 2,
-          baseY: g.topY + NAME_PLATE_GAP_IN,
-          label: g.label,
-        }))
-        const plateRows = assignNamePlateRows(plateInputs)
 
         // Selected student's bay: the bounding box of their boards on THIS wall
         // side, drawn as a blue-accent outline set proud of the surface. Computed per
@@ -735,59 +613,6 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                   suppressCountBadge={suppressCallouts || isDimmed}
                   dimmed={isDimmed}
                 />
-              )
-            })}
-
-            {/* One name plate per owner per side (see plateGroups above) — NOT
-                per board. Same z convention as the wall labels below: wall
-                half-depth plus 0.25, so the plate clears both the wall
-                surface and any board at ±3.2 without z-fighting either. */}
-            {Array.from(plateGroups.values()).map((g) => {
-              const PLATE_SURFACE_OFFSET = 3
-              const plateX = (g.minX + g.maxX) / 2
-              const plateZ = g.side === 'back'
-                ? -(PLATE_SURFACE_OFFSET + 0.25)
-                : PLATE_SURFACE_OFFSET + 0.25
-              const plateY = g.topY + NAME_PLATE_GAP_IN + (plateRows.get(g.key) ?? 0) * NAME_PLATE_ROW_STEP_IN
-              // A ghosted wall's plates stay inert: they're barely legible, and
-              // clicking one would navigate away from the wall being focused.
-              const plateClickable = Boolean(onNamePlateClick) && !isDimmed
-              return (
-                <Text
-                  key={g.key}
-                  position={[plateX, plateY, plateZ]}
-                  onClick={plateClickable ? (e) => {
-                    e.stopPropagation()
-                    // Same guard the wall surfaces use: a click that ended a
-                    // drag was an orbit, not a click.
-                    if (e.delta > FLOOR_DRAG_THRESHOLD_PX) return
-                    // Clear the hover cursor BEFORE navigating: opening the 2D
-                    // archive unmounts this whole Canvas, so onPointerOut will
-                    // never fire and the pointer cursor would otherwise stick
-                    // across the entire app.
-                    document.body.style.cursor = ''
-                    onNamePlateClick?.(g.studentId)
-                  } : undefined}
-                  onPointerOver={plateClickable ? () => { document.body.style.cursor = 'pointer' } : undefined}
-                  onPointerOut={plateClickable ? () => { document.body.style.cursor = '' } : undefined}
-                  // Back-side plates face into the back room so they read
-                  // correctly, matching the wall labels.
-                  rotation={g.side === 'back' ? [0, Math.PI, 0] : [0, 0, 0]}
-                  font={ROOM_FONT_3D}
-                  fontSize={NAME_PLATE_SIZE_IN}
-                  color={inkColor}
-                  // Stands in for a 600 weight the default face does not
-                  // carry; see NAME_PLATE_OUTLINE_IN.
-                  outlineWidth={NAME_PLATE_OUTLINE_IN}
-                  outlineColor={inkColor}
-                  anchorX="center"
-                  // Bottom anchor grows the plate upward from the gap above
-                  // the board, so a long name never creeps down over the sheet.
-                  anchorY="bottom"
-                  maxWidth={Math.max(g.maxX - g.minX, NAME_PLATE_SIZE_IN * 8)}
-                >
-                  {g.label}
-                </Text>
               )
             })}
 

@@ -15,7 +15,8 @@ import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, t
 import type { RoomCameraPreset } from '@/lib/room/cameraViews'
 import RosterPanel from '@/components/room/RosterPanel'
 import UnfoldedView from '@/components/room/UnfoldedView'
-import PlanView from '@/components/room/PlanView'
+import PlanView, { PLAN_VIEW, PLAN_MARGIN } from '@/components/room/PlanView'
+import PresentationView from '@/components/room/PresentationView'
 import TwoDView from '@/components/room/TwoDView'
 import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 import RevisionStrip, { type RoomView } from '@/components/room/RevisionStrip'
@@ -260,7 +261,6 @@ function SceneContent({
   onTextSelect,
   onTextDragEnd,
   onFloorClick,
-  onNamePlateClick,
   dimmedExceptWall,
   onTableModelClick,
   orbitControlsRef,
@@ -307,8 +307,6 @@ function SceneContent({
   onTextSelect: (id: string | null) => void
   onTextDragEnd: (id: string, x: number, y: number) => void
   onFloorClick?: () => void
-  /** Owner name plate clicked in the 3D room — opens that person's 2D archive. */
-  onNamePlateClick?: (studentId: string) => void
   /** Wall index to keep at full strength while every other wall ghosts back; null = no dimming. */
   dimmedExceptWall?: number | null
   onTableModelClick?: (modelUrl: string) => void
@@ -431,7 +429,6 @@ function SceneContent({
         highlightedBoardId={hoveredBoardId}
         onBoardHover={onBoardHover}
         onFloorClick={onFloorClick}
-        onNamePlateClick={onNamePlateClick}
         dimmedExceptWall={dimmedExceptWall}
         wallColor={wallColor}
       />
@@ -826,12 +823,6 @@ export default function StudioRoom(props: StudioRoomProps) {
     setRoomView('room')
   }, [])
 
-  const handleOpenStudentArchive = useCallback((studentId: string) => {
-    setSelectedStudentId(studentId)
-    setFocusedWall(null)
-    setRoomView('2d')
-  }, [])
-
   const [editingWall, setEditingWall] = useState<number | null>(null)
   const [editingWallDimensions, setEditingWallDimensions] = useState<WallDimensions | null>(null)
   const [editingWallPosition, setEditingWallPosition] = useState<THREE.Vector3 | null>(null)
@@ -841,6 +832,21 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [cameraTransitionKey, setCameraTransitionKey] = useState(0)
   const [showEditUI, setShowEditUI] = useState(false)
   const [floorEditorOpenInternal, setFloorEditorOpenInternal] = useState(false)
+  /**
+   * Which layer the plan editor lets you grab. Walls draw in both, so this is a
+   * layer switch rather than two tools. Local rather than reusing
+   * props.floorEditorMode: that one drives the standalone modal, and the plan
+   * tab's layer shouldn't be yanked around by an unrelated modal open.
+   */
+  const [planEditMode, setPlanEditMode] = useState<'walls' | 'tables'>('walls')
+
+  /**
+   * May this person reshape the room? Gates whether PLAN is the live editor or
+   * the read-only drawing. Same condition the removed "Reconfigure walls"
+   * button carried: editing is what writes the wall-config blob, and handing
+   * the controls to someone whose writes would no-op is a trap.
+   */
+  const canEditRoomLayout = Boolean(props.canEditWalls) && !props.isArchived
   const floorEditorOpen = props.floorEditorOpen !== undefined ? props.floorEditorOpen : floorEditorOpenInternal
   const setFloorEditorOpen = useCallback(
     (open: boolean) => {
@@ -980,8 +986,12 @@ export default function StudioRoom(props: StudioRoomProps) {
     setModelViewerUrl(modelUrl)
   }, [])
 
-  const handleFloorEditorSave = useCallback(() => {
-    setFloorEditorOpen(false)
+  /**
+   * Persist the floor/wall blob WITHOUT closing anything. Split out from
+   * handleFloorEditorSave because the plan tab hosts this editor inline, where
+   * there is no modal to dismiss — "Save & exit" there is just "Save".
+   */
+  const persistFloorConfig = useCallback(() => {
     // Save in background so user isn't stuck if the request hangs
     const tablesToSave = tables.map((t) => {
       const url = t.modelUrl ?? ''
@@ -1035,6 +1045,11 @@ export default function StudioRoom(props: StudioRoomProps) {
       }
     })()
   }, [props.studioId, props.workspaceId, props.wallConfig, props.wallConfigWriter, props.canEditWalls, tables, textItems])
+
+  const handleFloorEditorSave = useCallback(() => {
+    setFloorEditorOpen(false)
+    persistFloorConfig()
+  }, [persistFloorConfig, setFloorEditorOpen])
 
   /**
    * Wall indices for the floor editor's board-safety guard. Just the indices —
@@ -1555,12 +1570,6 @@ export default function StudioRoom(props: StudioRoomProps) {
     setLightboxBoard(board)
   }
 
-  // Lightbox-only slideshow order (boards.sort_order). A SEPARATE sorted copy —
-  // localBoards itself is untouched and keeps feeding WallSystem, the 2D editor
-  // and the sidebar in server order. Both the arrows below and the counter
-  // inside the modal must read THIS array or they'd disagree.
-  const lightboxBoards = useMemo(() => orderBoardsForLightbox(localBoards), [localBoards])
-
   // Roster rows and the selected student's board ids, both derived from the
   // boards already in state so the panel costs no extra fetch.
   const roomStudents = useMemo(() => deriveRoomStudents(localBoards), [localBoards])
@@ -1570,6 +1579,49 @@ export default function StudioRoom(props: StudioRoomProps) {
     const student = roomStudents.find((s) => s.id === selectedStudentId)
     return student ? new Set(student.boardIds) : undefined
   }, [selectedStudentId, roomStudents])
+
+  // Lightbox-only slideshow order (boards.sort_order). A SEPARATE sorted copy —
+  // localBoards itself is untouched and keeps feeding WallSystem, the 2D editor
+  // and the sidebar in server order. Both the arrows and the counter inside the
+  // modal must read THIS array or they'd disagree.
+  //
+  // Scoped to one person while the 2D tab is showing THEIR sheets. Opening a
+  // board there is opening their submission, so the arrows should walk it and
+  // stop at its end; before this they walked all 18 sheets in the room, in wall
+  // order, so page two of somebody's three-sheet set was a classmate's work.
+  // Every other surface — the 3D room, the 2D people grid — really is browsing
+  // the whole room, and keeps the full list.
+  //
+  // Declared after highlightedBoardIds on purpose: that memo is what resolves
+  // the selected person to board ids, and reading it earlier would be a TDZ
+  // error rather than just untidy.
+  /**
+   * The room in slideshow order (boards.sort_order). ONE sorted copy that the
+   * lightbox, the 2D archive and the presentation tab all read, so "position 3"
+   * means the same sheet everywhere. localBoards itself stays in server order
+   * for WallSystem, the 2D editor and the sidebar.
+   */
+  const roomOrderedBoards = useMemo(() => orderBoardsForLightbox(localBoards), [localBoards])
+  const roomOrderIds = useMemo(() => roomOrderedBoards.map((b) => b.id), [roomOrderedBoards])
+
+  /**
+   * Reordering renumbers every board in the room, so the API allows it for the
+   * workspace owner or a superadmin only — canReorderBoards carries that answer
+   * down. Gating the UI on the same flag keeps a student from dragging a card
+   * into a slot the server will refuse.
+   */
+  const canReorderSlideshow = !props.isArchived && !!props.canReorderBoards
+
+  const lightboxScopedToStudent = roomView === '2d' && !!highlightedBoardIds
+  const lightboxBoards = useMemo(
+    () =>
+      // Filtering an already-sorted array keeps its order, so there is no
+      // second sort here and no way for the two to disagree.
+      lightboxScopedToStudent && highlightedBoardIds
+        ? roomOrderedBoards.filter((b) => highlightedBoardIds.has(b.id))
+        : roomOrderedBoards,
+    [roomOrderedBoards, lightboxScopedToStudent, highlightedBoardIds]
+  )
 
   /**
    * Persist a new slideshow position, then let the existing refetch path
@@ -2856,35 +2908,65 @@ export default function StudioRoom(props: StudioRoomProps) {
         </div>
       )}
 
+      {/* PLAN is the room editor now — there is no "Reconfigure walls" button
+          because arriving here IS reconfiguring. Anyone who can edit gets the
+          real editor (stretch/rotate/move walls, place models) drawn at the
+          plan's own scale; anyone who cannot still gets the read-only plan,
+          because a student needs to see the layout even though they can't
+          change it.
+
+          NOTE: this was the modal editor's only entry point, so the
+          floorEditorOpen branch below is now unreachable — nothing calls
+          setFloorEditorOpen(true) any more. Left mounted rather than ripped
+          out, since it is the same component this renders inline and is the
+          way back if the inline plan needs to fall back to a modal. */}
       {editingWall === null && roomView === 'plan' && (
         <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
-          <PlanView
-            wallConfig={props.wallConfig}
-            boards={localBoards}
-            students={roomStudents}
-            selectedStudentId={selectedStudentId}
-            onSelectStudent={handleSelectStudent}
+          {canEditRoomLayout ? (
+            <FloorEditorOverlay
+              embedded
+              wallConfig={props.wallConfig}
+              tables={tables}
+              setTables={setTables}
+              // Inline there is nothing to exit, so this saves and stays put.
+              onSaveAndExit={persistFloorConfig}
+              mode={planEditMode}
+              onModeChange={setPlanEditMode}
+              onWallConfigChange={props.onWallConfigChange}
+              boardWallIndices={boardWallIndices}
+              onWallRemoved={handleWallRemoved}
+              onPersistWallConfig={handlePersistWallConfig}
+              canDeleteWalls={props.canDeleteWalls ?? false}
+              // Only the pre-measurement fallback: embedded, the editor measures
+              // its own box and draws at that size so the plan fills the tab.
+              // PlanView's numbers, so the very first paint already matches the
+              // read-only plan's framing instead of jumping on the next frame.
+              viewWidth={PLAN_VIEW}
+              viewHeight={PLAN_VIEW}
+              padding={PLAN_MARGIN}
+            />
+          ) : (
+            <PlanView
+              wallConfig={props.wallConfig}
+              // Boards no longer draw on the plan; they are still passed because
+              // a wall click needs to know which FACE has the work on it.
+              boards={localBoards}
+              onWallClick={handlePlanWallClick}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Running order for the whole room. Deliberately NOT filtered by the
+          roster selection: a crit runs across people, and the point of this
+          tab is the sequence you present in. */}
+      {editingWall === null && roomView === 'presentation' && (
+        <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
+          <PresentationView
+            boards={roomOrderedBoards}
+            canReorder={canReorderSlideshow}
+            onReorder={handleReorderBoard}
             onBoardClick={handleLightboxOpen}
-            onWallClick={handlePlanWallClick}
-            // Same gate the hamburger's items carried: opening either editor
-            // is what writes the wall-config blob, and offering it to someone
-            // whose writes would no-op is a trap. Undefined hides the button.
-            onReconfigureWalls={
-              props.canEditWalls && !props.isArchived
-                ? () => {
-                    props.onFloorEditorModeChange?.('walls')
-                    setFloorEditorOpen(true)
-                  }
-                : undefined
-            }
-            onPlaceModel={
-              props.canEditWalls && !props.isArchived
-                ? () => {
-                    props.onFloorEditorModeChange?.('tables')
-                    setFloorEditorOpen(true)
-                  }
-                : undefined
-            }
           />
         </div>
       )}
@@ -2892,7 +2974,9 @@ export default function StudioRoom(props: StudioRoomProps) {
       {editingWall === null && roomView === '2d' && (
         <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
           <TwoDView
-            boards={localBoards}
+            // Slideshow order, not server order: this grid is now where that
+            // order is set, so it has to be what it shows.
+            boards={roomOrderedBoards}
             students={roomStudents}
             selectedStudentId={selectedStudentId}
             // Plain setter, NOT handleSelectStudent: that one toggles a
@@ -2902,6 +2986,11 @@ export default function StudioRoom(props: StudioRoomProps) {
             onSelectStudent={(student) => setSelectedStudentId(student.id)}
             onClearSelection={() => setSelectedStudentId(null)}
             onBoardClick={handleLightboxOpen}
+            // Room-wide order, so a drag inside one person's sheets can be
+            // resolved against the slideshow it actually writes.
+            globalOrderIds={roomOrderIds}
+            canReorder={canReorderSlideshow}
+            onReorder={handleReorderBoard}
           />
         </div>
       )}
@@ -3020,7 +3109,6 @@ export default function StudioRoom(props: StudioRoomProps) {
             // Only bind a floor click while focused, so an ordinary click on the
             // floor stays inert (and can't swallow an orbit) the rest of the time.
             onFloorClick={focusedWall !== null ? handleExitFocus : undefined}
-            onNamePlateClick={handleOpenStudentArchive}
             // Edit mode dims too — the wall being edited is the focused one.
             dimmedExceptWall={editingWall ?? focusedWall?.wallIndex ?? null}
             onTableModelClick={handleTableModelClick}
@@ -3050,7 +3138,12 @@ export default function StudioRoom(props: StudioRoomProps) {
       onNavigate={handleLightboxNavigate}
       isEditMode={!props.isArchived}
       currentUserRole={props.currentUserRole ?? null}
-      canReorder={!props.isArchived && !!props.canReorderBoards}
+      // Withheld while the slideshow is scoped to one person. The reorder input
+      // takes a position in the ROOM's slideshow (boards.sort_order) but
+      // validates against allBoards.length, so against a 3-sheet subset "2"
+      // would read as second-of-three and land as second-of-eighteen. Sheet
+      // order is a room-level property; reorder it from the room-wide view.
+      canReorder={canReorderSlideshow && !lightboxScopedToStudent}
       onReorder={handleReorderBoard}
       liveChannelRef={props.liveChannelRef}
       isPresenter={!!props.isPresenter}

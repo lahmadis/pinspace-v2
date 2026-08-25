@@ -206,7 +206,10 @@ export default function TableWithModel({ table, onTableClick }: TableWithModelPr
       {/* Table pedestal */}
       <mesh castShadow receiveShadow position={[0, TABLE_HEIGHT / 2, 0]}>
         <boxGeometry args={[table.width, TABLE_HEIGHT, table.depth]} />
-        <meshStandardMaterial color="#D8DEFF" roughness={0.9} metalness={0} />
+        {/* White, like the walls and floor. The models sitting on it are white
+            too (MODEL_COLOR), so the two separate by shading and contact shadow
+            rather than by hue — which is how a real white plinth reads. */}
+        <meshStandardMaterial color="#FFFFFF" roughness={0.9} metalness={0} />
       </mesh>
 
       {hasModel && (

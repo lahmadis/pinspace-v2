@@ -106,15 +106,6 @@ export default function RosterPanel({ students, selectedStudentId, onSelect }: R
                       W{String(student.wallIndex + 1).padStart(2, '0')} · {student.boardCount} sheet{student.boardCount === 1 ? '' : 's'}
                     </span>
                   </span>
-                  {student.calloutCount > 0 && (
-                    <span
-                      className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full tabular-nums"
-                      style={{ fontFamily: MONO_STACK, background: ROOM.accent, color: ROOM.wall }}
-                      title={`${student.calloutCount} callout${student.calloutCount === 1 ? '' : 's'}`}
-                    >
-                      {student.calloutCount}
-                    </span>
-                  )}
                 </button>
               </li>
             )

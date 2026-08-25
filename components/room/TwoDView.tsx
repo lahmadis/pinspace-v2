@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import type { Board } from '@/types'
 import { ROOM, MONO_STACK, SANS_STACK } from '@/lib/room/palette'
 import type { RoomStudent } from '@/lib/room/students'
+import SortableBoardGrid from './SortableBoardGrid'
 
 interface TwoDViewProps {
   boards: Board[]
@@ -15,16 +16,19 @@ interface TwoDViewProps {
   onClearSelection: () => void
   /** Opens the full-screen lightbox, which carries its own prev/next. */
   onBoardClick?: (board: Board) => void
+  /**
+   * Board ids for the whole room in slideshow order. A person's sheets are a
+   * SUBSET of that order, and the reorder API addresses room positions, so a
+   * drag here can't be resolved from the visible list alone.
+   */
+  globalOrderIds?: readonly string[]
+  /** Off unless the viewer may reorder the room's slideshow. */
+  canReorder?: boolean
+  onReorder?: (boardId: string, targetPosition: number) => Promise<boolean | void>
 }
 
 /** Cover thumbnails stacked on a person card. */
 const COVER_COUNT = 3
-
-function sheetLabel(board: Board, index: number): string {
-  const title = board.title?.trim()
-  if (title) return title
-  return `Sheet ${String(index + 1).padStart(2, '0')}`
-}
 
 /**
  * The room's work as a flat 2D archive, browsable by person — the counterpart to
@@ -48,6 +52,9 @@ export default function TwoDView({
   onSelectStudent,
   onClearSelection,
   onBoardClick,
+  globalOrderIds,
+  canReorder = false,
+  onReorder,
 }: TwoDViewProps) {
   const boardsById = useMemo(() => {
     const map = new Map<string, Board>()
@@ -110,50 +117,17 @@ export default function TwoDView({
               </div>
             </header>
 
-            <div className="grid gap-5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-              {selectedBoards.map((board, i) => (
-                <button
-                  key={board.id}
-                  type="button"
-                  onClick={() => onBoardClick?.(board)}
-                  className="group text-left"
-                >
-                  <div
-                    className="relative w-full aspect-[4/3] rounded-lg overflow-hidden flex items-center justify-center transition-shadow group-hover:shadow-lg"
-                    style={{ background: ROOM.wall, border: `1px solid ${ROOM.hairline}` }}
-                  >
-                    {board.thumbnailUrl || board.fullImageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={board.thumbnailUrl || board.fullImageUrl}
-                        alt={sheetLabel(board, i)}
-                        loading="lazy"
-                        className="w-full h-full object-contain"
-                      />
-                    ) : (
-                      <span className="text-[10px] uppercase tracking-[0.14em]" style={headerStyle}>
-                        No preview
-                      </span>
-                    )}
-                    {(board.calloutCount ?? 0) > 0 && (
-                      <span
-                        className="absolute top-2 right-2 text-[10px] px-1.5 py-0.5 rounded-full tabular-nums"
-                        style={{ fontFamily: MONO_STACK, background: ROOM.accent, color: ROOM.wall }}
-                        title={`${board.calloutCount} callout${board.calloutCount === 1 ? '' : 's'}`}
-                      >
-                        {board.calloutCount}
-                      </span>
-                    )}
-                  </div>
-                  <p
-                    className="mt-2 text-[12px] truncate"
-                    style={{ color: ROOM.ink, fontFamily: SANS_STACK }}
-                  >
-                    {sheetLabel(board, i)}
-                  </p>
-                </button>
-              ))}
-            </div>
+            {/* Same grid the presentation view uses — dragging a sheet here
+                sets its slot in the ROOM's running order, resolved by
+                neighbour rather than by index (see reorderTargetPosition),
+                because these four sheets are a subset of eighteen. */}
+            <SortableBoardGrid
+              boards={selectedBoards}
+              globalOrderIds={globalOrderIds ?? boards.map((b) => b.id)}
+              canReorder={canReorder}
+              onReorder={onReorder}
+              onBoardClick={onBoardClick}
+            />
           </>
         ) : (
           <>

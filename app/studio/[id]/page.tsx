@@ -1065,11 +1065,22 @@ function StudioPageInner() {
                   </button>
 
                   {showRoomSwitcher && allRooms.length > 1 && (
+                    // The pill above is JetBrains Mono with uppercase and wide
+                    // tracking — drafting-annotation styling, deliberate there.
+                    // This menu is a DOM child of it, so it was inheriting all
+                    // three: mono glyphs, 0.14em tracking, and a text-transform
+                    // that hit the <div> and <a> but NOT the <button>s (Chrome's
+                    // UA sheet resets text-transform on buttons), which is why
+                    // the list read "SITE ANALYSIS" next to "Precedents". Room
+                    // names are content, not annotation, so all three are reset
+                    // back to the app's own Onest here.
                     <div
-                      className="absolute left-0 top-full mt-2 w-56 bg-white text-gray-900 rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50"
+                      className="absolute left-0 top-full mt-2 w-56 bg-white text-gray-900 rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50 font-sans normal-case tracking-normal"
                       onMouseLeave={() => setShowRoomSwitcher(false)}
                     >
-                      <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 border-b border-gray-100">
+                      {/* Deliberately keeps its own caps + tracking: this is a
+                          section label, not a room name. */}
+                      <div className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-[0.12em] bg-gray-50 border-b border-gray-100 truncate">
                         Spaces in {workspaceName}
                       </div>
                       <ul className="py-1">
@@ -1078,9 +1089,14 @@ function StudioPageInner() {
                           return (
                             <li key={r.id}>
                               {isCurrent ? (
-                                <div className="px-3 py-2 text-sm bg-[#3B6EF6]/10 text-[#3B6EF6] font-medium flex items-center justify-between">
-                                  <span>{r.name}</span>
-                                  <span className="text-xs">current</span>
+                                <div className="px-3 py-2 text-[13px] bg-[#3B6EF6]/10 text-[#3B6EF6] font-semibold flex items-center justify-between gap-2">
+                                  <span className="truncate">{r.name}</span>
+                                  {/* Its own caps rather than the inherited
+                                      ones, so it reads as a badge instead of
+                                      running into the name. */}
+                                  <span className="shrink-0 text-[10px] uppercase tracking-[0.1em] opacity-70">
+                                    current
+                                  </span>
                                 </div>
                               ) : (
                                 <button
@@ -1088,7 +1104,7 @@ function StudioPageInner() {
                                     setShowRoomSwitcher(false)
                                     router.push(`/studio/${r.id}`)
                                   }}
-                                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                                  className="block w-full truncate text-left px-3 py-2 text-[13px] hover:bg-gray-50"
                                 >
                                   {r.name}
                                 </button>
@@ -1101,7 +1117,7 @@ function StudioPageInner() {
                         <Link
                           href={`/workspace/${workspaceId}`}
                           onClick={() => setShowRoomSwitcher(false)}
-                          className="block px-3 py-2 text-sm text-[#3B6EF6] hover:bg-[#3B6EF6]/10 font-medium"
+                          className="block px-3 py-2 text-[13px] text-[#3B6EF6] hover:bg-[#3B6EF6]/10 font-semibold"
                         >
                           See all spaces →
                         </Link>

@@ -12,7 +12,7 @@
  */
 
 import * as THREE from 'three'
-import { getWallTransformResolved, calculateFloorBounds, type WallConfig } from '@/lib/wallLayout'
+import { getWallTransformResolved, calculateFloorBounds, getFloorRect, floorRectBounds, type WallConfig } from '@/lib/wallLayout'
 
 /**
  * The room's resting camera FOV. Lives here rather than in CameraController so
@@ -105,7 +105,26 @@ export function getInitialRoomPose(wallConfig: WallConfig): CameraPose {
  * that overrun the load-time framing still land fully in shot.
  */
 function getFitPose(wallConfig: WallConfig): CameraPose {
-  const bounds = calculateFloorBounds(wallConfig)
+  // Frame the walls AND the slab: the floor is its own surface now and can
+  // extend past the walls, so fitting to the walls alone would cut it off.
+  const wallBounds = calculateFloorBounds(wallConfig)
+  const fr = getFloorRect(wallConfig)
+  const fBounds = floorRectBounds(fr)
+  const hasWalls = wallConfig.walls.length > 0 && Number.isFinite(wallBounds.minX)
+  const bounds = {
+    floorWidth: hasWalls
+      ? Math.max(wallBounds.maxX, fBounds.maxX) - Math.min(wallBounds.minX, fBounds.minX)
+      : fr.width,
+    floorDepth: hasWalls
+      ? Math.max(wallBounds.maxZ, fBounds.maxZ) - Math.min(wallBounds.minZ, fBounds.minZ)
+      : fr.depth,
+    floorCenterX: hasWalls
+      ? (Math.min(wallBounds.minX, fBounds.minX) + Math.max(wallBounds.maxX, fBounds.maxX)) / 2
+      : fr.centerX,
+    floorCenterZ: hasWalls
+      ? (Math.min(wallBounds.minZ, fBounds.minZ) + Math.max(wallBounds.maxZ, fBounds.maxZ)) / 2
+      : fr.centerZ,
+  }
   const heights = wallConfig.walls.map((w) => w.height)
   const maxWallHeightInches = (heights.length ? Math.max(...heights) : 8) * 12
 

@@ -63,6 +63,12 @@ export const ROOM = {
  * must all be this exact value: if the fog color and the background differ at
  * all, the ground plane's own edge shows up as a visible ring instead of an
  * invisible horizon.
+ *
+ * Note the sky is now DARKER than both the floor plate (#FFFFFF) and the ground
+ * (#F7F9FC), where it used to sit between the walls and a mid-tone floor. The
+ * ground therefore fades slightly darker toward the horizon, which reads as
+ * haze. That inversion is fine — the ring failure above depends only on fog and
+ * background matching each other, not on which side of the sky the ground sits.
  */
 export const ROOM_SKY = '#E7ECF5'
 
