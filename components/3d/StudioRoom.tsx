@@ -11,8 +11,7 @@ import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from './WallSystem'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry, type FocusedWall, type PresetRequest } from './CameraController'
-import type { RoomCameraPreset } from '@/lib/room/cameraViews'
+import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry, type FocusedWall } from './CameraController'
 import RosterPanel from '@/components/room/RosterPanel'
 import UnfoldedView from '@/components/room/UnfoldedView'
 import PlanView, { PLAN_VIEW, PLAN_MARGIN } from '@/components/room/PlanView'
@@ -123,6 +122,19 @@ interface StudioRoomProps {
   /** When provided, floor editor open state is controlled by the parent (e.g. header button). */
   floorEditorOpen?: boolean
   onFloorEditorOpenChange?: (open: boolean) => void
+  /**
+   * Which reading of the room is on screen. Controlled/uncontrolled like
+   * floorEditorOpen above: lifted so the page's menu beside Share can switch to
+   * 2D and Presentation, which no longer have tabs in the bottom strip. Omit
+   * both and the room keeps its own state exactly as before.
+   */
+  roomView?: RoomView
+  onRoomViewChange?: (view: RoomView) => void
+  /**
+   * Whether the floating roster is shown. Read-only from here — the menu
+   * beside Share owns it. Omit and the roster is always on, as before.
+   */
+  rosterOpen?: boolean
   /** 'tables' = place tables/models, 'walls' = move/rotate walls. */
   floorEditorMode?: 'tables' | 'walls'
   /**
@@ -782,7 +794,20 @@ export default function StudioRoom(props: StudioRoomProps) {
   // Which of the the flat room views is showing. Room is the orbit-capable 3D
   // Canvas; Unfolded and Plan are pure DOM/CSS, so switching to either from
   // Room unmounts WebGL, and switching back remounts it.
-  const [roomView, setRoomView] = useState<RoomView>('room')
+  const [roomViewInternal, setRoomViewInternal] = useState<RoomView>('room')
+  const roomView = props.roomView !== undefined ? props.roomView : roomViewInternal
+  const setRoomView = useCallback(
+    (view: RoomView) => {
+      props.onRoomViewChange?.(view)
+      if (props.roomView === undefined) setRoomViewInternal(view)
+    },
+    [props.onRoomViewChange, props.roomView]
+  )
+
+  // Read-only here: the roster has no toggle of its own any more, so the menu
+  // beside Share is the only thing that opens and closes it. Defaults open, so
+  // a surface that never passes the prop behaves exactly as it did.
+  const rosterOpen = props.rosterOpen ?? true
 
   const handleSelectStudent = useCallback((student: RoomStudent) => {
     setSelectedStudentId((prev) => (prev === student.id ? null : student.id))
@@ -795,15 +820,7 @@ export default function StudioRoom(props: StudioRoomProps) {
    * and by users who can't edit walls.
    */
   const [focusedWall, setFocusedWall] = useState<FocusedWall | null>(null)
-  const [presetRequest, setPresetRequest] = useState<PresetRequest | null>(null)
 
-  const handlePreset = useCallback((preset: RoomCameraPreset) => {
-    // Key off a counter rather than the preset name so pressing the same button
-    // twice re-frames both times.
-    setPresetRequest((prev) => ({ preset, key: (prev?.key ?? 0) + 1 }))
-    // Jumping to a whole-room angle contradicts being focused on one wall.
-    setFocusedWall(null)
-  }, [])
 
   const handleExitFocus = useCallback(() => setFocusedWall(null), [])
 
@@ -2874,7 +2891,7 @@ export default function StudioRoom(props: StudioRoomProps) {
 
       {/* Hidden in the 2D view, which is itself a list of everyone — a floating
           roster there would both duplicate it and sit on top of the grid. */}
-      {editingWall === null && roomView !== '2d' && (
+      {editingWall === null && roomView !== '2d' && rosterOpen && (
         <RosterPanel
           students={roomStudents}
           selectedStudentId={selectedStudentId}
@@ -3003,7 +3020,6 @@ export default function StudioRoom(props: StudioRoomProps) {
           // you set several views ago. handlePlanWallClick sets roomView
           // directly rather than through here, so its focus survives.
           onViewChange={(v) => { setRoomView(v); setFocusedWall(null) }}
-          onPreset={handlePreset}
           isFocused={focusedWall !== null}
           onExitFocus={handleExitFocus}
         />
@@ -3061,7 +3077,6 @@ export default function StudioRoom(props: StudioRoomProps) {
             followPoseRef={props.followPoseRef}
             wallConfig={props.wallConfig}
             focusedWall={focusedWall}
-            presetRequest={presetRequest}
           />
           <SceneContent
             {...props}

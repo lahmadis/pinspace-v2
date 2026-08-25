@@ -1,8 +1,6 @@
 'use client'
 
 import { ROOM, MONO_STACK } from '@/lib/room/palette'
-import type { RoomCameraPreset } from '@/lib/room/cameraViews'
-import RoomViewPresets from './RoomViewPresets'
 
 /**
  * The canvas is deliberately NOT here.
@@ -17,28 +15,22 @@ export type RoomView = 'room' | 'unfolded' | 'plan' | '2d' | 'presentation'
 interface RevisionStripProps {
   view: RoomView
   onViewChange: (view: RoomView) => void
-  /**
-   * Fly the camera to a named angle. Omit to hide the preset row entirely —
-   * surfaces that mount the room without a CameraController have nothing to
-   * fly.
-   */
-  onPreset?: (preset: RoomCameraPreset) => void
   /** True while a single wall is focused, which is the only time exiting means anything. */
   isFocused?: boolean
   onExitFocus?: () => void
 }
 
+/**
+ * Only the three spatial readings of the room live in the strip. 2D and
+ * Presentation moved to the menu beside Share: they are not ways of looking at
+ * the SPACE — one is a per-person archive, the other a running order — and
+ * sitting them in the same segmented control implied five peers when there are
+ * three plus two different things.
+ */
 const VIEWS: Array<{ id: RoomView; label: string }> = [
   { id: 'room', label: 'Space' },
   { id: 'unfolded', label: 'Unfolded' },
   { id: 'plan', label: 'Plan' },
-  // The per-person board archive. Labelled by what it IS from the viewer's
-  // side — a flat 2D read of the room — rather than "Archive", which sounds
-  // like cold storage for old work.
-  { id: '2d', label: '2D' },
-  // The room's running order. Last because it's the only tab about WHEN work
-  // is shown rather than where it hangs or whose it is.
-  { id: 'presentation', label: 'Presentation' },
 ]
 
 /**
@@ -55,16 +47,32 @@ const VIEWS: Array<{ id: RoomView; label: string }> = [
 export default function RevisionStrip({
   view,
   onViewChange,
-  onPreset,
   isFocused = false,
   onExitFocus,
 }: RevisionStripProps) {
-  const showPresets = view === 'room' && Boolean(onPreset)
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none pb-5 flex flex-col items-center gap-2">
-      {showPresets && onPreset && (
-        <RoomViewPresets onPreset={onPreset} isFocused={isFocused} onExitFocus={onExitFocus} />
+      {/* Axon and Fit are gone, but NOT this. Wall focus holds the camera
+          square-on with orbit switched off, and its own escape hatches —
+          Escape, a floor click — are both invisible. Dropping the pill wholesale
+          along with the presets would have removed the only discoverable way
+          out of a locked camera. */}
+      {isFocused && onExitFocus && (
+        <div
+          className="pointer-events-auto flex items-center p-1 rounded-full shadow-lg"
+          style={{ background: ROOM.wall, border: `1px solid ${ROOM.hairline}` }}
+        >
+          <button
+            type="button"
+            onClick={onExitFocus}
+            title="Release the camera and show every wall again (Esc)"
+            className="px-4 py-1.5 rounded-full text-[10px] uppercase tracking-[0.16em] transition-opacity hover:opacity-90"
+            style={{ fontFamily: MONO_STACK, background: ROOM.accent, color: ROOM.wall, fontWeight: 700 }}
+          >
+            Exit focus
+          </button>
+        </div>
       )}
 
       <div
