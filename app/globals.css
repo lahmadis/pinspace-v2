@@ -4,6 +4,57 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Semantic colour tokens.
+ *
+ * Thirteen components address colours as `rgb(var(--color-primary))` and friends — the bubble
+ * network, the admin charts, the gallery, the shared Primitives. None of these
+ * were defined, so every one of those references resolved to nothing. Where the
+ * property has no inherited value that reads as invisible; on an SVG `fill` it
+ * reads as BLACK, which is why the network graph rendered as black dots.
+ *
+ * They existed once (`feat: establish Kova UI foundation`) and were dropped
+ * when the room/canvas work merged onto the awais base, which brought its own
+ * globals.css. Nothing noticed because Tailwind's own `bg-primary` kept
+ * working — the network legend renders in indigo from `bg-primary` two lines
+ * away from bubbles that render black from `var(--color-primary)`.
+ *
+ * Values track what the app RENDERS TODAY rather than the original Kova block:
+ * that block is yellow/forest (`--color-primary: 255 200 0`) and was superseded
+ * by the blue/paper restyle, so restoring it verbatim would make "primary" mean
+ * indigo in Tailwind and yellow in CSS within the same file. Hues below mirror
+ * tailwind.config.js; the status, forest and shape values have no Tailwind
+ * counterpart and are the original Kova ones.
+ *
+ * Unlayered on purpose: unlayered declarations outrank @layer base, so these
+ * stay defined regardless of how the Tailwind layers are ordered.
+ *
+ * Space-separated triples, NOT hex — every consumer wraps them in rgb() and
+ * several use the `rgb(var(--x) / 0.5)` alpha form, which only parses this way.
+ */
+:root {
+  /* Brand — mirrors tailwind.config.js `primary` / `accent`. */
+  --color-primary: 99 102 241;
+  --color-primary-hover: 79 70 229;
+  --color-accent: 59 130 246;
+
+  /* Surfaces and text — mirrors `background.light` / `text.primary`. */
+  --color-paper: 255 255 255;
+  --color-ink: 15 23 42;
+  --color-border-light: 241 245 249;
+
+  /* No Tailwind counterpart; kept from the original token set. */
+  --color-secondary: 20 112 92;
+  --color-forest: 10 47 40;
+  --color-success: 23 128 94;
+  --color-warning: 179 111 0;
+  --color-danger: 180 51 43;
+
+  --radius-sm: 10px;
+  --shadow-soft: 0 10px 30px rgb(10 47 40 / 0.10);
+  --shadow-raised: 0 18px 50px rgb(10 47 40 / 0.16);
+}
+
 @layer base {
   body {
     @apply bg-background text-text-primary font-sans antialiased;
