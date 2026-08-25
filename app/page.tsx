@@ -62,7 +62,11 @@ function HomeInner() {
 
   const signInHref = institutionSlug ? `/sign-in?institution=${institutionSlug}` : '/sign-in'
   const signUpHref = institutionSlug ? `/sign-up?institution=${institutionSlug}` : '/sign-up'
-  const primaryHref = user ? '/dashboard' : signUpHref
+  // Signed-in users go straight in; signed-out users get the sign-up path
+  // rather than bouncing off /network's own auth redirect. The Dashboard button
+  // is the secondary action, so it sends signed-out users to sign-in instead.
+  const networkHref = user ? '/network' : signUpHref
+  const dashboardHref = user ? '/dashboard' : signInHref
 
   const content = (
     <div className="min-h-screen relative overflow-x-hidden" style={{ background: 'linear-gradient(160deg, #F2F5FB 0%, #EDF1F9 55%, #F6F3EC 100%)' }}>
@@ -122,7 +126,7 @@ function HomeInner() {
       </div>
 
       {/* Hero */}
-      <div className="relative z-10 px-4 pt-8 pb-48 sm:pb-56">
+      <div className="relative z-10 px-4 pt-16 sm:pt-24 pb-24 sm:pb-32">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -130,14 +134,21 @@ function HomeInner() {
           className="text-center"
         >
           <motion.h1
-            className="mx-auto max-w-4xl text-6xl sm:text-7xl md:text-8xl font-extrabold leading-[0.98] tracking-[-0.03em] text-[#16181D]"
+            className="flex items-center justify-center gap-4 sm:gap-5 text-6xl sm:text-7xl md:text-8xl font-extrabold leading-[0.98] tracking-[-0.03em] text-[#16181D]"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.9, delay: 0.15 }}
           >
-            Your studio,
-            <br />
-            always on the wall.
+            {/* Same lockup as the nav, scaled to hero size. The mark is sized in
+                em so it tracks the wordmark across the responsive type steps
+                instead of needing its own breakpoints. */}
+            <span
+              aria-hidden="true"
+              className="shrink-0 rounded-[0.28em] bg-[#3B6EF6] text-white flex items-center justify-center w-[0.92em] h-[0.92em] text-[0.34em] shadow-[0_10px_30px_rgba(59,110,246,0.32)]"
+            >
+              ◉
+            </span>
+            pinspace
           </motion.h1>
 
           <motion.p
@@ -146,7 +157,7 @@ function HomeInner() {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.8, delay: 0.35 }}
           >
-            Pin work into a 3D space, crit it in place, and keep every semester — beautifully archived.
+            where design work lives
           </motion.p>
 
           <motion.div
@@ -156,16 +167,16 @@ function HomeInner() {
             transition={{ duration: 0.8, delay: 0.5 }}
           >
             <button
-              onClick={() => router.push(primaryHref)}
+              onClick={() => router.push(networkHref)}
               className="px-9 py-4 bg-[#3B6EF6] hover:bg-[#16181D] text-white rounded-full transition-colors font-bold text-[17px] shadow-[0_14px_34px_rgba(59,110,246,0.35)]"
             >
-              Enter your studio
+              Enter your network
             </button>
             <button
-              onClick={() => router.push(signInHref)}
+              onClick={() => router.push(dashboardHref)}
               className="px-8 py-4 bg-white/80 hover:border-[#3B6EF6] hover:text-[#3B6EF6] text-[#16181D] rounded-full transition-colors font-semibold text-[17px] border border-[#16181D]/10"
             >
-              I have a class code
+              Dashboard
             </button>
           </motion.div>
 
@@ -182,29 +193,13 @@ function HomeInner() {
         </motion.div>
       </div>
 
-      {/* Decorative studio wall preview */}
-      <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-[-120px] w-[min(980px,92vw)] h-[280px] sm:h-[360px] rounded-t-[26px] p-5 box-border"
-        style={{ background: 'rgba(255,255,255,0.65)', border: '1px solid rgba(255,255,255,0.9)', backdropFilter: 'blur(16px)', boxShadow: '0 -20px 70px rgba(22,24,29,0.12)' }}
-      >
-        <div className="relative w-full h-full rounded-2xl overflow-hidden" style={{ background: 'linear-gradient(180deg, #EDF1F9 60%, #DFE6F2 60%)' }}>
-          <div className="absolute left-[6%] top-[14%] w-[7%] h-[52%]" style={{ background: 'repeating-linear-gradient(180deg, #8A8FA0 0 2px, #F4F6FA 2px 6px)' }} />
-          <div className="absolute left-[16%] top-[14%] w-[13%] h-[36%]" style={{ background: 'repeating-linear-gradient(135deg, #D3D9E6 0 8px, #C2C9DA 8px 16px)' }} />
-          <div className="absolute left-[33%] top-[18%] w-[10%] h-[30%] rounded" style={{ background: '#3B6EF6' }} />
-          <div className="absolute left-[47%] top-[12%] w-[15%] h-[48%]" style={{ background: 'repeating-linear-gradient(135deg, #D3D9E6 0 8px, #C2C9DA 8px 16px)' }} />
-          <div className="absolute left-[66%] top-[16%] w-[8%] h-[44%]" style={{ background: 'repeating-linear-gradient(180deg, #8A8FA0 0 2px, #F4F6FA 2px 6px)' }} />
-          <div className="absolute right-4 top-4 bg-white/90 rounded-full px-4 py-2 text-xs font-bold text-[#5A5E6B]">
-            your studio, live
-          </div>
-        </div>
-      </div>
-
       <GalleryAvatarModal
         isOpen={showGalleryModal}
         onClose={() => setShowGalleryModal(false)}
         onEnter={handleEnterGallery}
       />
 
-      <footer className="relative z-10 border-t border-[#16181D]/10 bg-white/70 backdrop-blur-sm mt-[220px] sm:mt-[260px]">
+      <footer className="relative z-10 border-t border-[#16181D]/10 bg-white/70 backdrop-blur-sm mt-24 sm:mt-32">
         <div className="max-w-5xl mx-auto px-4 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-[#8A8FA0]">
           <p>© {new Date().getFullYear()} pinspace</p>
           <nav className="flex gap-6">
