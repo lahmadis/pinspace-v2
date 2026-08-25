@@ -479,7 +479,10 @@ function StudioPageInner() {
             // that ever regains a version field on an errored read can't be read
             // as authoritative.
             if (data?.readError !== true && typeof data?.version === 'number') {
-              wallConfigWriter.setVersion(studioId, data.version)
+              // Hand it the config too: knowing what the server holds is what
+              // lets a later 409 against an unstamped blob be told apart from a
+              // rival editor. See the rebase gate in lib/wallConfigWriter.ts.
+              wallConfigWriter.setVersion(studioId, data.version, data.config)
               versionKnown = true
             }
             if (data?.config) {

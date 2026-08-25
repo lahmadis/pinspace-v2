@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
   ImageIcon,
@@ -46,6 +46,7 @@ export default function CritColumn({
   onNote,
   onStep,
   onToggleRecording,
+  onRename,
   onDelete,
   recording = false,
   busy = false,
@@ -58,6 +59,10 @@ export default function CritColumn({
   refreshKey: number
   /** Words being spoken into THIS crit right now, if any. */
   liveTranscript?: string | null
+  /**
+   * Rename this crit. Omit to leave the title read-only.
+   */
+  onRename?: (title: string) => void
   /**
    * Delete this whole crit. Omit to hide the control — only the person who
    * owns the crit may delete it, and the API refuses anyone else.
@@ -136,7 +141,38 @@ export default function CritColumn({
     [nodes, deleteNode]
   )
 
-  const { shared, notes, drawings } = useMemo(() => {
+  const [titleDraft, setTitleDraft] = useState(crit.title)
+  // Follow the crit if it is renamed somewhere else; a local draft that never
+  // resyncs would quietly re-save the old name on the next blur.
+  useEffect(() => {
+    setTitleDraft(crit.title)
+  }, [crit.title])
+
+  /**
+   * Set for exactly the blur that Escape causes.
+   *
+   * blur() dispatches focusout SYNCHRONOUSLY, so the setTitleDraft(crit.title)
+   * beside it has not been flushed by the time onBlur runs — commitTitle read
+   * the abandoned draft and renamed the crit to it, which is the opposite of
+   * what Escape means. A ref lands immediately; state does not.
+   */
+  const abandonedRef = useRef(false)
+
+  const commitTitle = useCallback(() => {
+    if (abandonedRef.current) {
+      abandonedRef.current = false
+      setTitleDraft(crit.title)
+      return
+    }
+    const next = titleDraft.trim()
+    if (!next || next === crit.title) {
+      setTitleDraft(crit.title)
+      return
+    }
+    onRename?.(next)
+  }, [titleDraft, crit.title, onRename])
+
+  const { shared, notes } = useMemo(() => {
     const sharedNodes: Array<{ node: (typeof nodes)[number]; props: NodeProps }> = []
     const privateNotes: Array<{ node: (typeof nodes)[number]; props: NodeProps }> = []
     let drawingCount = 0
@@ -198,7 +234,38 @@ export default function CritColumn({
       <div className="px-5 pt-4 pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-lg font-bold text-[#16181D] truncate">{crit.title}</h2>
+            {onRename ? (
+              /* Edits in place rather than behind a pencil: the title is the
+                 one thing on the card that is plainly yours to change, and a
+                 dedicated control for one field is more chrome than it earns.
+                 Committing on blur and on Enter means there is no Save to
+                 forget. */
+              <input
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.currentTarget.select()}
+                onBlur={commitTitle}
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                    e.preventDefault()
+                    e.currentTarget.blur()
+                  }
+                  // Escape abandons the edit rather than saving a half-typed
+                  // name, which is what blur-to-commit would otherwise do.
+                  if (e.key === 'Escape') {
+                    abandonedRef.current = true
+                    setTitleDraft(crit.title)
+                    e.currentTarget.blur()
+                  }
+                }}
+                aria-label="Crit name"
+                className="w-full bg-transparent text-lg font-bold text-[#16181D] truncate rounded-md -mx-1 px-1 py-0.5 outline-none hover:bg-[#16181D]/4 focus:bg-white focus:ring-2 focus:ring-[#3B6EF6]/40"
+              />
+            ) : (
+              <h2 className="text-lg font-bold text-[#16181D] truncate">{crit.title}</h2>
+            )}
             <p className="text-[10px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0] mt-0.5">
               {new Date(crit.createdAt).toLocaleDateString(undefined, {
                 weekday: 'long',
@@ -255,10 +322,9 @@ export default function CritColumn({
         </div>
       </div>
 
-      {/* ---------------- shared with prof ---------------- */}
+      {/* ---------------- pinned work ---------------- */}
       <div className="px-5">
-        <div className="flex items-center justify-between gap-2">
-          <SectionLabel>Shared with prof</SectionLabel>
+        <div className="flex items-center justify-end gap-2">
           {onPin && (
             <CardAction onClick={onPin} disabled={busy} icon={<Pin className="w-3 h-3" />}>
               Pin work
@@ -292,8 +358,7 @@ export default function CritColumn({
 
       {/* ---------------- only you ---------------- */}
       <div className="px-5 pt-4 pb-5 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <SectionLabel>Only you</SectionLabel>
+        <div className="flex items-center justify-end gap-2">
           <div className="flex items-center gap-1">
             {onNote && (
               <CardAction onClick={onNote} icon={<StickyNote className="w-3 h-3" />}>
@@ -352,13 +417,6 @@ export default function CritColumn({
             onSubmit={(text) => onComposerSubmit?.(text)}
             onCancel={() => onComposerCancel?.()}
           />
-        )}
-
-        {drawings > 0 && (
-          <p className="text-[11px] text-[#8A8FA0] italic">
-            {drawings} mark{drawings === 1 ? '' : 's'} on the work — open the crit to see
-            {drawings === 1 ? ' it' : ' them'}.
-          </p>
         )}
 
         {/* Voice */}
@@ -518,14 +576,6 @@ export default function CritColumn({
         )}
       </div>
     </section>
-  )
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#3B6EF6] mb-1.5">
-      {children}
-    </div>
   )
 }
 

@@ -31,7 +31,7 @@ const PRIVATE_ROW_Y = 720
 
 export default function DeskPage() {
   const router = useRouter()
-  const { crits, loading, error, clearError, createCrit, deleteCrit } = useDeskCrits()
+  const { crits, loading, error, clearError, createCrit, deleteCrit, renameCrit } = useDeskCrits()
   const { upload } = useDirectUpload()
   const speech = useSpeechTranscription()
 
@@ -494,6 +494,7 @@ export default function DeskPage() {
                     onNote={() => setComposer({ critId: crit.id, kind: 'note' })}
                     onStep={() => setComposer({ critId: crit.id, kind: 'step' })}
                     onToggleRecording={() => toggleRecording(crit.id)}
+                    onRename={(title) => void renameCrit(crit.id, title)}
                     onDelete={() => setPendingDelete({ id: crit.id, title: crit.title })}
                     recording={listening && recordingCritId === crit.id}
                     busy={busy !== null && activeCritId === crit.id}
