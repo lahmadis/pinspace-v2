@@ -211,3 +211,97 @@ export function getWallFocusPose(
 
   return getHeadOnPose(wallCenter, rotation, transform.width)
 }
+
+/* ------------------------------------------------------------------ *
+ * Swoosh timing — the wall-to-wall camera move
+ * ------------------------------------------------------------------ */
+
+/**
+ * How long a camera move takes. Deliberately above the ~300ms ceiling that
+ * applies to dropdowns and popovers: this is a large spatial translation, and
+ * the *point* of animating it at all is that you keep track of which wall you
+ * ended up facing. Cut it much below this and the room reads as a jump cut —
+ * you arrive somewhere without having travelled, which is the exact
+ * disorientation the animation exists to prevent. It used to be 950ms, which
+ * is long enough that clicking a second wall felt like waiting your turn.
+ */
+export const SWOOSH_DURATION_SECONDS = 0.4
+
+/**
+ * Per-frame progression cap, so a transient stall (a save, a texture upload)
+ * can't advance the whole move in one giant step and skip the travel.
+ *
+ * Scaled with the duration rather than left at the 1/45 that paired with the
+ * old 950ms move. A cap this size is also a floor on how many frames the move
+ * takes (duration / cap), and 1/45 against 400ms would mean 18 frames — so
+ * anything under 45fps would stretch the swoosh in wall-clock time instead of
+ * dropping frames (0.6s at 30fps). At 1/20 the floor is 8 frames: a single
+ * frame still can't advance more than an eighth of the move, but the timing
+ * only distorts below 20fps, where the whole scene is already struggling.
+ */
+export const MAX_SWOOSH_STEP_SECONDS = 1 / 20
+
+/**
+ * Cubic-bezier easing solver — the same curve model CSS `cubic-bezier()` uses,
+ * with P0 and P3 pinned at (0,0) and (1,1) so only the two control points vary.
+ *
+ * Hand-rolled because these curves drive a Three.js camera inside the R3F frame
+ * loop, not a CSS property, so there's no browser easing to lean on. Newton
+ * iteration recovers the curve parameter for a given x, then we evaluate y.
+ */
+function cubicBezierEasing(x1: number, y1: number, x2: number, y2: number): (x: number) => number {
+  // Polynomial coefficients for B(t) = A·t³ + B·t² + C·t (P0 = 0, P3 = 1).
+  const coefA = (a: number, b: number) => 1 - 3 * b + 3 * a
+  const coefB = (a: number, b: number) => 3 * b - 6 * a
+  const coefC = (a: number) => 3 * a
+
+  const sample = (t: number, a: number, b: number) =>
+    ((coefA(a, b) * t + coefB(a, b)) * t + coefC(a)) * t
+  const slope = (t: number, a: number, b: number) =>
+    3 * coefA(a, b) * t * t + 2 * coefB(a, b) * t + coefC(a)
+
+  return (x: number): number => {
+    if (x <= 0) return 0
+    if (x >= 1) return 1
+    let t = x
+    for (let i = 0; i < 8; i++) {
+      const dx = sample(t, x1, x2) - x
+      if (Math.abs(dx) < 1e-6) break
+      const d = slope(t, x1, x2)
+      if (Math.abs(d) < 1e-6) break
+      t -= dx / d
+    }
+    return sample(t, y1, y2)
+  }
+}
+
+/**
+ * The curve for a move that starts from a standing camera — easeInOutCubic.
+ *
+ * The gentle start is not politeness: it bounds the per-frame displacement at
+ * the moment the entire viewport begins to move, which is what keeps a
+ * room-crossing translation from strobing. Measured at 60fps over this
+ * duration, this curve peaks at ~12% of the move per frame, against ~18-20%
+ * for the more aggressive alternatives.
+ *
+ * Specifically NOT the "strong" ease-in-out (0.77, 0, 0.175, 1) that UI
+ * guidance usually reaches for. On a move this large that curve is strictly
+ * worse on both axes at once — it sits visibly still for ~67ms AND peaks
+ * higher per frame (~20%), so it manages to feel sluggish and look steppy in
+ * the same animation. This one gives up almost nothing at the start (~58ms
+ * before the move reads, roughly the slack a camera taking up inertia would
+ * have anyway) and is the smoothest of the candidates through the middle.
+ */
+export const EASE_SWOOSH_START = cubicBezierEasing(0.65, 0, 0.35, 1)
+
+/**
+ * The curve for a move that *interrupts* one already running. Strong ease-out:
+ * full speed immediately, then decelerate into the new target.
+ *
+ * This is the whole interruption story. The camera is already travelling when
+ * the second click lands, so replaying the ease-in ramp would brake it to a
+ * stop and re-accelerate — a visible stall-then-lurch right where the user
+ * expects the most responsiveness. Starting at speed instead approximates
+ * carrying the existing velocity through the re-target.
+ */
+export const EASE_SWOOSH_REDIRECT = cubicBezierEasing(0.23, 1, 0.32, 1)
