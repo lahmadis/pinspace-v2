@@ -118,15 +118,19 @@ const HOVER_DEBOUNCE_MS = 100
 const BUBBLE_SIZE_MIN = 55
 const BUBBLE_SIZE_MAX = 75
 const ANIMATION_DURATION = 300
-const NETWORK_VISUAL_COLORS = [
-  'rgb(var(--color-primary))',
-  'rgb(var(--color-secondary))',
-  'rgb(var(--color-warning))',
-  'rgb(var(--color-paper))',
-  'rgb(var(--color-primary-hover))',
-  'rgb(var(--color-success))',
-] as const
-const NETWORK_VISUAL_COLOR_SET = new Set<string>(NETWORK_VISUAL_COLORS)
+/**
+ * Every bubble is this one indigo. The graph used to spread nodes across six
+ * hues from an ordinal scale, which read as categorical — six colours imply six
+ * kinds of thing — when the only real distinction between nodes is what the
+ * EDGES say. Colour was carrying no information, so it is now constant and the
+ * relationship lines do the explaining.
+ *
+ * Matches Tailwind's `primary`, which the legend swatch beside the graph
+ * already renders via `bg-primary`.
+ */
+const NETWORK_NODE_COLOR = 'rgb(var(--color-primary))'
+/** Same hue at half alpha, for the outer hover glow. */
+const NETWORK_NODE_GLOW = 'rgb(var(--color-primary) / 0.5)'
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -325,13 +329,6 @@ export default function BubbleNetwork({
   const simulationRef = useRef<d3.Simulation<BubbleNode, undefined> | null>(null)
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
 
-  // Memoize color scale
-  const colorScale = useMemo(() => 
-    d3.scaleOrdinal<string>()
-      .range([...NETWORK_VISUAL_COLORS]),
-    []
-  )
-
   // ============================================================================
   // DIMENSIONS
   // ============================================================================
@@ -390,7 +387,12 @@ export default function BubbleNetwork({
       return {
       ...n,
         radius: n.radius ?? Math.max(BUBBLE_SIZE_MIN, Math.min(BUBBLE_SIZE_MAX, (n.count || 10) * 1.5 + 45)),
-      color: n.color && NETWORK_VISUAL_COLOR_SET.has(n.color) ? n.color : colorScale(n.id),
+      // n.color is deliberately ignored. It used to be honoured only when it
+      // appeared in an allowlist of the six scale colours — so the three
+      // network pages, which all pass the literal '#6366f1', failed that test
+      // and silently fell through to an ordinal scale that coloured each node
+      // differently. They were already asking for one indigo; now they get it.
+      color: NETWORK_NODE_COLOR,
         x: width / 2 + Math.cos(angle) * radius,
         y: height / 2 + Math.sin(angle) * radius,
       }
@@ -439,7 +441,7 @@ export default function BubbleNetwork({
     return () => {
       simulation.stop()
     }
-  }, [nodes, dimensions, colorScale])
+  }, [nodes, dimensions])
 
   // ============================================================================
   // ZOOM & PAN
@@ -652,7 +654,9 @@ export default function BubbleNetwork({
     if (node.id === hoveredNode.id) {
       return {
         opacity: 1,
-        filter: `drop-shadow(0 0 20px ${node.color}) drop-shadow(0 0 40px ${node.color}80)`,
+        // NOT `${node.color}80`: appending hex alpha to `rgb(var(--x))` yields
+        // a malformed colour and the whole drop-shadow is dropped.
+        filter: `drop-shadow(0 0 20px ${NETWORK_NODE_COLOR}) drop-shadow(0 0 40px ${NETWORK_NODE_GLOW})`,
         strokeColor: 'rgb(var(--color-paper))',
         strokeWidth: 4,
       }
