@@ -105,7 +105,9 @@ export default function CritWorkspace({ canvasId }: { canvasId: string }) {
 
   const [tool, setTool] = useState<WorkTool>('select')
   const [focusedId, setFocusedId] = useState<string | null>(null)
-  const [panel, setPanel] = useState<'transcript' | 'summary' | 'notes' | null>(null)
+  // Defaults to the transcript now that the panel is a permanent column — an
+  // always-present aside with nothing in it would just be a blank margin.
+  const [panel, setPanel] = useState<'transcript' | 'summary' | 'notes'>('transcript')
   const [busy, setBusy] = useState<string | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [summarising, setSummarising] = useState(false)
@@ -699,126 +701,133 @@ export default function CritWorkspace({ canvasId }: { canvasId: string }) {
             </div>
           )}
         </div>
+      </div>
 
-        {/* ---- Transcript / summary tab bar ---- */}
-        <div className="shrink-0 border-t border-[#16181D]/10 bg-white">
-          <div className="flex items-center gap-1 px-3">
+      {/* ---- Transcript / summary / notes ----
+
+           A right-hand column rather than the strip this used to be along the
+           bottom. Transcript is a run of speech and a summary is a list of
+           points; both are read down a narrow measure, and as a full-width
+           band they were long lines in a 56px-tall window. Vertical gives them
+           the whole height of the workspace and a sane line length, and the
+           stage loses width it was not using. */}
+      <aside className="w-[340px] shrink-0 border-l border-[#16181D]/10 bg-white flex flex-col min-h-0">
+        <div className="shrink-0 flex items-center gap-1 px-3 border-b border-[#16181D]/8">
+          <TabButton
+            label="Transcript"
+            active={panel === 'transcript'}
+            live={listening}
+            onClick={() => setPanel('transcript')}
+          />
+          <TabButton
+            label="Summary"
+            active={panel === 'summary'}
+            onClick={() => setPanel('summary')}
+          />
+          {loose.length > 0 && (
             <TabButton
-              label="Transcript"
-              active={panel === 'transcript'}
-              live={listening}
-              onClick={() => setPanel((p) => (p === 'transcript' ? null : 'transcript'))}
+              label={`Notes (${loose.length})`}
+
+              active={panel === 'notes'}
+              onClick={() => setPanel('notes')}
             />
-            <TabButton
-              label="Summary"
-              active={panel === 'summary'}
-              onClick={() => setPanel((p) => (p === 'summary' ? null : 'summary'))}
-            />
-            {loose.length > 0 && (
-              <TabButton
-                label={`Notes (${loose.length})`}
-
-                active={panel === 'notes'}
-                onClick={() => setPanel((p) => (p === 'notes' ? null : 'notes'))}
-              />
-            )}
-            {(legacyCount > 0 || orphanCount > 0) && (
-              <span
-                className="ml-auto pr-1 text-[11px] text-[#8A8FA0]"
-                title={
-                  'Marks whose sheet was deleted, and drawings from the old canvas ' +
-                  'surface. Neither can be shown here; they are listed so the count ' +
-                  'on your desk card is not a promise this view breaks.'
-                }
-              >
-                {[
-                  legacyCount > 0 ? `${legacyCount} old drawing${legacyCount === 1 ? '' : 's'}` : '',
-                  orphanCount > 0 ? `${orphanCount} orphaned mark${orphanCount === 1 ? '' : 's'}` : '',
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </span>
-            )}
-          </div>
-
-          {panel === 'transcript' && (
-            <div className="max-h-56 overflow-y-auto px-4 py-3 border-t border-[#16181D]/8">
-              {transcript.segments.length === 0 && !live ? (
-                <p className="text-[13px] text-[#8A8FA0]">
-                  Nothing recorded yet. Hit Record and talk through the work.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {transcript.segments.map((seg) => (
-                    <p key={seg.id} className="text-[13px] leading-relaxed text-[#16181D]">
-                      {seg.text}
-                    </p>
-                  ))}
-                  {live && (
-                    <p className="text-[13px] leading-relaxed text-[#3B6EF6] italic">{live}</p>
-                  )}
-                </div>
-              )}
-              {transcript.fullText.trim() && (
-                <button
-                  type="button"
-                  onClick={() => void handleSummarise()}
-                  disabled={summarising}
-                  className="mt-3 px-3 py-1.5 rounded-lg bg-[#16181D] text-white text-[12px] font-semibold disabled:opacity-60"
-                >
-                  {summarising ? 'Summarising…' : 'Summarise'}
-                </button>
-              )}
-            </div>
           )}
-
-          {panel === 'notes' && (
-            <div className="max-h-56 overflow-y-auto px-4 py-3 border-t border-[#16181D]/8 space-y-2">
-              {loose.map((n) => (
-                <div
-                  key={n.id}
-                  className="flex items-start gap-2 rounded-lg bg-[#FFF8DC] border border-[#16181D]/8 px-3 py-2"
-                >
-                  <p className="flex-1 text-[13px] leading-snug text-[#16181D] whitespace-pre-wrap">
-                    {String(n.props?.text ?? '')}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => void deleteNode(n.id)}
-                    title="Delete note"
-                    className="shrink-0 p-1 rounded hover:bg-[#16181D]/6"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-[#D64545]" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {panel === 'summary' && (
-            <div className="max-h-56 overflow-y-auto px-4 py-3 border-t border-[#16181D]/8">
-              {summary.summary?.text ? (
-                <ul className="space-y-1">
-                  {summary.summary.text
-                    .split('\n')
-                    .map((l) => l.trim())
-                    .filter(Boolean)
-                    .map((line, i) => (
-                      <li key={i} className="flex gap-2 text-[13px] leading-snug text-[#16181D]">
-                        <span className="text-[#3B6EF6] shrink-0">•</span>
-                        <span>{line}</span>
-                      </li>
-                    ))}
-                </ul>
-              ) : (
-                <p className="text-[13px] text-[#8A8FA0]">
-                  No summary yet. Record the crit, then Summarise from the transcript tab.
-                </p>
-              )}
-            </div>
+          {(legacyCount > 0 || orphanCount > 0) && (
+            <span
+              className="ml-auto pr-1 text-[10px] text-[#8A8FA0] truncate max-w-[120px]"
+              title={
+                'Marks whose sheet was deleted, and drawings from the old canvas ' +
+                'surface. Neither can be shown here; they are listed so the count ' +
+                'on your desk card is not a promise this view breaks.'
+              }
+            >
+              {[
+                legacyCount > 0 ? `${legacyCount} old drawing${legacyCount === 1 ? '' : 's'}` : '',
+                orphanCount > 0 ? `${orphanCount} orphaned mark${orphanCount === 1 ? '' : 's'}` : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
           )}
         </div>
-      </div>
+
+        {panel === 'transcript' && (
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
+            {transcript.segments.length === 0 && !live ? (
+              <p className="text-[13px] text-[#8A8FA0]">
+                Nothing recorded yet. Hit Record and talk through the work.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {transcript.segments.map((seg) => (
+                  <p key={seg.id} className="text-[13px] leading-relaxed text-[#16181D]">
+                    {seg.text}
+                  </p>
+                ))}
+                {live && (
+                  <p className="text-[13px] leading-relaxed text-[#3B6EF6] italic">{live}</p>
+                )}
+              </div>
+            )}
+            {transcript.fullText.trim() && (
+              <button
+                type="button"
+                onClick={() => void handleSummarise()}
+                disabled={summarising}
+                className="mt-3 px-3 py-1.5 rounded-lg bg-[#16181D] text-white text-[12px] font-semibold disabled:opacity-60"
+              >
+                {summarising ? 'Summarising…' : 'Summarise'}
+              </button>
+            )}
+          </div>
+        )}
+
+        {panel === 'notes' && (
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2">
+            {loose.map((n) => (
+              <div
+                key={n.id}
+                className="flex items-start gap-2 rounded-lg bg-[#FFF8DC] border border-[#16181D]/8 px-3 py-2"
+              >
+                <p className="flex-1 text-[13px] leading-snug text-[#16181D] whitespace-pre-wrap">
+                  {String(n.props?.text ?? '')}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void deleteNode(n.id)}
+                  title="Delete note"
+                  className="shrink-0 p-1 rounded hover:bg-[#16181D]/6"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-[#D64545]" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {panel === 'summary' && (
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
+            {summary.summary?.text ? (
+              <ul className="space-y-1">
+                {summary.summary.text
+                  .split('\n')
+                  .map((l) => l.trim())
+                  .filter(Boolean)
+                  .map((line, i) => (
+                    <li key={i} className="flex gap-2 text-[13px] leading-snug text-[#16181D]">
+                      <span className="text-[#3B6EF6] shrink-0">•</span>
+                      <span>{line}</span>
+                    </li>
+                  ))}
+              </ul>
+            ) : (
+              <p className="text-[13px] text-[#8A8FA0]">
+                No summary yet. Record the crit, then Summarise from the transcript tab.
+              </p>
+            )}
+          </div>
+        )}
+      </aside>
     </div>
   )
 }
