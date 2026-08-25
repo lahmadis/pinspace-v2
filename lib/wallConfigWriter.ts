@@ -100,7 +100,7 @@ export interface WallConfigWriter {
   /** Queue a write. Resolves once it reaches the front of the queue and lands. */
   write(params: WallConfigWriteParams): Promise<WallConfigWriteResult>
   /** Adopt a version learned from a load GET, for one room. */
-  setVersion(roomId: string, version: number): void
+  setVersion(roomId: string, version: number, storedConfig?: unknown): void
   /**
    * Forget a room's version, optionally recording the config our local state for
    * it is based on. Called when a load never obtained a version (baseline =
@@ -201,8 +201,15 @@ function toError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err))
 }
 
-/** Per-room concurrency state. `baseline` matters only while `version` is null. */
-type RoomVersionState = { version: number | null; baseline: unknown }
+/**
+ * Per-room concurrency state.
+ *
+ * `baseline` matters only while `version` is null. `lastSeenServerConfig` is
+ * tracked ALWAYS: it is the last content this client knows the server held, and
+ * it is what lets an unattributable 409 be told apart from a real second editor
+ * — see the rebase gate.
+ */
+type RoomVersionState = { version: number | null; baseline: unknown; lastSeenServerConfig?: unknown }
 
 /** One POST attempt, classified. Never throws. */
 type Attempt =
@@ -288,11 +295,12 @@ export function useWallConfigWriter(
   }, [onConflict])
 
   const setVersion = useCallback(
-    (roomId: string, version: number) => {
+    (roomId: string, version: number, storedConfig?: unknown) => {
       if (!Number.isFinite(version)) return
       const state = stateFor(roomId)
       state.version = version
       state.baseline = undefined // known version — nothing to reconcile
+      if (storedConfig !== undefined) state.lastSeenServerConfig = storedConfig
     },
     [stateFor]
   )
@@ -389,6 +397,7 @@ export function useWallConfigWriter(
         const state = stateFor(p.roomId)
         state.version = latest.version
         state.baseline = undefined // the page adopts `latest` as its new state
+        state.lastSeenServerConfig = latest
       }
       const onScreen = currentRoomRef.current === p.roomId
       if (latest && onScreen && !p.silentConflict) onConflictRef.current(latest)
@@ -416,9 +425,12 @@ export function useWallConfigWriter(
        * A null version leaves us without a base, so record what we just wrote as
        * the new baseline — the server is now known to hold exactly that.
        */
-      const adopt = (v: number | null, baselineWhenUnknown?: unknown) => {
+      const adopt = (v: number | null, baselineWhenUnknown?: unknown, storedNow?: unknown) => {
         state.version = v
         state.baseline = v === null ? baselineWhenUnknown : undefined
+        // Whatever we just proved the server holds. Only the rebase gate reads
+        // it, and only to tell an old blob apart from a rival editor.
+        if (storedNow !== undefined) state.lastSeenServerConfig = storedNow
       }
 
       // Version-unknown rebase. Reachable ONLY when the load never learned a
@@ -450,7 +462,7 @@ export function useWallConfigWriter(
           })
         }
         base = latest.version
-        adopt(base)
+        adopt(base, undefined, latest.config)
       }
 
       // One logical send at a given base: the POST, plus exactly one retry if the
@@ -492,7 +504,7 @@ export function useWallConfigWriter(
         // no longer justify.
         const attempt = await sendAt(base)
         if (attempt.kind === 'ok') {
-          adopt(attempt.version, p.config)
+          adopt(attempt.version, p.config, p.config)
           return { status: 'ok', version: attempt.version }
         }
         if (attempt.kind === 'rejected' || attempt.kind === 'unreachable') {
@@ -502,16 +514,36 @@ export function useWallConfigWriter(
         // attempt.kind === 'conflict'
         // Attribute the 409 by who wrote the stored blob last. Rebase only when
         // that was THIS user (same human, two tabs / in-flight overlap) — re-posting
-        // their newest intent loses nothing. A different writer, or a legacy blob
-        // with no lastWriterId, is a genuine second editor: fall through to
-        // settleConflict so their layout is not silently clobbered. Absent id →
-        // lastWriterOf is null → not us → reports. Fails safe.
+        // their newest intent loses nothing. A different writer is a genuine
+        // second editor: fall through to settleConflict so their layout is not
+        // silently clobbered.
         const storedWriter = lastWriterOf(attempt.latest)
         const sameWriter = storedWriter !== null && storedWriter === userId
+
+        /**
+         * An UNSTAMPED blob is not evidence of a second editor — it is evidence
+         * of an OLD one, written before this writer stamped anybody. Treating it
+         * as a rival made such a room permanently unsaveable: every 409 against
+         * it reported instead of rebasing, and reporting RELOADS rather than
+         * writes, so the blob never gained a lastWriterId and the next attempt
+         * failed exactly the same way. "Your changes weren't saved", forever,
+         * with one person in the room.
+         *
+         * Rebasing over it is safe when the stored CONTENT still equals what we
+         * last saw the server holding: the version moved but the layout did not,
+         * so there is no one else's work in it to lose. That is the same test
+         * the version-unknown path already uses to justify a write, applied to
+         * the one case attribution cannot cover.
+         */
+        const unattributable = storedWriter === null
+        const contentUnchanged =
+          state.lastSeenServerConfig !== undefined &&
+          sameStoredConfig(attempt.latest, state.lastSeenServerConfig)
+
         const nextBase = attempt.latest?.version
         const canRebase =
           allowRebase &&
-          sameWriter &&
+          (sameWriter || (unattributable && contentUnchanged)) &&
           rebases < MAX_REBASE_RETRIES &&
           typeof nextBase === 'number' &&
           Number.isFinite(nextBase) &&
@@ -522,7 +554,7 @@ export function useWallConfigWriter(
         // No onConflict here: nothing is being discarded, so there is nothing to
         // warn about — the toast is reserved for work actually lost.
         base = nextBase as number
-        adopt(base)
+        adopt(base, undefined, attempt.latest)
       }
     },
     [fetchLatest, sendOnce, settleConflict, stateFor, resolveUserId]

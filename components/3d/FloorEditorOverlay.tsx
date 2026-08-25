@@ -6,7 +6,7 @@ import { makePlanProjection } from '@/lib/room/planProjection'
 import { ROOM, MONO_STACK } from '@/lib/room/palette'
 import type { WallConfig, WallTransformOverride } from '@/lib/wallLayout'
 import type { FloorTable } from '@/types'
-import { X, Plus, Upload, Trash2 } from 'lucide-react'
+import { X, Plus, Upload, Trash2, Loader2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { maxModelBytesForName } from '@/lib/uploadLimits'
 import { useDirectUpload } from '@/lib/useDirectUpload'
@@ -253,6 +253,15 @@ export default function FloorEditorOverlay({
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null)
   const [dragStart, setDragStart] = useState<{ x: number; z: number; startPx: number; startPy: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  /**
+   * Which table the open file dialog belongs to.
+   *
+   * A ref, not selectedTableId: the picker is opened from the table's own
+   * centre, which selects it in the same gesture — and state has not
+   * re-rendered by the time the dialog is launched. Reading the state there
+   * would attach the model to whichever table was selected BEFORE this one.
+   */
+  const uploadTargetRef = useRef<string | null>(null)
 
   // Walls mode: which wall the user has selected (target of the Remove wall
   // button). null = nothing selected. Set by pointerdown on a wall polygon.
@@ -510,7 +519,8 @@ export default function FloorEditorOverlay({
   const handleTableFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
-      const tableId = selectedTableId
+      const tableId = uploadTargetRef.current ?? selectedTableId
+      uploadTargetRef.current = null
       if (!file || !tableId) return
       const lower = file.name.toLowerCase()
       const isSupportedExt = lower.endsWith('.glb') || lower.endsWith('.gltf') || lower.endsWith('.3dm') || lower.endsWith('.stl')
@@ -1366,7 +1376,7 @@ export default function FloorEditorOverlay({
           <p className={embedded ? 'hidden' : 'text-sm text-gray-500 mb-4'}>
             {mode === 'walls'
               ? 'Top-down view. Click a wall to select it. Drag walls to move, endpoint handles to resize, the circle handle on the front edge to rotate. Hold Shift while dragging to snap — 90° on rotate, to a neighbouring wall corner on move and resize. Ctrl+Z undo, Ctrl+Y redo.'
-              : 'Top-down view. Drag tables to move. Click a table then "Add model" to place a 3D model on it.'}
+              : 'Top-down view. Drag a table to move it, click its middle to add a 3D model, its corners to rotate.'}
           </p>
 
           {/* Floor plan canvas. Embedded it fills the tab and is MEASURED
@@ -1633,19 +1643,90 @@ export default function FloorEditorOverlay({
                     backgroundColor: isSelected ? 'rgba(59,110,246,0.15)' : 'rgba(138,143,160,0.2)',
                   }}
                 >
-                  <span className="text-[10px] font-medium truncate px-1" style={{ color: isSelected ? ROOM.accent : ROOM.ink2 }}>
-                    {table.modelUrl ? 'Model' : 'Table'}
-                  </span>
+                  {/* The MIDDLE is the model target: click it and the file
+                      dialog opens for this table. It used to be a button in an
+                      inspector below the canvas, which you had to find after
+                      selecting the table — and selecting was itself unreliable,
+                      because the four rotate hotspots below were 24px each and
+                      on a table this size they covered the whole glyph. They
+                      are 14px now and pinned to the corners, so the centre is
+                      always clear. */}
+                  <button
+                    type="button"
+                    title={table.modelUrl ? 'Replace this model' : 'Add a 3D model'}
+                    aria-label={table.modelUrl ? 'Replace model' : 'Add model'}
+                    // pointerdown is what starts the table drag; swallow it here
+                    // so pressing the centre never drags the table out from
+                    // under the click that was meant to open the picker.
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedTableId(table.id)
+                      uploadTargetRef.current = table.id
+                      fileInputRef.current?.click()
+                    }}
+                    disabled={uploadingTableId === table.id}
+                    className="flex flex-col items-center justify-center gap-0.5 px-1 rounded-md hover:bg-white/60 disabled:opacity-70"
+                    style={{ color: isSelected ? ROOM.accent : ROOM.ink2 }}
+                  >
+                    {uploadingTableId === table.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : table.modelUrl ? (
+                      <span className="text-[10px] font-medium truncate">Model</span>
+                    ) : (
+                      <>
+                        <Upload className="w-3.5 h-3.5" />
+                        <span className="text-[9px] font-medium leading-none">Add model</span>
+                      </>
+                    )}
+                  </button>
+
                   {[['0%', '0%'], ['100%', '0%'], ['100%', '100%'], ['0%', '100%']].map(([left, top], i) => (
                     <div
                       key={i}
-                      className="absolute w-6 h-6 cursor-pointer"
-                      style={{ left, top, transform: 'translate(-50%,-50%)' }}
+                      className="absolute w-3.5 h-3.5 cursor-pointer rounded-sm"
+                      style={{
+                        left,
+                        top,
+                        transform: 'translate(-50%,-50%)',
+                        background: isSelected ? ROOM.accent : 'transparent',
+                      }}
                       title="Rotate 90°"
                       onPointerDown={(e) => handleRotateTable(table.id, e)}
                       onClick={(e) => e.stopPropagation()}
                     />
                   ))}
+
+                  {/* Delete. Centred ABOVE the table and rendered after the
+                      rotate handles, both deliberately: it used to sit on the
+                      top-right corner, where the 14px rotate target landed
+                      entirely inside its 20px box and — being later in the DOM
+                      — took every click. The button was there and looked right;
+                      it just never received the press. Mid-edge is the one
+                      place none of the four corner targets can reach. */}
+                  {isSelected && (
+                    <button
+                      type="button"
+                      title="Remove this table"
+                      aria-label="Remove table"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setTables((prev) => prev.filter((t) => t.id !== table.id))
+                        setSelectedTableId(null)
+                      }}
+                      className="absolute z-10 w-5 h-5 rounded-full bg-white border shadow-sm flex items-center justify-center hover:bg-[#D64545]/8"
+                      style={{
+                        left: '50%',
+                        top: 0,
+                        transform: 'translate(-50%, -150%)',
+                        borderColor: ROOM.hairline,
+                        color: '#D64545',
+                      }}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               )
             })}
@@ -1658,36 +1739,24 @@ export default function FloorEditorOverlay({
             </p>
           )}
 
-          {/* Table inspector */}
-          {mode === 'tables' && selectedTableId && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-3 flex-wrap">
-              <span className="text-sm font-medium text-gray-700">Selected table</span>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".glb,.gltf,.3dm,.stl"
-                className="hidden"
-                onChange={handleTableFileChange}
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadingTableId === selectedTableId}
-                className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg text-sm font-medium text-gray-700 transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                {uploadingTableId === selectedTableId
-                  ? uploadLabel(modelUploadPct, modelUploadLoaded, modelUploadTotal)
-                  : 'Add model'}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setTables((prev) => prev.filter((t) => t.id !== selectedTableId)); setSelectedTableId(null) }}
-                className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-              >
-                Remove table
-              </button>
-            </div>
+          {/* Always mounted, never inside a conditional panel: the picker is
+              opened from a table's centre, and an input that only exists while
+              something is selected is not there yet at the moment of the click
+              that selects it. */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".glb,.gltf,.3dm,.stl"
+            className="hidden"
+            onChange={handleTableFileChange}
+          />
+
+          {/* Upload progress. The only part of the old inspector worth keeping:
+              a large model takes long enough that silence reads as failure. */}
+          {mode === 'tables' && uploadingTableId && (
+            <p className="mt-2 text-xs" style={{ color: ROOM.ink2 }}>
+              {uploadLabel(modelUploadPct, modelUploadLoaded, modelUploadTotal)}
+            </p>
           )}
         </div>
       </div>

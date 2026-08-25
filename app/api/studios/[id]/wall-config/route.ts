@@ -163,8 +163,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const legacy = await readConfigAt(configPath(id, null))
     if (legacy.status === 'found') {
+      // The CONFIG comes from the legacy workspace blob, but the VERSION must
+      // not: the POST that follows writes to the per-room path, and reporting
+      // the workspace blob's counter tells the client it is based on a blob it
+      // will never write to. The per-room blob does not exist (that is what
+      // licensed this fallback), so its true base is 0 — which the POST reads
+      // as "nothing stored", accepts, and stamps as version 1.
+      //
+      // Sending the workspace number instead left the client holding a base
+      // belonging to a different object: harmless on the very first save, and a
+      // guaranteed 409 the moment anything else created the per-room blob.
       return jsonNoStore(
-        { exists: true, config: legacy.stored.config, version: legacy.stored.version },
+        { exists: true, config: legacy.stored.config, version: 0 },
         { status: 200 }
       )
     }
