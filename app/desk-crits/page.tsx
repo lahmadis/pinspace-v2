@@ -31,7 +31,7 @@ const PRIVATE_ROW_Y = 720
 
 export default function DeskPage() {
   const router = useRouter()
-  const { crits, loading, error, clearError, createCrit } = useDeskCrits()
+  const { crits, loading, error, clearError, createCrit, deleteCrit } = useDeskCrits()
   const { upload } = useDirectUpload()
   const speech = useSpeechTranscription()
 
@@ -45,6 +45,16 @@ export default function DeskPage() {
   const [recordingCritId, setRecordingCritId] = useState<string | null>(null)
   /** An open inline composer for a note or a next step. */
   const [composer, setComposer] = useState<{ critId: string; kind: 'note' | 'step' } | null>(null)
+  /**
+   * The crit awaiting a delete confirmation, if any.
+   *
+   * Confirmed rather than undoable: the row cascades to canvas_nodes, so the
+   * transcript, the summary, the next steps and every pinned sheet go with it
+   * and there is nothing left to restore from. Title is held alongside the id
+   * so the prompt can name what is about to go.
+   */
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   /** Which zone the pending file picker is filling. */
@@ -484,6 +494,7 @@ export default function DeskPage() {
                     onNote={() => setComposer({ critId: crit.id, kind: 'note' })}
                     onStep={() => setComposer({ critId: crit.id, kind: 'step' })}
                     onToggleRecording={() => toggleRecording(crit.id)}
+                    onDelete={() => setPendingDelete({ id: crit.id, title: crit.title })}
                     recording={listening && recordingCritId === crit.id}
                     busy={busy !== null && activeCritId === crit.id}
                     composer={composer?.critId === crit.id ? composer.kind : null}
@@ -513,6 +524,64 @@ export default function DeskPage() {
           }
         }}
       />
+
+      {/* Delete confirmation. A modal rather than an inline two-step because
+          this is not recoverable: the canvas row cascades to its nodes, so the
+          transcript, summary, next steps and pinned sheets all go at once. */}
+      {pendingDelete && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-crit-title"
+          onClick={() => { if (!deleting) setPendingDelete(null) }}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-[#16181D]/10 p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="delete-crit-title" className="text-base font-bold text-[#16181D]">
+              Delete this crit?
+            </h2>
+            <p className="mt-2 text-sm text-[#5A5E6B]">
+              <span className="font-semibold text-[#16181D]">{pendingDelete.title}</span> and
+              everything on it — the transcript, the summary, any next steps and every pinned
+              sheet — will be removed. This can&rsquo;t be undone.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingDelete(null)}
+                disabled={deleting}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-[#5A5E6B] hover:bg-[#16181D]/5 disabled:opacity-60 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setDeleting(true)
+                  // deleteCrit removes it optimistically and puts it back at
+                  // its old index if the request fails, surfacing the reason
+                  // through the hook's error — which the banner above already
+                  // renders, so there is nothing to report here.
+                  const ok = await deleteCrit(pendingDelete.id)
+                  setDeleting(false)
+                  setPendingDelete(null)
+                  if (ok) {
+                    // Focus follows the list, not the deleted row.
+                    setActiveCritId((prev) => (prev === pendingDelete.id ? null : prev))
+                  }
+                }}
+                disabled={deleting}
+                className="px-4 py-2 rounded-xl bg-[#D64545] text-white text-sm font-semibold hover:bg-[#B93A3A] disabled:opacity-60 transition-colors"
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

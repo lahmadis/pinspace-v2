@@ -46,6 +46,7 @@ export default function CritColumn({
   onNote,
   onStep,
   onToggleRecording,
+  onDelete,
   recording = false,
   busy = false,
 }: {
@@ -57,6 +58,11 @@ export default function CritColumn({
   refreshKey: number
   /** Words being spoken into THIS crit right now, if any. */
   liveTranscript?: string | null
+  /**
+   * Delete this whole crit. Omit to hide the control — only the person who
+   * owns the crit may delete it, and the API refuses anyone else.
+   */
+  onDelete?: () => void
   /** An open inline composer targeting this crit. */
   composer?: 'note' | 'step' | null
   onComposerSubmit?: (text: string) => void
@@ -226,6 +232,25 @@ export default function CritColumn({
               Open
               <Maximize2 className="w-3 h-3" />
             </button>
+            {/* Deleting takes the transcript, the summary, the next steps and
+                every pinned sheet with it, so the confirm lives on the board
+                rather than here — this only asks for it. stopPropagation for
+                the same reason Open does: the card's own click just focuses it
+                for the tool rail. */}
+            {onDelete && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
+                title="Delete this crit"
+                aria-label={`Delete ${crit.title}`}
+                className="p-1.5 rounded-lg text-[#8A8FA0] hover:text-[#D64545] hover:bg-[#D64545]/8 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>
