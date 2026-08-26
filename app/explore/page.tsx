@@ -13,6 +13,9 @@ type StudioResponse = {
   hasOrg?: boolean
 }
 
+/** How many matched names to spell out before collapsing to a count. */
+const MAX_NAMED_PEOPLE = 3
+
 
 function ExplorePageInner() {
   const router = useRouter()
@@ -64,15 +67,40 @@ function ExplorePageInner() {
     }
   }, [])
 
-  // Filter nodes by search (studio name or professor/instructor)
+  // Filter nodes by search (studio name, professor/instructor, or anyone with
+  // work pinned in the space).
   const searchFilteredNodes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
     if (!q) return nodes
     return nodes.filter(
       (n) =>
         (n.name && n.name.toLowerCase().includes(q)) ||
-        (n.instructor && n.instructor.toLowerCase().includes(q))
+        (n.instructor && n.instructor.toLowerCase().includes(q)) ||
+        n.contributors?.some((c) => c.toLowerCase().includes(q))
     )
+  }, [nodes, searchQuery])
+
+  /**
+   * The people the query matched, for the line under the search box.
+   *
+   * Without it a student search is baffling: you type a name and some spaces
+   * survive with nothing on screen explaining why, because the thing that
+   * matched — who has work inside — is not written on the bubble. Naming the
+   * people also disambiguates a partial query that hit several of them.
+   */
+  const matchedPeople = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return []
+    // Keyed case-insensitively so the same person stored two ways across two
+    // studios lists once; the first spelling seen is the one shown.
+    const byKey = new Map<string, string>()
+    for (const n of nodes) {
+      for (const c of n.contributors ?? []) {
+        const key = c.toLowerCase()
+        if (key.includes(q) && !byKey.has(key)) byKey.set(key, c)
+      }
+    }
+    return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b))
   }, [nodes, searchQuery])
 
   // Load available academic years for the tab bar — scoped to user's own institution server-side
@@ -278,14 +306,27 @@ function ExplorePageInner() {
 
           {/* Center: search + All Studios + Drill-down */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full md:w-auto md:shrink-0">
-            <input
-              type="search"
-              placeholder="Search by space name or professor…"
-              value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setRoomDrillWorkspace(null) }}
-              className="w-full sm:w-80 sm:min-w-[18rem] px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              aria-label="Search spaces by name or professor"
-            />
+            <div className="w-full sm:w-80 sm:min-w-[18rem]">
+              <input
+                type="search"
+                placeholder="Search by space, professor, or student…"
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setRoomDrillWorkspace(null) }}
+                className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                aria-label="Search spaces by name, professor, or student"
+              />
+              {/* Says WHY these spaces matched. A student's name isn't written
+                  on any bubble, so without this a name search looks like an
+                  unexplained filter. */}
+              {matchedPeople.length > 0 && (
+                <p className="mt-1 text-[11px] text-slate-400 truncate" aria-live="polite">
+                  <span className="text-slate-500">Work by </span>
+                  {matchedPeople.slice(0, MAX_NAMED_PEOPLE).join(', ')}
+                  {matchedPeople.length > MAX_NAMED_PEOPLE &&
+                    ` +${matchedPeople.length - MAX_NAMED_PEOPLE} more`}
+                </p>
+              )}
+            </div>
             <div className="flex items-center gap-2 sm:gap-3">
               <button
                 onClick={() => {

@@ -204,7 +204,7 @@ export default function TableWithModel({ table, onTableClick }: TableWithModelPr
       onPointerOut={handlePointerOut}
     >
       {/* Table pedestal */}
-      <mesh castShadow receiveShadow position={[0, TABLE_HEIGHT / 2, 0]}>
+      <mesh position={[0, TABLE_HEIGHT / 2, 0]}>
         <boxGeometry args={[table.width, TABLE_HEIGHT, table.depth]} />
         {/* White, like the walls and floor. The models sitting on it are white
             too (MODEL_COLOR), so the two separate by shading and contact shadow

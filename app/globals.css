@@ -50,12 +50,33 @@
   --color-warning: 179 111 0;
   --color-danger: 180 51 43;
 
+  /*
+   * Corner radii. `rounded-pinspace` and `rounded-pinspace-lg` in
+   * tailwind.config.js resolve to md and lg — 135 usages between them, every
+   * one of which rendered SQUARE while these were missing.
+   */
   --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
   --shadow-soft: 0 10px 30px rgb(10 47 40 / 0.10);
   --shadow-raised: 0 18px 50px rgb(10 47 40 / 0.16);
 }
 
 @layer base {
+  /* In-page anchors (the landing page's For schools / FAQ tabs) glide instead
+     of teleporting, so it stays obvious that you moved down the same page
+     rather than opening a new one. Turned off outright under reduced motion —
+     a long scroll is exactly the vestibular motion that setting is about. */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
   body {
     @apply bg-background text-text-primary font-sans antialiased;
     overflow-x: hidden;

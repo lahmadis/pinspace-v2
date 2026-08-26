@@ -97,7 +97,8 @@ export async function GET(
       id: room.id,
       workspaceId: room.workspace_id,
       name: room.name,
-      wallColor: room.wall_color === 'white' ? 'white' : 'grey',
+      // white is the default now; only an explicit 'grey' opts out.
+      wallColor: room.wall_color === 'grey' ? 'grey' : 'white',
     },
   })
   response.headers.set('Cache-Control', 'no-store')

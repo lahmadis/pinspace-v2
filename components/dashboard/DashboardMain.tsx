@@ -127,7 +127,7 @@ function RoomCard({
                   onClick={() => { onLeave(workspace.id, workspace.name || ''); setOpenMenuId(null) }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-[#C2452D] hover:bg-[#C2452D]/8 text-left"
                 >
-                  <LogOut className="w-4 h-4" /> Leave project
+                  <LogOut className="w-4 h-4" /> Leave studio
                 </button>
               )}
             </div>
@@ -198,10 +198,15 @@ interface ScopeCfg {
 
 // One vocabulary for every org type. This used to swap "Project"/"Class" on
 // accountMode === 'firm', which doubled the copy surface for no benefit and
-// left the firm half effectively untested. Deliberately avoids "room" and
-// "studio": both already name the layer BELOW a workspace (a workspace holds
-// rooms; /studio/[id] is the 3D room view), so reusing either here would
-// collide.
+// left the firm half effectively untested.
+//
+// This layer is a STUDIO, not a project. The note that used to sit here avoided
+// the word because "studio" already names the layer below — a workspace holds
+// rooms, and /studio/[id] is the 3D room view — but that collision is internal.
+// The people using this call the thing a studio (the workspaces really are named
+// "Studio 06", "Studio 07"), and naming it "Project" for the sake of a routing
+// convention taught them a word nobody says. The URLs are unchanged; only the
+// copy moved.
 function scopeConfig(
   scope: Scope,
   organization: { name: string; slug: string } | null,
@@ -212,7 +217,7 @@ function scopeConfig(
     case 'wentworth':
       return {
         title: organization?.name || 'Network',
-        newLabel: 'New Project',
+        newLabel: 'New Studio',
         newHref: withInstitution('/workspace/new', institutionHome),
         emptyTitle: 'Nothing here yet',
         // Students are the people who see this copy most, and the same
@@ -225,8 +230,8 @@ function scopeConfig(
       }
     case 'shared':
       return {
-        title: 'Shared Projects',
-        newLabel: 'New Shared Project',
+        title: 'Shared Studios',
+        newLabel: 'New Shared Studio',
         newHref: '/workspace/new?type=shared',
         emptyTitle: 'Nothing here yet',
         emptySubtext: 'Anything you collaborate on with others will appear here.',
@@ -234,8 +239,8 @@ function scopeConfig(
       }
     case 'personal':
       return {
-        title: 'Personal Projects',
-        newLabel: 'New Personal Project',
+        title: 'Personal Studios',
+        newLabel: 'New Personal Studio',
         newHref: withInstitution('/studio/new', institutionHome),
         emptyTitle: 'Nothing here yet',
         emptySubtext: 'Create one to get started.',
@@ -298,10 +303,10 @@ export function DashboardMain({
     <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
       {/* Top bar */}
       {/* Wrap below sm so the org title + action buttons each get their own
-          row on narrow viewports (≤ ~440px) instead of pushing New Project past
+          row on narrow viewports (≤ ~440px) instead of pushing New Studio past
           the right edge. min-w-0 on the title lets it shrink rather than
           shove the actions row off, and the actions inner row also wraps so
-          three buttons (Show archived / Join with code / New Project) don't
+          three buttons (Show archived / Join with code / New Studio) don't
           clip individually on the narrowest phones. sm:flex-nowrap + sm:h-16
           restore the desktop row exactly. */}
       <div className="shrink-0 sm:h-16 flex flex-wrap items-center justify-between gap-2 px-6 py-3 sm:py-0 sm:flex-nowrap border-b border-[#16181D]/8 bg-white/70 backdrop-blur-sm">
@@ -311,7 +316,7 @@ export function DashboardMain({
           {/* Revealing your own archived rooms is a VIEW action, so it is not
               gated on account_role. It used to be, which made archiving a
               one-way door: a student-account owner can archive a personal or
-              shared project (that check is the workspace MEMBER role, and every
+              shared studio (that check is the workspace MEMBER role, and every
               creator is inserted as an instructor member) but could never
               unhide it again, because this check was the ACCOUNT role. The
               rooms are already in `rooms` — this only toggles the filter. */}
@@ -367,7 +372,7 @@ export function DashboardMain({
           </div>
         ) : (
           <>
-            {/* Persistent chrome. Enter Network and New Project are entry points,
+            {/* Persistent chrome. Enter Network and New Studio are entry points,
                 not content, so they render unconditionally rather than inside
                 the populated branch of an empty-state ternary — that structure
                 is what silently deleted Enter Network for every user with zero

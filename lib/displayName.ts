@@ -25,3 +25,36 @@ export function cleanDisplayName(value: unknown): string {
   if (!trimmed) return ''
   return PLACEHOLDER_NAMES.has(trimmed.toLowerCase()) ? '' : trimmed
 }
+
+/**
+ * Who a board is credited to. '' when nothing usable is stored — callers decide
+ * what to render for that (the 3D room draws no label rather than inventing one).
+ *
+ * STUDENT_NAME WINS, and that ordering is the whole point of this function.
+ * The two columns are not two guesses at the same fact:
+ *
+ *   student_name — the CURATED label. Free text. It is what LightboxModal's
+ *                  author edit writes, what /api/boards/attribution writes, and
+ *                  what app/api/boards/[id]/owner deliberately lets a caller
+ *                  preserve on reassignment ("let a caller preserve a curated
+ *                  label"). It exists precisely so a board can read under a
+ *                  name that is not an account holder's.
+ *   owner_name   — a SNAPSHOT of the owning account's display name, refreshed
+ *                  from the live user_profiles row on every GET /api/boards.
+ *
+ * A relabel is a statement about this board; an account name is a fact about a
+ * person. When they disagree, the deliberate one has to win, or the rename
+ * silently does nothing for anyone who has a profile name.
+ *
+ * Four surfaces used to answer this question and they did not agree — 3D board
+ * labels and hover cards preferred student_name while the roster, the 2D
+ * archive and the presentation grid preferred owner_name. That is why renaming
+ * an author in the lightbox moved the label under the board but left the same
+ * person listed under their old name two views away.
+ */
+export function boardAuthorName(board: {
+  studentName?: unknown
+  ownerName?: unknown
+}): string {
+  return cleanDisplayName(board.studentName) || cleanDisplayName(board.ownerName)
+}

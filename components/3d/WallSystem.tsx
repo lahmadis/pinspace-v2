@@ -122,14 +122,34 @@ interface WallSystemProps {
 // with the wall so only the ink stands out. Its edge tones are deepened less
 // than grey's, on purpose — over-darkening them would put a visible frame
 // around a wall that's supposed to read as one continuous white surface.
+//
+// THE EDGE TONES ARE ORDERED TOP → SIDE → BOTTOM, LIGHTEST TO DEEPEST.
+//
+// They used to run the other way: topEdge (#D7DAD9) was DARKER than sideEdge
+// (#E2E4E4), which is the one arrangement real light never produces — an
+// upward-facing edge catches the sky and is the brightest thing on a solid, not
+// the dimmest. The result read as lit from underneath, which is a large part of
+// what felt wrong about the walls without being obvious as a colour problem.
+//
+// The steps are gentle and cool. Each tone is a lightness step of the SAME hue
+// rather than a different grey, so the strips read as one solid catching light
+// at three angles instead of as a painted frame around the wall — the effect
+// this was tuned against gets its whole sense of volume from exactly that, and
+// nothing else. They are also all LIGHTER than before: the previous values were
+// tuned to survive a rig bright enough to clip them (see RoomLighting), and at
+// the current budget they no longer need to shout to be seen.
+//
+// Cool (B > G > R), where the old white tones were neutral-to-warm. Against
+// ROOM_SKY_COLOR a warm-grey shadow reads slightly green, which is the other
+// half of why the white walls looked off-hue.
 const WALL_PALETTES: Record<'grey' | 'white', {
   main: string
   sideEdge: string
   topEdge: string
   bottomEdge: string
 }> = {
-  grey: { main: '#F1F4F9', sideEdge: '#C7D0E0', topEdge: '#B9C4D6', bottomEdge: '#A8B5CA' },
-  white: { main: '#FFFFFF', sideEdge: '#E2E4E4', topEdge: '#D7DAD9', bottomEdge: '#C9CDCB' },
+  grey: { main: '#F1F4F9', sideEdge: '#D3DBE8', topEdge: '#E3E9F2', bottomEdge: '#C2CCDD' },
+  white: { main: '#FFFFFF', sideEdge: '#E8ECF3', topEdge: '#F4F6FA', bottomEdge: '#DAE0EA' },
 }
 
 /**
@@ -203,30 +223,6 @@ function dimTowardSky(hex: string, amount: number): string {
   return `#${new THREE.Color(hex).lerp(new THREE.Color(ROOM_SKY_COLOR), amount).getHexString()}`
 }
 
-// Reads as the same ground continuing outward, just further away. Now that
-// the floor plate is pure white this sits a hair BELOW it rather than above
-// (it used to be the lighter of the two), which keeps the room's own plinth
-// very slightly lifted off the world instead of the seam vanishing entirely.
-const GROUND_COLOR = '#F7F9FC'
-/** Horizon reference grid on the ground plane, outside the room's own
- *  footprint (the room's opaque floor/walls occlude it directly underneath).
- *  Minor lines every foot, a heavier line every 10 feet — the same
- *  cell/section convention any CAD or level-editor grid uses. */
-// Lines have to carry against GROUND_COLOR without turning the ground into a
-// drawing of its own. The foot lines do the visible work; the ten-foot lines
-// are a light structural beat, and are told apart by WEIGHT rather than
-// darkness (sectionThickness is nearly twice cellThickness below). An earlier
-// pass made the ten-foot lines much darker and they read as the loudest thing
-// in an otherwise pale room.
-//
-// Lightened along with the ground: these were tuned against a mid-tone
-// #C3CDDE, and left as they were on a near-white ground the grid would be the
-// loudest thing in the scene — exactly the failure the note above describes.
-// Same ~11-point lightness gap below the ground as before, so the grid keeps
-// its old subtlety rather than its old hex.
-const GRID_CELL_COLOR = '#E1E7F0'
-const GRID_SECTION_COLOR = '#D3DBE8'
-
 /**
  * The three stacked horizontal planes, top to bottom: the room's floor plate,
  * the reference grid, then the ground that runs out to the horizon.
@@ -246,9 +242,23 @@ const GRID_SECTION_COLOR = '#D3DBE8'
  * fog reaches full strength before the grid gets close to the quantum, which is
  * what covers the tail.
  */
+/* Horizon grid. Lines have to carry against the sky without turning it into a
+ * drawing of its own: the foot lines do the visible work and the ten-foot lines
+ * are a light structural beat, told apart by WEIGHT (sectionThickness is nearly
+ * twice cellThickness) rather than by darkness. */
+const GRID_CELL_COLOR = '#E1E7F0'
+const GRID_SECTION_COLOR = '#D3DBE8'
+
+/**
+ * The grid sits slightly BELOW the walls' base rather than exactly on it. The
+ * gap only works because StudioRoom's camera uses near = 5 rather than
+ * three.js's default 0.1 — resolvable depth goes as z²/(near·2²⁴), so that one
+ * change buys ~50x precision and makes a few inches of separation safe even at
+ * a large room's maximum zoom-out. If anyone lowers that near plane, the
+ * symptom is the grid flickering in and out as the camera orbits.
+ */
 const FLOOR_Y = 0
 const GRID_Y = -4
-const GROUND_Y = -8
 
 /**
  * Ground plane + fog scale with the room's own footprint rather than a fixed
@@ -282,7 +292,7 @@ export function getRoomFogParams(wallConfig: WallConfig): { fogNear: number; fog
 const BAY_FRAME_PADDING_IN = 3
 
 
-export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'grey', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick }: WallSystemProps) {
+export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'white', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick }: WallSystemProps) {
 
   const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
   // Ghosted variants for wall focus. Memoized on the palette rather than
@@ -327,28 +337,16 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
 
   return (
     <group>
-      {/* Large ground plane the room sits on, so orbiting out past the floor's
-          edge finds more ground (fading into fog) instead of empty background
-          — the "floating platform" fix. */}
-      <mesh position={[floorRect.centerX, GROUND_Y, floorRect.centerZ]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[groundSize, groundSize]} />
-        <meshStandardMaterial color={GROUND_COLOR} roughness={0.95} metalness={0} fog />
-      </mesh>
-
       {/* Reference grid — a foot-scale minor line and a 10-foot-scale major
           line, the same convention as any CAD or level-editor floor grid, so
-          the surrounding space reads as measurable rather than a flat colour.
-          Sits between the ground and the room's floor plate (see FLOOR_Y /
-          GRID_Y / GROUND_Y for why they're spaced), so the opaque floor hides
-          it inside the room and it only shows on the ground around it.
+          the space reads as measurable and the horizon is legible.
 
           `args` is deliberately modest (canonical drei infiniteGrid usage, e.g.
           their own docs example, uses [10,10]) — infiniteGrid's shader already
           multiplies the visible extent by (1 + fadeDistance) on top of whatever
-          `args` is, so pairing it with groundSize-scale args would compound into
-          tens of millions of vertex-space units and risk float32 precision
-          jitter in the shader's line test. fadeDistance alone (matched to the
-          scene fog's fogFar) already controls how far out the grid reads. */}
+          `args` is, so pairing it with a large value would compound into tens of
+          millions of vertex-space units and risk float32 precision jitter in the
+          shader's line test. fadeDistance alone controls how far out it reads. */}
       <Grid
         position={[floorRect.centerX, GRID_Y, floorRect.centerZ]}
         args={[10, 10]}
@@ -364,36 +362,40 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
         infiniteGrid
       />
 
-      {/* Floor: a flat surface sitting on the grid, NOT a slab. It used to be a
-          box as deep as the walls, whose side faces read as a thick grey band
-          around the room's edge. A plan-like plate reads better and there is
-          nothing to see underneath it anyway — the camera can't go below the
-          horizon (OrbitControls' maxPolarAngle). */}
-      <mesh
-        position={[floorRect.centerX, FLOOR_Y, floorRect.centerZ]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        receiveShadow
-        onClick={(e) => {
-          // Only bound while a wall is focused; otherwise stay out of the way so
-          // a stray floor click can't swallow an orbit gesture.
-          //
-          // No drag-threshold guard, deliberately. Focus switches OrbitControls
-          // off, so there is no orbit for a click to be the tail of — the guard
-          // could only ever reject a real click that wandered a few pixels. That
-          // matters here because this is the main way out of a state where the
-          // camera is locked: a rejected click leaves the user feeling stuck.
-          if (!onFloorClick) return
-          e.stopPropagation()
-          onFloorClick()
-        }}
-      >
-        <planeGeometry args={[floorRect.width, floorRect.depth]} />
-        <meshStandardMaterial
-          color={ROOM_PALETTE.floor} // white; never tinted toward the accent
-          roughness={0.9}
-          metalness={0.0}
-        />
-      </mesh>
+      {/* No floor plate and no solid ground — the room is its walls, standing
+          on the grid above.
+          What used to be here as well: a white floor plate, and a large solid
+          ground plane so orbiting past its edge found more ground rather than
+          empty background. Both are gone by request. The grid stayed, because
+          it is what makes the horizon legible — without it the walls sit in an
+          unbroken field of sky with no sense of ground or distance.
+
+          The invisible plane below is the only part kept, and it is kept for
+          BEHAVIOUR rather than looks: the floor mesh carried onFloorClick,
+          which is the main way out of wall focus. Focus pins the camera and
+          switches OrbitControls off, and its other exits — Escape, the Exit
+          focus pill — are one keystroke and one small button. Deleting the
+          click target along with the floor would have quietly removed the
+          gesture people actually use to get unstuck. It renders nothing:
+          visible={false} keeps it out of the picture while still taking
+          raycasts. */}
+      {onFloorClick && (
+        <mesh
+          position={[floorRect.centerX, FLOOR_Y, floorRect.centerZ]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          visible={false}
+          onClick={(e) => {
+            // No drag-threshold guard, deliberately. Focus switches
+            // OrbitControls off, so there is no orbit for a click to be the
+            // tail of — the guard could only ever reject a real click that
+            // wandered a few pixels, on the main way out of a locked camera.
+            e.stopPropagation()
+            onFloorClick()
+          }}
+        >
+          <planeGeometry args={[groundSize, groundSize]} />
+        </mesh>
+      )}
 
       {wallConfig.walls.map((wall, wallIndex) => {
         const transform = getTransform(wallIndex)
@@ -487,7 +489,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             {/* Modern off-white wall with depth and shadows */}
             {/* Main wall surface - off-white with subtle depth */}
             {/* Increased thickness for more visible depth */}
-            <mesh castShadow receiveShadow renderOrder={0}>
+            <mesh renderOrder={0}>
               <boxGeometry args={[transform.width, transform.height, 6]} />
               <meshStandardMaterial
                 color={palette.main} // room wall color (grey default / paper white), ghosted when unfocused
@@ -508,9 +510,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             {/* Subtle edge shadows for depth - creates modern panel effect */}
             {/* Left edge shadow */}
             <mesh 
-              position={[-transform.width / 2 + 0.1, 0, 2.1]} 
-              castShadow 
-              receiveShadow
+              position={[-transform.width / 2 + 0.1, 0, 2.1]}  
             >
               <boxGeometry args={[0.2, transform.height, 0.2]} />
               <meshStandardMaterial
@@ -523,8 +523,6 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             {/* Right edge shadow */}
             <mesh
               position={[transform.width / 2 - 0.1, 0, 2.1]}
-              castShadow
-              receiveShadow
             >
               <boxGeometry args={[0.2, transform.height, 0.2]} />
               <meshStandardMaterial
@@ -537,8 +535,6 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             {/* Top edge shadow */}
             <mesh
               position={[0, transform.height / 2 - 0.1, 2.1]}
-              castShadow
-              receiveShadow
             >
               <boxGeometry args={[transform.width, 0.2, 0.2]} />
               <meshStandardMaterial
@@ -551,8 +547,6 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             {/* Bottom edge shadow */}
             <mesh
               position={[0, -transform.height / 2 + 0.1, 2.1]}
-              castShadow
-              receiveShadow
             >
               <boxGeometry args={[transform.width, 0.2, 0.2]} />
               <meshStandardMaterial

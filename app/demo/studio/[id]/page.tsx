@@ -10,6 +10,7 @@ import Loading from '@/components/Loading'
 import { getStudioById, getBoardsByStudio, transformDemoBoard, type DemoStudio } from '@/lib/mockData'
 import { Board } from '@/types'
 import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from '@/components/3d/WallSystem'
+import RoomLighting from '@/components/3d/RoomLighting'
 import { CameraController } from '@/components/3d/CameraController'
 import { EditModeOverlay } from '@/components/3d/EditModeOverlay'
 
@@ -119,7 +120,6 @@ export default function DemoStudioRoomPage() {
       {/* 3D Canvas */}
       <div className="w-full h-full pt-32">
         <Canvas
-          shadows
           dpr={[1, 2]}
           gl={{ antialias: true, alpha: false }}
           style={{ background: ROOM_SKY_COLOR }}
@@ -136,24 +136,8 @@ export default function DemoStudioRoomPage() {
           })()}
           <PerspectiveCamera makeDefault position={[0, 60, 120]} fov={35} near={5} far={2000} />
 
-          <ambientLight intensity={0.6} />
-          {/* Matches the editor's key light — see StudioRoom. A low light with a
-              small shadow frustum truncates shadows partway across the floor. */}
-          <directionalLight
-            position={[400, 700, 300]}
-            intensity={1.2}
-            castShadow
-            shadow-mapSize-width={2048}
-            shadow-mapSize-height={2048}
-            shadow-camera-near={1}
-            shadow-camera-far={2500}
-            shadow-camera-left={-700}
-            shadow-camera-right={700}
-            shadow-camera-top={700}
-            shadow-camera-bottom={-700}
-            shadow-bias={-0.0001}
-          />
-          <hemisphereLight args={['#ffffff', '#8888aa', 0.4]} />
+          {/* One shared rig for every room surface — see RoomLighting. */}
+          <RoomLighting />
 
           <Suspense fallback={null}>
             <WallSystem

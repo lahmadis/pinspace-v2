@@ -26,9 +26,9 @@ function NewWorkspaceForm() {
   // arms were pure noun swaps ("Firm Room" vs "Class"). The shared/personal
   // arms stay: those are genuine workspace kinds, not org-type nouns.
   const headerTitle =
-    typeParam === 'shared' ? 'Create Shared Project'
-    : accountMode === 'personal' ? 'Create a Personal Project'
-    : 'Create a Project'
+    typeParam === 'shared' ? 'Create Shared Studio'
+    : accountMode === 'personal' ? 'Create a Personal Studio'
+    : 'Create a Studio'
   const headerSubtitle =
     typeParam === 'shared' ? 'Set up a shared space for collaboration'
     : accountMode === 'personal' ? 'Set up a space for your own work'
@@ -170,13 +170,16 @@ function NewWorkspaceForm() {
               {headerTitle}
             </h2>
             <p className="text-gray-600">
-              {/* "holds a 3D studio" rather than "is a studio": a project is the
-                  container, the studio is the 3D view one level down. */}
+              {/* The container is now called a studio, so the thing inside it
+                  cannot also be "a 3D studio" — that read as "a studio holds a
+                  studio". It is a SPACE, which is what the rest of the app
+                  already calls it: the room switcher lists "Spaces in …" and the
+                  view strip's first tab is Space. */}
               {typeParam === 'shared'
-                ? 'A shared project holds a 3D studio anyone with an invite code can join and collaborate in.'
+                ? 'A shared studio holds a 3D space anyone with an invite code can join and collaborate in.'
                 : accountMode === 'personal'
-                ? 'A personal project holds your own 3D studio for individual work.'
-                : 'A project holds a shared 3D studio where you can invite collaborators and work on design together.'}
+                ? 'A personal studio holds your own 3D space for individual work.'
+                : 'A studio holds a shared 3D space where you can invite collaborators and work on design together.'}
             </p>
           </div>
 
@@ -197,7 +200,7 @@ function NewWorkspaceForm() {
                 required
               />
               <p className="mt-2 text-sm text-gray-500">
-                Choose a descriptive name for your project
+                Choose a descriptive name for your studio
               </p>
             </div>
 

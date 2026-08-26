@@ -10,6 +10,9 @@ import GalleryAvatarModal, { AvatarFormValues } from '@/components/GalleryAvatar
 import DemoBanner from '@/components/DemoBanner'
 import { isDemoMode } from '@/lib/demoMode'
 import AvatarMenu from '@/components/AvatarMenu'
+import KineticGrid from '@/components/ui/kinetic-grid'
+import ForSchoolsSection from '@/components/landing/ForSchoolsSection'
+import FaqSection from '@/components/landing/FaqSection'
 
 function HomeInner() {
   const router = useRouter()
@@ -62,15 +65,20 @@ function HomeInner() {
 
   const signInHref = institutionSlug ? `/sign-in?institution=${institutionSlug}` : '/sign-in'
   const signUpHref = institutionSlug ? `/sign-up?institution=${institutionSlug}` : '/sign-up'
-  // Signed-in users go straight in; signed-out users get the sign-up path
-  // rather than bouncing off /network's own auth redirect. The Dashboard button
-  // is the secondary action, so it sends signed-out users to sign-in instead.
-  const networkHref = user ? '/network' : signUpHref
-  const dashboardHref = user ? '/dashboard' : signInHref
 
   const content = (
-    <div className="min-h-screen flex flex-col relative overflow-x-hidden" style={{ background: 'linear-gradient(160deg, #F2F5FB 0%, #EDF1F9 55%, #F6F3EC 100%)' }}>
+    <div id="top" className="min-h-screen flex flex-col relative overflow-x-hidden" style={{ background: 'linear-gradient(160deg, #F2F5FB 0%, #EDF1F9 55%, #F6F3EC 100%)' }}>
       <DemoBanner />
+
+      {/* Faint grid, now cursor-reactive — it pinches toward the pointer and
+          rings out from a click. Same near-white ruling on the same paper wash
+          as the CSS version it replaces; only the behaviour is new.
+
+          Renders as a bare background layer rather than wrapping the page:
+          the ambient glows below have to sit OVER the grid, and a wrapper
+          would put everything above it. Takes no pointer events, so it stays
+          purely paper. */}
+      <KineticGrid />
 
       {/* Ambient blue glows */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -86,14 +94,34 @@ function HomeInner() {
 
       {/* Nav */}
       <div className="relative z-20 flex items-center justify-between px-6 sm:px-10 py-6">
-        {/* Same lockup as the hero, just small — wordmark plus the blue
-            terminal dot, no badge. */}
-        <div className="text-[#16181D] font-extrabold text-xl tracking-[-0.045em]">
-          pinspace
-          <span
-            aria-hidden="true"
-            className="inline-block align-baseline rounded-full bg-[#3B6EF6] w-[0.2em] h-[0.2em] ml-[0.06em]"
-          />
+        <div className="flex items-center gap-10">
+          {/* Same lockup as the hero, just small — wordmark plus the blue
+              terminal dot, no badge. */}
+          <a href="#top" className="text-[#16181D] font-extrabold text-xl tracking-[-0.045em]">
+            pinspace
+            <span
+              aria-hidden="true"
+              className="inline-block align-baseline rounded-full bg-[#3B6EF6] w-[0.2em] h-[0.2em] ml-[0.06em]"
+            />
+          </a>
+
+          {/* The two section tabs. Hidden on small screens rather than folded
+              into a menu: the sections are directly below the hero, so on a
+              phone scrolling IS the navigation. */}
+          <nav className="hidden md:flex items-center gap-7">
+            <a
+              href="#for-schools"
+              className="text-sm font-medium text-[#5A5E6B] hover:text-[#3B6EF6] transition-colors"
+            >
+              For schools
+            </a>
+            <a
+              href="#faq"
+              className="text-sm font-medium text-[#5A5E6B] hover:text-[#3B6EF6] transition-colors"
+            >
+              FAQ
+            </a>
+          </nav>
         </div>
 
         <div className="flex items-center gap-3">
@@ -131,12 +159,14 @@ function HomeInner() {
       </div>
 
       {/* Hero */}
-      {/* flex-1 inside the page's flex column, so this takes exactly the space
-          left between nav and footer and centres in it — no min-height guess
-          and no magic offset for the nav's height, which changes between the
-          signed-in and signed-out button sets. Padding is symmetric so the
-          content sits on the true centre of that space rather than riding high. */}
-      <div className="relative z-10 flex-1 px-4 py-10 flex items-center justify-center">
+      {/* Two rules, because the page has two shapes. flex-1 takes whatever the
+          column has left over — which is what centred the hero when the footer
+          sat directly below it. Now that the For schools and FAQ sections follow,
+          there IS no leftover space, so the min-height is what holds the hero to
+          the first screen. 104px is the nav's own height; svh so mobile browser
+          chrome doesn't push the fold. Padding is symmetric so the content sits
+          on the true centre rather than riding high. */}
+      <div className="relative z-10 flex-1 min-h-[calc(100svh_-_104px)] px-4 py-10 flex items-center justify-center">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -174,28 +204,11 @@ function HomeInner() {
             where design work lives
           </motion.p>
 
-          <motion.div
-            className="flex flex-wrap justify-center gap-3 mt-9"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 0.5 }}
-          >
-            <button
-              onClick={() => router.push(networkHref)}
-              className="px-9 py-4 bg-[#3B6EF6] hover:bg-[#16181D] text-white rounded-full transition-colors font-bold text-[17px] shadow-[0_14px_34px_rgba(59,110,246,0.35)]"
-            >
-              Enter your network
-            </button>
-            <button
-              onClick={() => router.push(dashboardHref)}
-              className="px-8 py-4 bg-white/80 hover:border-[#3B6EF6] hover:text-[#3B6EF6] text-[#16181D] rounded-full transition-colors font-semibold text-[17px] border border-[#16181D]/10"
-            >
-              Dashboard
-            </button>
-          </motion.div>
-
         </motion.div>
       </div>
+
+      <ForSchoolsSection />
+      <FaqSection />
 
       <GalleryAvatarModal
         isOpen={showGalleryModal}
@@ -203,8 +216,7 @@ function HomeInner() {
         onEnter={handleEnterGallery}
       />
 
-      {/* No top margin: the hero's flex-1 already owns the space above, so a
-          margin here would just push the footer past the fold. */}
+      {/* No top margin: the section above brings its own bottom padding. */}
       <footer className="relative z-10 border-t border-[#16181D]/10 bg-white/70 backdrop-blur-sm">
         <div className="max-w-5xl mx-auto px-4 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-[#8A8FA0]">
           <p>© {new Date().getFullYear()} pinspace</p>

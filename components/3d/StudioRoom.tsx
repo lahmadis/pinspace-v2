@@ -19,7 +19,8 @@ import PresentationView from '@/components/room/PresentationView'
 import TwoDView from '@/components/room/TwoDView'
 import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 import RevisionStrip, { type RoomView } from '@/components/room/RevisionStrip'
-import { deriveRoomStudents, type RoomStudent } from '@/lib/room/students'
+import RoomLighting from '@/components/3d/RoomLighting'
+import { deriveRoomStudents, studentKeyFor, type RoomStudent } from '@/lib/room/students'
 import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
 import { DraggableText } from './DraggableText'
@@ -277,7 +278,7 @@ function SceneContent({
   onTableModelClick,
   orbitControlsRef,
   showEditUI,
-  wallColor = 'grey',
+  wallColor = 'white',
   suppressCallouts,
 }: StudioRoomProps & {
   onWallDoubleClick: (wallIndex: number, wallDimensions: WallDimensions, position: THREE.Vector3, rotation: number, side: 'front' | 'back') => void
@@ -376,50 +377,8 @@ function SceneContent({
           pre-paint fallback and should still match, but isn't the one doing
           the work. */}
       <color attach="background" args={[ROOM_SKY_COLOR]} />
-      {/* Ambient light - reduced for better shadow definition */}
-      <ambientLight intensity={0.5} />
-      
-      {/* Main directional light - creates shadows and depth.
-          Position and shadow frustum are both well clear of the room rather
-          than fixed: at y=20 the light sat BELOW the top of a 96" wall, and a
-          ±200 frustum doesn't contain a default room (x −92..140, z −141..97)
-          once projected along the light direction — so shadows truncated at a
-          hard straight line partway across the floor. Outside a shadow
-          frustum three.js returns fully lit, so the symptom is a shadow that
-          simply stops, not a dark patch.
-
-          shadow-bias is coupled to shadow-camera-far: three.js applies it in
-          the shadow camera's LINEAR ortho depth, so -0.0001 is worth ~0.25" of
-          world offset at far=2500 but only ~0.05" at the old far=500.
-          Re-tightening far without raising the bias by the same factor brings
-          shadow acne back. */}
-      <directionalLight
-        position={[400, 700, 300]}
-        intensity={1.2}
-        castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
-        shadow-camera-near={1}
-        shadow-camera-far={2500}
-        shadow-camera-left={-700}
-        shadow-camera-right={700}
-        shadow-camera-top={700}
-        shadow-camera-bottom={-700}
-        shadow-bias={-0.0001}
-      />
-      
-      {/* Fill light from opposite side - softens shadows */}
-      <directionalLight position={[-10, 12, -8]} intensity={0.5} />
-      
-      {/* Top light for overall illumination */}
-      <directionalLight position={[0, 25, 0]} intensity={0.4} />
-      
-      {/* Rim lighting for wall edges - enhances depth */}
-      <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
-      <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
-      
-      {/* Hemisphere light for natural ambient */}
-      <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
+      {/* One shared rig for every room surface — see RoomLighting. */}
+      <RoomLighting />
       
       {/* Floor is now created dynamically in WallSystem based on wall configuration */}
       
@@ -1647,6 +1606,56 @@ export default function StudioRoom(props: StudioRoomProps) {
    * rides through that merge as a server-authoritative field, so the counter
    * lands on the new value without any local reordering here.
    */
+  /**
+   * Relabel every sheet a person has, from the 2D archive's header.
+   *
+   * Gated on the same flag as reordering, and for the same reason: both are
+   * room-wide acts by the studio owner rather than per-board edits a member
+   * makes to their own work. The route re-checks — this only decides whether
+   * the pencil appears.
+   *
+   * The refetch is what makes it stick anywhere else: every surface resolves
+   * the name through boardAuthorName (student_name first), so the roster and
+   * the 3D room only see the new one once the boards come back.
+   */
+  const canRenameStudents = !props.isArchived && !!props.canReorderBoards
+
+  const handleRenameStudent = useCallback(
+    async (student: RoomStudent, name: string): Promise<{ ok: boolean; error?: string }> => {
+      if (student.boardIds.length === 0) return { ok: false, error: 'This person has no sheets to relabel.' }
+      try {
+        const res = await fetch('/api/boards/attribution', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ boardIds: student.boardIds, name }),
+          credentials: 'include',
+        })
+        if (!res.ok) {
+          // The route's 400s explain themselves (a placeholder name, a
+          // cross-studio id list); forward the text rather than flattening
+          // every failure into one unhelpful line.
+          const detail = await res.json().catch(() => null)
+          return { ok: false, error: typeof detail?.error === 'string' ? detail.error : undefined }
+        }
+        // A person with an account is keyed by owner id, which a rename does
+        // not touch. A legacy person — no owner_id, from before boards carried
+        // one — is keyed by their NAME, so renaming them mints a new id and the
+        // open selection would stop matching anything: the refetch would drop
+        // you back to the people grid, as if the rename had closed their work.
+        // Follow the key across.
+        if (student.id.startsWith('name:')) {
+          const nextId = studentKeyFor(null, name)
+          setSelectedStudentId((prev) => (prev === student.id ? nextId : prev))
+        }
+        await props.onBoardUpdate()
+        return { ok: true }
+      } catch {
+        return { ok: false }
+      }
+    },
+    [props.onBoardUpdate]
+  )
+
   const handleReorderBoard = useCallback(async (boardId: string, targetPosition: number) => {
     if (!props.roomId) return false
     try {
@@ -3008,6 +3017,8 @@ export default function StudioRoom(props: StudioRoomProps) {
             globalOrderIds={roomOrderIds}
             canReorder={canReorderSlideshow}
             onReorder={handleReorderBoard}
+            canRenameStudent={canRenameStudents}
+            onRenameStudent={handleRenameStudent}
           />
         </div>
       )}
@@ -3050,7 +3061,6 @@ export default function StudioRoom(props: StudioRoomProps) {
         onDoubleClick={editingWall !== null ? handleEditComplete : undefined}
       >
         <Canvas
-          shadows
           dpr={[1, 2]}
           gl={{
             shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap },

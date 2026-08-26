@@ -10,6 +10,7 @@ import { useBoardTexture } from './useBoardTexture'
 import { useDisposableGeometry } from './useDisposableGeometry'
 import VideoBadge from './VideoBadge'
 import { ROOM_SKY } from '@/lib/room/palette'
+import { boardAuthorName } from '@/lib/displayName'
 import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 
 interface BoardThumbnailProps {
@@ -112,9 +113,11 @@ function BoardImageMaterial({
 export default function BoardThumbnail({ board, position, width, height, onClick, isHighlighted, onHover, suppressCountBadge, dimmed = false }: BoardThumbnailProps) {
   const [hovered, setHovered] = useState(false)
   const meshRef = useRef<THREE.Mesh>(null)
+  // Shared rule (see boardAuthorName): the curated label beats the account
+  // snapshot, and known placeholders like 'Anonymous' are treated as absent
+  // rather than printed — this used to render them verbatim.
   const uploaderName =
-    board.studentName?.trim() ||
-    board.ownerName?.trim() ||
+    boardAuthorName(board) ||
     board.studentEmail?.split('@')[0]?.trim() ||
     'Unknown uploader'
 
@@ -202,8 +205,6 @@ export default function BoardThumbnail({ board, position, width, height, onClick
     >
       <mesh
         ref={meshRef}
-        castShadow
-        receiveShadow
         renderOrder={1}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}

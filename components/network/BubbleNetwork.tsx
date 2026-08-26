@@ -17,6 +17,13 @@ export interface StudioData {
   department?: string // Architecture, Interior Design, Industrial Design
   memberCount?: number
   color?: string
+  /**
+   * Names of everyone with work pinned in this studio, from
+   * /api/explore/studios. A search index, not a label — nothing renders the
+   * list, the network search box matches against it so a person can be found
+   * by name and not only by the space or the professor. Absent in demo mode.
+   */
+  contributors?: string[]
 }
 
 export interface BubbleNode extends StudioData {
@@ -128,6 +135,10 @@ const ANIMATION_DURATION = 300
  * Matches Tailwind's `primary`, which the legend swatch beside the graph
  * already renders via `bg-primary`.
  */
+/** The network's own ground, and the ruling on it. */
+const NETWORK_BG = '#191a1a'
+const NETWORK_GRID = 'rgba(114, 114, 114, 0.3)'
+
 const NETWORK_NODE_COLOR = 'rgb(var(--color-primary))'
 /** Same hue at half alpha, for the outer hover glow. */
 const NETWORK_NODE_GLOW = 'rgb(var(--color-primary) / 0.5)'
@@ -710,22 +721,31 @@ export default function BubbleNetwork({
   return (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden bg-pinspace-forest ${isEffectiveFullscreen ? 'fixed inset-0 z-50 h-screen w-screen' : 'h-full w-full'}`}
+      className={`relative overflow-hidden ${isEffectiveFullscreen ? 'fixed inset-0 z-50 h-screen w-screen' : 'h-full w-full'}`}
       style={{
+        // Set here rather than through bg-pinspace-forest: that class is not
+        // defined in tailwind.config.js, so it emitted nothing and the surface
+        // was taking whatever the page behind it happened to be.
+        backgroundColor: NETWORK_BG,
         ...(fullScreen && !isFullscreen ? { top: headerHeight } : {}),
         height: isEffectiveFullscreen ? (fullScreen && !isFullscreen ? `calc(100vh - ${headerHeight}px)` : '100vh') : '100%',
         minHeight: isEffectiveFullscreen ? undefined : 600,
       }}
     >
-      {/* Grid background */}
-      <div 
-        className="absolute inset-0 pointer-events-none opacity-[0.03]"
+      {/* Grid background.
+          Four-stop gradients rather than the usual 1px hairline: the line is
+          drawn as a band between two transparent stops, which lets it stay a
+          crisp hairline at any zoom without the shimmer a fractional 1px
+          border gets. The old layer used rgb(var(--color-paper) / 0.45) at 3%
+          opacity — and --color-paper was undefined, so it drew nothing at all. */}
+      <div
+        className="absolute inset-0 pointer-events-none"
         style={{
           backgroundImage: `
-            linear-gradient(to right, rgb(var(--color-paper) / 0.45) 1px, transparent 1px),
-            linear-gradient(to bottom, rgb(var(--color-paper) / 0.45) 1px, transparent 1px)
+            linear-gradient(0deg, transparent 24%, ${NETWORK_GRID} 25%, ${NETWORK_GRID} 26%, transparent 27%, transparent 74%, ${NETWORK_GRID} 75%, ${NETWORK_GRID} 76%, transparent 77%, transparent),
+            linear-gradient(90deg, transparent 24%, ${NETWORK_GRID} 25%, ${NETWORK_GRID} 26%, transparent 27%, transparent 74%, ${NETWORK_GRID} 75%, ${NETWORK_GRID} 76%, transparent 77%, transparent)
           `,
-          backgroundSize: '60px 60px',
+          backgroundSize: '55px 55px',
         }}
       />
 

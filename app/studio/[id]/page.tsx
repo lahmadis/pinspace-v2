@@ -94,7 +94,7 @@ function StudioPageInner() {
   const [workspaceName, setWorkspaceName] = useState<string | null>(null)
   // Room-level wall color (migration 031), surfaced by /api/boards. Drives the
   // 3D wall material; defaults to 'grey' (the current look).
-  const [wallColor, setWallColor] = useState<'grey' | 'white'>('grey')
+  const [wallColor, setWallColor] = useState<'grey' | 'white'>('white')
   const [currentRoomName, setCurrentRoomName] = useState<string | null>(null)
   const [allRooms, setAllRooms] = useState<Array<{ id: string; name: string }>>([])
   const [showRoomSwitcher, setShowRoomSwitcher] = useState(false)
@@ -365,7 +365,7 @@ function StudioPageInner() {
           resolvedWorkspaceId = data.room?.workspaceId ?? null
           setRoomId(resolvedRoomId)
           setWorkspaceId(resolvedWorkspaceId)
-          setWallColor(data.room?.wallColor === 'white' ? 'white' : 'grey')
+          setWallColor(data.room?.wallColor === 'grey' ? 'grey' : 'white')
           setBoardsError(false)
 
           // Backward-compat redirect: legacy /studio/{workspace_id} URLs.

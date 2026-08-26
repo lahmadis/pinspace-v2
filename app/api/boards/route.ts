@@ -337,14 +337,15 @@ export async function GET(request: NextRequest) {
     // Room-level wall color (migration 031) so the 3D renderer can paint the
     // walls without a second round-trip. One tiny read keyed by the resolved
     // room; defaults to 'grey' (the current look) when absent.
-    let scopedRoomWallColor: 'grey' | 'white' = 'grey'
+    // white is the default now; only an explicit 'grey' opts out.
+    let scopedRoomWallColor: 'grey' | 'white' = 'white'
     if (scopedRoomId) {
       const { data: roomRow } = await adminDb
         .from('rooms')
         .select('wall_color')
         .eq('id', scopedRoomId)
         .maybeSingle()
-      if (roomRow?.wall_color === 'white') scopedRoomWallColor = 'white'
+      if (roomRow?.wall_color === 'grey') scopedRoomWallColor = 'grey'
     }
 
     // Surface the resolved room so the studio page can subscribe to realtime

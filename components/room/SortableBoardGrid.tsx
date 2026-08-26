@@ -19,6 +19,7 @@ import { CSS } from '@dnd-kit/utilities'
 import type { Board } from '@/types'
 import { ROOM, MONO_STACK, SANS_STACK } from '@/lib/room/palette'
 import { reorderTargetPosition } from '@/lib/room/reorderTarget'
+import { boardAuthorName } from '@/lib/displayName'
 
 interface SortableBoardGridProps {
   /** Boards to show, already in display order. */
@@ -239,7 +240,7 @@ function SortableBoardCard({
         </p>
         {labelOwner && (
           <p className="text-[10px] uppercase tracking-[0.12em] truncate" style={headerStyle}>
-            {board.ownerName || board.studentName || 'Unattributed'}
+            {boardAuthorName(board) || 'Unattributed'}
           </p>
         )}
       </button>

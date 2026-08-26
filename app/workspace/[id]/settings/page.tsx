@@ -231,7 +231,7 @@ export default function WorkspaceSettingsPage() {
 
   const handleSetWallColor = async (room: Room, wallColor: 'grey' | 'white') => {
     // No-op if already this color (avoids a needless PATCH + refetch).
-    if ((room.wallColor ?? 'grey') === wallColor) return
+    if ((room.wallColor ?? 'white') === wallColor) return
     try {
       setRoomBusy(room.id)
       const response = await fetch(`/api/rooms/${room.id}`, {
@@ -464,7 +464,7 @@ export default function WorkspaceSettingsPage() {
                                 aria-label="Wall color"
                               >
                                 {(['grey', 'white'] as const).map((c) => {
-                                  const active = (room.wallColor ?? 'grey') === c
+                                  const active = (room.wallColor ?? 'white') === c
                                   return (
                                     <button
                                       key={c}

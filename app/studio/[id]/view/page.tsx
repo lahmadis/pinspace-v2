@@ -8,9 +8,13 @@ import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 import { Board, FloorTable } from '@/types'
 import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from '@/components/3d/WallSystem'
+import RoomLighting from '@/components/3d/RoomLighting'
 import { CameraController, type FocusedWall, type PresetRequest } from '@/components/3d/CameraController'
 import { getInitialRoomPose, type RoomCameraPreset } from '@/lib/room/cameraViews'
 import RoomViewPresets from '@/components/room/RoomViewPresets'
+import TwoDView from '@/components/room/TwoDView'
+import { deriveRoomStudents } from '@/lib/room/students'
+import { ROOM } from '@/lib/room/palette'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
@@ -19,7 +23,7 @@ import { getCachedStudioData } from '@/lib/studioViewCache'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import { useAuthSession } from '@/hooks/useAuthSession'
 import { useAccountMode } from '@/lib/useAccountMode'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, LayoutGrid, Box } from 'lucide-react'
 
 interface WallDimensions {
   height: number
@@ -185,7 +189,7 @@ function StudioViewPageInner() {
   const [roomName, setRoomName] = useState<string | null>(null)
   // Room-level wall color (migration 031), surfaced by /api/boards. Drives the
   // 3D wall material for viewers; defaults to 'grey' (the current look).
-  const [wallColor, setWallColor] = useState<'grey' | 'white'>('grey')
+  const [wallColor, setWallColor] = useState<'grey' | 'white'>('white')
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null)
   // The signed-in user's workspace role (owner surfaces as 'instructor'),
   // resolved best-effort below. Passed to the lightbox so the owner/instructor
@@ -198,6 +202,15 @@ function StudioViewPageInner() {
    * Fail-closed: stays false for guests, students and unresolved ownership.
    */
   const [canReorderBoards, setCanReorderBoards] = useState(false)
+  /**
+   * The flat 2D archive, browsable by person — the same surface the editor
+   * reaches from its Views menu, which view mode had no way into at all. It is
+   * a reading of the room's work rather than of the space, so it overlays the
+   * canvas instead of replacing this route: the WebGL context stays alive
+   * underneath, and toggling back is instant rather than a fresh scene build.
+   */
+  const [show2D, setShow2D] = useState(false)
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
   const [compareBoardIds, setCompareBoardIds] = useState<string[]>([])
   const shiftPressedRef = useRef(false)
   const compareBoardIdsRef = useRef<string[]>([])
@@ -375,7 +388,7 @@ function StudioViewPageInner() {
       const resolvedRoomName: string | null = data.room?.name ?? null
       setResolvedWorkspaceId(wsId)
       setRoomName(resolvedRoomName)
-      setWallColor(data.room?.wallColor === 'white' ? 'white' : 'grey')
+      setWallColor(data.room?.wallColor === 'grey' ? 'grey' : 'white')
 
       if (!isDemo && resolvedRoomId && resolvedRoomId !== studioId) {
         const qs = searchParams ? searchParams.toString() : ''
@@ -456,12 +469,47 @@ function StudioViewPageInner() {
   // Lightbox-only slideshow order (boards.sort_order). A SEPARATE sorted copy —
   // `boards` itself stays in server order for the 3D scene. The arrows here and
   // the counter inside the modal must read THIS array or they'd disagree.
-  const lightboxBoards = useMemo(() => orderBoardsForLightbox(boards), [boards])
+  const roomOrderedBoards = useMemo(() => orderBoardsForLightbox(boards), [boards])
+  const roomOrderIds = useMemo(() => roomOrderedBoards.map((b) => b.id), [roomOrderedBoards])
+
+  /**
+   * The same grouping the editor's 2D archive, the roster and the 3D name
+   * plates use — derived, not fetched, so "everyone" means the same set of
+   * people on every surface. Built from the slideshow-ordered copy so a
+   * person's sheets read in the order the room presents them.
+   */
+  const roomStudents = useMemo(() => deriveRoomStudents(roomOrderedBoards), [roomOrderedBoards])
+
+  const selectedStudentBoardIds = useMemo(() => {
+    if (!show2D || !selectedStudentId) return null
+    const student = roomStudents.find((s) => s.id === selectedStudentId)
+    return student ? new Set(student.boardIds) : null
+  }, [show2D, selectedStudentId, roomStudents])
+
+  /**
+   * Opening a sheet from one person's contact sheet scopes the lightbox arrows
+   * to that person. Reported as a bug the other way round: stepping through a
+   * student's sheets used to walk the whole room and land you on a classmate's
+   * work. Filtering an already-sorted array keeps its order, so there is no
+   * second sort here and no way for the two to disagree.
+   */
+  const lightboxBoards = useMemo(
+    () =>
+      selectedStudentBoardIds
+        ? roomOrderedBoards.filter((b) => selectedStudentBoardIds.has(b.id))
+        : roomOrderedBoards,
+    [roomOrderedBoards, selectedStudentBoardIds]
+  )
 
   const handleNavigate = (direction: 'prev' | 'next') => {
     if (!selectedBoard) return
 
     const currentIndex = lightboxBoards.findIndex(b => b.id === selectedBoard.id)
+    // Not in the list at all — reachable now that the arrows can be scoped to
+    // one person: open a sheet from the room, then pick a student in 2D and the
+    // open board may not be theirs. Without this, -1 makes 'next' compute 0 and
+    // jump to the top of someone else's sheets.
+    if (currentIndex === -1) return
     let newIndex: number
 
     if (direction === 'prev') {
@@ -472,6 +520,31 @@ function StudioViewPageInner() {
 
     if (newIndex >= 0 && newIndex < lightboxBoards.length) {
       setSelectedBoard(lightboxBoards[newIndex])
+    }
+  }
+
+  /**
+   * Set a sheet's slot in the room's running order. Lifted out of the lightbox's
+   * inline prop so the 2D grid's drag-to-reorder writes through exactly the same
+   * path — one definition of what a reorder is on this page.
+   */
+  const handleReorderBoard = async (boardId: string, targetPosition: number) => {
+    // studioId IS the room id on this route — a legacy /studio/{ws} URL
+    // is redirected to the canonical room URL in fetchBoards, and the
+    // boards fetch above already keys off it the same way.
+    try {
+      const res = await fetch('/api/boards/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: studioId, boardId, targetPosition }),
+        credentials: 'include',
+      })
+      if (!res.ok) return false
+      // Existing refetch path: sortOrder lands and lightboxBoards recomputes.
+      await fetchBoards()
+      return true
+    } catch {
+      return false
     }
   }
 
@@ -565,6 +638,22 @@ function StudioViewPageInner() {
 
       {/* Top-right status pill (view mode + board count) */}
       <div className="fixed top-4 right-4 z-40 flex items-center gap-2.5">
+        {/* Space ⇄ 2D. A single toggle rather than the editor's Views menu:
+            with Presentation, Roster and wall editing all absent here, a menu
+            holding one item is just a click in front of the thing. Labelled
+            with what you get, not what you're in — so it reads as the
+            destination the way the editor's menu items do. */}
+        <button
+          type="button"
+          onClick={() => setShow2D((v) => !v)}
+          aria-pressed={show2D}
+          title={show2D ? 'Back to the 3D space' : "Browse everyone's sheets as a flat archive"}
+          className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-colors duration-200 font-medium text-sm flex items-center gap-2"
+        >
+          {show2D ? <Box className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
+          {show2D ? 'Space' : '2D'}
+        </button>
+
         <div className="px-4 py-2.5 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2">
           <div className="w-2 h-2 bg-[#3B6EF6] rounded-full animate-pulse" />
           <span>View Mode</span>
@@ -572,16 +661,50 @@ function StudioViewPageInner() {
         </div>
       </div>
 
-      {/* Instructions Overlay */}
-      <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10 bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full shadow-lg border border-gray-200">
-        <p className="text-sm text-gray-700">
-          <span className="font-semibold">💬 Click boards</span> to view comments
-          <span className="mx-3 text-gray-400">•</span>
-          <span className="font-semibold">Double-click a wall</span> to focus it
-          <span className="mx-3 text-gray-400">•</span>
-          <span className="font-semibold">Drag</span> to rotate camera
-        </p>
-      </div>
+      {/* The 2D archive. Sits at z-30: over the canvas, under the fixed chrome
+          at z-40, so the toggle that got you here stays reachable. Inset from
+          the top by the height of that chrome rather than running under it —
+          the grid scrolls, and content sliding beneath a pill you can't see
+          past reads as clipped. */}
+      {show2D && (
+        <div className="fixed inset-0 z-30" style={{ background: ROOM.background }}>
+          <div className="absolute left-0 right-0 bottom-0" style={{ top: 68 }}>
+            <TwoDView
+              // Slideshow order, matching the editor: this grid shows the same
+              // sequence the lightbox arrows walk.
+              boards={roomOrderedBoards}
+              students={roomStudents}
+              selectedStudentId={selectedStudentId}
+              onSelectStudent={(student) => setSelectedStudentId(student.id)}
+              onClearSelection={() => setSelectedStudentId(null)}
+              onBoardClick={(board) => setSelectedBoard(board)}
+              // Room-wide order, so a drag inside one person's sheets resolves
+              // against the running order it actually writes.
+              globalOrderIds={roomOrderIds}
+              canReorder={canReorderBoards}
+              onReorder={handleReorderBoard}
+              // Renaming stays in the editor. This route is the read-only
+              // presentation surface — it already withholds callouts and traces
+              // for the same reason.
+              canRenameStudent={false}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Instructions Overlay. Hidden in 2D — every line of it is about the
+          camera, which doesn't exist there. */}
+      {!show2D && (
+        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10 bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full shadow-lg border border-gray-200">
+          <p className="text-sm text-gray-700">
+            <span className="font-semibold">💬 Click boards</span> to view comments
+            <span className="mx-3 text-gray-400">•</span>
+            <span className="font-semibold">Double-click a wall</span> to focus it
+            <span className="mx-3 text-gray-400">•</span>
+            <span className="font-semibold">Drag</span> to rotate camera
+          </p>
+        </div>
+      )}
 
       {/* Full-screen 3D model viewer overlay */}
       {modelViewerUrl && (
@@ -604,7 +727,6 @@ function StudioViewPageInner() {
 
       {/* 3D Canvas */}
       <Canvas
-        shadows
         dpr={[1, 2]}
         className="w-full h-full"
         gl={{
@@ -627,43 +749,8 @@ function StudioViewPageInner() {
           return <fog attach="fog" args={[ROOM_SKY_COLOR, fogNear, fogFar]} />
         })()}
 
-        {/* Lighting – match StudioRoom for consistent brightness and color */}
-        {/* Ambient light - reduced for better shadow definition */}
-        <ambientLight intensity={0.5} />
-        
-        {/* Main directional light - creates shadows and depth */}
-        {/* Key light. Matches the editor (see StudioRoom): the old [15,20,10]
-            sat BELOW the top of a 96" wall with a frustum too small to contain
-            a default room, so shadows truncated at a hard line partway across
-            the floor — and the same room looked different here than in the
-            editor. */}
-        <directionalLight
-          position={[400, 700, 300]}
-          intensity={1.2}
-          castShadow
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
-          shadow-camera-near={1}
-          shadow-camera-far={2500}
-          shadow-camera-left={-700}
-          shadow-camera-right={700}
-          shadow-camera-top={700}
-          shadow-camera-bottom={-700}
-          shadow-bias={-0.0001}
-        />
-        
-        {/* Fill light from opposite side - softens shadows */}
-        <directionalLight position={[-10, 12, -8]} intensity={0.5} />
-        
-        {/* Top light for overall illumination */}
-        <directionalLight position={[0, 25, 0]} intensity={0.4} />
-        
-        {/* Rim lighting for wall edges - enhances depth */}
-        <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
-        <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
-        
-        {/* Hemisphere light for natural ambient */}
-        <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
+        {/* One shared rig for every room surface — see RoomLighting. */}
+        <RoomLighting />
         
         {/* Wall System with Boards */}
         {wallConfig && (
@@ -713,17 +800,20 @@ function StudioViewPageInner() {
       </Canvas>
 
       {/* Sits above the instructions pill below (absolute bottom-6, ~46px tall),
-          which is the only other bottom-centre element on this page. */}
-      <div
-        className="fixed left-0 right-0 z-40 pointer-events-none flex justify-center"
-        style={{ bottom: 84 }}
-      >
-        <RoomViewPresets
-          onPreset={handlePreset}
-          isFocused={focusedWall !== null}
-          onExitFocus={() => setFocusedWall(null)}
-        />
-      </div>
+          which is the only other bottom-centre element on this page. Gone in
+          2D, where there is no camera for a preset to move. */}
+      {!show2D && (
+        <div
+          className="fixed left-0 right-0 z-40 pointer-events-none flex justify-center"
+          style={{ bottom: 84 }}
+        >
+          <RoomViewPresets
+            onPreset={handlePreset}
+            isFocused={focusedWall !== null}
+            onExitFocus={() => setFocusedWall(null)}
+          />
+        </div>
+      )}
 
       {/* Lightbox Modal */}
       <LightboxModal
@@ -744,26 +834,13 @@ function StudioViewPageInner() {
         // Only the view page opts in; editor (via StudioRoom) and guest crit leave it default false.
         hideCallouts={true}
         currentUserRole={currentUserRole}
-        canReorder={canReorderBoards}
-        onReorder={async (boardId, targetPosition) => {
-          // studioId IS the room id on this route — a legacy /studio/{ws} URL
-          // is redirected to the canonical room URL in fetchBoards, and the
-          // boards fetch above already keys off it the same way.
-          try {
-            const res = await fetch('/api/boards/reorder', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ roomId: studioId, boardId, targetPosition }),
-              credentials: 'include',
-            })
-            if (!res.ok) return false
-            // Existing refetch path: sortOrder lands and lightboxBoards recomputes.
-            await fetchBoards()
-            return true
-          } catch {
-            return false
-          }
-        }}
+        // Withheld while the arrows are scoped to one person. The reorder input
+        // takes a position in the ROOM's running order but validates against
+        // allBoards.length, so against a 3-sheet subset "2" would read as
+        // second-of-three and land as second-of-eighteen. Sheet order is a
+        // room-level property; set it from the room-wide grid.
+        canReorder={canReorderBoards && !selectedStudentBoardIds}
+        onReorder={handleReorderBoard}
         onTitleSaved={(boardId, title) => {
           // Rename persisted server-side already. Mirror into local boards + the
           // open snapshot so the header stays correct on reopen/navigation

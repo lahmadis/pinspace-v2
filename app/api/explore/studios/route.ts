@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { getDemoStudios, getDemoTotals } from '@/lib/mockData'
 import { isSuperadmin } from '@/lib/auth/superadmin'
+import { cleanDisplayName } from '@/lib/displayName'
 
 // Allow short-lived caching so repeat visits and multiple clients don't all hit Supabase
 export const dynamic = 'force-dynamic'
@@ -11,6 +12,9 @@ const STALE_WHILE_REVALIDATE = 120
 
 // Single color for all bubbles - connections differentiate relationships
 const BUBBLE_COLOR = '#6366f1' // Indigo
+
+/** Search-index cap per studio — see contributorsByWorkspace below. */
+const MAX_CONTRIBUTORS_PER_STUDIO = 500
 
 export async function GET(request: NextRequest) {
   try {
@@ -87,9 +91,16 @@ export async function GET(request: NextRequest) {
     // id). A non-superadmin passing `org` is ignored and stays scoped to their
     // own org. This is the sole cross-org override — content endpoints still
     // gate independently on published status.
+    // Captured rather than discarded: `contributors` below needs the same
+    // answer, and re-asking would be a second round trip on every explore load.
+    // Only resolved when the org override is actually used — a superadmin
+    // browsing their OWN org falls through to the ordinary member checks, which
+    // is correct for them anyway.
+    let callerIsSuperadmin = false
     const requestedOrg = searchParams.get('org')
-    if (requestedOrg && user?.id && (await isSuperadmin(user.id))) {
-      institutionFilterId = requestedOrg
+    if (requestedOrg && user?.id) {
+      callerIsSuperadmin = await isSuperadmin(user.id)
+      if (callerIsSuperadmin) institutionFilterId = requestedOrg
     }
 
     if (!institutionFilterId) {
@@ -115,6 +126,9 @@ export async function GET(request: NextRequest) {
       network_metadata: { department?: string; year?: string | number } | null
       academic_year: string | null
       instructor: string | null
+      // Both carried solely to decide who may receive `contributors` below.
+      is_public: boolean | null
+      owner_id: string | null
     }
     type PublishedEntry = {
       roomId: string
@@ -126,6 +140,8 @@ export async function GET(request: NextRequest) {
       academicYear: string | null
       instructor: string | null
       organizationId: string | null
+      isPublic: boolean
+      ownerId: string | null
     }
 
     // PostgREST embedded resource returns workspaces as a nested object.
@@ -141,7 +157,9 @@ export async function GET(request: NextRequest) {
           organization_id,
           network_metadata,
           academic_year,
-          instructor
+          instructor,
+          is_public,
+          owner_id
         )
       `)
       .eq('is_published', true)
@@ -174,6 +192,8 @@ export async function GET(request: NextRequest) {
         academicYear: ws.academic_year,
         instructor: ws.instructor,
         organizationId: ws.organization_id,
+        isPublic: ws.is_public === true,
+        ownerId: ws.owner_id,
       })
     }
 
@@ -209,26 +229,85 @@ export async function GET(request: NextRequest) {
     const roomIdsForBoardCounts = filteredEntries.map(e => e.roomId)
     const memberCounts: Record<string, number> = {}
     const boardCountsByRoom: Record<string, number> = {}
+    /** Workspaces the CALLER belongs to — gates `contributors`, see below. */
+    const callerMemberOf = new Set<string>()
     if (workspaceIdsForCounts.length > 0) {
+      // user_id comes back purely so the caller's own rows can be picked out of
+      // the same scan; it is never returned to the client.
       const { data: membersData } = await supabase
         .from('workspace_members')
-        .select('workspace_id')
+        .select('workspace_id, user_id')
         .in('workspace_id', workspaceIdsForCounts)
       for (const m of membersData ?? []) {
         const k = m.workspace_id as string
         memberCounts[k] = (memberCounts[k] ?? 0) + 1
+        if (user?.id && m.user_id === user.id) callerMemberOf.add(k)
       }
     }
+    /**
+     * Who has work in each workspace, for the network search box.
+     *
+     * Piggybacks on the board-count query rather than adding one: that scan
+     * already visits every board in every published room, so the names come
+     * back for the cost of two more text columns.
+     *
+     * BOTH name columns go in, deduplicated — this is a search index, not a
+     * label, so it should match whichever name the person is known by. (The
+     * rendered label elsewhere picks one; see lib/displayName.ts.) Placeholder
+     * values like "Anonymous" are dropped by cleanDisplayName, so searching
+     * cannot surface a studio by a non-name.
+     *
+     * GATED TO STUDIOS THE CALLER CAN ACTUALLY OPEN, which is narrower than
+     * the set of bubbles they can see. A room may be is_published (so it shows
+     * on the network) while its workspace is is_public = false — and for those,
+     * GET /api/boards admits only the owner, a member, or a superadmin viewing
+     * network-published content. An org member who is not in that studio gets a
+     * 403 opening it, so shipping them its roster of student names would expose
+     * something the app otherwise refuses them. `contributors` is therefore
+     * populated only when the caller could open the room anyway; everyone else
+     * receives an empty array and simply cannot find that studio by student
+     * name. The bubble, its title and its counts are unchanged for them.
+     */
+    const contributorsByWorkspace: Record<string, Set<string>> = {}
+    const workspaceIdByRoom: Record<string, string> = {}
+    for (const e of filteredEntries) workspaceIdByRoom[e.roomId] = e.workspaceId
+
+    // Mirrors GET /api/boards' own gate: public workspace, or the caller owns
+    // it, or the caller is a member, or a verified superadmin is viewing this
+    // org's network-published content.
+    const contributorsAllowed = new Set<string>()
+    for (const e of filteredEntries) {
+      if (
+        e.isPublic ||
+        callerIsSuperadmin ||
+        (user?.id != null && (e.ownerId === user.id || callerMemberOf.has(e.workspaceId)))
+      ) {
+        contributorsAllowed.add(e.workspaceId)
+      }
+    }
+
     if (roomIdsForBoardCounts.length > 0) {
       const { data: boardsData } = await supabase
         .from('boards')
-        .select('room_id')
+        .select('room_id, student_name, owner_name')
         .in('room_id', roomIdsForBoardCounts)
         .neq('upload_status', 'pending')
       for (const b of boardsData ?? []) {
         const k = b.room_id as string
         if (!k) continue
         boardCountsByRoom[k] = (boardCountsByRoom[k] ?? 0) + 1
+
+        const workspaceId = workspaceIdByRoom[k]
+        if (!workspaceId || !contributorsAllowed.has(workspaceId)) continue
+        const set = contributorsByWorkspace[workspaceId] ?? new Set<string>()
+        contributorsByWorkspace[workspaceId] = set
+        // Bounded so one enormous studio can't balloon the payload. Well above
+        // any real cohort; if it ever trips, search simply misses the tail.
+        if (set.size >= MAX_CONTRIBUTORS_PER_STUDIO) continue
+        for (const raw of [b.student_name, b.owner_name]) {
+          const name = cleanDisplayName(raw)
+          if (name) set.add(name)
+        }
       }
     }
 
@@ -305,6 +384,9 @@ export async function GET(request: NextRequest) {
         year: yearNum,
         academicYear: e.academicYear || undefined,
         memberCount: memberCounts[e.workspaceId] || 0,
+        // Names of everyone with work in this studio, so the network search
+        // box can find a person and not just a space or a professor.
+        contributors: Array.from(contributorsByWorkspace[e.workspaceId] ?? []),
         count: totalBoardCount,
         color: BUBBLE_COLOR,
         url,

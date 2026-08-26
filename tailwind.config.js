@@ -37,6 +37,20 @@ module.exports = {
           light: '#f1f5f9',
         }
       },
+      /*
+       * `rounded-pinspace` / `rounded-pinspace-lg`.
+       *
+       * These were defined in 308e11e and lost when the room/canvas work merged
+       * onto the awais base, which brought a tailwind.config.js without them —
+       * the same merge that dropped the :root tokens from globals.css. Tailwind
+       * silently emits nothing for a class it cannot resolve, so 135 usages
+       * across ~40 files rendered with square corners and no error anywhere:
+       * the build passes, the class is simply absent from the output CSS.
+       */
+      borderRadius: {
+        pinspace: 'var(--radius-md)',
+        'pinspace-lg': 'var(--radius-lg)',
+      },
       fontFamily: {
         sans: ['Onest', 'Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],

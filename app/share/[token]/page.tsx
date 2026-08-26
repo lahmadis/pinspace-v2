@@ -8,6 +8,7 @@ import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 import { Board, FloorTable } from '@/types'
 import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from '@/components/3d/WallSystem'
+import RoomLighting from '@/components/3d/RoomLighting'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
@@ -151,7 +152,7 @@ export default function SharePage() {
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
   const [roomName, setRoomName] = useState<string | null>(null)
   // Room wall color (migration 031) so shared viewers see the room's chosen look.
-  const [wallColor, setWallColor] = useState<'grey' | 'white'>('grey')
+  const [wallColor, setWallColor] = useState<'grey' | 'white'>('white')
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null)
   const [compareBoardIds, setCompareBoardIds] = useState<string[]>([])
@@ -220,7 +221,7 @@ export default function SharePage() {
         const workspaceId: string | null = data.room?.workspaceId ?? null
         const roomId: string | null = data.room?.id ?? null
         setRoomName(data.room?.name ?? null)
-        setWallColor(data.room?.wallColor === 'white' ? 'white' : 'grey')
+        setWallColor(data.room?.wallColor === 'grey' ? 'grey' : 'white')
 
         // Phase 2b: pass roomId so the route reads the per-room wall-config blob
         // (which has its own legacy fallback). Without it the route only reads
@@ -389,7 +390,6 @@ export default function SharePage() {
       )}
 
       <Canvas
-        shadows
         dpr={[1, 2]}
         className="w-full h-full"
         gl={{
@@ -407,31 +407,8 @@ export default function SharePage() {
           const { fogNear, fogFar } = getRoomFogParams(wallConfig)
           return <fog attach="fog" args={[ROOM_SKY_COLOR, fogNear, fogFar]} />
         })()}
-        <ambientLight intensity={0.5} />
-        {/* Key light. Matches the editor (see StudioRoom): the old [15,20,10]
-            sat BELOW the top of a 96" wall with a frustum too small to contain
-            a default room, so shadows truncated at a hard line partway across
-            the floor — and the same room looked different here than in the
-            editor. */}
-        <directionalLight
-          position={[400, 700, 300]}
-          intensity={1.2}
-          castShadow
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
-          shadow-camera-near={1}
-          shadow-camera-far={2500}
-          shadow-camera-left={-700}
-          shadow-camera-right={700}
-          shadow-camera-top={700}
-          shadow-camera-bottom={-700}
-          shadow-bias={-0.0001}
-        />
-        <directionalLight position={[-10, 12, -8]} intensity={0.5} />
-        <directionalLight position={[0, 25, 0]} intensity={0.4} />
-        <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
-        <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
-        <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
+        {/* One shared rig for every room surface — see RoomLighting. */}
+        <RoomLighting />
 
         {wallConfig && (
           <WallSystem

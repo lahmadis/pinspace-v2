@@ -1,5 +1,5 @@
 import type { Board } from '@/types'
-import { cleanDisplayName } from '@/lib/displayName'
+import { boardAuthorName } from '@/lib/displayName'
 
 export interface RoomStudent {
   /** Stable key: owner id when present, otherwise the normalised name. */
@@ -54,7 +54,10 @@ export function deriveRoomStudents(boards: Board[]): RoomStudent[] {
   }>()
 
   for (const board of boards) {
-    const name = cleanDisplayName(board.ownerName) || cleanDisplayName(board.studentName)
+    // Shared rule — see boardAuthorName. The curated label wins over the
+    // account snapshot, which is what lets a relabel here show up in the
+    // roster, the 3D room and the presentation grid as the same person.
+    const name = boardAuthorName(board)
     if (!name) continue
     const key = studentKeyFor(board.ownerId, name)
 

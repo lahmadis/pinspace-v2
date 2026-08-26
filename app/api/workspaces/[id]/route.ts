@@ -222,7 +222,8 @@ export async function GET(
         isPublished: Boolean(r.is_published),
         publishedAt: (r.published_at as string | null) ?? null,
         createdAt: (r.created_at as string | null) ?? null,
-        wallColor: (r.wall_color as 'grey' | 'white' | null) ?? 'grey',
+        // white is the default now; only an explicit 'grey' opts out.
+        wallColor: r.wall_color === 'grey' ? 'grey' : 'white',
         boardCount: boardCountByRoom.get(r.id as string) ?? 0,
       })),
     }

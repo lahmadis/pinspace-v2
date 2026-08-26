@@ -29,6 +29,7 @@ import {
   type SnapTarget,
 } from './boardSnapping'
 import { enqueueBoardWrite } from '@/lib/boardPositionWriteQueue'
+import { boardAuthorName } from '@/lib/displayName'
 
 interface DraggableBoardProps {
   board: Board
@@ -1532,12 +1533,11 @@ if (e.intersections && e.intersections.length > 0) {
 
         {/* Owner name tooltip - only show on hover */}
         {(() => {
-          // Get the display name: prefer studentName, fallback to ownerName
-          // Only show if we have a valid name (not empty, "Anonymous", or "Uploaded Board")
-          const displayName = (board.studentName && board.studentName !== 'Anonymous' && board.studentName !== 'Uploaded Board'
-            ? board.studentName 
-            : (board.ownerName && board.ownerName !== 'Anonymous' && board.ownerName !== 'Uploaded Board' ? board.ownerName : null))
-          
+          // Shared rule (see boardAuthorName) rather than a local copy of it:
+          // same precedence this had, but the placeholder list is the one every
+          // other surface uses, so 'User' and 'Unknown' are filtered here too.
+          const displayName = boardAuthorName(board) || null
+
           return isHovered && displayName && !isDragging ? (
             <Html
               position={[0, -boardHeight / 2 - 0.05, 0.01]}

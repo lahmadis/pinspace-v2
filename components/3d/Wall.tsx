@@ -20,7 +20,7 @@ export default function Wall({ position, rotation, boards }: WallProps) {
   return (
     <group position={position} rotation={rotation}>
       {/* Wall surface - light gallery wall */}
-      <mesh castShadow receiveShadow>
+      <mesh>
         <boxGeometry args={[wallWidth, wallHeight, wallDepth]} />
         <meshStandardMaterial
           color={ENGINE_PALETTE.paperHover}
