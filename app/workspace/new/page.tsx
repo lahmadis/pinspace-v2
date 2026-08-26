@@ -1,179 +1,288 @@
 'use client'
 
-import { Suspense, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
-import { LayoutDashboard, PanelsTopLeft, Settings } from 'lucide-react'
+import { Suspense, useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-
-import { AppShell } from '@/components/layout/AppShell'
-import { PageHeader } from '@/components/layout/PageHeader'
-import { Button, Card, Input, Select, Skeleton, StatusState } from '@/components/ui'
-import { useAuthSession } from '@/hooks/useAuthSession'
-import { useAccountMode } from '@/lib/useAccountMode'
+import Link from 'next/link'
 import type { Institution } from '@/types'
-
-const navigation = [
-  { href: '/dashboard', label: 'Projects', icon: <LayoutDashboard className="h-4 w-4" />, exact: true },
-  { href: '/my-boards', label: 'My boards', icon: <PanelsTopLeft className="h-4 w-4" />, exact: true },
-]
-
-const footerNavigation = [
-  { href: '/settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
-]
-
-function LoadingState() {
-  return (
-    <AppShell navigation={navigation} footerNavigation={footerNavigation} currentPath="/workspace/new" contentClassName="bg-background">
-      <div role="status" aria-label="Loading project creation" className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8 sm:px-6 lg:px-8">
-        <span className="sr-only">Loading project creation</span>
-        <Skeleton className="h-9 w-64" />
-        <Card className="space-y-4"><Skeleton className="h-11 w-full" /><Skeleton className="h-11 w-full" /></Card>
-      </div>
-    </AppShell>
-  )
-}
+import { toast } from '@/lib/toast'
+import { useAccountMode } from '@/lib/useAccountMode'
+import { useAuthSession } from '@/hooks/useAuthSession'
 
 function NewWorkspaceForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const typeParam = searchParams?.get('type') === 'shared' ? 'shared' : null
   const { status: authStatus, user } = useAuthSession()
-  const { mode: accountMode } = useAccountMode(user?.id)
+  const isLoaded = authStatus !== 'loading'
   const [loading, setLoading] = useState(false)
-  const [institutions, setInstitutions] = useState<Institution[]>([])
-  const [name, setName] = useState('')
-  const [institutionSlug, setInstitutionSlug] = useState('')
-  const [error, setError] = useState('')
+  // In-flight guard. A ref, not the `loading` state: two clicks in the same tick
+  // both run handleSubmit with the render's stale `loading === false`, so a state
+  // check can't stop the second POST — the ref is set synchronously and is seen
+  // by the second call. This is what prevents the duplicate-workspace double POST.
   const submittingRef = useRef(false)
-
-  const title = typeParam === 'shared'
-    ? 'Create Shared Project'
-    : accountMode === 'personal'
-      ? 'Create a Personal Project'
-      : 'Create a Project'
-  const description = typeParam === 'shared'
-    ? 'Set up a shared space for collaboration.'
-    : accountMode === 'personal'
-      ? 'Set up a private space for your own work.'
-      : 'Set up a space where collaborators can work together.'
+  const [institutions, setInstitutions] = useState<Institution[]>([])
+  const { mode: accountMode } = useAccountMode(user?.id)
+  // Firm and university share one vocabulary — the old accountMode === 'firm'
+  // arms were pure noun swaps ("Firm Room" vs "Class"). The shared/personal
+  // arms stay: those are genuine workspace kinds, not org-type nouns.
+  const headerTitle =
+    typeParam === 'shared' ? 'Create Shared Project'
+    : accountMode === 'personal' ? 'Create a Personal Project'
+    : 'Create a Project'
+  const headerSubtitle =
+    typeParam === 'shared' ? 'Set up a shared space for collaboration'
+    : accountMode === 'personal' ? 'Set up a space for your own work'
+    : 'Set up a shared space and invite collaborators'
+  const [formData, setFormData] = useState({
+    name: '',
+    institutionSlug: ''
+  })
 
   useEffect(() => {
-    if (authStatus === 'unauthenticated') router.push('/sign-in')
+    if (authStatus === 'unauthenticated') {
+      router.push('/sign-in')
+    }
   }, [authStatus, router])
 
   useEffect(() => {
-    if (authStatus === 'loading') return
+    if (!isLoaded) return
     fetch('/api/institutions', { cache: 'no-store' })
-      .then((response) => response.ok ? response.json() : [])
+      .then((res) => res.ok ? res.json() : [])
       .then((list: Institution[]) => {
         setInstitutions(list)
-        if (!list.length) return
-        const initialSlug = list.find((institution) => institution.slug === 'wit')?.slug ?? list[0].slug
-        setInstitutionSlug((current) => current || initialSlug)
+        if (list.length > 0) {
+          const defaultSlug = list.find((i) => i.slug === 'wit')?.slug ?? list[0].slug
+          setFormData((prev) => ({ ...prev, institutionSlug: prev.institutionSlug || defaultSlug }))
+        }
       })
-      .catch(() => setInstitutions([]))
-  }, [authStatus])
+      .catch(() => {})
+  }, [isLoaded])
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    // Refuse a second submit while one is already in flight (double-click, or
+    // Enter + click). Must run before any await so the second call bails
+    // immediately rather than firing a second create POST.
     if (submittingRef.current) return
-    const trimmedName = name.trim()
-    if (!trimmedName) {
-      setError('Enter a project name')
+
+    if (!formData.name.trim()) {
+      toast.error('Please enter a workspace name')
       return
     }
 
-    submittingRef.current = true
-    setLoading(true)
-    setError('')
     try {
+      submittingRef.current = true
+      setLoading(true)
+
       let creatorName = ''
       try {
-        const profileResponse = await fetch('/api/user-profile', { cache: 'no-store' })
-        if (profileResponse.ok) {
-          const profile = await profileResponse.json()
-          if (typeof profile?.full_name === 'string') creatorName = profile.full_name.trim()
+        const profileRes = await fetch('/api/user-profile', { cache: 'no-store' })
+        if (profileRes.ok) {
+          const profile = await profileRes.json()
+          if (typeof profile?.full_name === 'string') {
+            creatorName = profile.full_name.trim()
+          }
         }
       } catch {
-        // Profile lookup is best effort; preserve the established fallback.
+        // Profile fetch is best-effort; fall back to email-local below.
       }
 
       const payload: Record<string, string> = {
-        name: trimmedName,
+        name: formData.name.trim(),
         creatorName: creatorName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Instructor',
       }
-      if (institutionSlug) payload.institution_slug = institutionSlug
+      if (formData.institutionSlug) payload.institution_slug = formData.institutionSlug
       if (typeParam === 'shared') payload.type = 'shared'
 
       const response = await fetch('/api/workspaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload)
       })
+
       const data = await response.json()
-      if (!response.ok) throw new Error(data.error || data.details || 'Failed to create project')
+
+      if (!response.ok) {
+        const errorMsg = data.error || data.details || 'Failed to create workspace'
+        throw new Error(errorMsg)
+      }
+
+      // API returns workspace directly, not wrapped in {workspace: ...}
       const workspaceId = data.id || data.workspace?.id
-      if (!workspaceId) throw new Error('Project created but no ID returned')
+
+      if (!workspaceId) {
+        throw new Error('Workspace created but no ID returned')
+      }
+
+      // Redirect to workspace settings
       router.push(`/workspace/${workspaceId}/settings`)
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Failed to create project')
+    } catch (error) {
+      console.error('Error creating workspace:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create workspace'
+      toast.error(errorMessage)
     } finally {
+      // Re-enable on both success and failure. On success the component is
+      // navigating away, so clearing the ref is harmless; on failure it makes the
+      // create retryable.
       submittingRef.current = false
       setLoading(false)
     }
   }
 
-  if (authStatus === 'loading') return <LoadingState />
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-[#4444ff]/20 border-t-[#4444ff] mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <AppShell navigation={navigation} footerNavigation={footerNavigation} currentPath="/workspace/new" contentClassName="bg-background">
-      <PageHeader eyebrow="Projects" title={title} description={description} />
-      <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 lg:px-8">
-        <Card className="p-5 sm:p-7">
-          <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Link href="/dashboard">
+              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                <svg className="w-5 h-5 text-gray-600" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+                  <path d="M15 19l-7-7 7-7"></path>
+                </svg>
+              </button>
+            </Link>
             <div>
-              <label htmlFor="project-name" className="mb-1.5 block text-sm font-semibold text-text-primary">Project name</label>
-              <Input
-                id="project-name"
+              <h1 className="text-xl font-bold text-gray-900">{headerTitle}</h1>
+              <p className="text-sm text-gray-600">{headerSubtitle}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-2xl mx-auto px-6 py-12">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              {headerTitle}
+            </h2>
+            <p className="text-gray-600">
+              {/* "holds a 3D studio" rather than "is a studio": a project is the
+                  container, the studio is the 3D view one level down. */}
+              {typeParam === 'shared'
+                ? 'A shared project holds a 3D studio anyone with an invite code can join and collaborate in.'
+                : accountMode === 'personal'
+                ? 'A personal project holds your own 3D studio for individual work.'
+                : 'A project holds a shared 3D studio where you can invite collaborators and work on design together.'}
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Workspace Name */}
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+                Workspace Name *
+              </label>
+              <input
                 type="text"
-                value={name}
-                onChange={(event) => {
-                  setName(event.target.value)
-                  if (error === 'Enter a project name') setError('')
-                }}
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 maxLength={100}
-                placeholder="e.g. Studio 08 — Fall 2026"
-                disabled={loading}
-                aria-invalid={error === 'Enter a project name'}
-                aria-describedby={error === 'Enter a project name' ? 'project-name-help project-form-error' : 'project-name-help'}
+                placeholder="e.g., Studio 08 - Fall 2024"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4444ff] focus:border-transparent"
+                required
               />
-              <p id="project-name-help" className="mt-1.5 text-sm text-text-secondary">Use a clear name that will still make sense in a long project list.</p>
+              <p className="mt-2 text-sm text-gray-500">
+                Choose a descriptive name for your project
+              </p>
             </div>
 
+            {/* Institution */}
             {institutions.length > 0 && (
               <div>
-                <label htmlFor="project-institution" className="mb-1.5 block text-sm font-semibold text-text-primary">Institution or school</label>
-                <Select id="project-institution" value={institutionSlug} disabled={loading} onChange={(event) => setInstitutionSlug(event.target.value)}>
-                  {institutions.map((institution) => <option key={institution.id} value={institution.slug}>{institution.name}</option>)}
-                </Select>
-                <p className="mt-1.5 text-sm text-text-secondary">This project appears under the selected school in Explore.</p>
+                <label htmlFor="institution" className="block text-sm font-medium text-gray-700 mb-2">
+                  Institution / School
+                </label>
+                <select
+                  id="institution"
+                  value={formData.institutionSlug}
+                  onChange={(e) => setFormData({ ...formData, institutionSlug: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4444ff] focus:border-transparent"
+                >
+                  {institutions.map((inst) => (
+                    <option key={inst.id} value={inst.slug}>
+                      {inst.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-sm text-gray-500">
+                  This workspace will appear under this school in the explore view
+                </p>
               </div>
             )}
 
-            {error && <StatusState id="project-form-error" role="alert" status="error" title={error} />}
+            {/* Info Box - Hidden for demo video */}
+            {/* <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex gap-3">
+                <div className="text-2xl">💡</div>
+                <div>
+                  <p className="text-sm text-blue-900 font-medium mb-1">
+                    What happens next?
+                  </p>
+                  <ul className="text-sm text-blue-800 space-y-1">
+                    <li>• A new 3D studio space will be created</li>
+                    <li>• You'll get a unique invite link to share</li>
+                    <li>• Students can join using the invite code</li>
+                    <li>• Everyone can add and edit their own boards</li>
+                  </ul>
+                </div>
+              </div>
+            </div> */}
 
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <Link href="/dashboard" className="inline-flex min-h-11 items-center justify-center rounded-pinspace px-4 py-2 text-sm font-semibold text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Cancel</Link>
-              <Button type="submit" size="lg" loading={loading}>{loading ? 'Creating project…' : 'Create project'}</Button>
-            </div>
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={loading || !formData.name.trim()}
+              className="w-full px-6 py-3 bg-[#4444ff] text-white rounded-lg hover:bg-[#3333ee] disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold text-lg shadow-md hover:shadow-lg"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  Creating Workspace...
+                </span>
+              ) : (
+                'Create Workspace'
+              )}
+            </button>
           </form>
-        </Card>
-        <p className="mt-5 text-center text-sm text-text-secondary">Questions? Contact your instructor or system administrator.</p>
+        </div>
+
+        {/* Help Text */}
+        <div className="mt-6 text-center">
+          <p className="text-sm text-gray-600">
+            Questions? Contact your instructor or system administrator.
+          </p>
+        </div>
       </div>
-    </AppShell>
+    </div>
   )
 }
 
 export default function NewWorkspacePage() {
-  return <Suspense fallback={<LoadingState />}><NewWorkspaceForm /></Suspense>
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-[#4444ff]/20 border-t-[#4444ff] mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    }>
+      <NewWorkspaceForm />
+    </Suspense>
+  )
 }

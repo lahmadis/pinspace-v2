@@ -1,7 +1,5 @@
 'use client'
 
-/* eslint-disable react-hooks/exhaustive-deps, react-hooks/immutability, react-hooks/refs -- Frozen R3F gesture semantics intentionally mutate the renderer cursor and mesh refs outside React state. */
-
 const isDev = process.env.NODE_ENV === 'development'
 const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
 
@@ -13,6 +11,8 @@ import * as THREE from 'three'
 import type { Board } from '@/types'
 import { Suspense } from 'react'
 import { Text, Html } from '@react-three/drei'
+import { ROOM_FONT_3D } from '@/lib/room/palette'
+import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 import { PDFTextureMaterial } from './PDFTexture'
 import { useBoardTexture } from './useBoardTexture'
 import { toast } from '@/lib/toast'
@@ -29,7 +29,6 @@ import {
   type SnapTarget,
 } from './boardSnapping'
 import { enqueueBoardWrite } from '@/lib/boardPositionWriteQueue'
-import { ENGINE_PALETTE } from './enginePalette'
 
 interface DraggableBoardProps {
   board: Board
@@ -41,6 +40,18 @@ interface DraggableBoardProps {
   wallDimensions: { width: number; height: number }
   side?: 'front' | 'back'
   initialLocalPosition?: { x: number; y: number; width?: number; height?: number }
+  /**
+   * Increments when a position arrives from something other than a gesture —
+   * an undo or a redo.
+   *
+   * The sync effect below ignores incoming positions for two seconds after a
+   * drag, so that a slow save's echo cannot snap the board back. An undo lands
+   * inside exactly that window (it is what you press right after moving
+   * something), and was being swallowed: the data changed, the board did not
+   * move, and it only looked correct after leaving edit mode remounted it.
+   * A change in this number means "this one is deliberate, take it".
+   */
+  positionEpoch?: number
   onDragEnd: (boardId: string, localX: number, localY: number, width?: number, height?: number, side?: 'front' | 'back') => void
   /**
    * Pushed on corner-resize PATCH success so the parent can mirror the
@@ -97,8 +108,8 @@ type ResizeCursor = 'nwse-resize' | 'nesw-resize'
 /** Stable empties so a no-snap pointer sample doesn't allocate every frame. */
 const EMPTY_GUIDES: ActiveGuides = { vertical: [], horizontal: [] }
 const EMPTY_SIZE_MATCHES: SizeMatch[] = []
-/** Pink shared with the alignment guides. */
-const SNAP_ACCENT = ENGINE_PALETTE.snap
+/** Blue accent shared with the alignment guides — matches the app's one accent color everywhere else. */
+const SNAP_ACCENT = '#3B6EF6'
 /** Thickness of guide lines and the size-match outline, in wall inches. */
 const SNAP_LINE_THICKNESS_IN = 0.5
 
@@ -128,7 +139,7 @@ function BoardTextureMaterial({ imageUrl }: { imageUrl: string }) {
     // faint plate. Avoid a pulsing animation here — the edit-mode view is busy enough already.
     return (
       <meshStandardMaterial
-        color={ENGINE_PALETTE.paper}
+        color="#ffffff"
         transparent
         opacity={0.22}
         roughness={0.85}
@@ -137,7 +148,7 @@ function BoardTextureMaterial({ imageUrl }: { imageUrl: string }) {
       />
     )
   }
-  return <meshStandardMaterial color={ENGINE_PALETTE.paper} side={THREE.DoubleSide} />
+  return <meshStandardMaterial color="#ffffff" side={THREE.DoubleSide} />
 }
 
 export function DraggableBoard({
@@ -149,6 +160,7 @@ export function DraggableBoard({
   wallDimensions,
   side = 'front',
   initialLocalPosition = { x: 0, y: 0 },
+  positionEpoch = 0,
   onDragEnd,
   onSizePersisted,
   onDelete: _onDelete,
@@ -226,6 +238,7 @@ export function DraggableBoard({
     const next = { width: s.widthIn, height: s.heightIn }
     sizeRef.current = next
     setSizeIn(next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board.boardWidthIn, board.boardHeightIn, board.physicalWidth, board.physicalHeight, board.aspectRatio])
 
   const resizeStartRef = useRef<{
@@ -259,10 +272,19 @@ export function DraggableBoard({
   
   // Track if we just finished dragging to avoid resetting position
   const justFinishedDragging = useRef(false)
+  /** Last epoch this board acted on; see the positionEpoch prop. */
+  const lastPositionEpochRef = useRef(positionEpoch)
   
  // Sync position when props change (but not right after we finished dragging)
 useEffect(() => {
-  if (justFinishedDragging.current) {
+  // An undo or redo overrides the post-drag hold. It is a deliberate external
+  // move, not the stale echo the hold exists to ignore, and it is pressed
+  // precisely when the hold is active. Clearing the flag as well as syncing
+  // matters: leaving it set would swallow the NEXT undo too.
+  const external = positionEpoch !== lastPositionEpochRef.current
+
+  if (!external && justFinishedDragging.current) {
+    devLog('[UNDO-DIAG] sync BLOCKED by post-drag hold', { board: board.id, positionEpoch })
     // 🎯 Keep the flag set for 2 seconds to give save time to complete
     const timer = setTimeout(() => {
       justFinishedDragging.current = false
@@ -270,25 +292,48 @@ useEffect(() => {
     }, 2000)
     return () => clearTimeout(timer)
   }
-  if (isResizing) return
-  
-  if (!isDragging) {
-    // Only sync if position actually changed from external source
-    const propsPos = initialLocalPosition
-    const currentPos = positionRef.current
-    
-    // Use a small epsilon for comparison (floating point tolerance)
-    const epsilon = 0.001
-    const xChanged = Math.abs(propsPos.x - currentPos.x) > epsilon
-    const yChanged = Math.abs(propsPos.y - currentPos.y) > epsilon
-    
-    if (xChanged || yChanged) {
-      devLog('📍 Syncing position from props:', propsPos)
-      positionRef.current = propsPos
-      setLocalPosition(propsPos)
-    }
+
+  // Still mid-gesture: leave WITHOUT consuming the epoch, so the undo is
+  // applied when the gesture ends rather than being marked as handled here and
+  // then swallowed by the post-gesture hold — which would lose it for good.
+  if (isResizing || isDragging) {
+    devLog('[UNDO-DIAG] sync deferred, gesture active', { board: board.id, isDragging, isResizing })
+    return
   }
-}, [initialLocalPosition.x, initialLocalPosition.y, isDragging, isResizing])
+
+  // Past every gate, so this run really will sync. Only now is the bump
+  // recorded, and the post-drag hold dropped: an undo is a deliberate external
+  // move, not the stale save echo that hold exists to ignore.
+  if (external) {
+    lastPositionEpochRef.current = positionEpoch
+    justFinishedDragging.current = false
+  }
+
+  // Only sync if position actually changed from external source
+  const propsPos = initialLocalPosition
+  const currentPos = positionRef.current
+
+  // Use a small epsilon for comparison (floating point tolerance)
+  const epsilon = 0.001
+  const xChanged = Math.abs(propsPos.x - currentPos.x) > epsilon
+  const yChanged = Math.abs(propsPos.y - currentPos.y) > epsilon
+
+  devLog('[UNDO-DIAG] sync effect', {
+    board: board.id,
+    external,
+    justFinishedDragging: justFinishedDragging.current,
+    isDragging,
+    isResizing,
+    props: { x: propsPos.x, y: propsPos.y },
+    current: { x: currentPos.x, y: currentPos.y },
+    willSync: xChanged || yChanged,
+  })
+  if (xChanged || yChanged) {
+    devLog('📍 Syncing position from props:', propsPos)
+    positionRef.current = propsPos
+    setLocalPosition(propsPos)
+  }
+}, [initialLocalPosition.x, initialLocalPosition.y, isDragging, isResizing, positionEpoch])
   
   devLog('🎨 [DraggableBoard] Rendering board:', board.id, 'at position:', localPosition)
   
@@ -354,9 +399,10 @@ useEffect(() => {
   })
 
   // Boards whose width or height the in-progress resize currently matches.
-  // Rendered as a pink outline on the matched board rather than a guide line —
-  // a shared dimension is not a spatial alignment, so a line between the two
-  // would imply an edge relationship that isn't there. Cleared on pointer-up.
+  // Rendered as an accent-colored outline on the matched board rather than a
+  // guide line — a shared dimension is not a spatial alignment, so a line
+  // between the two would imply an edge relationship that isn't there.
+  // Cleared on pointer-up.
   const [sizeMatches, setSizeMatches] = useState<SizeMatch[]>(EMPTY_SIZE_MATCHES)
 
   const updatePosition = (clientX: number, clientY: number) => {
@@ -1245,7 +1291,7 @@ if (e.intersections && e.intersections.length > 0) {
           // on objects carrying that named handler — so without this a double
           // click on a board overhanging the wall edge could reach an ADJACENT
           // wall's plane and jump edit mode mid-edit.
-          onDoubleClick={(e) => e.stopPropagation()}
+          onDoubleClick={consumeDoubleClick}
           // Make sure boards render in front of the invisible wall plane
           renderOrder={1}
           onPointerOver={(e) => {
@@ -1271,15 +1317,15 @@ if (e.intersections && e.intersections.length > 0) {
           {/* Use boxGeometry instead of planeGeometry to give boards thickness */}
           <boxGeometry args={[boardWidth, boardHeight, BOARD_THICKNESS]} />
           {isPDF ? (
-            <Suspense fallback={<meshStandardMaterial color={ENGINE_PALETTE.paperSkeleton} />}>
+            <Suspense fallback={<meshStandardMaterial color="#f3f4f6" />}>
               <PDFTextureMaterial pdfUrl={imageUrl} hovered={isHovered} />
             </Suspense>
           ) : hasImage ? (
             <BoardTextureMaterial imageUrl={imageUrl} />
           ) : (
             <meshStandardMaterial 
-              color={isHovered ? ENGINE_PALETTE.paperHover : ENGINE_PALETTE.paper}
-              emissive={isHovered ? ENGINE_PALETTE.boardEmission : ENGINE_PALETTE.black}
+              color={isHovered ? "#f8f8f8" : "#ffffff"} 
+              emissive={isHovered ? "#444444" : "#000000"}
               emissiveIntensity={0.1}
             />
           )}
@@ -1291,10 +1337,10 @@ if (e.intersections && e.intersections.length > 0) {
           <lineBasicMaterial 
             color={
               isSelected
-                ? ENGINE_PALETTE.selection
+                ? "#4444ff"  // Blue border when selected (indicates it can be deleted with backspace)
                 : isLocked 
-                  ? (isHovered ? ENGINE_PALETTE.lockedHover : ENGINE_PALETTE.locked)
-                  : (isHovered ? ENGINE_PALETTE.selection : ENGINE_PALETTE.owned)
+                  ? (isHovered ? "#999999" : "#666666")  // Gray for locked boards
+                  : (isHovered ? "#4444ff" : "#333333")  // Blue for owned boards
             } 
             linewidth={isSelected ? 5 : 2} 
           />
@@ -1304,7 +1350,7 @@ if (e.intersections && e.intersections.length > 0) {
         {isSelected && (
           <lineSegments position={[0, 0, 0]} raycast={() => null}>
             <edgesGeometry args={[selectedEdgeGeometry]} />
-            <lineBasicMaterial color={ENGINE_PALETTE.selection} linewidth={3} />
+            <lineBasicMaterial color="#4444ff" linewidth={3} />
           </lineSegments>
         )}
 
@@ -1313,6 +1359,10 @@ if (e.intersections && e.intersections.length > 0) {
             and true dimensions exist; manual resize otherwise stays an override. */}
         {isSoleSelection && canEdit && hasPhysicalSize && (
           <Html position={[0, boardHeight / 2 + 2, 0.1]} center distanceFactor={10} style={{ pointerEvents: 'auto' }}>
+            {/* Guard on the wrapper, not the button — see VideoBadge for why
+                (drei's inner div owns the hit area, and it runs in its own
+                React root so a synthetic stop wouldn't reach the native event). */}
+            <div style={{ display: 'inline-flex' }} onDoubleClick={consumeDoubleClick}>
             <button
               onClick={(e) => { e.stopPropagation(); handleResetToTrueScale() }}
               onPointerDown={(e) => e.stopPropagation()}
@@ -1332,6 +1382,7 @@ if (e.intersections && e.intersections.length > 0) {
             >
               Reset to true scale
             </button>
+            </div>
           </Html>
         )}
 
@@ -1406,12 +1457,12 @@ if (e.intersections && e.intersections.length > 0) {
               {/* Stalk (visual only — no raycast). */}
               <mesh position={[0, topY + stem / 2, BOARD_THICKNESS / 2 + 0.01]} raycast={() => null}>
                 <planeGeometry args={[Math.max(0.2, knobR * 0.5), stem]} />
-                <meshBasicMaterial color={ENGINE_PALETTE.selection} transparent opacity={0.7} depthTest={false} depthWrite={false} />
+                <meshBasicMaterial color="#4444ff" transparent opacity={0.7} depthTest={false} depthWrite={false} />
               </mesh>
               {/* Visible knob (small, no raycast — the hit disc below owns events). */}
               <mesh position={[0, knobY, BOARD_THICKNESS / 2 + 0.02]} renderOrder={3} raycast={() => null}>
                 <circleGeometry args={[knobR, 24]} />
-                <meshBasicMaterial color={ENGINE_PALETTE.selection} transparent opacity={0.9} depthTest={false} depthWrite={false} />
+                <meshBasicMaterial color="#4444ff" transparent opacity={0.9} depthTest={false} depthWrite={false} />
               </mesh>
               {/* Invisible generous hit target. Biased UPWARD so its bottom sits
                   at the top edge (center = topY + max(stem,hitR) ⇒ bottom ≈ topY),
@@ -1439,7 +1490,7 @@ if (e.intersections && e.intersections.length > 0) {
             {/* Lock icon background */}
             <mesh>
               <circleGeometry args={[deleteButtonSize / 2, 32]} />
-              <meshBasicMaterial color={ENGINE_PALETTE.locked} transparent opacity={0.9} />
+              <meshBasicMaterial color="#666666" transparent opacity={0.9} />
             </mesh>
 
             {/* Lock icon using HTML emoji */}
@@ -1536,14 +1587,15 @@ if (e.intersections && e.intersections.length > 0) {
               }}
             >
               <circleGeometry args={[Math.min(boardWidth, boardHeight) * 0.08, 32]} />
-              <meshBasicMaterial color={ENGINE_PALETTE.selection} transparent opacity={0.95} />
+              <meshBasicMaterial color="#4444ff" transparent opacity={0.95} />
             </mesh>
 
             {/* Comment count text */}
             <Text
               position={[0, 0, 0.002]}
+              font={ROOM_FONT_3D}
               fontSize={Math.min(boardWidth, boardHeight) * 0.06}
-              color={ENGINE_PALETTE.paper}
+              color="#ffffff"
               anchorX="center"
               anchorY="middle"
               fontWeight={700}

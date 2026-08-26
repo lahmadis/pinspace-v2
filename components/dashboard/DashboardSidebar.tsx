@@ -1,15 +1,11 @@
 'use client'
 
 import Link from 'next/link'
-import { LogOut, Menu, Network, PanelsTopLeft, Settings, User, Users } from 'lucide-react'
-import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useRef } from 'react'
-
-import { Sheet } from '@/components/ui'
-import { useProfile } from '@/lib/ProfileContext'
+import { Network, Users, User, Settings, LogOut, Menu, X, Archive as ArchiveIcon, PencilRuler } from 'lucide-react'
+import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { resetAccountModeCache } from '@/lib/useAccountMode'
-
+import { useProfile } from '@/lib/ProfileContext'
 import { SuperadminOrgSwitcher } from './SuperadminOrgSwitcher'
 
 export type Scope = 'wentworth' | 'shared' | 'personal'
@@ -26,199 +22,20 @@ interface DashboardSidebarProps {
   onToggle: () => void
 }
 
-interface SidebarContentProps {
-  currentScope: Scope
-  onScopeChange: (scope: Scope) => void
-  hasOrganization: boolean
-  orgLabel: string
-  displayName: string
-  avatarUrl?: string | null
-  isAdmin?: boolean
-  pathname: string
-  onNavigate: () => void
-  onSignOut: () => void
-  includeOrgSwitcher: boolean
-}
-
-function SidebarContent({
-  currentScope,
-  onScopeChange,
-  hasOrganization,
-  orgLabel,
-  displayName,
-  avatarUrl,
-  isAdmin,
-  pathname,
-  onNavigate,
-  onSignOut,
-  includeOrgSwitcher,
-}: SidebarContentProps) {
-  const initials = displayName.slice(0, 2).toUpperCase()
-
-  const scopeButton = (scope: Scope, label: string, icon: React.ReactNode) => {
-    const active = currentScope === scope
-
-    return (
-      <button
-        key={scope}
-        type="button"
-        onClick={() => {
-          onScopeChange(scope)
-          onNavigate()
-        }}
-        aria-current={active ? 'page' : undefined}
-        className={`flex min-h-11 w-full items-center gap-3 rounded-pinspace border px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-          active
-            ? 'border-border bg-primary text-text-primary shadow-[var(--shadow-soft)]'
-            : 'border-transparent text-text-secondary hover:border-border-light hover:bg-background-lighter hover:text-text-primary'
-        }`}
-      >
-        <span className="shrink-0 text-current" aria-hidden="true">{icon}</span>
-        <span className="truncate">{label}</span>
-      </button>
-    )
-  }
-
-  const linkClass = (active: boolean) => `flex min-h-11 items-center gap-3 rounded-pinspace border px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-    active
-      ? 'border-border bg-primary text-text-primary shadow-[var(--shadow-soft)]'
-      : 'border-transparent text-text-secondary hover:border-border-light hover:bg-background-lighter hover:text-text-primary'
-  }`
-  const adminActive = pathname === '/admin' || pathname.startsWith('/admin/')
-  const settingsActive = pathname === '/settings' || pathname.startsWith('/settings/')
-  const myBoardsActive = pathname === '/my-boards' || pathname.startsWith('/my-boards/')
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <nav aria-label="Project scopes" className="flex-1 space-y-0.5 overflow-y-auto px-1 py-2">
-        {hasOrganization && scopeButton('wentworth', orgLabel, <Network className="h-4 w-4" />)}
-        {scopeButton('shared', 'Shared', <Users className="h-4 w-4" />)}
-        {scopeButton('personal', 'Personal', <User className="h-4 w-4" />)}
-        <Link
-          href="/my-boards"
-          aria-current={myBoardsActive ? 'page' : undefined}
-          onClick={onNavigate}
-          className={linkClass(myBoardsActive)}
-        >
-          <PanelsTopLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span className="truncate">My boards</span>
-        </Link>
-
-        {/* The switcher remains server-gated by its own endpoint. Only one copy
-            is mounted while the mobile Sheet is open to avoid duplicate reads. */}
-        {includeOrgSwitcher && <SuperadminOrgSwitcher />}
-      </nav>
-
-      <div className="shrink-0 space-y-0.5 border-t border-border pt-3">
-        {isAdmin && (
-          <Link
-            href="/admin"
-            aria-current={adminActive ? 'page' : undefined}
-            onClick={onNavigate}
-            className={linkClass(adminActive)}
-          >
-            <Settings className="h-4 w-4 shrink-0" aria-hidden="true" />
-            Admin
-          </Link>
-        )}
-        <Link
-          href="/settings"
-          aria-current={settingsActive ? 'page' : undefined}
-          onClick={onNavigate}
-          className={linkClass(settingsActive)}
-        >
-          <Settings className="h-4 w-4 shrink-0" aria-hidden="true" />
-          Settings
-        </Link>
-
-        <div className="mt-1 flex items-center gap-3 px-3 py-2">
-          {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={avatarUrl}
-              alt={`${displayName}'s avatar`}
-              className="h-8 w-8 shrink-0 rounded-full border border-border object-cover"
-            />
-          ) : (
-            <div
-              className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-accent text-xs font-bold text-background-light"
-              aria-hidden="true"
-            >
-              {initials}
-            </div>
-          )}
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
-            {displayName}
-          </span>
-          <button
-            type="button"
-            onClick={onSignOut}
-            title="Sign out"
-            aria-label="Sign out"
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-pinspace text-text-secondary transition-colors hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <LogOut className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export function DashboardSidebar({
-  currentScope,
-  onScopeChange,
-  hasOrganization,
-  orgName,
-  firstName,
-  userEmail,
-  isAdmin,
-  isOpen,
-  onToggle,
+  currentScope, onScopeChange, hasOrganization, orgName,
+  firstName, userEmail, isAdmin, isOpen, onToggle,
 }: DashboardSidebarProps) {
   const router = useRouter()
   const pathname = usePathname()
   const { profile } = useProfile()
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const desktopBrandRef = useRef<HTMLAnchorElement>(null)
-  const wasOpenRef = useRef(false)
-  const desktopDismissalRef = useRef(false)
-  const displayName =
-    (profile.fullName ? profile.fullName.trim().split(/\s+/)[0] : null) ||
-    firstName ||
-    userEmail?.split('@')[0] ||
-    'You'
+  const displayName = (profile.fullName ? profile.fullName.trim().split(/\s+/)[0] : null) || firstName || userEmail?.split('@')[0] || 'You'
+  const initials = displayName.slice(0, 2).toUpperCase()
   const avatarUrl = profile.avatarUrl
-  // Real data (the org's own first word) is unchanged. Only the fallback noun
-  // from the old account-mode copy branch is collapsed.
+  // Real data (the org's own first word) is unchanged — both arms of the old
+  // accountMode ternary computed it identically. Only the FALLBACK noun
+  // branched ('Firm' vs 'Network'), which is the copy branch being collapsed.
   const orgLabel = orgName?.split(' ')[0] || 'Network'
-
-  useEffect(() => {
-    let restoreTimer: number | undefined
-    if (wasOpenRef.current && !isOpen) {
-      const restoreTarget = desktopDismissalRef.current
-        ? desktopBrandRef.current
-        : triggerRef.current
-      desktopDismissalRef.current = false
-      restoreTimer = window.setTimeout(() => restoreTarget?.focus(), 0)
-    }
-    wasOpenRef.current = isOpen
-    return () => {
-      if (restoreTimer !== undefined) window.clearTimeout(restoreTimer)
-    }
-  }, [isOpen])
-
-  useEffect(() => {
-    const desktopQuery = window.matchMedia('(min-width: 768px)')
-    const closeAtDesktop = (event: MediaQueryListEvent | MediaQueryList) => {
-      desktopDismissalRef.current = event.matches
-      if (event.matches && isOpen) onToggle()
-    }
-
-    closeAtDesktop(desktopQuery)
-    desktopQuery.addEventListener('change', closeAtDesktop)
-    return () => desktopQuery.removeEventListener('change', closeAtDesktop)
-  }, [isOpen, onToggle])
 
   const handleSignOut = async () => {
     resetAccountModeCache()
@@ -226,91 +43,148 @@ export function DashboardSidebar({
     router.push('/sign-in')
   }
 
-  const closeMobileNavigation = () => {
+  const handleScopeClick = (scope: Scope) => {
+    onScopeChange(scope)
     if (isOpen) onToggle()
   }
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (nextOpen !== isOpen) onToggle()
-  }
+  const navBtn = (scope: Scope, label: string, icon: React.ReactNode) => (
+    <button
+      key={scope}
+      type="button"
+      onClick={() => handleScopeClick(scope)}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors text-left ${
+        currentScope === scope
+          ? 'bg-white text-[#16181D] shadow-[0_2px_10px_rgba(22,24,29,0.07)]'
+          : 'text-[#5A5E6B] hover:bg-white/60'
+      }`}
+    >
+      <span className={`shrink-0 ${currentScope === scope ? 'text-[#3B6EF6]' : 'text-[#8A8FA0]'}`}>{icon}</span>
+      <span className="truncate">{label}</span>
+    </button>
+  )
 
-  const contentProps = {
-    currentScope,
-    onScopeChange,
-    hasOrganization,
-    orgLabel,
-    displayName,
-    avatarUrl,
-    isAdmin,
-    pathname,
-    onSignOut: handleSignOut,
+  const navLink = (href: string, label: string, icon: React.ReactNode) => {
+    const active = pathname === href
+    return (
+      <Link
+        href={href}
+        onClick={() => { if (isOpen) onToggle() }}
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+          active
+            ? 'bg-white text-[#16181D] shadow-[0_2px_10px_rgba(22,24,29,0.07)]'
+            : 'text-[#5A5E6B] hover:bg-white/60'
+        }`}
+      >
+        <span className={`shrink-0 ${active ? 'text-[#3B6EF6]' : 'text-[#8A8FA0]'}`}>{icon}</span>
+        {label}
+      </Link>
+    )
   }
 
   return (
     <>
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={onToggle}
-        className={`fixed left-4 top-4 z-50 inline-flex h-11 min-w-11 items-center justify-center rounded-pinspace border border-border bg-background-light text-text-primary shadow-[var(--shadow-soft)] transition-opacity hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:hidden ${
-          isOpen ? 'pointer-events-none opacity-0' : 'opacity-100'
-        }`}
-        aria-label="Open navigation"
-        aria-expanded={isOpen}
-        aria-controls={isOpen ? 'dashboard-mobile-navigation' : undefined}
-        aria-hidden={isOpen || undefined}
-        tabIndex={isOpen ? -1 : undefined}
-      >
-        <Menu className="h-5 w-5" aria-hidden="true" />
-      </button>
+      {/* Mobile hamburger — only visible when sidebar is closed */}
+      {!isOpen && (
+        <button
+          type="button"
+          onClick={onToggle}
+          className="fixed top-4 left-4 z-50 md:hidden p-2 rounded-xl bg-white border border-[#16181D]/10 shadow-sm text-[#5A5E6B] hover:bg-[#3B6EF6]/5"
+          aria-label="Open navigation"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+      )}
 
+      {/* Mobile backdrop */}
+      {isOpen && (
+        <div className="fixed inset-0 bg-black/40 z-30 md:hidden" onClick={onToggle} />
+      )}
+
+      {/* Sidebar */}
       <aside
-        aria-label="Dashboard navigation"
-        className="hidden h-dvh w-60 shrink-0 flex-col border-r border-border bg-background-light md:flex"
+        className={[
+          'fixed inset-y-0 left-0 z-40 w-60 flex flex-col border-r border-[#16181D]/8',
+          'transform transition-transform duration-200 ease-in-out',
+          isOpen ? 'translate-x-0' : '-translate-x-full',
+          'md:relative md:translate-x-0 md:z-auto md:shrink-0',
+        ].join(' ')}
+        style={{ background: 'linear-gradient(180deg, #F2F5FB 0%, #EDF1F9 100%)' }}
       >
-        <div className="flex h-16 shrink-0 items-center px-5">
-          <Link
-            ref={desktopBrandRef}
-            href="/"
-            className="rounded-pinspace font-mono text-xl font-bold tracking-tight text-text-primary transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            pinspace
+        {/* Logo row */}
+        <div className="shrink-0 h-16 flex items-center justify-between px-5">
+          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <span className="w-[22px] h-[22px] rounded-[7px] bg-[#3B6EF6] text-white flex items-center justify-center text-[11px] shrink-0">◉</span>
+            <span className="text-lg font-extrabold text-[#16181D] tracking-tight">pinspace</span>
           </Link>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="md:hidden p-1.5 rounded-lg hover:bg-[#16181D]/8 transition-colors"
+            aria-label="Close menu"
+          >
+            <X className="w-4 h-4 text-[#8A8FA0]" />
+          </button>
         </div>
-        <div className="flex min-h-0 flex-1 flex-col px-3 pb-3">
-          <SidebarContent
-            {...contentProps}
-            onNavigate={() => undefined}
-            includeOrgSwitcher={!isOpen}
-          />
+
+        {/* Scope nav */}
+        <nav className="flex-1 px-3 pt-2 pb-4 space-y-0.5 overflow-y-auto">
+          {hasOrganization && navBtn('wentworth', orgLabel, <Network className="w-4 h-4" />)}
+          {navBtn('shared', 'Shared', <Users className="w-4 h-4" />)}
+          {navBtn('personal', 'Personal', <User className="w-4 h-4" />)}
+
+          {/* Superadmin-only: read-only org network switcher. Self-gates — renders
+              nothing for non-superadmins (server-verified via its endpoint). */}
+          <SuperadminOrgSwitcher />
+
+          <div className="pt-2 mt-2 border-t border-[#16181D]/8 space-y-0.5">
+            {navLink('/desk-crits', 'Desk crits', <PencilRuler className="w-4 h-4" />)}
+            {navLink('/archive', 'Archive', <ArchiveIcon className="w-4 h-4" />)}
+          </div>
+        </nav>
+
+        {/* Bottom section */}
+        <div className="shrink-0 border-t border-[#16181D]/8 px-3 py-3 space-y-0.5">
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-[#5A5E6B] hover:bg-white/60 transition-colors"
+            >
+              <Settings className="w-4 h-4 text-[#8A8FA0] shrink-0" />
+              Admin
+            </Link>
+          )}
+          {navLink('/settings', 'Settings', <Settings className="w-4 h-4" />)}
+
+          {/* Profile row */}
+          <div className="flex items-center gap-3 px-3 py-2 mt-1">
+            {avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarUrl}
+                alt="Avatar"
+                className="w-8 h-8 rounded-full object-cover shrink-0 border border-[#16181D]/10"
+              />
+            ) : (
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-extrabold shrink-0 select-none"
+                style={{ background: 'linear-gradient(140deg, #FFB08A, #E86A92)' }}
+              >
+                {initials}
+              </div>
+            )}
+            <span className="flex-1 min-w-0 text-sm font-bold text-[#16181D] truncate">{displayName}</span>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              title="Sign out"
+              className="p-1.5 rounded-full hover:bg-[#16181D]/8 transition-colors shrink-0"
+            >
+              <LogOut className="w-3.5 h-3.5 text-[#8A8FA0]" />
+            </button>
+          </div>
         </div>
       </aside>
-
-      <Sheet
-        id="dashboard-mobile-navigation"
-        open={isOpen}
-        onOpenChange={handleOpenChange}
-        side="left"
-        title="Dashboard navigation"
-        description="Choose a project scope or manage your account."
-        className="max-w-[min(20rem,calc(100vw-2rem))]"
-      >
-        <div className="flex min-h-[calc(100dvh-10rem)] flex-col">
-          <Link
-            href="/"
-            aria-label="pinspace home"
-            onClick={closeMobileNavigation}
-            className="mb-2 w-fit rounded-pinspace font-mono text-lg font-bold tracking-tight text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            pinspace
-          </Link>
-          <SidebarContent
-            {...contentProps}
-            onNavigate={closeMobileNavigation}
-            includeOrgSwitcher
-          />
-        </div>
-      </Sheet>
     </>
   )
 }

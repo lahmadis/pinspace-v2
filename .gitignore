@@ -28,7 +28,6 @@ yarn-error.log*
 build-output.txt
 
 # local env files
-.env*
 !.env.example
 
 # vercel
@@ -50,3 +49,4 @@ next-env.d.ts
 # local-only working files (not shipped to contractors)
 /audits/
 /pinspace-pitch.html
+config.bat

@@ -1,16 +1,18 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 import { Board, FloorTable } from '@/types'
-import WallSystem from '@/components/3d/WallSystem'
+import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from '@/components/3d/WallSystem'
+import { CameraController, type FocusedWall, type PresetRequest } from '@/components/3d/CameraController'
+import { getInitialRoomPose, type RoomCameraPreset } from '@/lib/room/cameraViews'
+import RoomViewPresets from '@/components/room/RoomViewPresets'
 import TableWithModel from '@/components/3d/TableWithModel'
 import ModelViewer from '@/components/3d/ModelViewer'
-import { SceneErrorBoundary } from '@/components/3d/SceneErrorBoundary'
 import LightboxModal from '@/components/LightboxModal'
 import DemoBanner from '@/components/DemoBanner'
 import { getCachedStudioData } from '@/lib/studioViewCache'
@@ -18,11 +20,6 @@ import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import { useAuthSession } from '@/hooks/useAuthSession'
 import { useAccountMode } from '@/lib/useAccountMode'
 import { ArrowLeft } from 'lucide-react'
-import { StudioShell } from '@/components/layout/StudioShell'
-import { Button, Dialog, StatusState } from '@/components/ui'
-import { ENGINE_PALETTE } from '@/components/3d/enginePalette'
-
-const STUDIO_SCENE_BACKGROUND = ENGINE_PALETTE.sceneNeutral
 
 interface WallDimensions {
   height: number
@@ -34,69 +31,31 @@ interface WallConfig {
   layoutType: 'zigzag' | 'square' | 'linear' | 'lshape'
 }
 
-function getControls(ref: React.RefObject<unknown>): OrbitControlsType | null {
-  const r = ref?.current
-  if (!r) return null
-  if (typeof (r as { get?: () => OrbitControlsType }).get === 'function') {
-    return (r as { get: () => OrbitControlsType }).get()
-  }
-  return r as OrbitControlsType
-}
+/**
+ * Mouse mapping for the read-only room: left orbits, right pans in screen space.
+ * Hoisted to a constant so the object identity is stable across renders —
+ * drei re-applies changed props, and a fresh object literal every render would
+ * mean re-applying this on every frame-triggered re-render.
+ */
+const VIEW_MOUSE_BUTTONS = {
+  LEFT: THREE.MOUSE.ROTATE,
+  MIDDLE: THREE.MOUSE.DOLLY,
+  RIGHT: THREE.MOUSE.PAN,
+} as const
 
-/** Stops orbit the instant the user releases the mouse (no lingering). */
-function CrispOrbitRestore({ orbitControlsRef }: { orbitControlsRef: React.RefObject<unknown> }) {
-  const { camera } = useThree()
-  const restoreOnNextFrame = useRef(false)
-  const positionOnEnd = useRef(new THREE.Vector3())
-  const targetOnEnd = useRef(new THREE.Vector3())
-  const endListenerAdded = useRef(false)
-
-  useFrame(() => {
-    const controls = getControls(orbitControlsRef)
-    if (!controls) return
-
-    if (!endListenerAdded.current) {
-      endListenerAdded.current = true
-      controls.addEventListener('end', () => {
-        positionOnEnd.current.copy(camera.position)
-        targetOnEnd.current.copy(controls.target)
-        restoreOnNextFrame.current = true
-      })
-    }
-
-    // Match StudioRoom controls: no damping, specific mouse buttons, screen-space panning
-    ;(controls as { enableDamping?: boolean; dampingFactor?: number }).enableDamping = false
-    ;(controls as { enableDamping?: boolean; dampingFactor?: number }).dampingFactor = 0
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(controls as any).mouseButtons = {
-      LEFT: THREE.MOUSE.ROTATE,
-      MIDDLE: THREE.MOUSE.DOLLY,
-      RIGHT: THREE.MOUSE.PAN,
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(controls as any).screenSpacePanning = true
-
-    controls.update()
-
-    if (restoreOnNextFrame.current) {
-      camera.position.copy(positionOnEnd.current)
-      controls.target.copy(targetOnEnd.current)
-      restoreOnNextFrame.current = false
-    }
-  })
-
-  return null
-}
-
-function StudioViewCameraControls({ wallConfig }: { wallConfig: WallConfig | null }) {
-  const orbitControlsRef = useRef<OrbitControlsType | null>(null)
+function StudioViewCameraControls({
+  wallConfig,
+  orbitControlsRef,
+}: {
+  wallConfig: WallConfig | null
+  orbitControlsRef: React.MutableRefObject<OrbitControlsType | null>
+}) {
   // Match StudioRoom camera layout and scaling logic so view mode feels identical
   const maxWallWidth = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.width)) : 8
-  const maxWallHeight = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.height)) : 8
+  const maxWallHeightInches = (wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.height)) : 8) * 12
 
   // Convert to inches (1 unit = 1 inch)
   const maxWallWidthInches = maxWallWidth * 12
-  const maxWallHeightInches = maxWallHeight * 12
 
   // Baseline room: 8ft wide, 8ft tall
   const baseWidthInches = 8 * 12
@@ -117,20 +76,15 @@ function StudioViewCameraControls({ wallConfig }: { wallConfig: WallConfig | nul
   // Aim slightly above mid-wall (where boards typically sit) so zoom goes toward the walls, not the floor.
   const targetHeight = Math.max(60, Math.min(maxWallHeightInches * 0.65, maxWallHeightInches)) || 60
 
-  // Axonometric view: position camera at diagonal angle with moderate elevation
-  const baseDistance = 110 * distanceScale
-  const elevationAngle = 35 * (Math.PI / 180) // 35 degrees elevation
-  const azimuthAngle = 45 * (Math.PI / 180)   // 45 degrees around (diagonal view)
-
-  // Calculate axonometric camera position
-  const horizontalDistance = baseDistance * Math.cos(elevationAngle)
-  const cameraHeight = targetHeight + (baseDistance * Math.sin(elevationAngle))
-  const cameraX = horizontalDistance * Math.sin(azimuthAngle)
-  const cameraZ = horizontalDistance * Math.cos(azimuthAngle)
+  // Load-time framing comes from the same helper the 'axon' preset flies back
+  // to, so "reset the view" lands exactly where the room opened rather than at
+  // a separately-maintained approximation of it.
+  const initial = getInitialRoomPose(
+    wallConfig ?? { walls: [{ width: 8, height: 8 }], layoutType: 'zigzag' }
+  )
 
   return (
     <>
-      <CrispOrbitRestore orbitControlsRef={orbitControlsRef} />
       <OrbitControls
         ref={orbitControlsRef}
         enableDamping={false}
@@ -143,18 +97,29 @@ function StudioViewCameraControls({ wallConfig }: { wallConfig: WallConfig | nul
         enablePan={true}
         enableRotate={true}
         enableZoom={true}
+        screenSpacePanning
+        mouseButtons={VIEW_MOUSE_BUTTONS}
         target={[0, targetHeight, 0]}
       />
       <PerspectiveCamera
         makeDefault
-        position={[cameraX, cameraHeight, cameraZ]}
-        fov={50}
+        position={[initial.position.x, initial.position.y, initial.position.z]}
+        fov={initial.fov}
+        // See StudioRoom's camera: a 0.1 near plane leaves only inches of
+        // depth precision at full zoom-out, which makes WallSystem's stacked
+        // floor/grid/ground planes flicker. Nothing is ever within 5 inches
+        // of the camera here either.
+        near={5}
+        // maxDistance below can exceed three.js's default far of 2000 on a
+        // large room, which clips boards away as you zoom out. Same formula
+        // StudioRoom uses.
+        far={maxDistance + maxWallWidthInches * layoutFactor + 1000}
       />
     </>
   )
 }
 
-export default function StudioViewPage() {
+function StudioViewPageInner() {
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -185,6 +150,32 @@ export default function StudioViewPage() {
   // empty array would re-introduce the empty-walls bug.
   const [loading, setLoading] = useState(!(initialCache?.boards && initialCache?.wallConfig))
   const [error, setError] = useState<string | null>(null)
+
+  /**
+   * Wall focus in the read-only room: double-click a wall to fly square-on to it
+   * with the rest of the room ghosted. There's no edit mode here, so this is the
+   * only thing a wall double-click does.
+   */
+  const orbitControlsRef = useRef<OrbitControlsType | null>(null)
+  const [focusedWall, setFocusedWall] = useState<FocusedWall | null>(null)
+  const [presetRequest, setPresetRequest] = useState<PresetRequest | null>(null)
+
+  const handlePreset = (preset: RoomCameraPreset) => {
+    // Counter-keyed so pressing the same preset twice re-frames both times.
+    setPresetRequest((prev) => ({ preset, key: (prev?.key ?? 0) + 1 }))
+    // A whole-room angle contradicts being focused on one wall.
+    setFocusedWall(null)
+  }
+
+  // Escape leaves focus, matching the editor.
+  useEffect(() => {
+    if (!focusedWall) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFocusedWall(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [focusedWall])
   // Phase 6.2: workspace id resolved from the room id in the URL. Used for
   // wall-config + view-counter calls which remain workspace-scoped.
   const [resolvedWorkspaceId, setResolvedWorkspaceId] = useState<string | null>(null)
@@ -326,17 +317,11 @@ export default function StudioViewPage() {
   useEffect(() => {
     const cached = getCachedStudioData(studioId, isDemo)
     if (cached?.boards?.length !== undefined) {
-      // Cache hydration intentionally synchronizes route state before the authoritative refetch.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBoards(cached.boards)
       setLoading(false)
       setError(null)
     }
-    // The existing fetch routine is declared below to keep related request logic together.
-    // eslint-disable-next-line react-hooks/immutability
     fetchBoards()
-    // Fetch identity is intentionally keyed to the room/demo inputs, not router object churn.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studioId, isDemo])
   
   // Open board from URL query param after boards are loaded
@@ -347,8 +332,6 @@ export default function StudioViewPage() {
       if (boardToOpen) {
         // Only update if it's a different board
         if (!selectedBoard || selectedBoard.id !== boardToOpen.id) {
-          // URL selection intentionally synchronizes the controlled lightbox state.
-          // eslint-disable-next-line react-hooks/set-state-in-effect
           setSelectedBoard(boardToOpen)
         }
       } else {
@@ -362,10 +345,10 @@ export default function StudioViewPage() {
       // Clear selection if no boardId in URL
       setSelectedBoard(null)
     }
-  }, [boards, searchParams, selectedBoard])
+  }, [boards, searchParams])
 
   useEffect(() => {
-    document.title = 'Studio View – pinspace'
+    document.title = 'Space View – pinspace'
   }, [])
 
   const fetchBoards = async () => {
@@ -413,8 +396,6 @@ export default function StudioViewPage() {
   // leaves the role null → no affordance. Never runs in demo mode.
   useEffect(() => {
     if (isDemo || !resolvedWorkspaceId || !user?.id) {
-      // Membership-derived permissions fail closed whenever identity or workspace scope disappears.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCurrentUserRole(null)
       return
     }
@@ -496,85 +477,47 @@ export default function StudioViewPage() {
 
   if (loading) {
     return (
-      <StudioShell label="Studio viewer loading">
-        <div className="flex h-screen flex-col bg-background text-text-primary overflow-hidden">
-          {/* Shimmer Header Bar */}
-          <div className="flex items-center justify-between border-b border-border bg-background-light px-4 py-3 sm:px-6">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-24 rounded-pinspace bg-background-light/20 animate-pulse" />
-              <div className="h-5 w-40 rounded bg-background-light/20 animate-pulse" />
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-background-light/10 animate-pulse" />
-              <div className="h-8 w-8 rounded-full bg-background-light/10 animate-pulse" />
-              <div className="h-8 w-20 rounded-pinspace bg-background-light/20 animate-pulse" />
-            </div>
-          </div>
-
-          {/* Main Viewport Shimmer Canvas */}
-          <div className="flex-1 min-h-0 relative flex items-center justify-center p-6 bg-gradient-to-b from-pinspace-forest via-[#113830] to-[#0A2620]">
-            {/* Subtle Room Wall Outline Skeleton */}
-            <div className="absolute inset-8 rounded-xl border border-background-light/10 bg-background-light/5 backdrop-blur-sm pointer-events-none" />
-
-            {/* Center High-Contrast Loading Badge & Shimmer Card */}
-            <div className="relative z-10 flex flex-col items-center justify-center p-8 rounded-2xl bg-pinspace-forest/90 border border-background-light/20 shadow-2xl backdrop-blur-xl text-center max-w-sm w-full mx-4">
-              <div className="relative mb-4 flex items-center justify-center">
-                <div className="h-12 w-12 rounded-full border-[3px] border-background-light/20 border-t-pinspace-amber animate-spin" />
-                <span className="absolute text-xl select-none" aria-hidden="true">🏛️</span>
-              </div>
-
-              {/* High-Contrast Visible White/Cream Title & Subtitle */}
-              <h3 className="text-base font-bold text-background-light mb-1.5 tracking-wide">
-                Loading 3D Studio View...
-              </h3>
-              <p className="text-xs font-medium text-pinspace-cream/80 max-w-xs leading-relaxed">
-                Preparing the public room layout, walls, and boards.
-              </p>
-
-              {/* Shimmer Progress Indicator Bar */}
-              <div className="mt-5 w-full h-1.5 rounded-full bg-background-light/10 overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-pinspace-amber via-accent to-pinspace-cream w-3/4 rounded-full animate-pulse" />
-              </div>
-            </div>
-
-            {/* Floating Bottom Toolbar Skeleton */}
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2 rounded-full bg-pinspace-forest/80 border border-background-light/15 shadow-lg backdrop-blur-md">
-              <div className="h-7 w-16 rounded-full bg-background-light/15 animate-pulse" />
-              <div className="h-7 w-20 rounded-full bg-background-light/15 animate-pulse" />
-              <div className="h-7 w-7 rounded-full bg-background-light/15 animate-pulse" />
-            </div>
-          </div>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#3B6EF6' }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
+          <p className="text-white/90 font-medium">Loading space...</p>
         </div>
-      </StudioShell>
+      </div>
     )
   }
 
   if (error) {
     return (
-      <StudioShell label="Studio viewer unavailable">
-        <div className="flex h-full w-full items-center justify-center p-4">
-          <StatusState status="error" title="Studio unavailable" description={error} action={<Button type="button" onClick={() => window.location.reload()}>Try again</Button>} />
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#E7ECF5' }}>
+        <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
+          <div className="text-6xl mb-4">😕</div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Oops!</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-6 py-3 bg-[#3B6EF6] text-white rounded-lg hover:bg-[#2F5CD6] transition-colors font-medium"
+          >
+            Try Again
+          </button>
         </div>
-      </StudioShell>
+      </div>
     )
   }
 
   return (
-    <StudioShell label={roomName ? `${roomName} studio viewer` : 'Studio viewer'}>
-    <div className="relative h-full w-full overflow-hidden bg-primary-dark">
+    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#E7ECF5' }}>
       <DemoBanner />
 
-      {/* Animated gradient background effects (match studio room page) */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute -right-40 -top-40 h-96 w-96 rounded-full bg-primary/10 blur-3xl motion-safe:animate-pulse"></div>
-        <div className="absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-accent/10 blur-3xl motion-safe:animate-pulse"></div>
-      </div>
+      {/* Flat, neutral field behind the board grid — matches the room's own
+          ROOM_SKY_COLOR (see components/3d/WallSystem.tsx) instead of the
+          previous pulsing indigo blur orbs, which read as a different, older
+          design language than the rest of the app. */}
 
       {/* Top Left - Logo and Back (match studio room chrome, but back to network/gallery) */}
-      <div className="fixed left-[max(0.75rem,env(safe-area-inset-left))] top-[max(0.75rem,env(safe-area-inset-top))] z-40 flex max-w-[calc(100vw-5rem)] flex-wrap items-center gap-2 sm:max-w-[calc(100vw-14rem)]">
+      <div className="fixed top-4 left-4 z-40 flex items-center gap-2.5">
         <button
           onClick={() => router.push('/')}
-          className="min-h-11 rounded-pinspace border-transparent bg-primary px-4 py-2 font-bold text-pinspace-ink shadow-[0_4px_16px_rgba(255,200,0,0.35)] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="px-5 py-2.5 bg-[#3B6EF6] hover:bg-[#2F5CD6] text-white rounded-xl shadow-lg shadow-[#3B6EF6]/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
         >
           pinspace
         </button>
@@ -600,7 +543,7 @@ export default function StudioViewPage() {
             }
             router.push(base)
           }}
-          className="flex min-h-11 items-center gap-2 rounded-pinspace border border-border/40 bg-primary-dark/80 px-4 py-2 text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
         >
           <ArrowLeft className="w-4 h-4" />
           {searchParams.get('returnTo') === 'gallery' ? 'Gallery' : 'Network'}
@@ -612,7 +555,7 @@ export default function StudioViewPage() {
             viewports so the Network button stays reachable. */}
         {roomName && (
           <div
-            className="max-w-[45vw] truncate rounded-pinspace border border-border/40 bg-primary-dark/80 px-3 py-2 font-mono text-sm font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md sm:max-w-xs"
+            className="px-3 py-2 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 text-sm font-medium max-w-[40vw] sm:max-w-xs truncate"
             title={roomName}
           >
             {roomName}
@@ -621,36 +564,48 @@ export default function StudioViewPage() {
       </div>
 
       {/* Top-right status pill (view mode + board count) */}
-      <div className="fixed right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] z-40 flex items-center gap-2">
-        <div role="status" className="flex min-h-11 items-center gap-2 rounded-pinspace border border-border/40 bg-primary-dark/80 px-3 py-2 font-mono text-xs font-medium text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md sm:px-4 sm:text-sm">
-          <div className="h-2 w-2 rounded-full bg-accent motion-safe:animate-pulse" aria-hidden="true" />
-          <span className="hidden sm:inline">View mode</span>
-          <span className="opacity-80">{boards.length} {boards.length === 1 ? 'board' : 'boards'}</span>
+      <div className="fixed top-4 right-4 z-40 flex items-center gap-2.5">
+        <div className="px-4 py-2.5 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2">
+          <div className="w-2 h-2 bg-[#3B6EF6] rounded-full animate-pulse" />
+          <span>View Mode</span>
+          <span className="opacity-80">• {boards.length} boards</span>
         </div>
       </div>
 
       {/* Instructions Overlay */}
-      <div className="absolute inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 flex justify-center sm:inset-x-6">
-        <details className="max-h-[40dvh] w-full max-w-2xl overflow-y-auto rounded-pinspace border border-border bg-background-light/95 px-4 py-3 text-sm text-text-secondary shadow-[var(--shadow-raised)] backdrop-blur-md">
-          <summary className="min-h-11 cursor-pointer rounded-pinspace font-semibold text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Room controls and board list</summary>
-          <p className="mt-2">Use pointer or touch to rotate the room. Keyboard users can open any board from the list below.</p>
-          {boards.length > 0 && <ul className="mt-3 grid gap-2 sm:grid-cols-2">{boards.map((board) => <li key={board.id}><button type="button" onClick={() => handleBoardClick(board)} className="min-h-11 w-full rounded-pinspace border border-border bg-background-light px-3 py-2 text-left font-medium text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">{board.title || 'Untitled board'}</button></li>)}</ul>}
-        </details>
+      <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10 bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full shadow-lg border border-gray-200">
+        <p className="text-sm text-gray-700">
+          <span className="font-semibold">💬 Click boards</span> to view comments
+          <span className="mx-3 text-gray-400">•</span>
+          <span className="font-semibold">Double-click a wall</span> to focus it
+          <span className="mx-3 text-gray-400">•</span>
+          <span className="font-semibold">Drag</span> to rotate camera
+        </p>
       </div>
 
       {/* Full-screen 3D model viewer overlay */}
       {modelViewerUrl && (
-        <Dialog open onOpenChange={(open) => { if (!open) setModelViewerUrl(null) }} title="3D model" description="Interactive model viewer. Use pointer, touch, or keyboard controls provided by the viewer." className="flex h-[min(90dvh,56rem)] max-w-6xl flex-col motion-reduce:transition-none [&>button.absolute]:h-11 [&>button.absolute]:w-11 [&>div.mt-5]:min-h-0 [&>div.mt-5]:flex-1">
-          <div className="h-full min-h-0 overflow-hidden rounded-pinspace bg-primary-dark">
+        <div className="fixed inset-0 z-50 bg-slate-900/90 flex flex-col">
+          <div className="flex items-center justify-between p-3 bg-white/10 border-b border-white/20">
+            <span className="text-white font-medium">3D Model</span>
+            <button
+              type="button"
+              onClick={() => setModelViewerUrl(null)}
+              className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium transition-colors"
+            >
+              Close
+            </button>
+          </div>
+          <div className="flex-1 min-h-0">
             <ModelViewer modelUrl={modelViewerUrl} />
           </div>
-        </Dialog>
+        </div>
       )}
 
       {/* 3D Canvas */}
-      <SceneErrorBoundary resetKey={studioId}>
       <Canvas
         shadows
+        dpr={[1, 2]}
         className="w-full h-full"
         gl={{
           shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap },
@@ -658,27 +613,42 @@ export default function StudioViewPage() {
           premultipliedAlpha: false,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
-        style={{ background: STUDIO_SCENE_BACKGROUND }}
+        style={{ background: ROOM_SKY_COLOR }}
       >
-        {/* Background matches wall color */}
-        <color attach="background" args={[STUDIO_SCENE_BACKGROUND]} />
-        
+        {/* Must match ROOM_SKY_COLOR/getRoomFogParams — see the comment on
+            those exports in components/3d/WallSystem.tsx. scene.background
+            (this) wins over the Canvas `style` above once WebGL paints; both
+            still have to agree with each other and with the fog color below,
+            or the ground plane's fade-out shows as a ring instead of a
+            horizon. */}
+        <color attach="background" args={[ROOM_SKY_COLOR]} />
+        {wallConfig && (() => {
+          const { fogNear, fogFar } = getRoomFogParams(wallConfig)
+          return <fog attach="fog" args={[ROOM_SKY_COLOR, fogNear, fogFar]} />
+        })()}
+
         {/* Lighting – match StudioRoom for consistent brightness and color */}
         {/* Ambient light - reduced for better shadow definition */}
         <ambientLight intensity={0.5} />
         
         {/* Main directional light - creates shadows and depth */}
-        <directionalLight 
-          position={[15, 20, 10]} 
-          intensity={1.2} 
+        {/* Key light. Matches the editor (see StudioRoom): the old [15,20,10]
+            sat BELOW the top of a 96" wall with a frustum too small to contain
+            a default room, so shadows truncated at a hard line partway across
+            the floor — and the same room looked different here than in the
+            editor. */}
+        <directionalLight
+          position={[400, 700, 300]}
+          intensity={1.2}
           castShadow
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
-          shadow-camera-far={500}
-          shadow-camera-left={-200}
-          shadow-camera-right={200}
-          shadow-camera-top={200}
-          shadow-camera-bottom={-200}
+          shadow-camera-near={1}
+          shadow-camera-far={2500}
+          shadow-camera-left={-700}
+          shadow-camera-right={700}
+          shadow-camera-top={700}
+          shadow-camera-bottom={-700}
           shadow-bias={-0.0001}
         />
         
@@ -689,18 +659,25 @@ export default function StudioViewPage() {
         <directionalLight position={[0, 25, 0]} intensity={0.4} />
         
         {/* Rim lighting for wall edges - enhances depth */}
-        <directionalLight position={[-8, 10, -12]} intensity={0.3} color={ENGINE_PALETTE.paper} />
-        <directionalLight position={[8, 10, 12]} intensity={0.3} color={ENGINE_PALETTE.paper} />
+        <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
+        <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
         
         {/* Hemisphere light for natural ambient */}
-        <hemisphereLight args={[ENGINE_PALETTE.paper, ENGINE_PALETTE.groundLight, 0.3]} />
+        <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
         
         {/* Wall System with Boards */}
         {wallConfig && (
           <WallSystem
             boards={boards}
             wallConfig={wallConfig}
-            onWallDoubleClick={() => {}} // No wall edit in view mode
+            // No wall EDIT in view mode — double-click focuses the wall instead.
+            onWallDoubleClick={(wallIndex, _dims, _pos, _rot, side) =>
+              // Nonce bumps so re-focusing the wall you're already on re-frames
+              // it rather than being a dead gesture after you've orbited away.
+              setFocusedWall((prev) => ({ wallIndex, side, nonce: (prev?.nonce ?? 0) + 1 }))
+            }
+            onFloorClick={focusedWall !== null ? () => setFocusedWall(null) : undefined}
+            dimmedExceptWall={focusedWall?.wallIndex ?? null}
             editingWall={null}
             onBoardClick={handleBoardClick}
             wallColor={wallColor}
@@ -719,9 +696,34 @@ export default function StudioViewPage() {
         ))}
         
         {/* Camera Controls - scaled by wall size; crisp stop on mouse release (no lingering) */}
-        <StudioViewCameraControls wallConfig={wallConfig} />
+        <StudioViewCameraControls wallConfig={wallConfig} orbitControlsRef={orbitControlsRef} />
+        {/* Drives preset flights and head-on wall focus. Also supplies the
+            crisp stop-on-release behaviour that used to live in a local
+            CrispOrbitRestore here — running both would have meant two useFrame
+            hooks writing camera position and target in the same frame. */}
+        <CameraController
+          orbitControlsRef={orbitControlsRef}
+          editingWall={null}
+          wallPosition={null}
+          wallRotation={0}
+          wallConfig={wallConfig}
+          focusedWall={focusedWall}
+          presetRequest={presetRequest}
+        />
       </Canvas>
-      </SceneErrorBoundary>
+
+      {/* Sits above the instructions pill below (absolute bottom-6, ~46px tall),
+          which is the only other bottom-centre element on this page. */}
+      <div
+        className="fixed left-0 right-0 z-40 pointer-events-none flex justify-center"
+        style={{ bottom: 84 }}
+      >
+        <RoomViewPresets
+          onPreset={handlePreset}
+          isFocused={focusedWall !== null}
+          onExitFocus={() => setFocusedWall(null)}
+        />
+      </div>
 
       {/* Lightbox Modal */}
       <LightboxModal
@@ -770,15 +772,15 @@ export default function StudioViewPage() {
           setSelectedBoard((prev) => (prev && prev.id === boardId ? { ...prev, title } : prev))
         }}
       />
-      {boards.length === 0 && (
-        <div className="pointer-events-none absolute inset-x-4 bottom-24 z-10 flex justify-center sm:bottom-28">
-          <div role="status" className="max-w-md rounded-pinspace border border-border/40 bg-primary-dark/85 px-4 py-3 text-center text-sm text-background-light shadow-[var(--shadow-raised)] backdrop-blur-md">
-            <p className="font-semibold">This room has no boards yet</p>
-            <p className="mt-1 text-background-light/75">The 3D space is ready, but there is no work to open yet.</p>
-          </div>
-        </div>
-      )}
     </div>
-    </StudioShell>
   )
 }
+
+export default function StudioViewPage() {
+  return (
+    <Suspense fallback={null}>
+      <StudioViewPageInner />
+    </Suspense>
+  )
+}
+

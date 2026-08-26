@@ -29,7 +29,7 @@ export async function GET(
     .maybeSingle()
 
   if (!room) {
-    return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+    return NextResponse.json({ error: 'Space not found' }, { status: 404 })
   }
 
   const { data: boards, error: boardsError } = await admin

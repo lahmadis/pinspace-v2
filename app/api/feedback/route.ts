@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
-import {
-  feedbackSubmitterIdentifier,
-  parseFeedbackPayload,
-  submitterHash,
-} from '@/lib/feedback/security'
+import { NOTIFY_EMAIL } from '@/lib/notifyEmail'
 
 /**
  * POST /api/feedback
@@ -13,58 +9,44 @@ import {
  *
  * Flow (durable-first): insert the row via the service-role client BEFORE sending
  * email, so feedback is never lost even if Resend bounces. Auth is OPTIONAL — we
- * capture the user id/email if a verified user exists, but unauthenticated feedback is
+ * capture the user id/email if a session exists, but unauthenticated feedback is
  * still accepted. If the email send fails we still return success (the row is the
  * backup) and only log the error server-side.
  */
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => null)
-    const payload = parseFeedbackPayload(body)
-    if (!payload.ok) {
-      return NextResponse.json({ error: payload.error }, { status: 400 })
+    const body = await request.json().catch(() => ({}))
+    const message = typeof body?.message === 'string' ? body.message.trim() : ''
+    const pageUrl = typeof body?.page_url === 'string' ? body.page_url : null
+
+    if (!message) {
+      return NextResponse.json({ error: 'Message is required' }, { status: 400 })
     }
-    const { message, pageUrl } = payload
 
     // Optional: capture who sent it, but never require auth.
     let userId: string | null = null
     let userEmail: string | null = null
     try {
-      const { data: { user } } = await (await supabaseServer()).auth.getUser()
-      if (user) {
-        userId = user.id
-        userEmail = user.email ?? null
+      const { data: { session } } = await (await supabaseServer()).auth.getSession()
+      if (session?.user) {
+        userId = session.user.id
+        userEmail = session.user.email ?? null
       }
     } catch {
-      // Ignore — feedback works even if optional identity verification fails.
+      // Ignore — feedback works even if we can't read a session.
     }
 
-    const rateLimitSecret = process.env.FEEDBACK_RATE_LIMIT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY
-    if (!rateLimitSecret) {
-      console.error('[feedback] No server-side secret is available for submitter hashing')
-      return NextResponse.json({ error: 'Feedback is temporarily unavailable' }, { status: 503 })
-    }
-
-    const identifier = feedbackSubmitterIdentifier(request, userId)
-    const hashedSubmitter = submitterHash(identifier, rateLimitSecret)
-
-    // 1. Durable backup and rate-limit check happen atomically in Postgres.
+    // 1. Durable backup first (bypasses RLS via service role).
     const { error: insertError } = await supabaseServiceRole()
-      .rpc('submit_feedback', {
-        p_message: message,
-        p_user_id: userId,
-        p_user_email: userEmail,
-        p_page_url: pageUrl,
-        p_submitter_hash: hashedSubmitter,
+      .from('feedback')
+      .insert({
+        message,
+        user_id: userId,
+        user_email: userEmail,
+        page_url: pageUrl,
       })
 
     if (insertError) {
-      if (insertError.message?.includes('feedback_rate_limited')) {
-        return NextResponse.json(
-          { error: 'Too many feedback submissions. Please try again in a few minutes.' },
-          { status: 429 }
-        )
-      }
       console.error('Failed to save feedback row:', insertError)
       return NextResponse.json({ error: 'Failed to save feedback' }, { status: 500 })
     }
@@ -101,9 +83,9 @@ export async function POST(request: Request) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'PinSpace <noreply@mail.pinspace3d.com>',
-            to: ['slahmadi04@gmail.com'],
-            subject: `PinSpace feedback — ${preview}`,
+            from: 'pinspace <noreply@mail.pinspace3d.com>',
+            to: [NOTIFY_EMAIL],
+            subject: `pinspace feedback — ${preview}`,
             html,
           }),
         })

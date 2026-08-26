@@ -1,47 +1,35 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { MessageSquarePlus } from 'lucide-react'
 
-import { Button, Dialog, StatusState } from '@/components/ui'
-
-const FEEDBACK_MESSAGE_MAX_LENGTH = 4000
-
+/**
+ * Floating "Report a bug / idea" button + modal. Self-contained: manages its own
+ * open/submit state and POSTs a single message to /api/feedback. Mounted once on
+ * the dashboard, fixed to the bottom-right corner so it's always reachable but
+ * out of the way. Uses the app's standard modal pattern (fixed inset-0 backdrop).
+ */
 export default function FeedbackButton() {
   const [open, setOpen] = useState(false)
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const closeTimerRef = useRef<number | null>(null)
 
-  useEffect(() => () => {
-    if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
-  }, [])
-
-  const setDialogOpen = (next: boolean) => {
-    if (!next && submitting) return
-    if (closeTimerRef.current !== null) {
-      window.clearTimeout(closeTimerRef.current)
-      closeTimerRef.current = null
-    }
-    setOpen(next)
-    if (!next) {
-      setError('')
-      setDone(false)
-    }
+  const close = () => {
+    setOpen(false)
+    setError('')
+    setDone(false)
   }
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (submitting) return
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
     const trimmed = message.trim()
     if (!trimmed) return
     setSubmitting(true)
     setError('')
     try {
-      const response = await fetch('/api/feedback', {
+      const res = await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -49,20 +37,16 @@ export default function FeedbackButton() {
           page_url: typeof window !== 'undefined' ? window.location.href : null,
         }),
       })
-      if (!response.ok) {
+      if (!res.ok) {
         setError('Something went wrong. Please try again.')
         return
       }
       setMessage('')
       setDone(true)
-      closeTimerRef.current = window.setTimeout(() => {
-        closeTimerRef.current = null
-        setOpen(false)
-        setError('')
-        setDone(false)
-      }, 1500)
+      // Briefly show the success state, then close.
+      setTimeout(() => close(), 1500)
     } catch {
-      setError('Something went wrong. Please try again.')
+      setError('Network error. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -73,64 +57,77 @@ export default function FeedbackButton() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] right-5 z-40 inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-background-light px-4 py-2 text-sm font-semibold text-text-primary shadow-[var(--shadow-raised)] transition-colors hover:border-accent hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-3.5 py-2.5 bg-white/85 border border-[#16181D]/10 text-[#5A5E6B] rounded-full shadow-md hover:shadow-lg hover:text-[#3B6EF6] hover:border-[#3B6EF6] transition-all text-sm font-semibold"
         aria-label="Report a bug or idea"
       >
-        <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
+        <MessageSquarePlus className="w-4 h-4" />
         <span className="hidden sm:inline">Report a bug / idea</span>
       </button>
 
-      <Dialog
-        open={open}
-        onOpenChange={setDialogOpen}
-        closeOnOutsideClick={!submitting}
-        hideCloseButton={submitting}
-        initialFocusRef={textareaRef}
-        title="Report a bug or idea"
-        description="Found a bug or have an idea? Tell us what happened. We read every message."
-      >
-        {done ? (
-          <StatusState status="success" title="Thanks — we received it." />
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-            <div>
-              <label htmlFor="feedback-message" className="mb-1 block text-sm font-semibold text-text-primary">
-                Feedback message
-              </label>
-              <textarea
-                ref={textareaRef}
-                id="feedback-message"
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                placeholder="What happened, or what would make pinspace better?"
-                rows={5}
-                maxLength={FEEDBACK_MESSAGE_MAX_LENGTH}
-                disabled={submitting}
-                aria-invalid={Boolean(error)}
-                aria-describedby={error ? 'feedback-error feedback-count' : 'feedback-count'}
-                className="min-h-36 w-full resize-y rounded-pinspace border border-border bg-background-light px-4 py-3 text-text-primary placeholder:text-text-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-              />
-              <p id="feedback-count" className="mt-1 text-right text-xs text-text-secondary">
-                {message.length.toLocaleString()} / {FEEDBACK_MESSAGE_MAX_LENGTH.toLocaleString()}
-              </p>
-            </div>
-            {error && <StatusState id="feedback-error" status="error" title={error} />}
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)} disabled={submitting}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                loading={submitting}
-                disabled={!message.trim()}
-                aria-label={submitting ? 'Sending feedback' : 'Submit feedback'}
-              >
-                {submitting ? 'Sending…' : 'Submit'}
-              </Button>
-            </div>
-          </form>
-        )}
-      </Dialog>
+      {open && (
+        <div
+          className="fixed inset-0 bg-[#16181D]/30 z-50 flex items-center justify-center p-4"
+          onClick={close}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-[0_30px_90px_rgba(22,24,29,0.3)] max-w-md w-full p-7"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {done ? (
+              <div className="text-center py-6">
+                <div className="text-3xl mb-2">✓</div>
+                <p className="text-[#16181D] font-bold">Thanks — got it!</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-lg font-extrabold text-[#16181D]">Report a bug / idea</h3>
+                  <button
+                    type="button"
+                    onClick={close}
+                    className="w-8 h-8 flex items-center justify-center rounded-full border border-[#16181D]/10 hover:border-[#3B6EF6] hover:text-[#3B6EF6] transition-colors"
+                    aria-label="Close"
+                  >
+                    <svg className="w-4 h-4 text-[#5A5E6B]" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+                      <path d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="text-sm text-[#5A5E6B] mb-4">
+                  Found a bug or have an idea? Tell us anything — we read every message.
+                </p>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <textarea
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="What's on your mind?"
+                    rows={5}
+                    className="w-full px-4 py-3 border border-[#16181D]/12 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3B6EF6] focus:border-transparent resize-none"
+                    autoFocus
+                  />
+                  {error && <p className="text-sm text-[#C2452D]">{error}</p>}
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={close}
+                      className="flex-1 px-4 py-2.5 border border-[#16181D]/12 text-[#5A5E6B] rounded-full hover:bg-[#16181D]/5 transition-colors font-semibold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submitting || !message.trim()}
+                      className="flex-1 px-4 py-2.5 bg-[#3B6EF6] text-white rounded-full hover:bg-[#16181D] disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold"
+                    >
+                      {submitting ? 'Sending…' : 'Submit'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </>
   )
 }

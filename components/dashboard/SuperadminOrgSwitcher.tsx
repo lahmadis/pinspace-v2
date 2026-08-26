@@ -4,8 +4,6 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Globe } from 'lucide-react'
 
-import { Select } from '@/components/ui'
-
 interface Org {
   id: string
   name: string
@@ -46,22 +44,18 @@ export function SuperadminOrgSwitcher() {
   if (!orgs || orgs.length === 0) return null
 
   return (
-    <div className="px-1 pb-1 pt-3">
-      <label
-        htmlFor="superadmin-organization-network"
-        className="mb-1.5 flex items-center gap-1.5 px-2 font-mono text-[0.68rem] font-semibold uppercase tracking-wide text-text-muted"
-      >
-        <Globe className="h-3.5 w-3.5" aria-hidden="true" />
-        Superadmin organization network
+    <div className="px-1 pt-2 pb-1">
+      <label className="flex items-center gap-1.5 px-2 text-[10px] font-bold uppercase tracking-wide text-[#8A8FA0] mb-1">
+        <Globe className="w-3 h-3" />
+        Superadmin · view org network
       </label>
-      <Select
-        id="superadmin-organization-network"
+      <select
         defaultValue=""
         onChange={(e) => {
           const id = e.target.value
           if (id) router.push(`/explore?org=${encodeURIComponent(id)}`)
         }}
-        className="text-sm"
+        className="w-full text-sm rounded-xl border border-[#16181D]/10 bg-white px-2.5 py-2 text-[#5A5E6B] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
       >
         <option value="" disabled>
           Select an organization…
@@ -71,7 +65,7 @@ export function SuperadminOrgSwitcher() {
             {org.name}
           </option>
         ))}
-      </Select>
+      </select>
     </div>
   )
 }

@@ -1,162 +1,183 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-
-import { Button, Card, Input, Skeleton, StatusState } from '@/components/ui'
+import Link from 'next/link'
+import { toast } from '@/lib/toast'
 import { useAuthSession } from '@/hooks/useAuthSession'
-
-function LoadingState() {
-  return (
-    <div role="status" aria-label="Loading space creation" className="min-h-dvh w-full bg-background text-text-primary animate-fade-in">
-      <header className="border-b border-border bg-background-light py-5">
-        <div className="mx-auto w-full max-w-[96rem] px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <Skeleton className="h-10 w-10 rounded-pinspace shrink-0" />
-            <div className="space-y-1.5 min-w-0">
-              <Skeleton className="h-4 w-24 rounded" />
-              <Skeleton className="h-8 w-64 rounded-pinspace" />
-            </div>
-          </div>
-        </div>
-      </header>
-      <div className="mx-auto w-full max-w-[96rem] space-y-5 px-4 py-8 sm:px-6 lg:px-8">
-        <span className="sr-only">Loading space creation</span>
-        <Card className="max-w-3xl space-y-4 p-5 sm:p-7"><Skeleton className="h-11 w-full" /><Skeleton className="h-24 w-full" /></Card>
-      </div>
-    </div>
-  )
-}
 
 export default function NewStudioPage() {
   const router = useRouter()
   const { status: authStatus } = useAuthSession()
+  const isLoaded = authStatus !== 'loading'
   const [loading, setLoading] = useState(false)
-  const [formData, setFormData] = useState({ name: '', description: '' })
-  const [error, setError] = useState('')
-  const submittingRef = useRef(false)
+  const [formData, setFormData] = useState({
+    name: '',
+    description: ''
+  })
 
   useEffect(() => {
-    if (authStatus === 'unauthenticated') router.push('/sign-in')
+    if (authStatus === 'unauthenticated') {
+      router.push('/sign-in')
+    }
   }, [authStatus, router])
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (submittingRef.current) return
-    const name = formData.name.trim()
-    if (!name) {
-      setError('Enter a space name')
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!formData.name.trim()) {
+      toast.error('Please enter a space name')
       return
     }
 
-    submittingRef.current = true
-    setLoading(true)
-    setError('')
     try {
+      setLoading(true)
+
+      // Create a workspace with type 'personal' for personal rooms
       const response = await fetch('/api/workspaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name,
+          name: formData.name.trim(),
           description: formData.description.trim() || null,
-          type: 'personal',
-        }),
+          type: 'personal' // Mark as personal room
+        })
       })
+
       const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Failed to create space')
-      const workspaceId = data.workspace?.id || data.id
-      if (!workspaceId) throw new Error('Space created but no workspace ID was returned')
-      router.push(`/workspace/${workspaceId}`)
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Failed to create space')
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create space')
+      }
+
+      // Phase 6.2: redirect to the rooms list, not directly into a studio.
+      // New workspaces start with one Main Room; user can rename or add more
+      // before entering a specific room.
+      router.push(`/workspace/${data.workspace?.id || data.id}`)
+    } catch (error) {
+      console.error('Error:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to create space')
     } finally {
-      submittingRef.current = false
       setLoading(false)
     }
   }
 
-  if (authStatus === 'loading') return <LoadingState />
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-blue-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600/20 border-t-indigo-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-dvh w-full bg-background text-text-primary">
-      <header className="border-b border-border bg-background-light py-5">
-        <div className="mx-auto w-full max-w-[96rem] px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/dashboard"
-              aria-label="Back to projects"
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-pinspace border border-border bg-background-light text-text-secondary shadow-xs transition-colors hover:bg-background-lighter hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Link href="/dashboard">
+              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                <svg className="w-5 h-5 text-gray-600" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+                  <path d="M15 19l-7-7 7-7"></path>
+                </svg>
+              </button>
             </Link>
-            <div className="min-w-0">
-              <span className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-text-secondary">
-                Personal studio
-              </span>
-              <h1 className="break-words text-2xl font-bold tracking-tight text-text-primary sm:text-3xl">
-                Create a personal space
-              </h1>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Create Personal Space</h1>
+              <p className="text-sm text-gray-600">Set up your individual studio space</p>
             </div>
           </div>
-          <p className="mt-2 text-sm text-text-secondary">
-            Set up a private 3D studio for boards, models, and portfolio work.
-          </p>
         </div>
-      </header>
+      </div>
 
-      <div className="mx-auto w-full max-w-[96rem] px-4 py-6 sm:px-6 lg:px-8">
-        <Card className="max-w-3xl p-5 sm:p-7">
-          <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+      {/* Main Content */}
+      <div className="max-w-2xl mx-auto px-6 py-12">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              Create a New Personal Space
+            </h2>
+            <p className="text-gray-600">
+              A personal space is your own 3D studio where you can organize and showcase your architecture work.
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Room Name */}
             <div>
-              <label htmlFor="room-name" className="mb-1.5 block text-sm font-semibold text-text-primary">Space name</label>
-              <Input
-                id="room-name"
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+                Space Name *
+              </label>
+              <input
+                type="text"
+                id="name"
                 value={formData.name}
-                onChange={(event) => {
-                  setFormData((current) => ({ ...current, name: event.target.value }))
-                  if (error === 'Enter a space name' || error === 'Enter a room name') setError('')
-                }}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 maxLength={100}
-                placeholder="e.g. Thesis experiments"
-                disabled={loading}
-                aria-invalid={error === 'Enter a space name' || error === 'Enter a room name'}
-                aria-describedby={error === 'Enter a space name' || error === 'Enter a room name' ? 'room-name-help room-form-error' : 'room-name-help'}
+                placeholder="e.g., Thesis Experiments, Summer Portfolio"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
+                required
               />
-              <p id="room-name-help" className="mt-1.5 text-sm text-text-secondary">Choose a clear name for your personal space.</p>
+              <p className="mt-2 text-sm text-gray-500">
+                Choose a name for your personal studio space
+              </p>
             </div>
 
+            {/* Description */}
             <div>
-              <label htmlFor="room-description" className="mb-1.5 block text-sm font-semibold text-text-primary">Description (optional)</label>
+              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
+                Description (Optional)
+              </label>
               <textarea
-                id="room-description"
+                id="description"
                 value={formData.description}
-                onChange={(event) => setFormData((current) => ({ ...current, description: event.target.value }))}
-                rows={4}
-                maxLength={500}
-                disabled={loading}
-                placeholder="Describe what this space is for…"
-                className="min-h-28 w-full resize-y rounded-pinspace border border-border bg-background-light px-3.5 py-2 text-text-primary placeholder:text-text-dim hover:border-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:bg-background-lighter"
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Describe what this space is for..."
+                rows={3}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
               />
             </div>
 
-            <div className="rounded-pinspace border border-border bg-primary-muted p-4 text-sm text-text-primary">
-              <p className="font-semibold">What happens next?</p>
-              <p className="mt-1 text-text-secondary">We create the workspace and its first space, then take you to the space list so you can review the setup before entering the 3D studio.</p>
+            {/* Info Box */}
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+              <div className="flex gap-3">
+                <div className="text-2xl">💡</div>
+                <div>
+                  <p className="text-sm text-indigo-900 font-medium mb-1">
+                    What happens next?
+                  </p>
+                  <ul className="text-sm text-indigo-800 space-y-1">
+                    <li>• A new 3D studio space will be created</li>
+                    <li>• You can add boards and organize your work</li>
+                    <li>• The space will appear in &quot;My Personal Spaces&quot; on your dashboard</li>
+                  </ul>
+                </div>
+              </div>
             </div>
 
-            {error && <StatusState id="room-form-error" status="error" title={error} />}
-
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <Link href="/dashboard" className="inline-flex min-h-11 items-center justify-center rounded-pinspace px-4 py-2 text-sm font-semibold text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Cancel</Link>
-              <Button type="submit" size="lg" loading={loading} aria-label={loading ? 'Creating space' : 'Create space'}>
-                {loading ? 'Creating space…' : 'Create space'}
-              </Button>
-            </div>
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={loading || !formData.name.trim()}
+              className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold text-lg shadow-md hover:shadow-lg"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  Creating Space...
+                </span>
+              ) : (
+                'Create Space'
+              )}
+            </button>
           </form>
-        </Card>
+        </div>
       </div>
     </div>
   )
 }
+

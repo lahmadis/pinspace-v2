@@ -2,14 +2,22 @@ import { useThree, useFrame } from '@react-three/fiber'
 import React, { useEffect, useLayoutEffect, useRef } from 'react'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
+import type { WallConfig } from '@/lib/wallLayout'
+import {
+  ROOM_DEFAULT_FOV,
+  getHeadOnPose,
+  getPresetPose,
+  getWallFocusPose,
+  type RoomCameraPreset,
+} from '@/lib/room/cameraViews'
 
 /**
- * The room's resting camera FOV — the single source of truth shared between the
- * <PerspectiveCamera> in StudioRoom and the exit swoosh below, so exiting edit
- * mode restores the exact FOV the room loads with (rather than leaving it at the
- * edit-mode value). StudioRoom imports this for its camera's `fov` prop.
+ * The room's resting camera FOV. Defined in lib/room/cameraViews.ts (where the
+ * preset math also needs it, without importing this component) and re-exported
+ * here so existing importers — StudioRoom's <PerspectiveCamera> `fov` prop —
+ * keep working from the same path.
  */
-export const ROOM_DEFAULT_FOV = 50
+export { ROOM_DEFAULT_FOV }
 
 function getControls(ref: React.RefObject<unknown> | null | undefined): OrbitControlsType | null {
   const r = ref?.current
@@ -92,6 +100,29 @@ export interface TraceStreamEntry {
   live: [number, number][] | null
 }
 
+/** A wall face the camera is framing head-on outside of edit mode. */
+export interface FocusedWall {
+  wallIndex: number
+  side: 'front' | 'back'
+  /**
+   * Bumped by the caller each time focus is (re-)requested, so double-clicking
+   * the wall you're already focused on re-frames it instead of doing nothing —
+   * which is what you want after orbiting away from it. Consumers that only
+   * dim (WallSystem) ignore this and read wallIndex.
+   */
+  nonce?: number
+}
+
+/**
+ * A request to fly to a named preset. `key` is bumped by the caller to re-fire
+ * the same preset (pressing "Axon" twice should re-centre both times), the same
+ * pattern `transitionKey` uses for re-entering a wall.
+ */
+export interface PresetRequest {
+  preset: RoomCameraPreset
+  key: number
+}
+
 interface CameraControllerProps {
   orbitControlsRef?: React.RefObject<unknown> | null
   editingWall: number | null
@@ -104,6 +135,23 @@ interface CameraControllerProps {
   isFollowing?: boolean
   /** Phase B.2: latest received presenter pose (read in the frame loop, never via state). */
   followPoseRef?: React.MutableRefObject<FollowPose | null>
+  /**
+   * Room geometry, needed to compute preset and wall-focus poses. Optional so
+   * callers that only use edit-mode framing (which carries its own wall pose in
+   * the props above) don't have to thread it through.
+   */
+  wallConfig?: WallConfig | null
+  /**
+   * Wall being framed head-on WITHOUT entering edit mode — the read-only focus
+   * state. Holds the camera square-on the way edit mode does — OrbitControls is
+   * switched off for the duration, because a head-on view you drift off at the
+   * first mouse move isn't one. The difference from `editingWall` is only that
+   * nothing here is editable. Ignored while `editingWall` is set, which
+   * outranks it.
+   */
+  focusedWall?: FocusedWall | null
+  /** Latest "fly to this preset" request; see PresetRequest. */
+  presetRequest?: PresetRequest | null
 }
 
 export function CameraController({ 
@@ -116,36 +164,46 @@ export function CameraController({
   onTransitionComplete,
   isFollowing = false,
   followPoseRef,
+  wallConfig = null,
+  focusedWall = null,
+  presetRequest = null,
 }: CameraControllerProps) {
   const { camera } = useThree()
   const SWOOSH_DURATION_SECONDS = 0.95
   const MAX_SWOOSH_STEP_SECONDS = 1 / 45
-  // Keep edit view close enough to comfortably place boards.
-  // Scale with wall width so large walls still frame well.
-  const MIN_EDIT_VIEW_DISTANCE_INCHES = 140
-  const MAX_EDIT_VIEW_DISTANCE_INCHES = 240
-  
+
   // Store the camera position before entering edit mode (so we can return to it)
   const savedCameraPosition = useRef<THREE.Vector3 | null>(null)
   const savedCameraTarget = useRef<THREE.Vector3 | null>(null)
-  
-  // Store default camera settings (used only on initial load if no saved position)
-  // With 1 unit = 1 inch scale, need much larger initial position
-  // Axonometric view: 35 degree elevation, 45 degree azimuth (diagonal view)
-  // This provides a clear view of all walls immediately
-  const baseDistance = 120 // 10ft away
-  const elevationAngle = 35 * (Math.PI / 180) // 35 degrees elevation
-  const azimuthAngle = 45 * (Math.PI / 180)   // 45 degrees around (diagonal view)
-  const horizontalDistance = baseDistance * Math.cos(elevationAngle)
-  const cameraHeight = 60 + (baseDistance * Math.sin(elevationAngle)) // ~129" high
-  const cameraX = horizontalDistance * Math.sin(azimuthAngle)
-  const cameraZ = horizontalDistance * Math.cos(azimuthAngle)
-  const defaultPosition = useRef(new THREE.Vector3(cameraX, cameraHeight, cameraZ))
-  const defaultTarget = useRef(new THREE.Vector3(0, 60, 0))
-  
+
+  // Fallback pose for exiting edit mode with nothing saved. Derived from the
+  // room's own geometry via the shared preset math, so it matches where the
+  // room actually loads; the hardcoded numbers that used to live here were a
+  // fourth, drifted copy of the axonometric framing. The literal fallback only
+  // applies when no wallConfig was threaded through (edit-only callers).
+  //
+  // Recomputed per render rather than held in a ref on purpose: wallConfig is
+  // commonly null on the first render and populated once the room loads, and a
+  // ref initialised on that first render would pin the fallback forever.
+  const defaultPose = wallConfig
+    ? getPresetPose('axon', wallConfig)
+    : { position: new THREE.Vector3(70, 129, 70), target: new THREE.Vector3(0, 60, 0), fov: ROOM_DEFAULT_FOV }
+
   // Track previous editing wall to detect enter/exit.
   const prevEditingWall = useRef<number | null>(null)
   const lastHandledTransitionKey = useRef<number>(-1)
+  // Preset requests and wall focus each fire once per change, not per render.
+  const lastHandledPresetKey = useRef<number>(-1)
+  const prevFocusedWallKey = useRef<string | null>(null)
+  /**
+   * True only once the focus effect has resolved a pose and aimed
+   * `targetTarget` at it. The frame loop must gate the camera hold on THIS, not
+   * on `focusedWall != null` — a focus request that can't resolve (wall deleted,
+   * wallConfig not loaded yet) would otherwise disable orbit and pin the camera
+   * on a stale target, which on a surface that never enters edit mode is the
+   * zero vector: locked, staring at the world origin.
+   */
+  const focusPoseArmed = useRef(false)
   const pendingAnimation = useRef(false)
   const targetTarget = useRef(new THREE.Vector3())
   const shouldNotifyOnComplete = useRef(false)
@@ -234,23 +292,11 @@ export function CameraController({
       }
       pendingAnimation.current = false
 
-      const wallWidthInches = (wallDimensions?.width ?? 8) * 12
-      const distance = THREE.MathUtils.clamp(
-        wallWidthInches * 1.35,
-        MIN_EDIT_VIEW_DISTANCE_INCHES,
-        MAX_EDIT_VIEW_DISTANCE_INCHES
-      )
-      const wallForward = new THREE.Vector3(
-        Math.sin(wallRotation),
-        0,
-        Math.cos(wallRotation)
-      ).normalize()
-      const offset = wallForward.multiplyScalar(distance)
-
-      const nextPosition = wallPosition.clone().add(offset)
-      nextPosition.y = wallPosition.y
-      const nextTarget = wallPosition.clone()
-      targetTarget.current.copy(wallPosition)
+      // Same head-on framing the read-only focus state uses, so a wall sits in
+      // frame identically whether you're editing it or just looking at it.
+      // wallRotation already carries the back-face half-turn from WallSystem.
+      const pose = getHeadOnPose(wallPosition, wallRotation, (wallDimensions?.width ?? 8) * 12)
+      targetTarget.current.copy(pose.target)
 
       const controls = getControls(orbitControlsRef)
       const fromTarget = controls ? controls.target.clone() : targetTarget.current.clone()
@@ -258,18 +304,18 @@ export function CameraController({
       beginSwoosh(
         camera.position.clone(),
         fromTarget,
-        nextPosition,
-        nextTarget,
+        pose.position,
+        pose.target,
         fromFov,
-        45,
+        pose.fov,
         true
       )
     } else if (exitingEditMode) {
       pendingAnimation.current = false
-      const returnPosition = savedCameraPosition.current || defaultPosition.current
-      const returnTarget = savedCameraTarget.current || defaultTarget.current
+      const returnPosition = savedCameraPosition.current || defaultPose.position
+      const returnTarget = savedCameraTarget.current || defaultPose.target
       const controls = getControls(orbitControlsRef)
-      const fromTarget = controls ? controls.target.clone() : defaultTarget.current.clone()
+      const fromTarget = controls ? controls.target.clone() : defaultPose.target.clone()
       const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : 45
       beginSwoosh(
         camera.position.clone(),
@@ -285,6 +331,78 @@ export function CameraController({
     prevEditingWall.current = editingWall
     lastHandledTransitionKey.current = transitionKey
   }, [editingWall, wallPosition, wallRotation, wallDimensions, camera, transitionKey, orbitControlsRef])
+
+  /**
+   * Fly to a named preset. Keyed rather than value-compared so pressing the same
+   * preset twice re-centres both times. Edit mode outranks this — its own
+   * framing is the whole point of being in edit mode — so a preset pressed while
+   * editing is ignored rather than queued.
+   */
+  useEffect(() => {
+    if (!presetRequest || !wallConfig) return
+    if (presetRequest.key === lastHandledPresetKey.current) return
+    lastHandledPresetKey.current = presetRequest.key
+    if (editingWall !== null) return
+
+    const pose = getPresetPose(presetRequest.preset, wallConfig)
+    const controls = getControls(orbitControlsRef)
+    const fromTarget = controls ? controls.target.clone() : pose.target.clone()
+    const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : ROOM_DEFAULT_FOV
+    beginSwoosh(camera.position.clone(), fromTarget, pose.position, pose.target, fromFov, pose.fov, false)
+    // wallConfig is read but deliberately not a dependency: it changes identity
+    // on every wall drag, and re-firing the swoosh mid-drag would yank the
+    // camera. The keyed request is the only trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetRequest, editingWall, camera])
+
+  /**
+   * Fly head-on to a focused wall — the same framing edit mode uses, and, since
+   * it's the same gesture, held the same way: the frame loop keeps the camera
+   * pinned and OrbitControls off for as long as focus lasts. Read-only, so you
+   * get the square-on view of the wall without the editing UI.
+   *
+   * Clearing focus deliberately does NOT fly the camera back. It leaves you
+   * looking at the wall you asked for, with control handed back — flying you
+   * somewhere else on exit would be a second unrequested camera move.
+   */
+  useEffect(() => {
+    // editingWall is part of the key, not just a guard below, so that any future
+    // path which sets it WITHOUT clearing focus still re-runs this effect and
+    // disarms. Relying on the guard alone made correctness conventional — it
+    // held only because the one enter-edit path happens to clear focus first —
+    // and the bug that convention hid (camera pinned to a stale target with
+    // orbit off, after exiting edit) is invisible until someone hits it.
+    const key = focusedWall
+      ? `${focusedWall.wallIndex}:${focusedWall.side}:${focusedWall.nonce ?? 0}:${editingWall ?? 'none'}`
+      : null
+    if (key === prevFocusedWallKey.current) return
+    prevFocusedWallKey.current = key
+
+    if (!focusedWall || !wallConfig || editingWall !== null) {
+      focusPoseArmed.current = false
+      return
+    }
+
+    const pose = getWallFocusPose(wallConfig, focusedWall.wallIndex, focusedWall.side)
+    if (!pose) {
+      // Wall deleted out from under a stale focus. Leave the camera alone
+      // rather than holding it on a wall that isn't there.
+      focusPoseArmed.current = false
+      return
+    }
+
+    // The frame loop re-aims at this every frame while focus holds, so it has
+    // to be the focused wall's centre and not whatever edit mode last set.
+    targetTarget.current.copy(pose.target)
+
+    const controls = getControls(orbitControlsRef)
+    const fromTarget = controls ? controls.target.clone() : pose.target.clone()
+    const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : ROOM_DEFAULT_FOV
+    beginSwoosh(camera.position.clone(), fromTarget, pose.position, pose.target, fromFov, pose.fov, false)
+    focusPoseArmed.current = true
+    // wallConfig intentionally omitted, same reason as the preset effect above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedWall, editingWall, camera])
 
   // Remove the 'end' listener when the component unmounts
   useEffect(() => {
@@ -381,7 +499,18 @@ export function CameraController({
     // isFollowing and re-enables input on the next frame — no stuck-disabled
     // state). The presenter cursor (B.3.1) is passive observation and does NOT
     // suppress the presenter's own controls.
-    controls.enabled = editingWall === null && !isAnimating.current && !isFollowing
+    //
+    // Wall focus holds the camera too. Flying square-on and then letting the
+    // very next mouse move drift off-axis isn't "head-on", it's a brief glance
+    // at head-on — and the point of the gesture is to READ the wall. Leaving
+    // focus (Escape, a floor click, or Exit focus) hands control straight back.
+    // Gated on the armed ref rather than the prop, and excluding follow mode:
+    // a follower whose camera is being lerped to the presenter's pose must not
+    // also have its aim overridden, or position follows while orientation
+    // doesn't.
+    const holdingFocus = focusPoseArmed.current && editingWall === null && !isFollowing
+    controls.enabled =
+      editingWall === null && !holdingFocus && !isAnimating.current && !isFollowing
     const c = controls as { enableDamping?: boolean }
     c.enableDamping = false
     controls.update()
@@ -392,7 +521,7 @@ export function CameraController({
       restoreOnNextFrame.current = false
     }
 
-    if (editingWall !== null && !isAnimating.current) {
+    if ((editingWall !== null || holdingFocus) && !isAnimating.current) {
       camera.lookAt(targetTarget.current)
       camera.up.set(0, 1, 0)
       camera.updateProjectionMatrix()

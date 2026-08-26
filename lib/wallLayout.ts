@@ -49,6 +49,17 @@ export interface WallConfig {
   textItems?: WallTextItem[]
   /** Floor models/tables persisted alongside geometry. */
   tables?: FloorTable[]
+  /**
+   * The floor slab, as its own surface.
+   *
+   * OPTIONAL ON PURPOSE. The floor used to be derived — literally the bounding
+   * box of the walls — so moving a wall outward dragged the floor with it and
+   * the two could never disagree. Rooms saved before this field exists still
+   * behave exactly that way, because `getFloorRect` falls back to the derived
+   * bounds when it's absent. Once a floor is set here it is independent: walls
+   * can sit off it, and resizing it does not move any wall.
+   */
+  floor?: FloorRect
   /** Optimistic-concurrency version stamped by the wall-config store. */
   version?: number
 }
@@ -208,6 +219,58 @@ export function getWallTransform(
   }
 
   return { x, z, rotationY, width, height }
+}
+
+/** The floor slab in world inches, centre + size. */
+export interface FloorRect {
+  centerX: number
+  centerZ: number
+  width: number
+  depth: number
+}
+
+/** Smallest floor we will store or draw, in inches. */
+export const FLOOR_MIN_INCHES = 24
+
+/**
+ * The room's floor, explicit if it has one and derived from the walls if not.
+ *
+ * Every consumer must go through this rather than calling calculateFloorBounds
+ * directly for floor purposes — that function answers "what do the walls span",
+ * which is a DIFFERENT question now that the two can disagree. It is still the
+ * right call for framing a camera around the walls themselves.
+ */
+export function getFloorRect(wallConfig: WallConfig): FloorRect {
+  const f = wallConfig.floor
+  if (
+    f &&
+    Number.isFinite(f.centerX) && Number.isFinite(f.centerZ) &&
+    Number.isFinite(f.width) && Number.isFinite(f.depth) &&
+    f.width >= FLOOR_MIN_INCHES && f.depth >= FLOOR_MIN_INCHES
+  ) {
+    return { centerX: f.centerX, centerZ: f.centerZ, width: f.width, depth: f.depth }
+  }
+  const b = calculateFloorBounds(wallConfig)
+  // A wall-less room has infinite/NaN bounds; give it a real slab to stand on.
+  if (!Number.isFinite(b.floorWidth) || !Number.isFinite(b.floorDepth) || b.floorWidth <= 0 || b.floorDepth <= 0) {
+    return { centerX: 0, centerZ: 0, width: 12 * 12, depth: 12 * 12 }
+  }
+  return {
+    centerX: b.floorCenterX,
+    centerZ: b.floorCenterZ,
+    width: Math.max(b.floorWidth, FLOOR_MIN_INCHES),
+    depth: Math.max(b.floorDepth, FLOOR_MIN_INCHES),
+  }
+}
+
+/** World-space extents of a floor rect, for unioning with wall bounds. */
+export function floorRectBounds(f: FloorRect) {
+  return {
+    minX: f.centerX - f.width / 2,
+    maxX: f.centerX + f.width / 2,
+    minZ: f.centerZ - f.depth / 2,
+    maxZ: f.centerZ + f.depth / 2,
+  }
 }
 
 export function calculateFloorBounds(wallConfig: WallConfig): {

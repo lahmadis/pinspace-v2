@@ -63,7 +63,7 @@ export async function POST(
 
     const workspaceId = (await params).id
     const body = await request.json().catch(() => ({}))
-    const nameResult = validateName(body?.name, { maxLength: 100, fieldLabel: 'Room name' })
+    const nameResult = validateName(body?.name, { maxLength: 100, fieldLabel: 'Space name' })
     if (!nameResult.ok) {
       return NextResponse.json({ error: nameResult.error }, { status: 400 })
     }
@@ -117,7 +117,7 @@ export async function POST(
 
     if (insertError || !room) {
       console.error('Error creating room:', insertError)
-      return NextResponse.json({ error: 'Failed to create room' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to create space' }, { status: 500 })
     }
 
     await seedDefaultWallConfig(workspaceId, room.id as string)

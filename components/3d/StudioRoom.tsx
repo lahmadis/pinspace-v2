@@ -3,29 +3,30 @@
 const isDev = process.env.NODE_ENV === 'development'
 const devLog = (...args: unknown[]) => { if (isDev) console.log(...args) }
 
-// TEMP diagnostic — always-on (NOT devLog-gated) tracing of placedBoards3D
-// rebuilds and the lightbox link read/write path. Remove once root-caused.
-const postrace = (...args: unknown[]) => {
-  console.log('[POSTRACE]', new Date().toISOString(), ...args)
-}
-
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { supabase } from '@/lib/supabase/client'
 import { Board, FloorTable } from '@/types'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
-import WallSystem from './WallSystem'
-import { SceneErrorBoundary } from './SceneErrorBoundary'
+import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from './WallSystem'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry } from './CameraController'
-import { LaserPointer } from './LaserPointer'
+import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry, type FocusedWall } from './CameraController'
+import RosterPanel from '@/components/room/RosterPanel'
+import UnfoldedView from '@/components/room/UnfoldedView'
+import PlanView, { PLAN_VIEW, PLAN_MARGIN } from '@/components/room/PlanView'
+import PresentationView from '@/components/room/PresentationView'
+import TwoDView from '@/components/room/TwoDView'
+import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
+import RevisionStrip, { type RoomView } from '@/components/room/RevisionStrip'
+import { deriveRoomStudents, type RoomStudent } from '@/lib/room/students'
 import { EditModeOverlay } from './EditModeOverlay'
 import { DraggableBoard } from './DraggableBoard'
 import { DraggableText } from './DraggableText'
 import { WallDropZone } from '@/components/3d/WallDropZone'
 import type { WallTextItem } from '@/lib/wallLayout'
 import type { WallConfigWriter } from '@/lib/wallConfigWriter'
+import { enqueueBoardWrite } from '@/lib/boardPositionWriteQueue'
 import RightCommentPanel from '@/components/RightCommentPanel'
 import LightboxModal from '@/components/LightboxModal'
 import { useBoardState } from './useBoardState'
@@ -37,10 +38,31 @@ import ModelViewer from './ModelViewer'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import { toast } from '@/lib/toast'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
-import { Dialog } from '@/components/ui'
-import { ENGINE_PALETTE } from './enginePalette'
 
-const STUDIO_SCENE_BACKGROUND = ENGINE_PALETTE.sceneNeutral
+
+/**
+ * Vertical space the view switcher and revision strip occupy at the bottom of
+ * the viewport. The 2D views inset by this so the strip is never covered.
+ */
+const REVISION_STRIP_CLEARANCE = 116
+/**
+ * How long a deleted board can be brought back with Ctrl+Z.
+ *
+ * The board vanishes immediately either way — this only holds the request that
+ * makes it permanent. Long enough to notice a mistake and reach for undo, short
+ * enough that the delete still feels like it happened. See handleBoardDelete
+ * for why an undo window is the only kind of delete-undo possible here.
+ */
+const DELETE_UNDO_WINDOW_MS = 6000
+
+/** A delete that has been applied locally but not yet sent. */
+interface PendingBoardDelete {
+  boardId: string
+  timer: ReturnType<typeof setTimeout>
+  restore: () => void
+  /** For the toast, captured before the board leaves local state. */
+  name: string
+}
 
 interface WallDimensions {
   height: number
@@ -100,8 +122,29 @@ interface StudioRoomProps {
   /** When provided, floor editor open state is controlled by the parent (e.g. header button). */
   floorEditorOpen?: boolean
   onFloorEditorOpenChange?: (open: boolean) => void
+  /**
+   * Which reading of the room is on screen. Controlled/uncontrolled like
+   * floorEditorOpen above: lifted so the page's menu beside Share can switch to
+   * 2D and Presentation, which no longer have tabs in the bottom strip. Omit
+   * both and the room keeps its own state exactly as before.
+   */
+  roomView?: RoomView
+  onRoomViewChange?: (view: RoomView) => void
+  /**
+   * Whether the floating roster is shown. Read-only from here — the menu
+   * beside Share owns it. Omit and the roster is always on, as before.
+   */
+  rosterOpen?: boolean
   /** 'tables' = place tables/models, 'walls' = move/rotate walls. */
   floorEditorMode?: 'tables' | 'walls'
+  /**
+   * Ask the page to switch the floor editor's mode.
+   *
+   * The mode is owned up there (it survives the editor closing), so the plan's
+   * two actions have to request it rather than set it. Without this, opening
+   * the editor from the plan would reuse whichever mode was last used.
+   */
+  onFloorEditorModeChange?: (mode: 'tables' | 'walls') => void
   /** Called when user updates wall positions/rotations in floor editor (walls mode). */
   /**
    * Local wall-config change. Persists via the page's debounced autosave unless
@@ -166,6 +209,12 @@ interface StudioRoomProps {
    * Phase B.3.1: presenter cursor. laserRef = latest received cursor world
    * position for followers to render; laserColor = the presenter's deterministic
    * dot color. (Broadcast is always-on while presenting — no activation flag.)
+   *
+   * laserRef is currently dormant: the parent page still pumps live "laser"
+   * broadcast packets into it every frame, but nothing in this file renders it
+   * any more — the dot depended on WebGL raycasting against wall meshes, which
+   * only exist in wall-edit mode now. Deferred pending a DOM re-implementation
+   * (see the room-rewrite plan), not an oversight.
    */
   laserRef?: React.MutableRefObject<LaserState | null>
   laserColor?: string
@@ -189,8 +238,6 @@ function SceneContent({
   studioId,
   boards: _boards,
   wallConfig,
-  commentNonce,
-  critDirty,
   othersEditingWalls,
   onBoardUpdate: _onBoardUpdate,
   onWallDoubleClick,
@@ -202,6 +249,7 @@ function SceneContent({
   editingWallBaseRotation,
   editingWallDimensions,
   onBoardPositionChange,
+  positionEpoch,
   onBoardSizePersisted,
   onBoardDelete,
   draggingFromSidebar,
@@ -214,6 +262,7 @@ function SceneContent({
   onDeselect,
   isWorkspaceMember,
   localBoards,
+  highlightedBoardIds,
   hoveredBoardId,
   onBoardHover,
   onBoardClick,
@@ -224,6 +273,7 @@ function SceneContent({
   onTextSelect,
   onTextDragEnd,
   onFloorClick,
+  dimmedExceptWall,
   onTableModelClick,
   orbitControlsRef,
   showEditUI,
@@ -240,6 +290,8 @@ function SceneContent({
   editingWallBaseRotation: number
   editingWallDimensions: WallDimensions | null
   onBoardPositionChange: (boardId: string, localX: number, localY: number, width?: number, height?: number) => void
+  /** Bumped by an undo/redo so boards accept the new position immediately. */
+  positionEpoch: number
   /** Mirrors a confirmed (server-acked) absolute size (inches) back into useBoardState.boards so post-edit-mode rendering sees it. */
   onBoardSizePersisted: (boardId: string, widthIn: number, heightIn: number) => void
   onBoardDelete: (boardId: string) => void
@@ -256,6 +308,7 @@ function SceneContent({
   onDeselect?: () => void
   isWorkspaceMember?: boolean
   localBoards: Board[]
+  highlightedBoardIds?: ReadonlySet<string>
   hoveredBoardId?: string | null
   onBoardHover?: (boardId: string | null) => void
   onBoardClick?: (board: Board) => void
@@ -266,6 +319,8 @@ function SceneContent({
   onTextSelect: (id: string | null) => void
   onTextDragEnd: (id: string, x: number, y: number) => void
   onFloorClick?: () => void
+  /** Wall index to keep at full strength while every other wall ghosts back; null = no dimming. */
+  dimmedExceptWall?: number | null
   onTableModelClick?: (modelUrl: string) => void
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   orbitControlsRef: React.RefObject<any>
@@ -275,12 +330,8 @@ function SceneContent({
   suppressCallouts: boolean
 }) {
   useThree()
-  const targetY = useMemo(() => {
-    const maxWallHeight = wallConfig?.walls?.length
-      ? Math.max(...wallConfig.walls.map((wall) => wall.height)) * 12
-      : 96
-    return Math.max(60, Math.min(maxWallHeight * 0.65, maxWallHeight)) || 60
-  }, [wallConfig])
+  const maxWallHeightRef = useRef<number>(96)
+  const [targetY, setTargetY] = useState<number>(48) // inches; focus point for zoom
   const sceneInitLoggedRef = useRef(false)
   
 
@@ -294,8 +345,6 @@ function SceneContent({
   useFrame(() => {
     const controlsObj = orbitControlsRef.current?.get ? orbitControlsRef.current.get() : orbitControlsRef.current
     if (controlsObj?.mouseButtons) {
-      // OrbitControls is an external mutable Three.js controller configured on each frame.
-      // eslint-disable-next-line react-hooks/immutability
       ;(controlsObj as { enableDamping?: boolean; dampingFactor?: number }).enableDamping = false
       ;(controlsObj as { enableDamping?: boolean; dampingFactor?: number }).dampingFactor = 0
       controlsObj.mouseButtons = {
@@ -314,29 +363,48 @@ function SceneContent({
       controlsObj.target.set(0, targetY, 0)
       controlsObj.update?.()
     }
-  }, [targetY, orbitControlsRef])
+  }, [targetY])
 
   // Removed aggressive wheel clamping; let OrbitControls zoom to cursor naturally
   
   return (
     <>
-      {/* Background matches wall color */}
-      <color attach="background" args={[STUDIO_SCENE_BACKGROUND]} />
+      {/* scene.background wins over the Canvas's DOM `style` background once
+          WebGL paints its first frame, so THIS is what actually has to match
+          the fog color for the ground plane's fade-out to read as a horizon
+          instead of a visible ring. The Canvas `style` value is just the
+          pre-paint fallback and should still match, but isn't the one doing
+          the work. */}
+      <color attach="background" args={[ROOM_SKY_COLOR]} />
       {/* Ambient light - reduced for better shadow definition */}
       <ambientLight intensity={0.5} />
       
-      {/* Main directional light - creates shadows and depth */}
-      <directionalLight 
-        position={[15, 20, 10]} 
-        intensity={1.2} 
+      {/* Main directional light - creates shadows and depth.
+          Position and shadow frustum are both well clear of the room rather
+          than fixed: at y=20 the light sat BELOW the top of a 96" wall, and a
+          ±200 frustum doesn't contain a default room (x −92..140, z −141..97)
+          once projected along the light direction — so shadows truncated at a
+          hard straight line partway across the floor. Outside a shadow
+          frustum three.js returns fully lit, so the symptom is a shadow that
+          simply stops, not a dark patch.
+
+          shadow-bias is coupled to shadow-camera-far: three.js applies it in
+          the shadow camera's LINEAR ortho depth, so -0.0001 is worth ~0.25" of
+          world offset at far=2500 but only ~0.05" at the old far=500.
+          Re-tightening far without raising the bias by the same factor brings
+          shadow acne back. */}
+      <directionalLight
+        position={[400, 700, 300]}
+        intensity={1.2}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
-        shadow-camera-far={500}
-        shadow-camera-left={-200}
-        shadow-camera-right={200}
-        shadow-camera-top={200}
-        shadow-camera-bottom={-200}
+        shadow-camera-near={1}
+        shadow-camera-far={2500}
+        shadow-camera-left={-700}
+        shadow-camera-right={700}
+        shadow-camera-top={700}
+        shadow-camera-bottom={-700}
         shadow-bias={-0.0001}
       />
       
@@ -347,16 +415,17 @@ function SceneContent({
       <directionalLight position={[0, 25, 0]} intensity={0.4} />
       
       {/* Rim lighting for wall edges - enhances depth */}
-      <directionalLight position={[-8, 10, -12]} intensity={0.3} color={ENGINE_PALETTE.paper} />
-      <directionalLight position={[8, 10, 12]} intensity={0.3} color={ENGINE_PALETTE.paper} />
+      <directionalLight position={[-8, 10, -12]} intensity={0.3} color="#ffffff" />
+      <directionalLight position={[8, 10, 12]} intensity={0.3} color="#ffffff" />
       
       {/* Hemisphere light for natural ambient */}
-      <hemisphereLight args={[ENGINE_PALETTE.paper, ENGINE_PALETTE.groundLight, 0.3]} />
+      <hemisphereLight args={['#ffffff', '#e5e7eb', 0.3]} />
       
       {/* Floor is now created dynamically in WallSystem based on wall configuration */}
       
       <WallSystem
         boards={localBoards}
+        highlightedBoardIds={highlightedBoardIds}
         // Hide the callout-count badges while a 2D panel covers the room — they
         // are z-60 DOM overlays and the panels are z-50, so they'd bleed onto it.
         suppressCallouts={suppressCallouts}
@@ -372,8 +441,8 @@ function SceneContent({
         highlightedBoardId={hoveredBoardId}
         onBoardHover={onBoardHover}
         onFloorClick={onFloorClick}
+        dimmedExceptWall={dimmedExceptWall}
         wallColor={wallColor}
-        refreshNonce={(commentNonce || 0) + (critDirty?.seq || 0)}
       />
 
       {/* Tables with optional 3D models on floor - click table to open model in viewer */}
@@ -420,6 +489,10 @@ function SceneContent({
                 onDeselect()
               }
             }}
+            // Empty space ON the wall is still the wall — consuming the double
+            // click here keeps it from reaching the canvas wrapper and dropping
+            // the user out of edit mode.
+            onDoubleClick={consumeDoubleClick}
             // Make sure this plane is behind boards by setting renderOrder
             renderOrder={-1}
           >
@@ -479,6 +552,7 @@ function SceneContent({
                   wallDimensions={editingWallDimensions}
                   side={editingWallSide}
                   initialLocalPosition={localPos}
+                  positionEpoch={positionEpoch}
                   onDragEnd={onBoardPositionChange}
                   onSizePersisted={onBoardSizePersisted}
                   onDelete={onBoardDelete}
@@ -575,6 +649,13 @@ function SceneContent({
         const cameraX = horizontalDistance * Math.sin(azimuthAngle)
         const cameraZ = horizontalDistance * Math.cos(azimuthAngle)
         
+        maxWallHeightRef.current = maxWallHeightInches
+
+        // Keep target in sync for OrbitControls updates
+        if (targetY !== targetHeight) {
+          setTargetY(targetHeight)
+        }
+        
         return (
           <>
             {/* Set up the camera first so OrbitControls always receives a valid camera instance */}
@@ -582,6 +663,16 @@ function SceneContent({
               makeDefault
               position={[cameraX, cameraHeight, cameraZ]}
               fov={ROOM_DEFAULT_FOV}
+              // near, NOT the three.js default of 0.1. Depth precision goes as
+              // z²/(near · 2²⁴), so a 0.1" near plane leaves only ~8 inches
+              // resolvable at this room's maximum zoom-out — which is why the
+              // near-coplanar floor/grid/ground planes in WallSystem needed
+              // absurd separations to stop flickering, and would still have
+              // flickered on a large room. Raising near is the actual fix, and
+              // it's free here: nothing is ever within 5 inches of the camera.
+              // OrbitControls' own minDistance is 40+ inches even for the
+              // smallest room, and edit mode clamps to 140-240.
+              near={5}
               far={cameraFar}
             />
 
@@ -611,119 +702,13 @@ function SceneContent({
   )
 }
 
-/**
- * Phase B.2: presenter camera broadcaster. Rendered inside <Canvas> as a sibling
- * of CameraController. When the local user is the presenter AND not in edit mode,
- * it sends the camera pose + OrbitControls target (~10Hz) over the live broadcast
- * channel. Pure side-effect in useFrame — no state, no logging. self:false on the
- * channel means the presenter never receives (or follows) its own packets.
- */
-function PresenterCamBroadcast({
-  liveChannelRef,
-  isPresenter,
-  editingWall,
-  orbitControlsRef,
-}: {
-  liveChannelRef?: React.MutableRefObject<ReturnType<typeof supabase.channel> | null>
-  isPresenter: boolean
-  editingWall: number | null
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  orbitControlsRef: React.RefObject<any>
-}) {
-  const { camera } = useThree()
-  const sinceLastSend = useRef(0)
-  useFrame((_state, delta) => {
-    if (!isPresenter || editingWall !== null) return
-    const channel = liveChannelRef?.current
-    if (!channel) return
-    sinceLastSend.current += delta
-    if (sinceLastSend.current < 0.1) return
-    sinceLastSend.current = 0
-    const controls = orbitControlsRef.current?.get
-      ? orbitControlsRef.current.get()
-      : orbitControlsRef.current
-    const target = controls?.target
-    const r = (n: number) => Math.round(n * 1000) / 1000
-    channel.send({
-      type: 'broadcast',
-      event: 'cam',
-      payload: {
-        p: [r(camera.position.x), r(camera.position.y), r(camera.position.z)],
-        t: target ? [r(target.x), r(target.y), r(target.z)] : [0, 0, 0],
-      },
-    })
-  })
-  return null
-}
-
-/**
- * Phase B.3.1: presenter cursor broadcaster (replaces the B.3 hold-L laser).
- * Lives inside <Canvas>. While presenting and NOT in edit mode, it passively
- * raycasts the live pointer against the scene and broadcasts the world hit point
- * over the "laser" event at ≤15Hz (throttled). It does NOT gate on any key and
- * does NOT suppress the presenter's own orbit/clicks — it is pure observation.
- * Sends a single { off:true } when the pointer leaves the canvas (incl. when the
- * presenter opens the lightbox, whose DOM overlay steals the pointer — so the 3D
- * dot is never shown over the lightbox) or when presenting stops. Read-only
- * raycast against existing meshes; no state, no logging. (The dot mesh sets
- * raycast=null so it's skipped.)
- */
-function PresenterCursorBroadcast({
-  liveChannelRef,
-  isPresenter,
-  editingWall,
-}: {
-  liveChannelRef?: React.MutableRefObject<ReturnType<typeof supabase.channel> | null>
-  isPresenter: boolean
-  editingWall: number | null
-}) {
-  const { camera, scene, raycaster, pointer, gl } = useThree()
-  const sinceLastSend = useRef(0)
-  const wasActive = useRef(false)
-  const pointerOverRef = useRef(false)
-  // Track whether the pointer is over the canvas so we can stop broadcasting (and
-  // emit one {off}) the moment it leaves — e.g. onto the lightbox/toolbar overlay.
-  useEffect(() => {
-    const el = gl.domElement
-    const onEnter = () => { pointerOverRef.current = true }
-    const onLeave = () => { pointerOverRef.current = false }
-    el.addEventListener('pointerenter', onEnter)
-    el.addEventListener('pointerleave', onLeave)
-    return () => {
-      el.removeEventListener('pointerenter', onEnter)
-      el.removeEventListener('pointerleave', onLeave)
-    }
-  }, [gl])
-  useFrame((_state, delta) => {
-    const channel = liveChannelRef?.current
-    const active = isPresenter && editingWall === null && pointerOverRef.current
-    if (active && channel) {
-      sinceLastSend.current += delta
-      if (sinceLastSend.current >= 1 / 15) {
-        sinceLastSend.current = 0
-        raycaster.setFromCamera(pointer, camera)
-        const hit = raycaster.intersectObjects(scene.children, true)[0]
-        if (hit) {
-          const r = (n: number) => Math.round(n * 1000) / 1000
-          channel.send({
-            type: 'broadcast',
-            event: 'laser',
-            payload: { p: [r(hit.point.x), r(hit.point.y), r(hit.point.z)] },
-          })
-        }
-      }
-    }
-    if (!active && wasActive.current && channel) {
-      channel.send({ type: 'broadcast', event: 'laser', payload: { off: true } })
-    }
-    wasActive.current = active
-  })
-  return null
-}
-
-// Phase B.4: LaserPointer (the presenter cursor dot) moved to
-// components/3d/LaserPointer.tsx so the guest /crit page renders an identical dot
-// without importing this heavy module. Behavior unchanged; imported at the top.
+// PresenterCamBroadcast / PresenterCursorBroadcast (camera-pose + raycast-cursor
+// broadcast for the orbiting room view) and the LaserPointer dot they fed were
+// removed during the fixed-camera room rewrite, when the Canvas below stopped
+// mounting for browsing at all. The Canvas is unconditionally mounted again
+// now (orbit is the primary room view once more — see the render below), so
+// restoring presenter camera-pose broadcast is once again possible, but is
+// its own follow-up, not part of this change. See docs/audit-3d-room.md.
 
 export default function StudioRoom(props: StudioRoomProps) {
   const [user, setUser] = useState<User | null>(null)
@@ -802,6 +787,59 @@ export default function StudioRoom(props: StudioRoomProps) {
 
     checkMembership()
   }, [user, props.workspaceId])
+
+  // Phase 4 roster. Derived from the boards already in state — no extra fetch.
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
+
+  // Which of the the flat room views is showing. Room is the orbit-capable 3D
+  // Canvas; Unfolded and Plan are pure DOM/CSS, so switching to either from
+  // Room unmounts WebGL, and switching back remounts it.
+  const [roomViewInternal, setRoomViewInternal] = useState<RoomView>('room')
+  const roomView = props.roomView !== undefined ? props.roomView : roomViewInternal
+  const setRoomView = useCallback(
+    (view: RoomView) => {
+      props.onRoomViewChange?.(view)
+      if (props.roomView === undefined) setRoomViewInternal(view)
+    },
+    [props.onRoomViewChange, props.roomView]
+  )
+
+  // Read-only here: the roster has no toggle of its own any more, so the menu
+  // beside Share is the only thing that opens and closes it. Defaults open, so
+  // a surface that never passes the prop behaves exactly as it did.
+  const rosterOpen = props.rosterOpen ?? true
+
+  const handleSelectStudent = useCallback((student: RoomStudent) => {
+    setSelectedStudentId((prev) => (prev === student.id ? null : student.id))
+  }, [])
+
+  /**
+   * Wall focus — camera held square-on to one wall with every other wall
+   * ghosted. Same framing and same camera hold as edit mode; the difference is
+   * that nothing is editable, which is why it's reachable on archived spaces
+   * and by users who can't edit walls.
+   */
+  const [focusedWall, setFocusedWall] = useState<FocusedWall | null>(null)
+
+
+  const handleExitFocus = useCallback(() => setFocusedWall(null), [])
+
+  /**
+   * Clicking someone's name plate on a 3D wall jumps to their sheets in the 2D
+   * archive — the shortcut for "I can see whose work this is, now let me read
+   * it" without hunting for them in a list first.
+   */
+  /**
+   * Clicking a wall in the plan takes you into the 3D space framed head-on to
+   * that wall — the plan answers "where is it", this is the "take me there".
+   * PlanView picks the side (the fuller face), since it's the thing that knows
+   * where each board sits; a plan drawn from above has no face of its own.
+   */
+  const handlePlanWallClick = useCallback((wallIndex: number, side: 'front' | 'back') => {
+    setFocusedWall((prev) => ({ wallIndex, side, nonce: (prev?.nonce ?? 0) + 1 }))
+    setRoomView('room')
+  }, [])
+
   const [editingWall, setEditingWall] = useState<number | null>(null)
   const [editingWallDimensions, setEditingWallDimensions] = useState<WallDimensions | null>(null)
   const [editingWallPosition, setEditingWallPosition] = useState<THREE.Vector3 | null>(null)
@@ -811,14 +849,27 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [cameraTransitionKey, setCameraTransitionKey] = useState(0)
   const [showEditUI, setShowEditUI] = useState(false)
   const [floorEditorOpenInternal, setFloorEditorOpenInternal] = useState(false)
+  /**
+   * Which layer the plan editor lets you grab. Walls draw in both, so this is a
+   * layer switch rather than two tools. Local rather than reusing
+   * props.floorEditorMode: that one drives the standalone modal, and the plan
+   * tab's layer shouldn't be yanked around by an unrelated modal open.
+   */
+  const [planEditMode, setPlanEditMode] = useState<'walls' | 'tables'>('walls')
+
+  /**
+   * May this person reshape the room? Gates whether PLAN is the live editor or
+   * the read-only drawing. Same condition the removed "Reconfigure walls"
+   * button carried: editing is what writes the wall-config blob, and handing
+   * the controls to someone whose writes would no-op is a trap.
+   */
+  const canEditRoomLayout = Boolean(props.canEditWalls) && !props.isArchived
   const floorEditorOpen = props.floorEditorOpen !== undefined ? props.floorEditorOpen : floorEditorOpenInternal
   const setFloorEditorOpen = useCallback(
     (open: boolean) => {
       props.onFloorEditorOpenChange?.(open)
       if (props.floorEditorOpen === undefined) setFloorEditorOpenInternal(open)
     },
-    // These two controlled/uncontrolled props are the intentional callback boundary.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [props.onFloorEditorOpenChange, props.floorEditorOpen]
   )
   const [modelViewerUrl, setModelViewerUrl] = useState<string | null>(null)
@@ -851,6 +902,11 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [compareBoardIds, setCompareBoardIds] = useState<string[]>([])
   const shiftPressedRef = useRef(false)
   
+  /** Deletes applied locally, waiting out their undo window. */
+  const pendingDeletesRef = useRef<PendingBoardDelete[]>([])
+  /** Late-bound flushPendingDeletes, for callers declared above it. */
+  const flushPendingDeletesRef = useRef<() => Promise<void>>(async () => {})
+
   // Keep a ref to the latest placedBoards3D to avoid stale closure issues
   const placedBoards3DRef = useRef(placedBoards3D)
   useEffect(() => {
@@ -897,11 +953,15 @@ export default function StudioRoom(props: StudioRoomProps) {
     applyBoardLinkLocal,
     applyBoardTitleLocal,
     deleteBoard,
+    stageBoardDelete,
+    commitBoardDelete,
     addTempBoard,
     replaceTempBoard,
     removeTempBoard,
     undo,
     redo,
+    positionEpoch,
+    apiToNormalized,
   } = useBoardState(
     props.boards,
     props.studioId,
@@ -914,8 +974,6 @@ export default function StudioRoom(props: StudioRoomProps) {
   // Sync tables when wall config loads or studio changes (strip blob URLs so GLTF never sees them)
   useEffect(() => {
     const configTables = (props.wallConfig as { tables?: FloorTable[] }).tables
-    // Local editor state intentionally mirrors a newly loaded external room config.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTables(sanitizeTables(configTables))
   }, [props.studioId, props.wallConfig, sanitizeTables])
 
@@ -924,8 +982,6 @@ export default function StudioRoom(props: StudioRoomProps) {
   // through here — last-writer-wins, same coarse behavior as tables.
   useEffect(() => {
     const raw = (props.wallConfig as { textItems?: WallTextItem[] }).textItems
-    // Local text editor state intentionally mirrors a newly loaded external room config.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTextItems(Array.isArray(raw) ? raw : [])
   }, [props.studioId, props.wallConfig])
 
@@ -934,8 +990,6 @@ export default function StudioRoom(props: StudioRoomProps) {
   // become the copy source next time a wall is opened.
   useEffect(() => {
     if (editingWall === null) {
-      // Selection is scoped to an edit session and must be retired when that session closes.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedTextId(null)
       clearBoardSelection()
     }
@@ -949,8 +1003,12 @@ export default function StudioRoom(props: StudioRoomProps) {
     setModelViewerUrl(modelUrl)
   }, [])
 
-  const handleFloorEditorSave = useCallback(() => {
-    setFloorEditorOpen(false)
+  /**
+   * Persist the floor/wall blob WITHOUT closing anything. Split out from
+   * handleFloorEditorSave because the plan tab hosts this editor inline, where
+   * there is no modal to dismiss — "Save & exit" there is just "Save".
+   */
+  const persistFloorConfig = useCallback(() => {
     // Save in background so user isn't stuck if the request hangs
     const tablesToSave = tables.map((t) => {
       const url = t.modelUrl ?? ''
@@ -1003,7 +1061,12 @@ export default function StudioRoom(props: StudioRoomProps) {
         toast.error(`Could not save studio model layout. ${result.error.message}`)
       }
     })()
-  }, [props.studioId, props.workspaceId, props.wallConfig, props.wallConfigWriter, props.canEditWalls, tables, textItems, setFloorEditorOpen])
+  }, [props.studioId, props.workspaceId, props.wallConfig, props.wallConfigWriter, props.canEditWalls, tables, textItems])
+
+  const handleFloorEditorSave = useCallback(() => {
+    setFloorEditorOpen(false)
+    persistFloorConfig()
+  }, [persistFloorConfig, setFloorEditorOpen])
 
   /**
    * Wall indices for the floor editor's board-safety guard. Just the indices —
@@ -1039,7 +1102,20 @@ export default function StudioRoom(props: StudioRoomProps) {
       expectedBoardCount: number,
     ): Promise<{ ok: boolean; message?: string; liveBoardCount?: number }> => {
       const roomId = props.studioId
+      // Settle any held deletes BEFORE the count below is judged against the
+      // server's. See flushPendingDeletes.
+      //
+      // Through a ref because that function is declared further down this
+      // component; naming it in this callback's dependency list would read it
+      // before initialization. It is assigned once after mount and this path
+      // is only reachable by user interaction.
       try {
+        // Inside the try: the caller (FloorEditorOverlay) wraps this in
+        // try/finally with no catch, so a rejection escaping here would leave
+        // its confirm dialog open with no way forward. It cannot reject today —
+        // commitBoardDelete swallows everything — which is exactly the kind of
+        // thing that stops being true quietly.
+        await flushPendingDeletesRef.current()
         const res = await fetch('/api/boards/reindex-after-wall-delete', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -1065,7 +1141,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             }
           }
           if (res.status === 403) {
-            return { ok: false, message: 'You do not have permission to delete a wall in this room.' }
+            return { ok: false, message: 'You do not have permission to delete a wall in this space.' }
           }
           if (data.partial) {
             // The delete committed and a later step failed. Saying "no changes
@@ -1086,8 +1162,6 @@ export default function StudioRoom(props: StudioRoomProps) {
         return { ok: false }
       }
     },
-    // Individual API props are the stable persistence boundary; the full props object would recreate the callback every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [props.studioId, props.onBoardUpdate]
   )
 
@@ -1255,14 +1329,10 @@ export default function StudioRoom(props: StudioRoomProps) {
     const currentPlaced = placedBoards3DRef.current
     const newMap = new Map<string, { x: number; y: number; width?: number; height?: number }>()
     const wallBoards = localBoards.filter(b => b.position?.wallIndex === editingWall && (b.position?.side || 'front') === editingWallSide)
-    postrace('placedBoards3D REBUILD FIRED', `wall=${editingWall}/${editingWallSide}`, `wallBoards=${wallBoards.length}`, `boardPositions.size=${boardPositions.size}`)
     wallBoards.forEach(board => {
         const isTemp = board.id.startsWith('temp-')
         const pos = boardPositions.get(board.id)
         const existing = currentPlaced.get(board.id)
-        const branch = pos ? 'USE_boardPositions' : existing ? 'KEEP_existing' : isTemp ? 'NEW_temp_center' : 'DROP'
-        const used = pos ?? existing ?? (isTemp ? { x: 0, y: 0, width: 0.3, height: 0.3 } : null)
-        postrace('  rebuild board', board.id, `isTemp=${isTemp}`, `branch=${branch}`, `existing=${existing ? `(${existing.x.toFixed(3)},${existing.y.toFixed(3)})` : 'none'}`, `boardPos=${pos ? `(${pos.x.toFixed(3)},${pos.y.toFixed(3)})` : 'none'}`, `USED=${used ? `(${used.x.toFixed(3)},${used.y.toFixed(3)})[${(used.width ?? 0).toFixed(3)}x${(used.height ?? 0).toFixed(3)}]` : 'none'}`)
         if (pos) {
           // boardPositions is the single source of truth for the live edit
           // session — for temp boards too. The old code force-pinned temp x/y
@@ -1291,14 +1361,15 @@ export default function StudioRoom(props: StudioRoomProps) {
   // page can broadcast it via presence. Additive — onEditModeChange is unchanged.
   useEffect(() => {
     props.onEditingWallChange?.(editingWall)
-    // The callback prop is listed explicitly; the full props object would resubscribe on unrelated presentation changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingWall, props.onEditingWallChange])
 
   /**
    * Walls whose board full-image textures have been pre-warmed in this session.
-   * Keyed `${wallIndex}-${side}`. Lives for the StudioRoom mount lifetime — no
-   * eviction, because the underlying useBoardTexture cache is also session-long.
+   * Keyed `${wallIndex}-${side}`. Lives for the StudioRoom mount lifetime and is
+   * never cleared. Note the underlying useBoardTexture cache DOES evict idle
+   * textures (LRU over refCount-0 entries), so a wall marked pre-warmed here may
+   * since have had its textures reclaimed; the worst case is the brief skeleton
+   * this pre-warm exists to avoid, i.e. the same cost as a cold wall.
    */
   const prefetchedWallsRef = useRef<Set<string>>(new Set())
 
@@ -1323,8 +1394,10 @@ export default function StudioRoom(props: StudioRoomProps) {
     }
   }, [localBoards])
 
-  // Enters 2D edit mode for a wall side. Fires on DOUBLE click only — a single
-  // click stays free for orbit/drag.
+  // Enters 2D edit mode for a wall side. Fires on DOUBLE click only; a single
+  // click is swallowed by the wall surface (WallSurface.handleClick) rather
+  // than left unhandled — orbit is unaffected either way, since it runs off
+  // pointer events, not clicks.
   const handleWallDoubleClick = (
     wallIndex: number,
     wallDimensions: WallDimensions,
@@ -1332,7 +1405,25 @@ export default function StudioRoom(props: StudioRoomProps) {
     rotation: number,
     side: 'front' | 'back'
   ) => {
-    if (props.isArchived) return
+    if (props.isArchived) {
+      // An archived room never enters edit mode, so without this the gesture
+      // would do nothing at all. Fall back to read-only focus: same head-on
+      // framing and dimming, no editing. Nonce bumps so re-focusing the same
+      // wall re-frames it rather than being a dead gesture.
+      setFocusedWall((prev) => ({ wallIndex, side, nonce: (prev?.nonce ?? 0) + 1 }))
+      return
+    }
+    // Not archived, so this double click is entering edit mode — which brings
+    // its own head-on camera and passes editingWall as the un-dimmed wall.
+    // Deliberately NOT also setting focusedWall: it would outlive the edit
+    // session and leave the room ghosted after exiting back to the overview.
+    //
+    // Any focus already running is cleared, because the two are alternative
+    // answers to "which wall am I looking at" and edit mode owns the camera
+    // while it's on. Leaving one set meant that arriving from a Plan-view wall
+    // click, editing, then exiting would fly to the saved overview pose and
+    // then immediately be re-aimed back at the wall with orbit off.
+    setFocusedWall(null)
     // Belt-and-suspenders prefetch for users who double-click without hovering
     // (touch, fast clickers, keyboard). Idempotent — handleWallHover early-
     // returns for already-prefetched walls.
@@ -1392,7 +1483,6 @@ export default function StudioRoom(props: StudioRoomProps) {
     devLog('🖼️ [StudioRoom] Total boards to render on', side, 'side:', newMap.size)
     setPlacedBoards3D(newMap)
   }
-
 
   const handleCameraTransitionComplete = () => {
     if (editingWall !== null) {
@@ -1494,18 +1584,61 @@ export default function StudioRoom(props: StudioRoomProps) {
     setCompareBoardIds((prev) => (
       prev.length > 1 && prev.includes(board.id) ? prev : []
     ))
-    // [POSTRACE] what board object the lightbox reads on open — note whether
-    // the passed board and the current localBoards entry agree on linkUrl.
-    const fromArray = localBoards.find(b => b.id === board.id)
-    postrace('lightbox OPEN', board.id, `passedBoard.linkUrl=${JSON.stringify(board.linkUrl)}`, `localBoards[].linkUrl=${JSON.stringify(fromArray?.linkUrl)}`, `sameRef=${fromArray === board}`)
     setLightboxBoard(board)
   }
 
+  // Roster rows and the selected student's board ids, both derived from the
+  // boards already in state so the panel costs no extra fetch.
+  const roomStudents = useMemo(() => deriveRoomStudents(localBoards), [localBoards])
+  const highlightedBoardIds = useMemo(() => {
+    // Roster selection is the only thing driving the wall-outline highlight.
+    if (!selectedStudentId) return undefined
+    const student = roomStudents.find((s) => s.id === selectedStudentId)
+    return student ? new Set(student.boardIds) : undefined
+  }, [selectedStudentId, roomStudents])
+
   // Lightbox-only slideshow order (boards.sort_order). A SEPARATE sorted copy —
   // localBoards itself is untouched and keeps feeding WallSystem, the 2D editor
-  // and the sidebar in server order. Both the arrows below and the counter
-  // inside the modal must read THIS array or they'd disagree.
-  const lightboxBoards = useMemo(() => orderBoardsForLightbox(localBoards), [localBoards])
+  // and the sidebar in server order. Both the arrows and the counter inside the
+  // modal must read THIS array or they'd disagree.
+  //
+  // Scoped to one person while the 2D tab is showing THEIR sheets. Opening a
+  // board there is opening their submission, so the arrows should walk it and
+  // stop at its end; before this they walked all 18 sheets in the room, in wall
+  // order, so page two of somebody's three-sheet set was a classmate's work.
+  // Every other surface — the 3D room, the 2D people grid — really is browsing
+  // the whole room, and keeps the full list.
+  //
+  // Declared after highlightedBoardIds on purpose: that memo is what resolves
+  // the selected person to board ids, and reading it earlier would be a TDZ
+  // error rather than just untidy.
+  /**
+   * The room in slideshow order (boards.sort_order). ONE sorted copy that the
+   * lightbox, the 2D archive and the presentation tab all read, so "position 3"
+   * means the same sheet everywhere. localBoards itself stays in server order
+   * for WallSystem, the 2D editor and the sidebar.
+   */
+  const roomOrderedBoards = useMemo(() => orderBoardsForLightbox(localBoards), [localBoards])
+  const roomOrderIds = useMemo(() => roomOrderedBoards.map((b) => b.id), [roomOrderedBoards])
+
+  /**
+   * Reordering renumbers every board in the room, so the API allows it for the
+   * workspace owner or a superadmin only — canReorderBoards carries that answer
+   * down. Gating the UI on the same flag keeps a student from dragging a card
+   * into a slot the server will refuse.
+   */
+  const canReorderSlideshow = !props.isArchived && !!props.canReorderBoards
+
+  const lightboxScopedToStudent = roomView === '2d' && !!highlightedBoardIds
+  const lightboxBoards = useMemo(
+    () =>
+      // Filtering an already-sorted array keeps its order, so there is no
+      // second sort here and no way for the two to disagree.
+      lightboxScopedToStudent && highlightedBoardIds
+        ? roomOrderedBoards.filter((b) => highlightedBoardIds.has(b.id))
+        : roomOrderedBoards,
+    [roomOrderedBoards, lightboxScopedToStudent, highlightedBoardIds]
+  )
 
   /**
    * Persist a new slideshow position, then let the existing refetch path
@@ -1529,8 +1662,6 @@ export default function StudioRoom(props: StudioRoomProps) {
     } catch {
       return false
     }
-    // Individual API props are the stable persistence boundary; the full props object would recreate the callback every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.roomId, props.onBoardUpdate])
 
   const handleLightboxNavigate = (direction: 'prev' | 'next') => {
@@ -1570,8 +1701,6 @@ export default function StudioRoom(props: StudioRoomProps) {
   useEffect(() => {
     if (!props.isFollowing) return
     const id = props.followLightboxBoardId ?? null
-    // Follower lightbox state intentionally mirrors the external presenter state.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!id) { setLightboxBoard(null); return }
     setLightboxBoard((prev) => {
       if (prev?.id === id) return prev
@@ -1814,7 +1943,6 @@ export default function StudioRoom(props: StudioRoomProps) {
         height: height ?? existing?.height ?? 0.2,
       }
 
-      postrace('handleBoardPositionChange (drag/resize write)', `${rawBoardId}${boardId !== rawBoardId ? ` (aliased -> ${boardId})` : ''}`, `isTemp=${rawBoardId.startsWith('temp-')}`, `existing=${existing ? `(${existing.x.toFixed(3)},${existing.y.toFixed(3)})` : 'none'} -> final(${finalPosition.x.toFixed(3)},${finalPosition.y.toFixed(3)})[${finalPosition.width.toFixed(3)}x${finalPosition.height.toFixed(3)}]`)
 
       // 2) update the Map, the ref, and the React state. FIX 2c: if a stale temp
       // key for this board is still present (e.g. the swap's carry hasn't run in
@@ -1844,24 +1972,395 @@ export default function StudioRoom(props: StudioRoomProps) {
   )
 
 
-  const handleBoardDelete = useCallback(async (boardId: string) => {
-    try {
-      // Use centralized hook so local state + positions stay in sync
-      const success = await deleteBoard(boardId)
-      if (!success) return
+  /**
+   * Delete a board, with a window to take it back.
+   *
+   * Everything local happens NOW — the board leaves the wall on the same frame
+   * as the keypress — and the request that makes it permanent is held for a few
+   * seconds. Ctrl+Z inside that window cancels it and the board comes back.
+   *
+   * It has to work this way round. The DELETE endpoint destroys the board's
+   * storage objects along with the row, so once it has run there is nothing
+   * left to restore from: an undo AFTER the fact would need the image
+   * re-uploaded, and the browser no longer has the bytes. A delay is the only
+   * point at which "undo a delete" can mean anything.
+   *
+   * Failing to fire is the safe failure. If the timer never runs — the tab is
+   * closed, the page navigates — the board survives, which beats deleting
+   * something the user was still deciding about. flushPendingDeletes covers the
+   * ordinary exits anyway.
+   */
+  const handleBoardDelete = useCallback(
+    (boardId: string) => {
+      const board = localBoards.find(b => b.id === boardId)
+      const placed = placedBoards3DRef.current.get(boardId)
 
-      // Remove from placedBoards3D immediately so it disappears in 2D edit view
+      // Local removal first, and synchronously — this is what makes it instant.
+      const restoreBoard = stageBoardDelete(boardId)
       setPlacedBoards3D(prev => {
         const newMap = new Map(prev)
         newMap.delete(boardId)
         placedBoards3DRef.current = newMap
         return newMap
       })
-    } catch (error) {
-      console.error('Error deleting board:', error)
-      toast.error('Failed to delete board')
-    }
-  }, [deleteBoard])
+
+      const restore = () => {
+        restoreBoard()
+        if (placed) {
+          setPlacedBoards3D(prev => {
+            const newMap = new Map(prev)
+            newMap.set(boardId, placed)
+            placedBoards3DRef.current = newMap
+            return newMap
+          })
+        }
+      }
+
+      const timer = setTimeout(() => {
+        pendingDeletesRef.current = pendingDeletesRef.current.filter(p => p.boardId !== boardId)
+        void commitBoardDelete(boardId, restore)
+      }, DELETE_UNDO_WINDOW_MS)
+
+      pendingDeletesRef.current = [
+        ...pendingDeletesRef.current,
+        { boardId, timer, restore, name: board?.title || 'Board' },
+      ]
+    },
+    [localBoards, stageBoardDelete, commitBoardDelete]
+  )
+
+  /**
+   * Cancel the most recent delete that hasn't gone out yet.
+   *
+   * Returns whether it did anything, so the Ctrl+Z handler can fall through to
+   * position undo when there is no delete waiting.
+   */
+  const undoPendingDelete = useCallback((): boolean => {
+    const pending = pendingDeletesRef.current
+    if (pending.length === 0) return false
+    const last = pending[pending.length - 1]
+    clearTimeout(last.timer)
+    pendingDeletesRef.current = pending.slice(0, -1)
+    last.restore()
+    toast.success(`${last.name} restored`)
+    return true
+  }, [])
+
+  /* ------------------------------------------------------------------ *
+   * Unfolded-view editing
+   *
+   * The developed surface can now be rearranged, with the same commands as
+   * 2D wall edit: drag to move, arrows to nudge, a corner to resize, Delete
+   * to remove, Ctrl+Z / Ctrl+Y to take it back.
+   *
+   * It keeps its OWN move history rather than sharing useBoardState's.
+   * That stack records positions only — "where this board was", never "which
+   * wall it was on" — because in wall edit there is exactly one wall in hand
+   * and the question cannot arise. Unfolded shows every wall at once and its
+   * whole point is that you can drag a sheet from one to another, so undoing
+   * through that stack would restore a board's x and y while leaving it on the
+   * wall it was dragged to. Recording the wall alongside the position is what
+   * makes Ctrl+Z here mean what it looks like it means.
+   * ------------------------------------------------------------------ */
+
+  /**
+   * One reversible unfolded edit.
+   *
+   * A union rather than just a position, because the surface has two kinds of
+   * change and Ctrl+Z has to undo whichever one actually happened. When resize
+   * was missing from this stack, undoing a resize silently teleported the sheet
+   * to an older POSITION instead — the toolbar promised undo and delivered a
+   * different edit.
+   */
+  type UnfoldedEdit =
+    | {
+        kind: 'move'
+        boardId: string
+        wallIndex: number
+        /** Normalised -0.5..0.5, the form updateBoardPosition takes. */
+        x: number
+        y: number
+        side: 'front' | 'back'
+      }
+    | { kind: 'size'; boardId: string; widthIn: number; heightIn: number }
+
+  /**
+   * Indirection so undo can replay a resize.
+   *
+   * handleUnfoldedBoardResize is defined below applyUnfoldedEdit and depends on
+   * it transitively, so naming it directly would be a temporal-dead-zone crash
+   * at render (the deps array is evaluated before the later const exists).
+   */
+  const unfoldedResizeRef = useRef<
+    ((boardId: string, widthIn: number, heightIn: number, record?: boolean) => void) | null
+  >(null)
+
+  const unfoldedUndoRef = useRef<UnfoldedEdit[]>([])
+  const unfoldedRedoRef = useRef<UnfoldedEdit[]>([])
+  const UNFOLDED_MAX_UNDO = 50
+
+  /** Where a board is right now, in the form the undo stack stores. */
+  const unfoldedMoveSnapshot = useCallback(
+    (boardId: string): UnfoldedEdit | null => {
+      const board = localBoards.find((b) => b.id === boardId)
+      const pos = board?.position
+      if (!pos || pos.wallIndex == null) return null
+      return {
+        kind: 'move',
+        boardId,
+        wallIndex: pos.wallIndex,
+        x: apiToNormalized(pos.x),
+        y: apiToNormalized(pos.y),
+        side: (pos.side as 'front' | 'back') || 'front',
+      }
+    },
+    [localBoards, apiToNormalized]
+  )
+
+  /** What size a board is right now, for the same purpose. */
+  const unfoldedSizeSnapshot = useCallback(
+    (boardId: string): UnfoldedEdit | null => {
+      const board = localBoards.find((b) => b.id === boardId)
+      if (!board) return null
+      const { widthIn, heightIn } = getBoardSizeInches(board)
+      return { kind: 'size', boardId, widthIn, heightIn }
+    },
+    [localBoards]
+  )
+
+  const pushUnfoldedEdit = useCallback((entry: UnfoldedEdit) => {
+    unfoldedUndoRef.current = [
+      ...unfoldedUndoRef.current.slice(-(UNFOLDED_MAX_UNDO - 1)),
+      entry,
+    ]
+    unfoldedRedoRef.current = []
+  }, [])
+
+  /** Replay one entry, in whichever direction it is being replayed. */
+  const applyUnfoldedEdit = useCallback(
+    (entry: UnfoldedEdit) => {
+      if (entry.kind === 'move') {
+        void updateBoardPosition(
+          entry.boardId, entry.wallIndex, entry.x, entry.y, undefined, undefined, entry.side
+        )
+      } else {
+        // record:false — the caller has already moved this entry between the
+        // undo and redo stacks; recording again would push a duplicate and
+        // clear the redo stack the caller just wrote to.
+        unfoldedResizeRef.current?.(entry.boardId, entry.widthIn, entry.heightIn, false)
+      }
+    },
+    [updateBoardPosition]
+  )
+
+  /**
+   * Arrow-key nudges are coalesced into ONE undo entry per run.
+   *
+   * A held arrow key repeats at the OS rate, and every repeat used to push its
+   * own snapshot — about two seconds of holding filled the 50-entry stack, so
+   * Ctrl+Z could no longer reach anything from before the nudge and instead
+   * walked back through the nudge one inch at a time. A run of nudges on one
+   * board is a single edit; only the position it started from is worth keeping.
+   */
+  const nudgeRunRef = useRef<{ boardId: string; at: number } | null>(null)
+  const NUDGE_RUN_MS = 700
+
+  const handleUnfoldedBoardMove = useCallback(
+    (
+      boardId: string,
+      wallIndex: number,
+      x: number,
+      y: number,
+      side: 'front' | 'back',
+      source: 'drag' | 'nudge' | 'place' = 'drag'
+    ) => {
+      const now = Date.now()
+      const run = nudgeRunRef.current
+      const continuesRun =
+        source === 'nudge' && run?.boardId === boardId && now - run.at < NUDGE_RUN_MS
+      nudgeRunRef.current = source === 'nudge' ? { boardId, at: now } : null
+
+      // A board being placed for the first time has no prior position, so
+      // there is nothing to go back to and nothing is pushed. Undoing an ADD
+      // would be a delete, which is a different operation with its own window.
+      if (!continuesRun) {
+        const prior = unfoldedMoveSnapshot(boardId)
+        if (prior) pushUnfoldedEdit(prior)
+      }
+      void updateBoardPosition(boardId, wallIndex, x, y, undefined, undefined, side)
+    },
+    [unfoldedMoveSnapshot, pushUnfoldedEdit, updateBoardPosition]
+  )
+
+  /** The state an entry is being undone FROM, so redo can return to it. */
+  const unfoldedCurrent = useCallback(
+    (entry: UnfoldedEdit): UnfoldedEdit | null =>
+      entry.kind === 'move' ? unfoldedMoveSnapshot(entry.boardId) : unfoldedSizeSnapshot(entry.boardId),
+    [unfoldedMoveSnapshot, unfoldedSizeSnapshot]
+  )
+
+  const handleUnfoldedUndo = useCallback(() => {
+    // Deletes first, same order as the 3D room: the thing you just did is the
+    // thing Ctrl+Z should take back, and a held delete is always more recent
+    // than anything still on the edit stack.
+    if (undoPendingDelete()) return
+    const stack = unfoldedUndoRef.current
+    if (stack.length === 0) return
+    const entry = stack[stack.length - 1]
+    const current = unfoldedCurrent(entry)
+    unfoldedUndoRef.current = stack.slice(0, -1)
+    if (current) unfoldedRedoRef.current = [...unfoldedRedoRef.current, current]
+    // A fresh run, so the next nudge starts its own undo entry rather than
+    // being folded into the one just undone.
+    nudgeRunRef.current = null
+    applyUnfoldedEdit(entry)
+  }, [undoPendingDelete, unfoldedCurrent, applyUnfoldedEdit])
+
+  const handleUnfoldedRedo = useCallback(() => {
+    const stack = unfoldedRedoRef.current
+    if (stack.length === 0) return
+    const entry = stack[stack.length - 1]
+    const current = unfoldedCurrent(entry)
+    unfoldedRedoRef.current = stack.slice(0, -1)
+    if (current) unfoldedUndoRef.current = [...unfoldedUndoRef.current, current]
+    nudgeRunRef.current = null
+    applyUnfoldedEdit(entry)
+  }, [unfoldedCurrent, applyUnfoldedEdit])
+
+  /**
+   * Resize a sheet from the unfolded view.
+   *
+   * Size is absolute inches on the board record, not a fraction of the wall,
+   * so this is the PATCH the lightbox's size picker uses rather than the
+   * position PUT — passing inches through updateBoardPosition would write the
+   * legacy percentage fields, which nothing reads for size any more, and the
+   * sheet would snap back on the next load.
+   */
+  const handleUnfoldedBoardResize = useCallback(
+    (boardId: string, widthIn: number, heightIn: number, record = true) => {
+      const board = localBoards.find((b) => b.id === boardId)
+      const pos = board?.position
+      if (!board || !pos || pos.wallIndex == null) return
+
+      if (record) {
+        const prior = unfoldedSizeSnapshot(boardId)
+        if (prior) pushUnfoldedEdit(prior)
+      }
+
+      const priorW = board.boardWidthIn
+      const priorH = board.boardHeightIn
+      applyBoardSizeLocal(boardId, widthIn, heightIn)
+
+      const isMockBoard =
+        boardId.startsWith('temp-') || boardId.startsWith('demo-') || boardId.startsWith('sample-')
+      if (isMockBoard) return
+
+      // Same per-board queue as every other board write, so a resize and a move
+      // for the same sheet can't land out of order.
+      enqueueBoardWrite(boardId, () =>
+        fetch(`/api/boards/${boardId}/position`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({
+            wallIndex: pos.wallIndex,
+            x: pos.x,
+            y: pos.y,
+            boardWidthIn: widthIn,
+            boardHeightIn: heightIn,
+            side: pos.side || 'front',
+          }),
+        })
+      )
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        })
+        .catch((err) => {
+          console.error('❌ [StudioRoom] Unfolded resize failed:', err)
+          // Put the size back rather than leaving the screen claiming a change
+          // that never saved. Boards with no stored inches had none to restore,
+          // so those keep the optimistic value until the next load corrects it.
+          if (priorW != null && priorH != null) applyBoardSizeLocal(boardId, priorW, priorH)
+          toast.error('Could not resize that board.')
+        })
+    },
+    [localBoards, applyBoardSizeLocal, unfoldedSizeSnapshot, pushUnfoldedEdit]
+  )
+
+  useEffect(() => {
+    unfoldedResizeRef.current = handleUnfoldedBoardResize
+  }, [handleUnfoldedBoardResize])
+
+  /** Boards in this room that aren't on a wall yet — what the + button offers. */
+  const unplacedBoards = useMemo(
+    () => localBoards.filter((b) => b.position?.wallIndex == null),
+    [localBoards]
+  )
+
+  // Leaving the unfolded view ends its history, for the same reason wall edit
+  // clears its own: a stack of moves is only meaningful inside the session that
+  // made them, and replaying one later would move boards the user is no longer
+  // looking at.
+  useEffect(() => {
+    if (roomView === 'unfolded') return
+    unfoldedUndoRef.current = []
+    unfoldedRedoRef.current = []
+  }, [roomView])
+
+
+  /**
+   * Send every held delete immediately.
+   *
+   * Leaving the room, closing the tab, or leaving edit mode all end the window
+   * — the user has moved on, and a delete that quietly evaporates because they
+   * navigated is its own kind of surprise. commitBoardDelete uses a keepalive
+   * fetch, so these survive the page going away.
+   */
+  const flushPendingDeletes = useCallback(async () => {
+    const pending = pendingDeletesRef.current
+    if (pending.length === 0) return
+    pendingDeletesRef.current = []
+    // Awaitable, because callers that COUNT boards have to wait. Removing a
+    // wall sends the number of boards it expects to find, derived from local
+    // state — which is short by every board still inside its undo window. The
+    // server re-counts and 409s on a mismatch, so deleting a board and then
+    // removing its wall failed with "this wall changed while you were
+    // working". Settling the deletes first makes the two counts agree.
+    await Promise.all(pending.map((entry) => {
+      clearTimeout(entry.timer)
+      return commitBoardDelete(entry.boardId, entry.restore)
+    }))
+  }, [commitBoardDelete])
+
+  useEffect(() => {
+    flushPendingDeletesRef.current = flushPendingDeletes
+  }, [flushPendingDeletes])
+
+  // Listener and unmount-flush kept in SEPARATE effects with no dependencies.
+  //
+  // Combined, the cleanup ran on any change of flushPendingDeletes — stable
+  // today, so unmount-only in practice, but a future dependency would silently
+  // start committing held deletes on re-render. Reading through the ref makes
+  // that structurally impossible rather than true by luck.
+  useEffect(() => {
+    const onHide = () => void flushPendingDeletesRef.current()
+    window.addEventListener('pagehide', onHide)
+    return () => window.removeEventListener('pagehide', onHide)
+  }, [])
+
+  useEffect(() => () => void flushPendingDeletesRef.current(), [])
+
+  /**
+   * Leaving 2D edit mode also ends the window.
+   *
+   * Deletes only happen in edit mode, and Ctrl+Z for them is only reachable
+   * there — so once the user has left, the window is time they cannot use.
+   * Holding the request past that point just widens the gap in which the
+   * parent's board list and the database disagree.
+   */
+  useEffect(() => {
+    if (editingWall === null) void flushPendingDeletesRef.current()
+  }, [editingWall])
 
   const handleClearWall = useCallback(async () => {
     if (editingWall === null || editingWallSide == null) return
@@ -2073,18 +2572,37 @@ export default function StudioRoom(props: StudioRoomProps) {
         return
       }
 
+      // The unfolded view runs its own keyboard handler, on this same window.
+      // preventDefault does not stop a sibling listener on the same target, so
+      // without this both fire: one Ctrl+Z called undoPendingDelete() twice and
+      // brought back TWO deleted boards, and Escape cleared two selections.
+      // Unfolded owns these keys while it is up.
+      if (roomView === 'unfolded' && editingWall === null) return
+
       // Ctrl/Cmd+Z = undo, Ctrl/Cmd+Y = redo, Ctrl/Cmd+C = copy, Ctrl/Cmd+V
       // = paste. metaKey covers Cmd on macOS; the browser's native `paste`
       // event already fires on Cmd+V, so Cmd+V is handled by the window
       // listener below — we only handle Cmd+C here.
       if (e.ctrlKey || e.metaKey) {
-        if (e.key === 'z') {
+        // `e.key` is 'Z' with Shift held, so lowercase it — otherwise
+        // Cmd+Shift+Z, which is redo everywhere on macOS, silently did nothing.
+        const key = e.key.toLowerCase()
+        if (key === 'z' && !e.shiftKey) {
           e.preventDefault()
-          undo()
-        } else if (e.key === 'y') {
+          // A held delete is the most recent thing that happened, so it is what
+          // Ctrl+Z means. Only when there is none does this fall through to
+          // undoing a move or resize.
+          //
+          // Position undo is gated on edit mode. It writes to the server now,
+          // and the snapshot stack describes ONE wall's 2D layout — outside
+          // edit mode there is no wall in hand, and pressing Ctrl+Z while
+          // simply standing in the room would push a stale layout back to the
+          // database. Harmless when undo was local-only; not any more.
+          if (!undoPendingDelete() && editingWall !== null) undo()
+        } else if ((key === 'y' || (key === 'z' && e.shiftKey)) && editingWall !== null) {
           e.preventDefault()
           redo()
-        } else if (e.key === 'c') {
+        } else if (key === 'c') {
           e.preventDefault()
           // Delegates to handleCopy (which copies the whole selection) rather
           // than re-implementing a single-board copy inline, as it used to —
@@ -2110,16 +2628,19 @@ export default function StudioRoom(props: StudioRoomProps) {
         }
       }
 
-      // Escape = deselect or close comment panel
+      // Escape = deselect, close comment panel, or leave wall focus
       if (e.key === 'Escape') {
         clearBoardSelection()
         if (commentPanelBoard) setCommentPanelBoard(null)
+        // Only meaningful outside edit mode; edit mode leaves via its own
+        // save-and-exit path, and focus is suppressed while editing anyway.
+        if (editingWall === null) setFocusedWall(null)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedBoardId, editingWall, localBoards, handleBoardDelete, commentPanelBoard, undo, redo, handleCopy, clearBoardSelection])
+  }, [selectedBoardId, editingWall, roomView, localBoards, handleBoardDelete, commentPanelBoard, undo, redo, undoPendingDelete, handleCopy, clearBoardSelection])
 
   const [isDragOver, setIsDragOver] = useState(false)
   const dragCounterRef = useRef(0)
@@ -2210,21 +2731,30 @@ export default function StudioRoom(props: StudioRoomProps) {
     }
   }, [uploadFilesDirect])
 
+  const roomFog = useMemo(() => getRoomFogParams(props.wallConfig), [props.wallConfig])
+
   return (
     <>
       {/* Full-screen 3D model viewer overlay (keeps blob URLs valid) */}
       {modelViewerUrl && (
-        <Dialog
-          open
-          onOpenChange={(open) => { if (!open) setModelViewerUrl(null) }}
-          title="3D model"
-          description="Interactive model viewer. Use pointer, touch, or the keyboard controls provided by the viewer."
-          className="flex h-[min(90dvh,56rem)] max-w-6xl flex-col motion-reduce:transition-none [&>button.absolute]:h-11 [&>button.absolute]:w-11 [&>div.mt-5]:min-h-0 [&>div.mt-5]:flex-1"
-        >
-          <div className="h-full min-h-0 overflow-hidden rounded-pinspace bg-primary-dark">
+        <div className="fixed inset-0 z-[100] flex flex-col bg-white">
+          <div className="flex-none flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white/95">
+            <span className="text-sm font-medium text-gray-700">3D model</span>
+            <button
+              type="button"
+              onClick={() => setModelViewerUrl(null)}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+              aria-label="Close"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="flex-1 min-h-0">
             <ModelViewer modelUrl={modelViewerUrl} />
           </div>
-        </Dialog>
+        </div>
       )}
 
       {floorEditorOpen && (
@@ -2244,14 +2774,14 @@ export default function StudioRoom(props: StudioRoomProps) {
 
       {/* Drag-and-drop overlay — only shown when user is in wall edit mode and dragging files */}
       {isDragOver && showEditUI && (
-        <div className="pointer-events-none fixed inset-0 z-[200] flex items-center justify-center p-4" aria-hidden="true">
-          <div className="absolute inset-4 rounded-pinspace-lg border-4 border-dashed border-primary bg-primary/20" />
-          <div className="relative flex max-w-md flex-col items-center gap-3 rounded-pinspace-lg border border-border bg-background-light/95 px-6 py-8 text-center shadow-[var(--shadow-raised)] backdrop-blur-sm sm:px-10">
-            <svg className="h-12 w-12 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none">
+          <div className="absolute inset-4 rounded-2xl border-4 border-dashed border-indigo-400 bg-indigo-600/20" />
+          <div className="relative bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl px-10 py-8 flex flex-col items-center gap-3">
+            <svg className="w-12 h-12 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
-            <p className="text-xl font-semibold text-text-primary">Drop to add to wall</p>
-            <p className="text-sm text-text-secondary">JPG, PNG, or PDF · max 75 MB each</p>
+            <p className="text-indigo-700 font-semibold text-xl">Drop to add to wall</p>
+            <p className="text-indigo-400 text-sm">JPG, PNG, or PDF · max 75 MB each</p>
           </div>
         </div>
       )}
@@ -2292,65 +2822,54 @@ export default function StudioRoom(props: StudioRoomProps) {
           this a non-owner could add a label, watch it appear, and have it vanish
           on reload — the write no-ops silently. Don't offer what can't be saved. */}
       {showEditUI && editingWall !== null && props.canEditWalls && (
-        <section
-          aria-label="Wall text controls"
-          className="fixed bottom-[calc(max(1rem,env(safe-area-inset-bottom))+4rem)] left-[max(1rem,env(safe-area-inset-left))] z-50 flex max-h-[42dvh] w-[min(20rem,calc(100vw-2rem))] flex-col gap-2 overflow-y-auto rounded-pinspace sm:bottom-auto sm:left-64 sm:top-32"
-        >
+        <div className="fixed left-6 top-48 z-50 flex flex-col gap-2 w-56">
           <button
-            type="button"
             onClick={handleAddText}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-pinspace border border-pinspace-ink bg-primary px-4 py-2 text-sm font-semibold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+            className="px-4 py-2 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-lg text-sm font-medium flex items-center justify-center gap-2"
           >
-            <span className="text-lg leading-none" aria-hidden="true">＋</span>
+            <span className="text-lg leading-none text-indigo-600">＋</span>
             Add text
           </button>
 
           {(() => {
             const sel = textItems.find((t) => t.id === selectedTextId && t.wallIndex === editingWall)
             if (!sel) return null
-            const textInputId = `wall-text-${sel.id}`
             return (
-              <div className="flex flex-col gap-3 rounded-pinspace border border-border bg-background-light p-3 text-text-primary shadow-[var(--shadow-raised)]">
-                <label htmlFor={textInputId} className="text-sm font-semibold text-text-primary">Text</label>
+              <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-3 flex flex-col gap-2">
+                <label className="text-xs font-medium text-gray-500">Text</label>
                 <input
-                  id={textInputId}
                   value={sel.text}
                   onChange={(e) => handleTextContentChange(sel.id, e.target.value)}
                   placeholder="Label text"
                   maxLength={200}
-                  className="min-h-11 w-full rounded-pinspace border border-border bg-background-light px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
-                <span className="text-sm font-semibold text-text-primary">Font size in inches</span>
-                <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Font size in inches">
+                <label className="text-xs font-medium text-gray-500 mt-1">Font size (in)</label>
+                <div className="flex items-center gap-1">
                   <button
-                    type="button"
                     onClick={() => handleTextFontSizeChange(sel.id, Math.max(2, Math.round(sel.fontSize) - 2))}
-                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace border border-border bg-background-light text-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className="px-2 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50"
                     aria-label="Decrease font size"
                   >
                     −
                   </button>
-                  <output className="w-9 text-center text-sm tabular-nums" aria-live="polite">{Math.round(sel.fontSize)}</output>
+                  <span className="w-9 text-center text-sm tabular-nums">{Math.round(sel.fontSize)}</span>
                   <button
-                    type="button"
                     onClick={() => handleTextFontSizeChange(sel.id, Math.min(96, Math.round(sel.fontSize) + 2))}
-                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-pinspace border border-border bg-background-light text-sm hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className="px-2 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50"
                     aria-label="Increase font size"
                   >
                     ＋
                   </button>
-                  <div className="flex flex-wrap gap-1 sm:ml-1">
+                  <div className="flex gap-1 ml-1">
                     {[6, 12, 24, 48].map((sz) => (
                       <button
-                        type="button"
                         key={sz}
                         onClick={() => handleTextFontSizeChange(sel.id, sz)}
-                        aria-pressed={Math.round(sel.fontSize) === sz}
-                        aria-label={`Set font size to ${sz} inches`}
-                        className={`min-h-11 min-w-11 rounded-pinspace border px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                        className={`px-1.5 py-1 rounded text-xs border ${
                           Math.round(sel.fontSize) === sz
-                            ? 'border-pinspace-ink bg-primary text-pinspace-ink'
-                            : 'border-border bg-background-light text-text-secondary hover:bg-background-lighter'
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'border-gray-300 text-gray-600 hover:bg-gray-50'
                         }`}
                       >
                         {sz}
@@ -2359,30 +2878,193 @@ export default function StudioRoom(props: StudioRoomProps) {
                   </div>
                 </div>
                 <button
-                  type="button"
                   onClick={() => handleRemoveText(sel.id)}
-                  className="min-h-11 rounded-pinspace border border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger))] px-3 py-2 text-sm font-semibold text-white hover:bg-[rgb(var(--color-danger)/0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+                  className="mt-1 px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded text-sm hover:bg-red-100 transition-colors"
                 >
                   Remove text
                 </button>
               </div>
             )
           })()}
-        </section>
+        </div>
       )}
 
-      <div className="w-full h-screen">
-        <SceneErrorBoundary resetKey={props.studioId}>
-        <Canvas 
-          shadows 
-          gl={{ 
+      {/* Hidden in the 2D view, which is itself a list of everyone — a floating
+          roster there would both duplicate it and sit on top of the grid. */}
+      {editingWall === null && roomView !== '2d' && rosterOpen && (
+        <RosterPanel
+          students={roomStudents}
+          selectedStudentId={selectedStudentId}
+          onSelect={handleSelectStudent}
+        />
+      )}
+
+      {editingWall === null && roomView === 'unfolded' && (
+        <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
+          <UnfoldedView
+            boards={localBoards}
+            wallConfig={props.wallConfig}
+            students={roomStudents}
+            selectedStudentId={selectedStudentId}
+            onSelectStudent={handleSelectStudent}
+            onBoardClick={handleLightboxOpen}
+            // Same gate the wall-edit board tools use. A viewer who cannot
+            // change boards is never offered the Edit toggle at all, rather
+            // than being offered it and told no when they try to save.
+            canEdit={isWorkspaceMember}
+            onBoardMove={handleUnfoldedBoardMove}
+            onBoardResize={handleUnfoldedBoardResize}
+            onBoardDelete={handleBoardDelete}
+            onUndo={handleUnfoldedUndo}
+            onRedo={handleUnfoldedRedo}
+            unplacedBoards={unplacedBoards}
+            onPlaceBoard={(board, wallIndex, x, y) =>
+              handleUnfoldedBoardMove(board.id, wallIndex, x, y, 'front', 'place')
+            }
+          />
+        </div>
+      )}
+
+      {/* PLAN is the room editor now — there is no "Reconfigure walls" button
+          because arriving here IS reconfiguring. Anyone who can edit gets the
+          real editor (stretch/rotate/move walls, place models) drawn at the
+          plan's own scale; anyone who cannot still gets the read-only plan,
+          because a student needs to see the layout even though they can't
+          change it.
+
+          NOTE: this was the modal editor's only entry point, so the
+          floorEditorOpen branch below is now unreachable — nothing calls
+          setFloorEditorOpen(true) any more. Left mounted rather than ripped
+          out, since it is the same component this renders inline and is the
+          way back if the inline plan needs to fall back to a modal. */}
+      {editingWall === null && roomView === 'plan' && (
+        <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
+          {canEditRoomLayout ? (
+            <FloorEditorOverlay
+              embedded
+              wallConfig={props.wallConfig}
+              tables={tables}
+              setTables={setTables}
+              // Inline there is nothing to exit, so this saves and stays put.
+              onSaveAndExit={persistFloorConfig}
+              mode={planEditMode}
+              onModeChange={setPlanEditMode}
+              onWallConfigChange={props.onWallConfigChange}
+              boardWallIndices={boardWallIndices}
+              onWallRemoved={handleWallRemoved}
+              onPersistWallConfig={handlePersistWallConfig}
+              canDeleteWalls={props.canDeleteWalls ?? false}
+              // Only the pre-measurement fallback: embedded, the editor measures
+              // its own box and draws at that size so the plan fills the tab.
+              // PlanView's numbers, so the very first paint already matches the
+              // read-only plan's framing instead of jumping on the next frame.
+              viewWidth={PLAN_VIEW}
+              viewHeight={PLAN_VIEW}
+              padding={PLAN_MARGIN}
+            />
+          ) : (
+            <PlanView
+              wallConfig={props.wallConfig}
+              // Boards no longer draw on the plan; they are still passed because
+              // a wall click needs to know which FACE has the work on it.
+              boards={localBoards}
+              onWallClick={handlePlanWallClick}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Running order for the whole room. Deliberately NOT filtered by the
+          roster selection: a crit runs across people, and the point of this
+          tab is the sequence you present in. */}
+      {editingWall === null && roomView === 'presentation' && (
+        <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
+          <PresentationView
+            boards={roomOrderedBoards}
+            canReorder={canReorderSlideshow}
+            onReorder={handleReorderBoard}
+            onBoardClick={handleLightboxOpen}
+          />
+        </div>
+      )}
+
+      {editingWall === null && roomView === '2d' && (
+        <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
+          <TwoDView
+            // Slideshow order, not server order: this grid is now where that
+            // order is set, so it has to be what it shows.
+            boards={roomOrderedBoards}
+            students={roomStudents}
+            selectedStudentId={selectedStudentId}
+            // Plain setter, NOT handleSelectStudent: that one toggles a
+            // selection off when you re-pick the same person, which is right
+            // for the roster's highlight-a-wall behaviour but here would mean
+            // clicking a card sometimes bounces you straight back out.
+            onSelectStudent={(student) => setSelectedStudentId(student.id)}
+            onClearSelection={() => setSelectedStudentId(null)}
+            onBoardClick={handleLightboxOpen}
+            // Room-wide order, so a drag inside one person's sheets can be
+            // resolved against the slideshow it actually writes.
+            globalOrderIds={roomOrderIds}
+            canReorder={canReorderSlideshow}
+            onReorder={handleReorderBoard}
+          />
+        </div>
+      )}
+
+      {editingWall === null && (
+        <RevisionStrip
+          view={roomView}
+          // Switching tabs by hand drops any wall focus, so coming back to the
+          // space doesn't land you in a room that's still ghosted from a focus
+          // you set several views ago. handlePlanWallClick sets roomView
+          // directly rather than through here, so its focus survives.
+          onViewChange={(v) => { setRoomView(v); setFocusedWall(null) }}
+          isFocused={focusedWall !== null}
+          onExitFocus={handleExitFocus}
+        />
+      )}
+
+      {/* The orbit-capable 3D Canvas IS the Room view now — mounted whenever
+          roomView === 'room', not just while editing a wall. editingWall is
+          a substate within it (the camera swooshes in close and
+          DraggableBoard takes over that one wall's boards; every other wall
+          keeps rendering normally via WallSystem's BoardThumbnails) rather
+          than a separate top-level mode, which is also why OrbitControls'
+          enabled={editingWall === null} below (unchanged) now actually does
+          something: previously this Canvas only ever mounted with
+          editingWall already non-null, so that comparison was always false
+          and orbit was permanently disabled. Unfolded/Plan stay pure DOM/CSS,
+          unaffected by any of this. Wall-edit entry is WallSystem's
+          onWallDoubleClick (double-click a wall surface), wired below to
+          handleWallDoubleClick — unchanged. */}
+      {roomView === 'room' && (
+      <div
+        className="w-full h-screen"
+        // Double-click into the space to leave wall-edit mode — the same thing
+        // Save & Exit does. Every 3D object that handles a double click
+        // consumes the native event too (see consumeDoubleClick), so anything
+        // reaching this wrapper is by definition NOT the wall, its boards, or
+        // another wall. Bound only while editing so an ordinary double click in
+        // the space stays inert.
+        onDoubleClick={editingWall !== null ? handleEditComplete : undefined}
+      >
+        <Canvas
+          shadows
+          dpr={[1, 2]}
+          gl={{
             shadowMap: { enabled: true, type: THREE.PCFSoftShadowMap },
             alpha: true,
             premultipliedAlpha: false
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } as any}
-          style={{ background: STUDIO_SCENE_BACKGROUND }}
+          style={{ background: ROOM_SKY_COLOR }}
         >
+          {/* Must match ROOM_SKY_COLOR above and be a direct Canvas child —
+              R3F's attach="fog" resolves to whatever object is its literal
+              JSX parent, and only the scene's .fog is read by the renderer.
+              See getRoomFogParams' comment in WallSystem.tsx. */}
+          <fog attach="fog" args={[ROOM_SKY_COLOR, roomFog.fogNear, roomFog.fogFar]} />
           <CameraController
             orbitControlsRef={orbitControlsRef}
             editingWall={editingWall}
@@ -2393,19 +3075,9 @@ export default function StudioRoom(props: StudioRoomProps) {
             onTransitionComplete={handleCameraTransitionComplete}
             isFollowing={props.isFollowing}
             followPoseRef={props.followPoseRef}
+            wallConfig={props.wallConfig}
+            focusedWall={focusedWall}
           />
-          <PresenterCamBroadcast
-            liveChannelRef={props.liveChannelRef}
-            isPresenter={!!props.isPresenter}
-            editingWall={editingWall}
-            orbitControlsRef={orbitControlsRef}
-          />
-          <PresenterCursorBroadcast
-            liveChannelRef={props.liveChannelRef}
-            isPresenter={!!props.isPresenter}
-            editingWall={editingWall}
-          />
-          <LaserPointer laserRef={props.laserRef} color={props.laserColor ?? ENGINE_PALETTE.cursor} />
           <SceneContent
             {...props}
             orbitControlsRef={orbitControlsRef}
@@ -2416,6 +3088,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             // props.floorEditorOpen, which is undefined in uncontrolled use.
             suppressCallouts={lightboxBoard !== null || floorEditorOpen}
             localBoards={localBoards}
+            highlightedBoardIds={highlightedBoardIds}
             onWallDoubleClick={handleWallDoubleClick}
             onWallHover={handleWallHover}
             editingWall={editingWall}
@@ -2425,6 +3098,7 @@ export default function StudioRoom(props: StudioRoomProps) {
             editingWallBaseRotation={editingWallBaseRotation}
             editingWallDimensions={editingWallDimensions}
             onBoardPositionChange={handleBoardPositionChange}
+            positionEpoch={positionEpoch}
             onBoardSizePersisted={applyBoardSizeLocal}
             onBoardDelete={handleBoardDelete}
             draggingFromSidebar={draggingFromSidebar}
@@ -2447,12 +3121,16 @@ export default function StudioRoom(props: StudioRoomProps) {
             selectedTextId={selectedTextId}
             onTextSelect={setSelectedTextId}
             onTextDragEnd={handleTextPositionChange}
-            onFloorClick={undefined}
+            // Only bind a floor click while focused, so an ordinary click on the
+            // floor stays inert (and can't swallow an orbit) the rest of the time.
+            onFloorClick={focusedWall !== null ? handleExitFocus : undefined}
+            // Edit mode dims too — the wall being edited is the focused one.
+            dimmedExceptWall={editingWall ?? focusedWall?.wallIndex ?? null}
             onTableModelClick={handleTableModelClick}
           />
         </Canvas>
-        </SceneErrorBoundary>
       </div>
+      )}
 
       {/* Right Comment Panel */}
       <RightCommentPanel
@@ -2475,21 +3153,25 @@ export default function StudioRoom(props: StudioRoomProps) {
       onNavigate={handleLightboxNavigate}
       isEditMode={!props.isArchived}
       currentUserRole={props.currentUserRole ?? null}
-      canReorder={!props.isArchived && !!props.canReorderBoards}
+      // Withheld while the slideshow is scoped to one person. The reorder input
+      // takes a position in the ROOM's slideshow (boards.sort_order) but
+      // validates against allBoards.length, so against a 3-sheet subset "2"
+      // would read as second-of-three and land as second-of-eighteen. Sheet
+      // order is a room-level property; reorder it from the room-wide view.
+      canReorder={canReorderSlideshow && !lightboxScopedToStudent}
       onReorder={handleReorderBoard}
       liveChannelRef={props.liveChannelRef}
       isPresenter={!!props.isPresenter}
       viewportDriven={!!props.isFollowing && lightboxBoard !== null}
       viewportTargetRef={props.lbViewportRef}
       lbCursorRef={props.lbCursorRef}
-      cursorColor={props.laserColor ?? ENGINE_PALETTE.cursor}
+      cursorColor={props.laserColor ?? '#22d3ee'}
       critDirty={props.critDirty}
       traceStreamRef={props.traceStreamRef}
       onLinkSaved={(boardId, linkUrl) => {
         // Persisted server-side already; mirror into the local boards cache so
         // a later reopen reads the fresh link, and into the open snapshot so
         // navigation within the lightbox stays consistent this session.
-        postrace('onLinkSaved (StudioRoom)', boardId, `linkUrl=${JSON.stringify(linkUrl)}`)
         applyBoardLinkLocal(boardId, linkUrl)
         setLightboxBoard((prev) =>
           prev && prev.id === boardId ? { ...prev, linkUrl: linkUrl || undefined } : prev

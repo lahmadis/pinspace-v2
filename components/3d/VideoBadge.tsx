@@ -2,7 +2,7 @@
 
 import { Html } from '@react-three/drei'
 import { ExternalLink } from 'lucide-react'
-import { ENGINE_PALETTE } from './enginePalette'
+import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 
 interface VideoBadgeProps {
   /** The validated link to open. */
@@ -35,6 +35,11 @@ export default function VideoBadge({ url, width, height }: VideoBadgeProps) {
       zIndexRange={[60, 0]}
       style={{ pointerEvents: 'auto' }}
     >
+      {/* Wrapper, not the button: drei's inner div owns pointerEvents and
+          shrink-wraps the button, so the pill's rounded corners hit-test on the
+          div. Guarding only the button leaves those few pixels able to bubble
+          out and drop the user from wall-edit mode. */}
+      <div style={{ display: 'inline-flex' }} onDoubleClick={consumeDoubleClick}>
       <button
         type="button"
         title="Open link"
@@ -53,8 +58,8 @@ export default function VideoBadge({ url, width, height }: VideoBadgeProps) {
           padding: 0,
           borderRadius: '9999px',
           border: '1px solid rgba(255,255,255,0.85)',
-          background: 'rgba(15,23,42,0.78)',
-          color: ENGINE_PALETTE.paper,
+          background: 'rgba(22,24,29,0.82)',
+          color: '#ffffff',
           cursor: 'pointer',
           boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
         }}
@@ -62,6 +67,7 @@ export default function VideoBadge({ url, width, height }: VideoBadgeProps) {
         {/* Generic link icon */}
         <ExternalLink size={14} strokeWidth={2.25} />
       </button>
+      </div>
     </Html>
   )
 }

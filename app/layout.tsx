@@ -1,35 +1,22 @@
 import type { Metadata } from 'next'
-import { Figtree, JetBrains_Mono } from 'next/font/google'
 import * as Sentry from '@sentry/nextjs'
 import './globals.css'
 import Toaster from '@/components/Toaster'
 import { ProfileProviderWrapper } from '@/components/ProfileProviderWrapper'
 
-const figtree = Figtree({
-  subsets: ['latin'],
-  variable: '--font-figtree',
-  display: 'swap',
-})
-
-const jetBrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  variable: '--font-jetbrains-mono',
-  display: 'swap',
-})
-
 export function generateMetadata(): Metadata {
   return {
-    title: 'pinspace - Interactive Studio Network',
+    title: 'pinspace — pin up and critique design work in 3D',
     description: 'Explore studio work in immersive 3D spaces. Browse student projects, pin boards to virtual walls, and discover design work from programs across the country.',
     openGraph: {
-      title: 'pinspace - Interactive Studio Network',
+      title: 'pinspace — pin up and critique design work in 3D',
       description: 'Explore studio work in immersive 3D spaces.',
       type: 'website',
       siteName: 'pinspace',
     },
     twitter: {
       card: 'summary_large_image',
-      title: 'pinspace - Interactive Studio Network',
+      title: 'pinspace — pin up and critique design work in 3D',
       description: 'Explore studio work in immersive 3D spaces.',
     },
     other: {
@@ -45,7 +32,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${figtree.variable} ${jetBrainsMono.variable}`} suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <ProfileProviderWrapper>
           {children}
         </ProfileProviderWrapper>

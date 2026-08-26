@@ -1,28 +1,42 @@
+import { motion } from 'framer-motion'
+
 interface LoadingProps {
   message?: string
-  variant?: 'fullscreen' | 'compact'
 }
 
-export default function Loading({
-  message = 'Loading…',
-  variant = 'fullscreen',
-}: LoadingProps) {
+export default function Loading({ message = 'Loading...' }: LoadingProps) {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
-      className={variant === 'fullscreen'
-        ? 'fixed inset-0 z-50 flex min-h-screen flex-col items-center justify-center bg-background p-6 text-center'
-        : 'flex min-h-24 w-full items-center justify-center p-4 text-center'}
-    >
-      <div className="flex min-w-0 flex-col items-center gap-3">
-        <span
-          aria-hidden="true"
-          className="h-8 w-8 shrink-0 animate-spin rounded-full border-4 border-border border-t-accent motion-reduce:animate-none"
-        />
-        <p className="max-w-md text-sm font-medium text-text-secondary">{message}</p>
-      </div>
+    <div className="fixed inset-0 bg-background flex flex-col items-center justify-center z-50">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.3 }}
+        className="flex flex-col items-center gap-4"
+      >
+        {/* Spinner */}
+        <div className="relative w-16 h-16">
+          <motion.div
+            className="absolute inset-0 rounded-full border-4 border-[#3B6EF6]/30"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+          />
+          <motion.div
+            className="absolute inset-0 rounded-full border-4 border-transparent border-t-[#3B6EF6]"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          />
+        </div>
+
+        {/* Message */}
+        <motion.p
+          className="text-text-secondary text-sm"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+        >
+          {message}
+        </motion.p>
+      </motion.div>
     </div>
   )
 }

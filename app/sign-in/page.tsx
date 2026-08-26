@@ -3,12 +3,8 @@
 import { Suspense, useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Mail } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import PasswordInput from '@/components/ui/PasswordInput'
-import { safeRedirectPath } from '@/lib/security/safeRedirect'
-import { Button, Input, StatusState } from '@/components/ui'
-import { AuthLoading, AuthShell, fieldLabelClass, textLinkClass } from '@/components/auth/AuthShell'
 
 interface OrgMatch {
   id: string
@@ -30,6 +26,7 @@ type Step =
 function SignInInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const [mounted, setMounted] = useState(false)
   const [step, setStep] = useState<Step>('password')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -47,12 +44,14 @@ function SignInInner() {
   const hasRedirected = useRef(false)
 
   const institutionSlug = searchParams?.get('institution') ?? null
-  const redirectTo = safeRedirectPath(searchParams?.get('redirect'))
+  const redirectTo = searchParams?.get('redirect') ?? undefined
   const [orgName, setOrgName] = useState<string | null>(null)
   const [orgFetchDone, setOrgFetchDone] = useState(false)
 
+  useEffect(() => { setMounted(true) }, [])
+
   useEffect(() => {
-    if (!institutionSlug) return
+    if (!mounted || !institutionSlug) return
     supabase
       .from('organizations')
       .select('name')
@@ -63,7 +62,7 @@ function SignInInner() {
         setOrgFetchDone(true)
       })
       .catch(() => setOrgFetchDone(true))
-  }, [institutionSlug])
+  }, [mounted, institutionSlug])
 
   // After any successful sign-in: write org context, check profile, redirect
   const redirectAfterSignIn = useCallback(async (orgSlug?: string) => {
@@ -74,7 +73,7 @@ function SignInInner() {
       sessionStorage.setItem('pinspace_institution', orgSlug)
     }
 
-    const target = redirectTo
+    const target = redirectTo || '/dashboard'
     try {
       const res = await fetch('/api/user-profile', { cache: 'no-store' })
       const data = res.ok ? await res.json().catch(() => null) : null
@@ -272,8 +271,8 @@ function SignInInner() {
 
   // ── RENDER ────────────────────────────────────────────────────────────────
 
-  if (step === 'checking' || step === 'verifying') {
-    return <AuthLoading label={step === 'verifying' ? 'Verifying your code' : 'Preparing sign in'} />
+  if (!mounted || step === 'checking' || step === 'verifying') {
+    return <Spinner />
   }
 
   if (step === 'password' || step === 'otp-email') {
@@ -281,12 +280,8 @@ function SignInInner() {
     const signUpParams = new URLSearchParams()
     if (email) signUpParams.set('email', email)
     if (institutionSlug) signUpParams.set('institution', institutionSlug)
-    if (redirectTo !== '/dashboard') signUpParams.set('redirect', redirectTo)
     const signUpHref = `/sign-up${signUpParams.size ? `?${signUpParams}` : ''}`
-    const forgotPasswordParams = new URLSearchParams()
-    if (email) forgotPasswordParams.set('email', email)
-    if (institutionSlug) forgotPasswordParams.set('institution', institutionSlug)
-    const forgotPasswordHref = `/forgot-password${forgotPasswordParams.size ? `?${forgotPasswordParams}` : ''}`
+    const forgotPasswordHref = `/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`
     const genericSubtitle = isPassword
       ? 'Welcome back. Sign in to pinspace.'
       : "We'll send a 6-digit sign-in code to your email."
@@ -300,35 +295,28 @@ function SignInInner() {
           : `Sign in to ${orgName} with an email code.`)
       : genericSubtitle
     return (
-      <AuthShell
-        title="Sign in"
-        description={subtitle}
-        footer={
-          <div className="flex flex-col items-start justify-between gap-1 sm:flex-row sm:items-center">
-            <Link href={signUpHref} className={textLinkClass}>Don&apos;t have an account? Sign up</Link>
-            <Link href="/" className={textLinkClass}>Back home</Link>
-          </div>
-        }
-      >
+      <Shell>
+        <h1 className="text-[28px] font-extrabold text-[#16181D] mb-1 tracking-[-0.02em]">Sign in</h1>
+        <p className="text-sm text-[#5A5E6B] mb-6">{subtitle}</p>
+
         <form onSubmit={isPassword ? handlePasswordSignIn : handleEmailContinue} className="space-y-4">
           <div>
-            <label htmlFor="email" className={fieldLabelClass}>Email</label>
-            <Input
+            <label htmlFor="email" className="block text-[11px] font-bold tracking-[0.06em] uppercase text-[#8A8FA0] mb-1.5">Email</label>
+            <input
               id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@school.edu"
+              className="w-full px-4 py-3 border border-[#16181D]/12 rounded-xl bg-white focus:ring-2 focus:ring-[#3B6EF6] focus:border-transparent"
               autoComplete="email"
               autoFocus={!email}
-              aria-invalid={error.toLowerCase().includes('email') || undefined}
-              aria-describedby={error ? 'sign-in-error' : undefined}
             />
           </div>
 
           {isPassword && (
             <div>
-              <label htmlFor="password" className={fieldLabelClass}>Password</label>
+              <label htmlFor="password" className="block text-[11px] font-bold tracking-[0.06em] uppercase text-[#8A8FA0] mb-1.5">Password</label>
               <PasswordInput
                 id="password"
                 value={password}
@@ -336,33 +324,31 @@ function SignInInner() {
                 placeholder="••••••••"
                 autoComplete="current-password"
                 autoFocus={!!email}
-                aria-invalid={error.toLowerCase().includes('password') || undefined}
-                aria-describedby={error ? 'sign-in-error' : undefined}
               />
-              <div className="mt-1 flex justify-end">
-                <Link href={forgotPasswordHref} className={textLinkClass}>
+              <div className="flex justify-end mt-1">
+                <Link href={forgotPasswordHref} className="text-sm text-[#3B6EF6] hover:underline">
                   Forgot password?
                 </Link>
               </div>
             </div>
           )}
 
-          {error && <StatusState id="sign-in-error" status="error" title={error} />}
+          {error && <p className="text-sm text-[#C2452D]">{error}</p>}
 
           {isPassword && showResetHint && (
             <Link
               href={forgotPasswordHref}
-              className={textLinkClass}
+              className="inline-block text-sm font-semibold text-[#3B6EF6] hover:underline"
             >
-              Reset password
+              Reset password →
             </Link>
           )}
 
           {!isPassword && showSignUpHint && (
-            <p className="text-sm text-text-secondary">
+            <p className="text-sm text-gray-600">
               <Link
                 href={signUpHref}
-                className={textLinkClass}
+                className="font-semibold text-[#3B6EF6] hover:underline"
               >
                 Sign up here
               </Link>
@@ -370,73 +356,77 @@ function SignInInner() {
             </p>
           )}
 
-          <Button
+          <button
             type="submit"
-            loading={busy}
-            className="w-full"
+            disabled={busy}
+            className="w-full py-3.5 bg-[#3B6EF6] text-white rounded-full hover:bg-[#16181D] disabled:opacity-50 font-bold transition-colors shadow-[0_10px_26px_rgba(59,110,246,0.3)]"
           >
-            {busy ? (isPassword ? 'Signing in…' : 'Sending code…') : (isPassword ? 'Sign in' : 'Continue')}
-          </Button>
+            {busy ? (isPassword ? 'Signing in…' : 'Sending code…') : (isPassword ? 'Sign in' : 'Continue →')}
+          </button>
         </form>
 
         {isPassword ? (
-          <Button
+          <button
             type="button"
-            variant="ghost"
             onClick={() => {
               setError('')
               setShowResetHint(false)
               setShowSignUpHint(false)
               setStep('otp-email')
             }}
-            className="mt-3 w-full shadow-none"
+            className="mt-3 w-full text-center text-sm text-[#8A8FA0] hover:text-[#16181D] transition-colors"
           >
             Sign in with email code instead
-          </Button>
+          </button>
         ) : (
-          <Button
+          <button
             type="button"
-            variant="ghost"
             onClick={() => {
               setError('')
               setShowResetHint(false)
               setShowSignUpHint(false)
               setStep('password')
             }}
-            className="mt-3 w-full shadow-none"
+            className="mt-3 w-full text-center text-sm text-[#8A8FA0] hover:text-[#16181D] transition-colors"
           >
-            Sign in with password instead
-          </Button>
+            ← Sign in with password instead
+          </button>
         )}
-      </AuthShell>
+
+        <div className="mt-6 pt-4 border-t border-[#16181D]/10 flex justify-between text-sm">
+          <Link href={signUpHref} className="text-[#3B6EF6] hover:underline">
+            Don&apos;t have an account? Sign up
+          </Link>
+          <Link href="/" className="text-[#8A8FA0] hover:underline">← Back</Link>
+        </div>
+      </Shell>
     )
   }
 
   if (step === 'check-email') {
     return (
-      <AuthShell
-        eyebrow="Secure sign in"
-        title="Check your email"
-        description={
-          <>
+      <Shell>
+        <div className="text-center mb-6">
+          <div className="w-12 h-12 bg-[#3B6EF6]/10 rounded-full flex items-center justify-center mx-auto mb-3">
+            <MailIcon />
+          </div>
+          <h1 className="text-[28px] font-extrabold text-[#16181D] mb-1 tracking-[-0.02em]">Check your email</h1>
+          <p className="text-sm text-gray-500">
             We sent a 6-digit code to{' '}
-            <strong className="text-text-primary">{email}</strong>
+            <span className="font-semibold text-[#16181D]">{email}</span>
             {orgs.length === 1 && (
-              <> for <strong className="text-text-primary">{orgs[0].name}</strong></>
+              <> for <span className="font-medium">{orgs[0].name}</span></>
             )}
             .
-          </>
-        }
-      >
-        <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-pinspace bg-primary-muted text-primary-dark">
-          <Mail aria-hidden="true" className="h-6 w-6" />
+          </p>
         </div>
+
         <form onSubmit={handleOtpVerify} className="space-y-4">
           <div>
-            <label htmlFor="otp" className={fieldLabelClass}>
+            <label htmlFor="otp" className="block text-[11px] font-bold tracking-[0.06em] uppercase text-[#8A8FA0] mb-1.5">
               Verification code
             </label>
-            <Input
+            <input
               id="otp"
               type="text"
               inputMode="numeric"
@@ -445,86 +435,125 @@ function SignInInner() {
               placeholder="123456"
               maxLength={6}
               autoComplete="one-time-code"
+              // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
-              className="py-3 text-center font-mono text-xl tracking-[0.3em]"
-              aria-invalid={!!error || undefined}
-              aria-describedby={error ? 'sign-in-error' : 'otp-guidance'}
+              className="w-full px-4 py-3 border border-[#16181D]/12 rounded-xl bg-white focus:ring-2 focus:ring-[#3B6EF6] focus:border-transparent text-center text-xl tracking-widest font-mono"
             />
-            <p id="otp-guidance" className="mt-2 text-xs leading-5 text-text-muted">Use the latest code. It may be in your spam or junk folder.</p>
           </div>
 
-          {error && <StatusState id="sign-in-error" status="error" title={error} />}
+          {error && <p className="text-sm text-[#C2452D]">{error}</p>}
 
-          <Button
+          <button
             type="submit"
-            className="w-full"
+            className="w-full py-3.5 bg-[#3B6EF6] text-white rounded-full hover:bg-[#16181D] font-bold transition-colors shadow-[0_10px_26px_rgba(59,110,246,0.3)]"
           >
             Verify
-          </Button>
+          </button>
         </form>
 
-        <div className="mt-4 flex flex-col justify-between gap-1 text-sm sm:flex-row">
-          <Button
+        <div className="mt-4 flex justify-between text-sm">
+          <button
             type="button"
-            variant="ghost"
             onClick={handleResendOtp}
-            loading={busy}
-            className="shadow-none"
+            disabled={busy}
+            className="text-[#3B6EF6] hover:underline disabled:opacity-50"
           >
             {busy ? 'Sending…' : 'Resend code'}
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
-            variant="ghost"
             onClick={() => { setError(''); setOtp(''); setStep('otp-email') }}
-            className="shadow-none"
+            className="text-[#8A8FA0] hover:underline"
           >
             Use a different email
-          </Button>
+          </button>
         </div>
-      </AuthShell>
+      </Shell>
     )
   }
 
   if (step === 'workspace-picker') {
     return (
-      <AuthShell
-        eyebrow="Workspace context"
-        title="Choose a workspace"
-        description="Your email is linked to multiple organizations. Pick one to continue."
-      >
+      <Shell>
+        <h1 className="text-[28px] font-extrabold text-[#16181D] mb-1 tracking-[-0.02em]">Choose a workspace</h1>
+        <p className="text-sm text-[#5A5E6B] mb-6">
+          Your email is linked to multiple organizations. Pick one to continue.
+        </p>
         <div className="space-y-2">
           {orgs.map((org) => (
-            <Button
+            <button
               key={org.id}
               type="button"
-              variant="ghost"
               onClick={() => handlePickOrg(org)}
-              className="h-auto w-full justify-start gap-3 border-border bg-background-light p-4 text-left shadow-none hover:border-accent"
+              className="w-full flex items-center gap-3 p-4 border border-[#16181D]/10 rounded-xl hover:border-[#3B6EF6] hover:bg-[#3B6EF6]/5 transition-all text-left"
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-pinspace bg-primary-muted text-sm font-bold text-primary-dark">
+              <div className="w-10 h-10 rounded-lg bg-[#3B6EF6]/10 flex items-center justify-center flex-shrink-0 text-sm font-bold text-[#3B6EF6]">
                 {org.name.charAt(0)}
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate font-semibold text-text-primary">{org.name}</span>
-                <span className="block text-xs text-text-muted">
+              </div>
+              <div>
+                <p className="font-semibold text-[#16181D]">{org.name}</p>
+                <p className="text-xs text-[#8A8FA0]">
                   {org.type === 'university' ? 'University' : 'Firm'}
                   {org.network_label ? ` · ${org.network_label}` : ''}
-                </span>
-              </span>
-            </Button>
+                </p>
+              </div>
+            </button>
           ))}
         </div>
-      </AuthShell>
+      </Shell>
     )
   }
 
   return null
 }
 
+// ── Layout helpers ────────────────────────────────────────────────────────────
+
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="relative flex min-h-screen items-center justify-center p-6 overflow-hidden"
+      style={{ background: 'linear-gradient(160deg, #F2F5FB 0%, #EDF1F9 55%, #F6F3EC 100%)' }}
+    >
+      <div className="absolute -left-44 -top-52 w-[700px] h-[700px] rounded-full pointer-events-none" style={{ background: 'radial-gradient(closest-side, rgba(59,110,246,0.14), rgba(59,110,246,0))' }} />
+      <div className="absolute -right-36 -bottom-64 w-[800px] h-[800px] rounded-full pointer-events-none" style={{ background: 'radial-gradient(closest-side, rgba(160,190,255,0.25), rgba(160,190,255,0))' }} />
+      <Link href="/" className="absolute left-6 top-6 sm:left-10 sm:top-8 flex items-center gap-2 text-[#16181D] font-extrabold text-xl tracking-tight">
+        <span className="w-[26px] h-[26px] rounded-lg bg-[#3B6EF6] text-white flex items-center justify-center text-xs">◉</span>
+        pinspace
+      </Link>
+      <div
+        className="relative w-full max-w-md rounded-3xl p-8 sm:p-10"
+        style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(255,255,255,0.95)', backdropFilter: 'blur(14px)', boxShadow: '0 24px 70px rgba(22,24,29,0.12)' }}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function Spinner() {
+  return (
+    <div
+      className="flex min-h-screen items-center justify-center"
+      style={{ background: 'linear-gradient(160deg, #F2F5FB 0%, #EDF1F9 55%, #F6F3EC 100%)' }}
+    >
+      <div className="animate-spin rounded-full h-12 w-12 border-4 border-[#3B6EF6]/20 border-t-[#3B6EF6]" />
+    </div>
+  )
+}
+
+function MailIcon() {
+  return (
+    <svg className="w-6 h-6 text-[#3B6EF6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
+  )
+}
+
 export default function SignInPage() {
   return (
-    <Suspense fallback={<AuthLoading label="Preparing sign in" />}>
+    <Suspense fallback={<Spinner />}>
       <SignInInner />
     </Suspense>
   )
