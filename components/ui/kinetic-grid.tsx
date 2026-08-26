@@ -20,15 +20,21 @@ import { useEffect, useRef, type ReactNode } from 'react'
 const CELL = 55
 
 /** The ruling at rest, and its slightly firmer value inside the warp. */
-const LINE_REST = 'rgba(0, 0, 0, 0.085)'
-const LINE_NEAR = 'rgba(0, 0, 0, 0.16)'
+const LINE_REST = 'rgba(0, 0, 0, 0.11)'
+const LINE_NEAR = 'rgba(0, 0, 0, 0.3)'
 
 /**
  * Pointer warp. Vertices inside RADIUS are pulled toward the cursor, hardest at
  * the centre and easing to nothing at the rim.
+ *
+ * Tuned UP from a first pass that was invisible in practice. The reference this
+ * copies is white-on-near-black, where a 15px pull on a 55px cell reads clearly;
+ * the same numbers over this page's paper wash, on lines at ~10% black, did not
+ * register as an effect at all. Peak displacement is now a little over half a
+ * cell, which is the point at which the grid visibly bends rather than shimmers.
  */
-const WARP_RADIUS = 190
-const WARP_STRENGTH = 22
+const WARP_RADIUS = 240
+const WARP_STRENGTH = 46
 /**
  * Never let a vertex travel more than this fraction of its distance to the
  * cursor. Without the clamp, vertices closer than WARP_STRENGTH overshoot
@@ -44,12 +50,12 @@ const WARP_MAX_TRAVEL = 0.82
  * 120Hz display.
  */
 const POINTER_EASE = 0.16
-const STRENGTH_EASE = 0.08
+const STRENGTH_EASE = 0.2
 
 /** Click ripple: an expanding ring that shoves vertices radially outward. */
 const RIPPLE_SPEED = 620 // px per second
-const RIPPLE_WIDTH = 90 // how thick the displaced band is
-const RIPPLE_STRENGTH = 26
+const RIPPLE_WIDTH = 110 // how thick the displaced band is
+const RIPPLE_STRENGTH = 40
 const RIPPLE_LIFETIME = 1100 // ms
 /** Oldest ripples are dropped past this, so a mashed pointer can't pile up. */
 const MAX_RIPPLES = 6

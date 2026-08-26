@@ -39,6 +39,24 @@ interface SortableBoardGridProps {
   showPosition?: boolean
   /** Owner name under the title — presentation mixes people, the archive doesn't. */
   labelOwner?: boolean
+  /**
+   * Override the grid track definition. The default fills the width in columns;
+   * the 2D archive passes fixed-width sheet tracks instead, because a sheet has
+   * a real size and stretching it makes four boards look like a different kind
+   * of object from eight. Must be a COMPLETE class string — Tailwind reads raw
+   * file text, so anything assembled from fragments emits nothing.
+   */
+  gridClassName?: string
+  /**
+   * Shape of the well a board sits in. Defaults to landscape, which is what the
+   * presentation grid has always used; the 2D archive passes portrait, because a
+   * studio sheet is portrait and 4:3 letterboxed every one of them.
+   *
+   * A prop rather than a straight change: this grid is shared, and making the
+   * running order a third taller was not part of restyling the archive. Same
+   * COMPLETE-class-string rule as gridClassName.
+   */
+  wellAspectClassName?: string
 }
 
 function sheetLabel(board: Board, index: number): string {
@@ -67,6 +85,8 @@ export default function SortableBoardGrid({
   onBoardClick,
   showPosition = false,
   labelOwner = false,
+  gridClassName = 'grid gap-5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4',
+  wellAspectClassName = 'aspect-[4/3]',
 }: SortableBoardGridProps) {
   const sensors = useSensors(
     // Same 5px activation the workspace room grid uses: without it a click that
@@ -136,7 +156,7 @@ export default function SortableBoardGrid({
   }
 
   const grid = (
-    <div className="grid gap-5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+    <div className={gridClassName}>
       {ordered.map((board, i) => (
         <SortableBoardCard
           key={board.id}
@@ -146,6 +166,7 @@ export default function SortableBoardGrid({
           onBoardClick={onBoardClick}
           showPosition={showPosition}
           labelOwner={labelOwner}
+          wellAspectClassName={wellAspectClassName}
         />
       ))}
     </div>
@@ -169,6 +190,7 @@ function SortableBoardCard({
   onBoardClick,
   showPosition,
   labelOwner,
+  wellAspectClassName,
 }: {
   board: Board
   index: number
@@ -176,6 +198,7 @@ function SortableBoardCard({
   onBoardClick?: (board: Board) => void
   showPosition: boolean
   labelOwner: boolean
+  wellAspectClassName: string
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: board.id,
@@ -204,11 +227,16 @@ function SortableBoardCard({
         {...(canReorder ? listeners : {})}
         style={canReorder ? { touchAction: 'none', cursor: isDragging ? 'grabbing' : 'grab' } : undefined}
       >
+        {/* Shape comes from the caller — see wellAspectClassName.
+
+            The card lifts on hover rather than deepening its box-shadow:
+            drop-shadow follows the sheet's own edge, and on a white sheet over
+            a pale field a box-shadow just thickens the border. */}
         <div
-          className="relative w-full aspect-[4/3] rounded-lg overflow-hidden flex items-center justify-center transition-shadow group-hover:shadow-lg"
+          className={`relative w-full ${wellAspectClassName} rounded-xl overflow-hidden flex items-center justify-center transition-[transform,filter] duration-[400ms] ease-[cubic-bezier(.16,1,.3,1)] group-hover:-translate-y-[5px] group-hover:scale-[1.012] group-hover:[filter:drop-shadow(0_18px_26px_rgba(36,46,84,0.16))]`}
           style={{
-            background: ROOM.wall,
-            border: `1px solid ${isDragging ? ROOM.accent : ROOM.hairline}`,
+            background: '#fbfcfe',
+            border: `1px solid ${isDragging ? ROOM.accent : 'rgba(176,186,212,0.5)'}`,
           }}
         >
           {board.thumbnailUrl || board.fullImageUrl ? (
@@ -235,7 +263,13 @@ function SortableBoardCard({
             </span>
           )}
         </div>
-        <p className="mt-2 text-[12px] truncate" style={{ color: ROOM.ink, fontFamily: SANS_STACK }}>
+        {/* The reference leaves its sheets bare. The title stays because it is
+            the only place a board's name appears before you open it — but it
+            drops back to a caption so the sheet stays the object on the page. */}
+        <p
+          className="mt-3 text-[12px] font-medium tracking-[-0.01em] truncate"
+          style={{ color: '#7a8290', fontFamily: SANS_STACK }}
+        >
           {sheetLabel(board, index)}
         </p>
         {labelOwner && (

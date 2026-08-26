@@ -82,6 +82,32 @@
     overflow-x: hidden;
   }
 
+  /* Screen entrance for the 2D archive's two levels. A short rise rather than
+     a fade alone, so stepping into a person's sheets and back out reads as
+     movement between two places instead of a redraw. Runs once per level
+     change; the levels swap rarely enough that this is not motion anyone sees
+     repeatedly. */
+  @keyframes screenIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .screen-in {
+    animation: screenIn 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .screen-in {
+      animation: none;
+    }
+  }
+
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold;
   }
