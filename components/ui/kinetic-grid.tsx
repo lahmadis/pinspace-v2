@@ -19,22 +19,36 @@ import { useEffect, useRef, type ReactNode } from 'react'
 /** Matches the 55px cell of the CSS grid this replaces. */
 const CELL = 55
 
-/** The ruling at rest, and its slightly firmer value inside the warp. */
+/** The ruling at rest. */
 const LINE_REST = 'rgba(0, 0, 0, 0.11)'
-const LINE_NEAR = 'rgba(0, 0, 0, 0.3)'
 
 /**
  * Pointer warp. Vertices inside RADIUS are pulled toward the cursor, hardest at
  * the centre and easing to nothing at the rim.
  *
- * Tuned UP from a first pass that was invisible in practice. The reference this
- * copies is white-on-near-black, where a 15px pull on a 55px cell reads clearly;
- * the same numbers over this page's paper wash, on lines at ~10% black, did not
- * register as an effect at all. Peak displacement is now a little over half a
- * cell, which is the point at which the grid visibly bends rather than shimmers.
+ * Deliberately tight — a little over two cells. An earlier pass ran at 240px,
+ * four and a half cells, with a 46px pull to match; that bends a third of the
+ * viewport at once and reads as the page sagging rather than as a cursor with a
+ * pinch to it. The effect wants a small dense knot directly under the pointer,
+ * and the scale of the affected area is what sells that more than the depth of
+ * the pull does.
  */
-const WARP_RADIUS = 240
-const WARP_STRENGTH = 46
+const WARP_RADIUS = 135
+const WARP_STRENGTH = 26
+
+/**
+ * The blue that gathers under the cursor, restroked over the resting ruling.
+ *
+ * Alpha falls off radially from the centre rather than filling the affected
+ * block evenly: the block is rectangular and the effect is round, so a flat
+ * value paints a visible blue square. Held just inside WARP_RADIUS so the
+ * colour sits within the deformation instead of reaching past its edge.
+ */
+const HIGHLIGHT_RADIUS = 118
+const HIGHLIGHT_RGB = '37, 99, 235'
+const HIGHLIGHT_LINE_ALPHA = 0.55
+const HIGHLIGHT_DOT_ALPHA = 0.9
+const HIGHLIGHT_DOT_RADIUS = 2
 /**
  * Never let a vertex travel more than this fraction of its distance to the
  * cursor. Without the clamp, vertices closer than WARP_STRENGTH overshoot
@@ -183,10 +197,12 @@ export default function KineticGrid({ children, className = '' }: KineticGridPro
     }
 
     /**
-     * Two strokes, not one per segment. The whole grid goes down at the resting
-     * value in a single path; the segments inside the warp are then restroked a
-     * little firmer, so the cursor has presence without the lines changing hue.
-     * Per-segment alpha would mean ~1500 separate stroke calls a frame.
+     * The whole grid goes down at the resting value in one path — per-segment
+     * alpha across the full viewport would be ~1500 stroke calls a frame. Only
+     * the small block under the cursor is then restroked segment by segment, in
+     * blue, which is affordable precisely because WARP_RADIUS is tight: about
+     * 10x10 vertices, most of which the alpha cull drops before they ever reach
+     * a stroke, so a few dozen calls a frame rather than fifteen hundred.
      */
     const draw = () => {
       ctx.clearRect(0, 0, width, height)
@@ -223,23 +239,55 @@ export default function KineticGrid({ children, className = '' }: KineticGridPro
       const r0 = Math.max(0, Math.floor((warpY - originY - reach) / CELL))
       const r1 = Math.min(rows - 1, Math.ceil((warpY - originY + reach) / CELL))
 
-      ctx.beginPath()
+      /**
+       * Radial falloff, 1 at the cursor easing to 0 at the rim. Measured from
+       * the drawn position rather than the rest position, so the colour tracks
+       * what is actually on screen once the warp has moved it.
+       */
+      const glow = (x: number, y: number) => {
+        const d = Math.hypot(warpX - x, warpY - y)
+        if (d >= HIGHLIGHT_RADIUS) return 0
+        const t = 1 - d / HIGHLIGHT_RADIUS
+        return t * t * strength
+      }
+
+      const segment = (pa: number, pb: number) => {
+        const ax = points[pa]
+        const ay = points[pa + 1]
+        const bx = points[pb]
+        const by = points[pb + 1]
+        const a = glow((ax + bx) / 2, (ay + by) / 2)
+        if (a <= 0.01) return
+        ctx.strokeStyle = `rgba(${HIGHLIGHT_RGB}, ${a * HIGHLIGHT_LINE_ALPHA})`
+        ctx.beginPath()
+        ctx.moveTo(ax, ay)
+        ctx.lineTo(bx, by)
+        ctx.stroke()
+      }
+
+      for (let r = r0; r <= r1; r++) {
+        for (let c = c0; c < c1; c++) segment(idx(c, r), idx(c + 1, r))
+      }
+      for (let c = c0; c <= c1; c++) {
+        for (let r = r0; r < r1; r++) segment(idx(c, r), idx(c, r + 1))
+      }
+
+      // Lit vertices. The reference reads as nodes rather than merely tinted
+      // lines, and the dots are what carry that. They exist only inside the
+      // glow, so the page keeps its plain ruling everywhere the cursor isn't.
       for (let r = r0; r <= r1; r++) {
         for (let c = c0; c <= c1; c++) {
           const p = idx(c, r)
-          if (c === c0) ctx.moveTo(points[p], points[p + 1])
-          else ctx.lineTo(points[p], points[p + 1])
+          const x = points[p]
+          const y = points[p + 1]
+          const a = glow(x, y)
+          if (a <= 0.01) continue
+          ctx.fillStyle = `rgba(${HIGHLIGHT_RGB}, ${a * HIGHLIGHT_DOT_ALPHA})`
+          ctx.beginPath()
+          ctx.arc(x, y, HIGHLIGHT_DOT_RADIUS, 0, Math.PI * 2)
+          ctx.fill()
         }
       }
-      for (let c = c0; c <= c1; c++) {
-        for (let r = r0; r <= r1; r++) {
-          const p = idx(c, r)
-          if (r === r0) ctx.moveTo(points[p], points[p + 1])
-          else ctx.lineTo(points[p], points[p + 1])
-        }
-      }
-      ctx.strokeStyle = LINE_NEAR
-      ctx.stroke()
     }
 
     let lastFrame = 0
@@ -311,6 +359,13 @@ export default function KineticGrid({ children, className = '' }: KineticGridPro
     }
 
     const onPointerDown = (e: PointerEvent) => {
+      // Same first-sighting snap as onPointerMove. A touch device's first
+      // interaction is a tap with no move before it, so without this the warp
+      // centre is still parked off-screen and eases in across the page.
+      if (targetStrength === 0) {
+        warpX = e.clientX
+        warpY = e.clientY
+      }
       ripples.push({ x: e.clientX, y: e.clientY, born: performance.now() })
       if (ripples.length > MAX_RIPPLES) ripples = ripples.slice(-MAX_RIPPLES)
       targetX = e.clientX
