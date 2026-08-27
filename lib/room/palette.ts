@@ -55,9 +55,10 @@ export const ROOM = {
  * tuned separately against different neighbours.
  *
  * Lives here rather than in components/3d/WallSystem.tsx (which re-exports it as
- * ROOM_SKY_COLOR, its long-standing name) so that BoardThumbnail can reach it
- * for wall-focus ghosting without importing from WallSystem — WallSystem already
- * imports BoardThumbnail, and that would be an import cycle.
+ * ROOM_SKY_COLOR, its long-standing name) because several surfaces outside the
+ * 3D tree need it and WallSystem already imports BoardThumbnail, so reaching
+ * back into WallSystem would be an import cycle. Ghosting no longer reads this
+ * value at all — that is ROOM_GHOST's job now, below.
  *
  * The Canvas background, the scene fog color and the ground plane's fade target
  * must all be this exact value: if the fog color and the background differ at
@@ -70,20 +71,43 @@ export const ROOM = {
  * mismatch shows as a ring, but there is no ground left to fade into the sky,
  * so this value is now read almost entirely against the walls and that grid.
  *
- * A light tint of the palette accent (#3B6EF6): white + 28% accent.
+ * A very light tint of the palette accent (#3B6EF6): white + about 7%.
  *
- * An earlier pass held this at the luminance of the cool grey it replaced, on
- * the theory that a lighter sky would let a white wall dissolve into it. That
- * was the wrong constraint — holding the luminance meant the sky and the walls
- * were the SAME value, 1.10:1, and the room lost its silhouette against the
- * horizon entirely. The walls render at about sRGB 247 (see RoomLighting), so
- * the sky has to sit clearly BELOW them, not level with them.
+ * READ THIS BEFORE CHANGING IT. An earlier pass held this at the luminance of
+ * the cool grey it replaced, so the sky and the walls were the SAME value,
+ * 1.10:1, and the room lost its silhouette against the horizon entirely. The
+ * fix at the time was to push the sky well below the walls (28% accent,
+ * 1.34:1), which worked but made the room read as a wall standing in front of a
+ * coloured backdrop rather than as an airy space.
  *
- * 28% puts it at 1.34:1 against a wall face — a legible step while still
- * reading as a pale sky rather than a coloured backdrop. If a wall ever looks
- * cut out against it, that ratio is too high, not too low.
+ * It is now light again — deliberately, and only because the thing that failed
+ * last time has been replaced. A wall no longer earns its silhouette from a
+ * value step in the sky; it earns it from the soft contact shadow beneath it
+ * (WallSystem). That is how the reference this matches does it too: near-white
+ * panels on a near-white ground, separated by shadow, not by tone.
+ *
+ * So the rule is: THIS VALUE AND THE CONTACT SHADOW ARE ONE DECISION. Lighten
+ * the sky further and the shadow has to carry more; remove or weaken the shadow
+ * and this has to go back down, or the walls dissolve exactly as they did
+ * before. Do not tune either one alone — the shadow is now the ONLY thing
+ * holding a wall off the horizon, so it has no second line of defence.
  */
-export const ROOM_SKY = '#C8D6FC'
+export const ROOM_SKY = '#EDF1FB'
+
+/**
+ * What an unfocused surface is blended toward when a wall takes focus.
+ *
+ * This used to be ROOM_SKY itself, on the reasoning that a ghosted wall should
+ * fade into the background. That only worked while the sky was clearly darker
+ * than the walls. Now that both are near-white, blending a white wall toward a
+ * near-white sky is very nearly the identity function, and wall focus would
+ * have quietly stopped doing anything visible.
+ *
+ * A cool grey below both instead, so an unfocused wall recedes by going flat
+ * and slightly grey rather than by matching the horizon. Kept close enough in
+ * hue that ghosting reads as depth rather than as a colour change.
+ */
+export const ROOM_GHOST = '#D3DCEC'
 
 /** Monospace stack for sheet numbers, wall labels and the revision strip. */
 export const MONO_STACK = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"

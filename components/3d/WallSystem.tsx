@@ -6,9 +6,10 @@ import { Text, Grid } from '@react-three/drei'
 import { Board } from '@/types'
 import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
-import { getWallTransformResolved, getFloorRect, type WallTextItem } from '@/lib/wallLayout'
-import { ROOM_SKY, ROOM_FONT_3D } from '@/lib/room/palette'
+import { getWallTransformResolved, getWallEdgeJoins, getFloorRect, type WallTextItem } from '@/lib/wallLayout'
+import { ROOM_SKY, ROOM_GHOST, ROOM_FONT_3D } from '@/lib/room/palette'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
+import { useDisposableGeometry } from './useDisposableGeometry'
 
 interface WallDimensions {
   height: number
@@ -215,12 +216,16 @@ const _BOARD_DIM_AMOUNT = 0.62
  * Transparency would be the obvious approach and is the wrong one here: a single
  * wall is five-plus coplanar meshes with board quads standing 0.2" proud of it,
  * and three.js sorts transparent objects by distance-to-camera, so those
- * near-coplanar surfaces flicker and re-order as you orbit. Blending toward the
- * sky keeps every material opaque — no sort order to get wrong — and matches how
- * CAD tools ghost the parts of a model you aren't working on.
+ * near-coplanar surfaces flicker and re-order as you orbit. Blending toward a
+ * flat tone keeps every material opaque — no sort order to get wrong — and
+ * matches how CAD tools ghost the parts of a model you aren't working on.
+ *
+ * Blends toward ROOM_GHOST, not ROOM_SKY. See that constant: with a near-white
+ * sky, fading a white wall toward it is close to the identity function and wall
+ * focus stops reading at all.
  */
 function dimTowardSky(hex: string, amount: number): string {
-  return `#${new THREE.Color(hex).lerp(new THREE.Color(ROOM_SKY_COLOR), amount).getHexString()}`
+  return `#${new THREE.Color(hex).lerp(new THREE.Color(ROOM_GHOST), amount).getHexString()}`
 }
 
 /**
@@ -247,22 +252,27 @@ function dimTowardSky(hex: string, amount: number): string {
  * are a light structural beat, told apart by WEIGHT (sectionThickness is nearly
  * twice cellThickness) rather than by darkness.
  *
- * NEUTRAL GREY, deliberately. These used to be pale blue-greys, which was fine
- * while the whole scene was slightly blue and the renderer's ACES tone curve
- * muted them. Both of those changed: tone mapping is off (see RoomLighting) so
- * they now render at full strength, and ROOM_SKY carries a real accent tint —
- * so a blue-leaning grid on a blue sky read as one blue wash with no ruling in
- * it. Grey lines give the sky its colour back and let the grid be structure.
+ * Cool, not neutral. They were neutral greys while ROOM_SKY carried a strong
+ * accent tint, because a blue grid on a blue sky read as one wash with no
+ * ruling in it. The sky is near-white now, so that collision is gone and a
+ * faintly cool line sits in the same family as everything else in the room
+ * instead of reading as a grey drawing laid over it.
  *
- * THEY ARE MID GREYS, NOT PALE ONES, AND HAVE TO BE. The floor and ground plane
- * are gone, so the grid is drawn straight over the sky — there is no light
- * surface behind it any more. ROOM_SKY's luminance lands almost exactly on
- * #D8D8D8, so a grey near that value is a NULL: 1.02:1, invisible everywhere,
- * not merely faint at the horizon. Anything lighter than the sky loses too, so
- * these sit clearly below it — 1.35:1 for the foot lines and 1.70:1 for the
- * ten-foot beat. Check any new value against ROOM_SKY before trusting it. */
-const GRID_CELL_COLOR = '#B9B9B9'
-const GRID_SECTION_COLOR = '#A5A5A5'
+ * THE VALUES ARE TIED TO ROOM_SKY AND MOVED WITH IT. The floor and ground plane
+ * are gone, so the grid draws straight over the sky with nothing behind it —
+ * its contrast is entirely against that colour. The old #B9B9B9 / #A5A5A5 were
+ * chosen to clear a sky at roughly #D8D8D8 luminance; against a near-white sky
+ * they are far too dark and turn a background ruling into hard linework
+ * competing with the walls. These sit at about 1.25:1 and 1.45:1 against the
+ * new sky — present, structural, and clearly behind everything.
+ *
+ * ONE WEIGHT ONLY. There used to be a second, heavier ten-foot beat drawn over
+ * this at nearly twice the thickness. It was structure back when the grid was
+ * mid-grey on a tinted sky and needed internal hierarchy to read as a drawing;
+ * on the near-white ground it just read as dark lines cutting across an
+ * otherwise airy floor. The ten-foot rhythm is gone entirely rather than merely
+ * lightened — a faint heavier line is still a heavier line. */
+const GRID_CELL_COLOR = '#D2DAEA'
 
 /**
  * The grid sits slightly BELOW the walls' base rather than exactly on it. The
@@ -306,6 +316,143 @@ export function getRoomFogParams(wallConfig: WallConfig): { fogNear: number; fog
 /** Breathing room between a selected bay's boards and its outline, in inches. */
 const BAY_FRAME_PADDING_IN = 3
 
+/**
+ * Corner radius as a fraction of the wall's shorter side, then clamped. A fixed
+ * radius reads as a big soft pillow on a 4' partition and as a barely-chamfered
+ * box on a 20' wall; scaling keeps the same softness at both.
+ */
+const WALL_CORNER_RADIUS_FRACTION = 0.06
+const WALL_CORNER_RADIUS_MIN_IN = 2
+const WALL_CORNER_RADIUS_MAX_IN = 14
+
+export function getWallCornerRadius(width: number, height: number): number {
+  const scaled = Math.min(width, height) * WALL_CORNER_RADIUS_FRACTION
+  const clamped = Math.min(Math.max(scaled, WALL_CORNER_RADIUS_MIN_IN), WALL_CORNER_RADIUS_MAX_IN)
+  // Never let two radii on the same side meet or cross.
+  return Math.min(clamped, width / 2 - 0.01, height / 2 - 0.01)
+}
+
+/**
+ * The wall panel: a rectangle extruded to `depth`, with rounding applied only
+ * to the corners on a free vertical edge.
+ *
+ * Extrusion of a 2D shape rather than drei's RoundedBox, because RoundedBox
+ * rounds every edge of the solid including the depth axis — its radius is
+ * therefore capped at half the smallest dimension, and a wall is 6" deep. That
+ * caps the face radius at 3", which on a 96" wall is invisible. Extruding a
+ * rounded rectangle along Z decouples the face radius from the wall's
+ * thickness, so the corners can be as soft as the reference while the wall
+ * stays a 6" slab with square front and back faces.
+ */
+function buildWallPanelGeometry(
+  width: number,
+  height: number,
+  depth: number,
+  radius: number,
+  roundLeft: boolean,
+  roundRight: boolean,
+): THREE.ExtrudeGeometry {
+  const w = width / 2
+  const h = height / 2
+  const rL = roundLeft ? radius : 0
+  const rR = roundRight ? radius : 0
+
+  const shape = new THREE.Shape()
+  // Anticlockwise from the bottom-left, quadratic corners where rounded and a
+  // plain lineTo where the edge butts a neighbour.
+  shape.moveTo(-w + rL, -h)
+  shape.lineTo(w - rR, -h)
+  if (rR) shape.quadraticCurveTo(w, -h, w, -h + rR)
+  shape.lineTo(w, h - rR)
+  if (rR) shape.quadraticCurveTo(w, h, w - rR, h)
+  shape.lineTo(-w + rL, h)
+  if (rL) shape.quadraticCurveTo(-w, h, -w, h - rL)
+  shape.lineTo(-w, -h + rL)
+  if (rL) shape.quadraticCurveTo(-w, -h, -w + rL, -h)
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: false,
+    curveSegments: 8,
+  })
+  // ExtrudeGeometry runs 0..depth on Z; the room positions walls about their
+  // centre and boards sit at ±(depth/2 + offset), so recentre it.
+  geometry.translate(0, 0, -depth / 2)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+/**
+ * The soft blob a wall casts onto the floor.
+ *
+ * A gradient sprite, not a real shadow map and not drei's <ContactShadows>.
+ * Both of those re-render the scene into a texture every frame, and this room
+ * can hold a lot of boards and loaded 3D models; the shadow here is a fixed
+ * soft ellipse under a wall that does not move, so paying a render pass per
+ * frame for it would buy nothing. It is also more directable — the reference
+ * this matches has a diffuse pool under each panel rather than a cast shadow
+ * with a light direction, and that is exactly what a radial gradient is.
+ *
+ * Cool and blue-leaning rather than neutral grey: on a near-white sky a grey
+ * pool reads as dirt, and every other shaded tone in the room is cool.
+ */
+const SHADOW_TEXTURE_PX = 128
+const SHADOW_TINT = '64, 84, 126'
+
+function createSoftShadowTexture(): THREE.CanvasTexture | null {
+  // Client components still render on the server for the initial HTML, and R3F
+  // would otherwise evaluate this during that pass.
+  if (typeof document === 'undefined') return null
+  const canvas = document.createElement('canvas')
+  canvas.width = SHADOW_TEXTURE_PX
+  canvas.height = SHADOW_TEXTURE_PX
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  const c = SHADOW_TEXTURE_PX / 2
+  const gradient = ctx.createRadialGradient(c, c, 0, c, c, c)
+  // Three stops, not two: a straight linear falloff reads as a hard-edged disc
+  // because most of its opacity sits in the outer ring.
+  gradient.addColorStop(0, `rgba(${SHADOW_TINT}, 0.34)`)
+  gradient.addColorStop(0.4, `rgba(${SHADOW_TINT}, 0.16)`)
+  gradient.addColorStop(1, `rgba(${SHADOW_TINT}, 0)`)
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, SHADOW_TEXTURE_PX, SHADOW_TEXTURE_PX)
+  return new THREE.CanvasTexture(canvas)
+}
+
+/**
+ * How far past the wall's ends the pool spreads, as a FRACTION of the wall's
+ * width. NOT inches, unlike SHADOW_DEPTH_IN on the next line — the two sit
+ * together and read alike, so the name carries the unit.
+ */
+const SHADOW_WIDTH_OVERHANG_RATIO = 0.22
+const SHADOW_DEPTH_IN = 52
+/** Clear of the floor plane, below the accent rim at the wall's foot. */
+const SHADOW_Y = 0.5
+
+/**
+ * One wall's panel mesh. A component rather than inline JSX because the
+ * geometry is built imperatively and has to be disposed when the wall's
+ * dimensions change — the wall loop is a .map(), which cannot call hooks.
+ */
+function WallPanel({
+  width, height, depth, radius, roundLeft, roundRight, children,
+}: {
+  width: number
+  height: number
+  depth: number
+  radius: number
+  roundLeft: boolean
+  roundRight: boolean
+  children: React.ReactNode
+}) {
+  const geometry = useDisposableGeometry(
+    () => buildWallPanelGeometry(width, height, depth, radius, roundLeft, roundRight),
+    [width, height, depth, radius, roundLeft, roundRight],
+  )
+  return <mesh geometry={geometry} renderOrder={0}>{children}</mesh>
+}
+
 
 export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'white', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick }: WallSystemProps) {
 
@@ -321,6 +468,16 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
   }), [wallPalette])
   const dimmedInk = useMemo(() => dimTowardSky(ROOM_PALETTE.ink, WALL_DIM_AMOUNT), [])
   const dimmedAccent = useMemo(() => dimTowardSky(ROOM_PALETTE.accent, WALL_DIM_AMOUNT), [])
+
+  // Which wall ends are open air, and so get a rounded corner. Memoized on the
+  // config: this walks every wall pair, and the answer only moves when a wall
+  // is resized, added, or dragged.
+  const edgeJoins = useMemo(() => getWallEdgeJoins(wallConfig), [wallConfig])
+
+  // One gradient shared by every wall's floor pool — the sprite is identical
+  // for all of them, only the plane it is stretched over differs.
+  const shadowTexture = useMemo(() => createSoftShadowTexture(), [])
+  useEffect(() => () => { shadowTexture?.dispose() }, [shadowTexture])
 
   // Backstop for the hover cursor set by clickable name plates. The click path
   // clears it inline, but a plate can also stop being hoverable without an
@@ -368,9 +525,11 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
         cellSize={12}
         cellThickness={1}
         cellColor={GRID_CELL_COLOR}
+        // Section lines disabled: zero thickness, and the colour matched to the
+        // cell lines so nothing shows even if the shader still rasterises them.
         sectionSize={120}
-        sectionThickness={1.8}
-        sectionColor={GRID_SECTION_COLOR}
+        sectionThickness={0}
+        sectionColor={GRID_CELL_COLOR}
         fadeDistance={fogFar}
         fadeStrength={1}
         followCamera={false}
@@ -422,6 +581,17 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
         const isDimmed = dimmedExceptWall != null && wallIndex !== dimmedExceptWall
         const palette = isDimmed ? dimmedWallPalette : wallPalette
         const inkColor = isDimmed ? dimmedInk : ROOM_PALETTE.ink
+
+        // Corner rounding for this wall. An edge that butts a neighbour stays
+        // square; only ends in open air curve. radiusL/radiusR are the ACTUAL
+        // radius applied on each side (0 where square), and are what the edge
+        // bars and the accent rim inset by.
+        const joins = edgeJoins[wallIndex] ?? { left: false, right: false }
+        const roundLeft = !joins.left
+        const roundRight = !joins.right
+        const cornerRadius = getWallCornerRadius(transform.width, transform.height)
+        const radiusL = roundLeft ? cornerRadius : 0
+        const radiusR = roundRight ? cornerRadius : 0
         // Faint glow when another user is editing this wall (presence).
         // Suppressed while ghosted: a glowing accent on a wall we're actively
         // pushing into the background reads as a rendering bug, and PresenceBar
@@ -501,11 +671,43 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
               onSurfaceHover={({ side }) => onWallHover?.(wallIndex, side)}
             />
 
-            {/* Modern off-white wall with depth and shadows */}
-            {/* Main wall surface - off-white with subtle depth */}
-            {/* Increased thickness for more visible depth */}
-            <mesh renderOrder={0}>
-              <boxGeometry args={[transform.width, transform.height, 6]} />
+            {/* Floor pool. Transparent and depth-write-off, so it draws after
+                the opaque walls and cannot punch a hole in one. This is what
+                gives a near-white wall its silhouette against a near-white sky
+                — see the note on ROOM_SKY: the two are one decision, and
+                since the accent rim was removed this is the ONLY thing doing
+                that job, so weakening it puts the walls straight back to
+                dissolving into the horizon. Sits inside the rotated wall group, so it stays aligned
+                under the wall whatever the layout does with it. */}
+            {shadowTexture && (
+              <mesh
+                position={[0, -transform.height / 2 + SHADOW_Y, 0]}
+                rotation={[-Math.PI / 2, 0, 0]}
+                renderOrder={-1}
+              >
+                <planeGeometry
+                  args={[transform.width * (1 + SHADOW_WIDTH_OVERHANG_RATIO), SHADOW_DEPTH_IN]}
+                />
+                <meshBasicMaterial
+                  map={shadowTexture}
+                  transparent
+                  depthWrite={false}
+                  opacity={isDimmed ? 0.4 : 1}
+                />
+              </mesh>
+            )}
+
+            {/* Modern off-white wall with depth and shadows.
+                Corners round only where this wall ends in open air — see
+                getWallEdgeJoins for why a joined seam has to stay square. */}
+            <WallPanel
+              width={transform.width}
+              height={transform.height}
+              depth={6}
+              radius={cornerRadius}
+              roundLeft={roundLeft}
+              roundRight={roundRight}
+            >
               <meshStandardMaterial
                 color={palette.main} // room wall color (grey default / paper white), ghosted when unfocused
                 // White mode matches the board material's roughness (0.7) so a
@@ -520,14 +722,17 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                 emissive={isOthersEditing ? ROOM_PALETTE.accent : '#000000'}
                 emissiveIntensity={isOthersEditing ? 0.45 : 0}
               />
-            </mesh>
+            </WallPanel>
 
-            {/* Subtle edge shadows for depth - creates modern panel effect */}
+            {/* Subtle edge shadows for depth - creates modern panel effect.
+                Each bar is inset by the corner radius at any end that is
+                rounded, so it stops where the straight run stops instead of
+                cantilevering out past the curve into open air. */}
             {/* Left edge shadow */}
-            <mesh 
-              position={[-transform.width / 2 + 0.1, 0, 2.1]}  
+            <mesh
+              position={[-transform.width / 2 + 0.1, 0, 2.1]}
             >
-              <boxGeometry args={[0.2, transform.height, 0.2]} />
+              <boxGeometry args={[0.2, transform.height - 2 * radiusL, 0.2]} />
               <meshStandardMaterial
                 color={palette.sideEdge} // side edge shadow (per wall color)
                 roughness={0.9}
@@ -539,7 +744,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             <mesh
               position={[transform.width / 2 - 0.1, 0, 2.1]}
             >
-              <boxGeometry args={[0.2, transform.height, 0.2]} />
+              <boxGeometry args={[0.2, transform.height - 2 * radiusR, 0.2]} />
               <meshStandardMaterial
                 color={palette.sideEdge} // side edge shadow (per wall color)
                 roughness={0.9}
@@ -549,9 +754,9 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
 
             {/* Top edge shadow */}
             <mesh
-              position={[0, transform.height / 2 - 0.1, 2.1]}
+              position={[(radiusL - radiusR) / 2, transform.height / 2 - 0.1, 2.1]}
             >
-              <boxGeometry args={[transform.width, 0.2, 0.2]} />
+              <boxGeometry args={[transform.width - radiusL - radiusR, 0.2, 0.2]} />
               <meshStandardMaterial
                 color={palette.topEdge} // top edge shadow (per wall color)
                 roughness={0.9}
@@ -561,9 +766,9 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
 
             {/* Bottom edge shadow */}
             <mesh
-              position={[0, -transform.height / 2 + 0.1, 2.1]}
+              position={[(radiusL - radiusR) / 2, -transform.height / 2 + 0.1, 2.1]}
             >
-              <boxGeometry args={[transform.width, 0.2, 0.2]} />
+              <boxGeometry args={[transform.width - radiusL - radiusR, 0.2, 0.2]} />
               <meshStandardMaterial
                 color={palette.bottomEdge} // bottom edge shadow (per wall color)
                 roughness={0.9}

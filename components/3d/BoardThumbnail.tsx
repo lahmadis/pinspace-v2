@@ -9,7 +9,7 @@ import { PDFTextureMaterial } from './PDFTexture'
 import { useBoardTexture } from './useBoardTexture'
 import { useDisposableGeometry } from './useDisposableGeometry'
 import VideoBadge from './VideoBadge'
-import { ROOM_SKY } from '@/lib/room/palette'
+import { ROOM_GHOST } from '@/lib/room/palette'
 import { boardAuthorName } from '@/lib/displayName'
 import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 
@@ -47,10 +47,15 @@ const BOARD_THICKNESS = 0.08
  * `map` textures are multiplied by `color`, and a multiply can only ever darken
  * — so tinting alone would push a de-emphasised board toward black, making it
  * heavier and MORE conspicuous than the boards it's receding behind. Instead
- * pair a gentle multiply (drains contrast) with an emissive wash in the sky
- * colour (lifts the whole quad toward the background), which reads as fading
- * into the room rather than falling into shadow. No transparency involved, so
- * there's no depth-sort order to get wrong between overlapping boards.
+ * pair a gentle multiply (drains contrast) with an emissive wash toward
+ * ROOM_GHOST, which reads as fading into the room rather than falling into
+ * shadow. No transparency involved, so there is no depth-sort order to get
+ * wrong between overlapping boards.
+ *
+ * It must be whatever the WALLS ghost toward, and the two parted company when
+ * the sky went near-white. Washing a board toward a near-white sky while its
+ * wall ghosts toward a cool grey lifts the de-emphasised artwork ABOVE the
+ * surface it sits on, which is the inversion this treatment exists to avoid.
  */
 const BOARD_DIM_MULTIPLY = '#D7DEEB'
 const BOARD_DIM_WASH = 0.5
@@ -102,7 +107,7 @@ function BoardImageMaterial({
       color={dimmed ? BOARD_DIM_MULTIPLY : '#ffffff'}
       roughness={0.7}
       metalness={0.0}
-      emissive={dimmed ? ROOM_SKY : (isHighlighted || hovered ? '#3B6EF6' : '#000000')}
+      emissive={dimmed ? ROOM_GHOST : (isHighlighted || hovered ? '#3B6EF6' : '#000000')}
       emissiveIntensity={dimmed ? BOARD_DIM_WASH : (isHighlighted ? 0.3 : (hovered ? 0.12 : 0))}
       depthWrite={true}
       depthTest={true}
@@ -225,7 +230,7 @@ export default function BoardThumbnail({ board, position, width, height, onClick
               color={dimmed ? BOARD_DIM_MULTIPLY : (hovered ? '#f8f8f8' : '#ffffff')}
               roughness={0.7}
               metalness={0.0}
-              emissive={dimmed ? ROOM_SKY : (isHighlighted || hovered ? '#3B6EF6' : '#000000')}
+              emissive={dimmed ? ROOM_GHOST : (isHighlighted || hovered ? '#3B6EF6' : '#000000')}
               emissiveIntensity={dimmed ? BOARD_DIM_WASH : (isHighlighted ? 0.3 : (hovered ? 0.12 : 0))}
             />
           )
