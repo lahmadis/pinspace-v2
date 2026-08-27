@@ -3,32 +3,90 @@
 import Link from 'next/link'
 import { useRef, useEffect, useState } from 'react'
 import {
-  GraduationCap, Users, Building2, MoreVertical, Plus,
+  MoreVertical, Plus,
   Settings, Trash2, Pencil, Archive, UserPlus, LogOut, ArrowRight,
 } from 'lucide-react'
 import { useProfile } from '@/lib/ProfileContext'
+import { getOrgBrand, withAlpha, type OrgBrand } from '@/lib/constants/orgBranding'
 import { scopeConfig, withInstitution, metaLine } from './dashboardScope'
 import type { Scope, DashboardWorkspace } from './dashboardScope'
 
 // Re-exported so /dashboard and /archive keep importing this type from here.
 export type { DashboardWorkspace } from './dashboardScope'
 
+// ── Card preview ──────────────────────────────────────────────────────────────
+
+/**
+ * A studio's preview tile.
+ *
+ * Studios have no rendered thumbnail, so this draws the thing a studio IS: a
+ * corner of two walls, in the same near-white-on-pale-blue the 3D room itself
+ * uses. Inline SVG rather than an asset — it is four shapes, it has to recolour
+ * with the card, and it must stay crisp at every column width the grid can
+ * produce.
+ *
+ * A studio with no boards gets the placeholder instead. A generic room drawing
+ * on an empty studio reads as "here is your work" when there is none.
+ */
+function StudioPreview({ boards }: { boards: number }) {
+  if (boards === 0) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center gap-2.5">
+        <div className="flex items-end gap-1.5" aria-hidden="true">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="block rounded border border-dashed border-[#16181D]/[0.18]"
+              style={{ width: 22, height: i === 1 ? 30 : 24 }}
+            />
+          ))}
+        </div>
+        <span className="text-[11px] text-[#A8ADBA]">Nothing pinned yet</span>
+      </div>
+    )
+  }
+
+  return (
+    <svg
+      viewBox="0 0 200 150"
+      className="h-full w-full"
+      aria-hidden="true"
+      preserveAspectRatio="xMidYMid meet"
+    >
+      {/* Soft pool under the walls — the same trick the 3D room uses to lift a
+          near-white surface off a near-white ground. */}
+      <ellipse cx="104" cy="118" rx="62" ry="9" fill="#16181D" opacity="0.06" />
+      {/* Left wall, angled away */}
+      <path d="M52 44 L104 58 L104 114 L52 100 Z" fill="#FFFFFF" opacity="0.95" />
+      {/* Right wall, catching a little less light */}
+      <path d="M104 58 L156 44 L156 100 L104 114 Z" fill="#F2F5FB" />
+      {/* Sheets pinned on each face */}
+      <rect x="63" y="60" width="13" height="17" rx="1.5" fill="#DCE4F2" />
+      <rect x="80" y="65" width="13" height="17" rx="1.5" fill="#DCE4F2" />
+      <rect x="115" y="65" width="13" height="17" rx="1.5" fill="#E2E9F5" />
+      <rect x="132" y="60" width="13" height="17" rx="1.5" fill="#E2E9F5" />
+      {/* The seam where the two walls meet, which is what reads as a corner */}
+      <path d="M104 58 L104 114" stroke="#16181D" strokeOpacity="0.07" strokeWidth="1" />
+    </svg>
+  )
+}
+
 // ── RoomCard ──────────────────────────────────────────────────────────────────
 
 interface RoomCardProps {
   workspace: DashboardWorkspace
   isOwner: boolean
-  scope: Scope
   openMenuId: string | null
   setOpenMenuId: (id: string | null) => void
   institutionSlug: string | null
+  brand: OrgBrand | null
   onDelete: (id: string, name: string) => void
   onRename: (id: string, name: string) => void
   onLeave: (id: string, name: string) => void
 }
 
 function RoomCard({
-  workspace, isOwner, scope, openMenuId, setOpenMenuId, institutionSlug,
+  workspace, isOwner, openMenuId, setOpenMenuId, institutionSlug, brand,
   onDelete, onRename, onLeave,
 }: RoomCardProps) {
   const menuRef = useRef<HTMLDivElement>(null)
@@ -43,8 +101,6 @@ function RoomCard({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [isMenuOpen, setOpenMenuId])
-
-  const IconEl = scope === 'wentworth' ? GraduationCap : scope === 'shared' ? Users : Building2
 
   const rooms = workspace.room_count ?? 0
   const boards = workspace.board_count ?? 0
@@ -64,7 +120,7 @@ function RoomCard({
 
   return (
     <div
-      className={`group relative flex flex-col rounded-3xl border bg-white p-4 transition-shadow duration-200 ${
+      className={`group relative flex flex-col rounded-2xl border bg-white p-3 transition-shadow duration-200 ${
         isArchived
           ? 'border-[#16181D]/10 opacity-70'
           : 'border-[#16181D]/[0.08] shadow-[0_8px_24px_rgba(22,24,29,0.05)] hover:shadow-[0_16px_40px_rgba(22,24,29,0.10)]'
@@ -74,11 +130,17 @@ function RoomCard({
           There is no pill on a live studio: every card on this dashboard is one
           you own or belong to, so "Yours" was true of nearly all of them and
           told you nothing. Archived is the only state here worth marking. */}
-      <div className="mb-2.5 flex items-center justify-between gap-2">
+      <div className="mb-2 flex items-center justify-between gap-2">
         {isArchived ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-[#16181D]/[0.08] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[#5A5E6B]">
             <Archive className="h-3 w-3" /> Archived
           </span>
+        ) : brand ? (
+          // The org's mark, on org studios only. Shared and personal studios
+          // are not the institution's, so branding them would be a lie about
+          // where the work lives.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={brand.mark} alt="" aria-hidden="true" className="h-5 w-5 shrink-0" />
         ) : (
           <span />
         )}
@@ -147,54 +209,39 @@ function RoomCard({
 
       {/* Title */}
       <Link href={withInstitution(`/workspace/${workspace.id}`, institutionSlug)} className="block">
-        <h3 className="truncate text-[17px] font-extrabold tracking-[-0.02em] text-[#16181D] transition-colors hover:text-[#3B6EF6]">
+        <h3 className="truncate text-[15px] font-extrabold tracking-[-0.02em] text-[#16181D] transition-colors hover:text-[#3B6EF6]">
           {workspace.name || 'Unnamed'}
         </h3>
       </Link>
       {subMeta && <p className="mt-0.5 truncate text-xs text-[#8A8FA0]">{subMeta}</p>}
 
       {/* Preview. A tinted panel, not a render — studios have no thumbnail yet.
-          aspect-[4/3] is what makes the card shrink gracefully: the panel
+          The aspect-ratio box is what makes the card shrink gracefully: the panel
           rescales with the column instead of holding a fixed height. */}
       <Link
         href={withInstitution(`/workspace/${workspace.id}`, institutionSlug)}
-        className="mt-3 block overflow-hidden rounded-2xl border border-[#16181D]/[0.06]"
+        className="mt-2.5 block overflow-hidden rounded-xl border border-[#16181D]/[0.06]"
       >
         <div
-          className="flex aspect-[4/3] items-center justify-center"
+          className="flex aspect-[16/11] items-center justify-center p-2"
           style={{ background: isArchived
             ? 'linear-gradient(150deg, #F2F4F8, #E9ECF3)'
-            : 'linear-gradient(150deg, #EEF3FC, #DCE5F5)' }}
+            : 'linear-gradient(150deg, #F4F7FD, #E4EBF7)' }}
         >
-          <IconEl className={`h-9 w-9 ${isArchived ? 'text-[#B6BAC4]' : 'text-[#9FB0CE]'}`} />
+          <StudioPreview boards={boards} />
         </div>
       </Link>
 
       {/* Footer meta + actions */}
-      <p className="mt-3 text-xs text-[#8A8FA0]">{footerMeta}</p>
+      <p className="mt-2.5 text-[11px] text-[#8A8FA0]">{footerMeta}</p>
 
       <Link
         href={withInstitution(`/workspace/${workspace.id}`, institutionSlug)}
-        className="mt-3 block rounded-full bg-[#16181D] px-4 py-2.5 text-center text-[13px] font-bold text-white transition-colors hover:bg-[#3B6EF6]"
+        className="mt-2.5 block rounded-full bg-[#16181D] px-4 py-2 text-center text-[12.5px] font-bold text-white transition-colors hover:bg-[#3B6EF6]"
       >
         Open studio
       </Link>
     </div>
-  )
-}
-
-// ── New Room card ─────────────────────────────────────────────────────────────
-
-function NewRoomCard({ href, label }: { href: string; label: string }) {
-  return (
-    <Link href={href} className="block h-full">
-      <div className="group flex h-full min-h-[220px] flex-col items-center justify-center gap-2.5 rounded-3xl border-2 border-dashed border-[#16181D]/[0.12] bg-white/40 p-4 transition-colors duration-200 hover:border-[#3B6EF6] hover:bg-[#3B6EF6]/5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#16181D]/[0.06] transition-colors group-hover:bg-[#3B6EF6]/[0.12]">
-          <Plus className="h-5 w-5 text-[#8A8FA0] transition-colors group-hover:text-[#3B6EF6]" />
-        </div>
-        <span className="text-center text-sm font-semibold text-[#8A8FA0] transition-colors group-hover:text-[#3B6EF6]">{label}</span>
-      </div>
-    </Link>
   )
 }
 
@@ -204,11 +251,74 @@ function NewRoomCard({ href, label }: { href: string; label: string }) {
  * The one dark surface on the dashboard. It is the only element here that is a
  * place rather than a list item, and the contrast is what says so.
  */
-function EnterNetworkCard({ href, studioCount }: { href: string; studioCount: number }) {
+/**
+ * The network entry point.
+ *
+ * Two treatments. With org branding it is a warm wash carrying the institution's
+ * own seal — the one surface on the dashboard that belongs to the school rather
+ * than to pinspace. Without it, the original dark card: an unbranded org has no
+ * accent to wash with, and a beige card with no mark on it is just a beige card.
+ */
+function EnterNetworkCard({
+  href, studioCount, brand,
+}: { href: string; studioCount: number; brand: OrgBrand | null }) {
+  const blurb = `${studioCount > 0 ? `${studioCount} studio${studioCount === 1 ? '' : 's'} in one space. ` : ''}Walk the walls, read the boards, leave a crit.`
+
+  if (brand) {
+    return (
+      <Link href={href} className="group block h-full">
+        <div
+          // The hover shadow goes through a CSS variable rather than a literal
+          // in the class: a Tailwind arbitrary value is a static string, so an
+          // org colour cannot be interpolated into one, but it CAN read a
+          // variable that inline style sets per-org.
+          className="relative flex h-full min-h-[180px] flex-col justify-end overflow-hidden rounded-2xl border p-4 transition-shadow duration-200 hover:shadow-[0_16px_40px_var(--brand-shadow)]"
+          style={{
+            // Every stop derives from the brand — no literal golds, so a second
+            // branded org gets its own colours rather than Wentworth's.
+            background: `linear-gradient(150deg, #FFFFFF 0%, ${brand.accentSoft} 58%, ${withAlpha(brand.accent, 0.28)} 100%)`,
+            borderColor: withAlpha(brand.accentInk, 0.16),
+            '--brand-shadow': withAlpha(brand.accentInk, 0.16),
+          } as React.CSSProperties}
+        >
+          {/* The seal as a watermark, top-left, at the size it reads as a crest
+              rather than as an icon. Bleeds warm light behind it. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={brand.mark}
+            alt=""
+            aria-hidden="true"
+            className="pointer-events-none absolute left-5 top-5 h-24 w-24 opacity-95"
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -bottom-12 -right-8 h-52 w-52 rounded-full opacity-40 blur-[2px]"
+            style={{ background: `radial-gradient(closest-side, ${brand.accent}55, transparent)` }}
+          />
+
+          <div className="relative rounded-2xl bg-white/85 p-3.5 backdrop-blur-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[17px] font-extrabold tracking-[-0.02em] text-[#16181D]">
+                Enter network
+              </span>
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform duration-200 group-hover:translate-x-0.5"
+                style={{ background: brand.accent }}
+              >
+                <ArrowRight className="h-4 w-4 text-white" />
+              </span>
+            </div>
+            <p className="mt-1 text-[12px] leading-relaxed text-[#5A5E6B]">{blurb}</p>
+          </div>
+        </div>
+      </Link>
+    )
+  }
+
   return (
     <Link href={href} className="block h-full">
       <div
-        className="group relative flex h-full min-h-[220px] flex-col justify-between overflow-hidden rounded-3xl p-6 transition-shadow duration-200 hover:shadow-[0_20px_50px_rgba(22,24,29,0.28)]"
+        className="group relative flex h-full min-h-[180px] flex-col justify-between overflow-hidden rounded-2xl p-5 transition-shadow duration-200 hover:shadow-[0_20px_50px_rgba(22,24,29,0.28)]"
         style={{ background: 'linear-gradient(150deg, #171A24 0%, #1D2436 55%, #27365C 100%)' }}
       >
         {/* Decorative bubbles, echoing what the network itself renders. */}
@@ -219,12 +329,7 @@ function EnterNetworkCard({ href, studioCount }: { href: string; studioCount: nu
           <h3 className="text-[26px] font-extrabold leading-[1.05] tracking-[-0.03em] text-white">
             The bubble<br />network
           </h3>
-          <p className="mt-2.5 max-w-[15rem] text-[13px] leading-relaxed text-white/60">
-            {studioCount > 0
-              ? `${studioCount} studio${studioCount === 1 ? '' : 's'} in one space. `
-              : ''}
-            Walk the walls, read the boards, leave a crit.
-          </p>
+          <p className="mt-2.5 max-w-[15rem] text-[13px] leading-relaxed text-white/60">{blurb}</p>
         </div>
 
         <span className="relative mt-5 inline-flex w-fit items-center gap-2 rounded-full bg-white px-5 py-2.5 text-[13px] font-bold text-[#16181D] transition-transform duration-200 group-hover:translate-x-0.5">
@@ -281,6 +386,13 @@ export function DashboardMain({
       : scope === 'shared' ? '/network/shared' : '/network'
 
   const cfg = scopeConfig(scope, organization, institutionHome, canCreate)
+
+  // The institution's branding, and only on the institution's own tab. Shared
+  // and Personal studios are not the school's, so they keep the neutral
+  // treatment even for a user who belongs to a branded org. Null throughout for
+  // an org with no artwork — see lib/constants/orgBranding.
+  const brand = getOrgBrand(organization?.slug)
+  const brandHeader = scope === 'wentworth' ? brand : null
   const hasArchived = rooms.some((r) => r.is_archived)
   const visibleRooms = showArchived ? rooms : rooms.filter((r) => !r.is_archived)
   const openCount = rooms.filter((r) => !r.is_archived).length
@@ -315,13 +427,36 @@ export function DashboardMain({
           their own row on narrow viewports instead of the buttons being pushed
           past the right edge; min-w-0 lets the title shrink rather than shove
           them off. */}
-      <div className="shrink-0 border-b border-[#16181D]/[0.06] bg-white/60 px-6 pb-4 pt-5 backdrop-blur-sm sm:px-8">
+      <div className="shrink-0 border-b border-[#16181D]/[0.06] bg-white/60 px-5 pb-3 pt-4 backdrop-blur-sm sm:px-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="truncate pl-10 text-[26px] font-extrabold tracking-[-0.035em] text-[#16181D] md:pl-0">
-              {cfg.title}
-            </h1>
-            <p className="mt-0.5 pl-10 text-[13px] text-[#8A8FA0] md:pl-0">{headerMeta}</p>
+            {/* The institution's own lockup stands in for the title when we
+                have it. h1 either way — the wordmark carries the org's name, so
+                the alt text is the heading and the page keeps one. */}
+            {brandHeader ? (
+              <h1 className="pl-10 md:pl-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={brandHeader.wordmark}
+                  alt={brandHeader.wordmarkAlt}
+                  className="h-11 w-auto max-w-full object-contain object-left sm:h-14"
+                />
+              </h1>
+            ) : (
+              <h1 className="truncate pl-10 text-[26px] font-extrabold tracking-[-0.035em] text-[#16181D] md:pl-0">
+                {cfg.title}
+              </h1>
+            )}
+            <p className="mt-2 flex items-center gap-2.5 pl-10 text-[13px] text-[#8A8FA0] md:pl-0">
+              {brandHeader && (
+                <span
+                  aria-hidden="true"
+                  className="h-[3px] w-8 shrink-0 rounded-full"
+                  style={{ background: brandHeader.accent }}
+                />
+              )}
+              {headerMeta}
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -370,14 +505,14 @@ export function DashboardMain({
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6 sm:p-8">
+      <div className="flex-1 overflow-y-auto p-5 sm:p-6">
         {loading ? (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="animate-pulse rounded-3xl border border-[#16181D]/[0.08] bg-white p-4">
+              <div key={i} className="animate-pulse rounded-2xl border border-[#16181D]/[0.08] bg-white p-3">
                 <div className="mb-3 h-4 w-1/3 rounded bg-[#16181D]/5" />
                 <div className="mb-3 h-5 w-3/4 rounded bg-[#16181D]/5" />
-                <div className="aspect-[4/3] rounded-2xl bg-[#16181D]/5" />
+                <div className="aspect-[16/11] rounded-xl bg-[#16181D]/5" />
                 <div className="mt-3 h-9 rounded-full bg-[#16181D]/5" />
               </div>
             ))}
@@ -389,23 +524,22 @@ export function DashboardMain({
                 the populated branch of an empty-state ternary — that structure
                 is what silently deleted Enter Network for every user with zero
                 rooms. Anything added to this grid later inherits the fix. */}
-            <div className={`grid gap-5 ${gridCols}`}>
-              <EnterNetworkCard href={networkHref} studioCount={openCount} />
+            <div className={`grid gap-4 ${gridCols}`}>
+              <EnterNetworkCard href={networkHref} studioCount={openCount} brand={brandHeader} />
               {visibleRooms.map((room) => (
                 <RoomCard
                   key={room.id}
                   workspace={room}
                   isOwner={room.owner_id === userId}
-                  scope={scope}
                   openMenuId={openMenuId}
                   setOpenMenuId={setOpenMenuId}
                   institutionSlug={institutionHome}
+                  brand={scope === 'wentworth' ? brand : null}
                   onDelete={onDelete}
                   onRename={onRename}
                   onLeave={onLeave}
                 />
               ))}
-              {canCreate && <NewRoomCard href={cfg.newHref} label={cfg.newLabel} />}
             </div>
 
             {visibleRooms.length === 0 && (

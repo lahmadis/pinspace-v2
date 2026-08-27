@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase/client'
 import { resetAccountModeCache } from '@/lib/useAccountMode'
 import { useProfile } from '@/lib/ProfileContext'
 import { SuperadminOrgSwitcher } from './SuperadminOrgSwitcher'
+import { getOrgBrand, type OrgBrand } from '@/lib/constants/orgBranding'
 import { withInstitution } from './dashboardScope'
 import type { DashboardWorkspace, ScopeCfg, Scope } from './dashboardScope'
 
@@ -22,6 +23,8 @@ interface DashboardSidebarProps {
   onScopeChange: (scope: Scope) => void
   hasOrganization: boolean
   orgName?: string | null
+  /** organizations.slug — keys the org's branding. See lib/constants/orgBranding. */
+  orgSlug?: string | null
   firstName?: string | null
   userEmail?: string | null
   isAdmin?: boolean
@@ -132,7 +135,7 @@ function StudioGroup({
 
 export function DashboardSidebar({
   currentScope, onScopeChange, hasOrganization, orgName,
-  firstName, userEmail, isAdmin, isOpen, onToggle,
+  firstName, userEmail, isAdmin, isOpen, onToggle, orgSlug,
   workspaces, scopeCfg, institutionSlug,
 }: DashboardSidebarProps) {
   const router = useRouter()
@@ -148,6 +151,9 @@ export function DashboardSidebar({
   // accountMode ternary computed it identically. Only the FALLBACK noun
   // branched ('Firm' vs 'Network'), which is the copy branch being collapsed.
   const orgLabel = orgName?.split(' ')[0] || 'Network'
+  // Null for an org with no artwork, which keeps the other two orgs on the
+  // neutral blue treatment. See lib/constants/orgBranding.
+  const brand = getOrgBrand(orgSlug)
 
   const live = (workspaces ?? []).filter((w) => !w.is_archived)
   const past = (workspaces ?? []).filter((w) => w.is_archived)
@@ -164,21 +170,38 @@ export function DashboardSidebar({
     if (isOpen) onToggle()
   }
 
-  const navBtn = (scope: Scope, label: string, icon: React.ReactNode) => (
-    <button
-      key={scope}
-      type="button"
-      onClick={() => handleScopeClick(scope)}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors text-left ${
-        currentScope === scope
-          ? 'bg-[#3B6EF6]/10 text-[#16181D]'
-          : 'text-[#5A5E6B] hover:bg-white/70'
-      }`}
-    >
-      <span className={`shrink-0 ${currentScope === scope ? 'text-[#3B6EF6]' : 'text-[#8A8FA0]'}`}>{icon}</span>
-      <span className="truncate">{label}</span>
-    </button>
-  )
+  /**
+   * `accent` is passed only for the org's own tab, and only when that org has
+   * branding. Its active state is then styled inline rather than by class,
+   * because the colour is per-org data and Tailwind scans source text — it
+   * cannot resolve a class name built from a variable.
+   */
+  const navBtn = (scope: Scope, label: string, icon: React.ReactNode, accent?: OrgBrand | null) => {
+    const active = currentScope === scope
+    return (
+      <button
+        key={scope}
+        type="button"
+        onClick={() => handleScopeClick(scope)}
+        className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors text-left ${
+          active
+            ? accent ? 'text-[#16181D]' : 'bg-[#3B6EF6]/10 text-[#16181D]'
+            : 'text-[#5A5E6B] hover:bg-white/70'
+        }`}
+        style={active && accent ? { background: accent.accentSoft } : undefined}
+      >
+        {active && accent && (
+          <span
+            aria-hidden="true"
+            className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full"
+            style={{ background: accent.accent }}
+          />
+        )}
+        <span className={`shrink-0 ${active && !accent ? 'text-[#3B6EF6]' : active ? '' : 'text-[#8A8FA0]'}`}>{icon}</span>
+        <span className="truncate">{label}</span>
+      </button>
+    )
+  }
 
   const navLink = (href: string, label: string, icon: React.ReactNode) => {
     const active = pathname === href
@@ -237,20 +260,41 @@ export function DashboardSidebar({
               />
             </span>
           </Link>
-          <button
-            type="button"
-            onClick={onToggle}
-            className="md:hidden p-1.5 rounded-lg hover:bg-[#16181D]/[0.08] transition-colors"
-            aria-label="Close menu"
-          >
-            <X className="w-4 h-4 text-[#8A8FA0]" />
-          </button>
+          <div className="flex items-center gap-1">
+            {/* The institution's mark beside the product's, so the sidebar says
+                whose pinspace this is at a glance. */}
+            {brand && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={brand.mark}
+                alt=""
+                aria-hidden="true"
+                className="hidden h-6 w-6 md:block"
+              />
+            )}
+            <button
+              type="button"
+              onClick={onToggle}
+              className="md:hidden p-1.5 rounded-lg hover:bg-[#16181D]/[0.08] transition-colors"
+              aria-label="Close menu"
+            >
+              <X className="w-4 h-4 text-[#8A8FA0]" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable middle: scopes, then this scope's studios */}
         <nav className="flex-1 px-3 pt-2 pb-4 overflow-y-auto">
           <div className="space-y-0.5">
-            {hasOrganization && navBtn('wentworth', orgLabel, <Network className="w-4 h-4" />)}
+            {hasOrganization && navBtn(
+              'wentworth',
+              orgLabel,
+              brand
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={brand.mark} alt="" aria-hidden="true" className="h-5 w-5" />
+                : <Network className="w-4 h-4" />,
+              brand,
+            )}
             {navBtn('shared', 'Shared', <Users className="w-4 h-4" />)}
             {navBtn('personal', 'Personal', <User className="w-4 h-4" />)}
 

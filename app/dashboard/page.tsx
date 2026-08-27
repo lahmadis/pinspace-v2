@@ -305,6 +305,7 @@ function DashboardContent() {
         onScopeChange={handleScopeChange}
         hasOrganization={hasOrganization}
         orgName={organization?.name}
+        orgSlug={organization?.slug}
         firstName={firstName}
         userEmail={user?.email}
         isAdmin={isAdmin}
