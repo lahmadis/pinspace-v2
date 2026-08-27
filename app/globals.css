@@ -108,6 +108,79 @@
     }
   }
 
+  /*
+   * Landing hero scroll cue.
+   *
+   * CSS rather than framer-motion, which the rest of the hero uses, for two
+   * reasons. A perpetual loop is predetermined motion, so it belongs off the
+   * main thread — this page is mounting the auth session, the Supabase client
+   * and the kinetic grid's canvas at the same moment, and a JS-driven bob
+   * would stutter through exactly that. And landingKit's Reveal already
+   * documents why useReducedMotion() cannot decide what gets rendered here:
+   * framer reads the preference synchronously at first render and the server
+   * has no matchMedia, so branching on it mismatches hydration. A media query
+   * has no such problem.
+   *
+   * Two elements, two animations: the entrance owns the anchor's transform and
+   * the bob owns the arrow's. Stacked on one element the second would simply
+   * overwrite the first.
+   */
+  @keyframes scrollCueIn {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes scrollCueFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Falls, returns, then holds for the last 30% — a metronome reads as a
+     loading indicator, and the rest is what makes it read as a gesture. */
+  @keyframes scrollCueBob {
+    0% {
+      transform: translateY(0);
+    }
+    35% {
+      transform: translateY(7px);
+    }
+    70%, 100% {
+      transform: translateY(0);
+    }
+  }
+
+  /* Delayed past the hero's own entrance, which finishes at 1.15s. A cue to
+     keep going that arrives before you have read what is on screen is noise. */
+  .scroll-cue {
+    animation: scrollCueIn 0.6s cubic-bezier(0.23, 1, 0.32, 1) 1.2s both;
+  }
+
+  .scroll-cue-arrow {
+    animation: scrollCueBob 2.4s ease-in-out 1.8s infinite;
+  }
+
+  /* The arrow still renders and still scrolls the page — only the movement
+     goes, which is the whole of what this preference is about. */
+  @media (prefers-reduced-motion: reduce) {
+    .scroll-cue {
+      animation: scrollCueFade 0.4s ease 1.2s both;
+    }
+
+    .scroll-cue-arrow {
+      animation: none;
+    }
+  }
+
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold;
   }

@@ -13,6 +13,7 @@ import AvatarMenu from '@/components/AvatarMenu'
 import KineticGrid from '@/components/ui/kinetic-grid'
 import ForSchoolsSection from '@/components/landing/ForSchoolsSection'
 import FaqSection from '@/components/landing/FaqSection'
+import ScrollCue from '@/components/landing/ScrollCue'
 
 function HomeInner() {
   const router = useRouter()
@@ -205,6 +206,10 @@ function HomeInner() {
           </motion.p>
 
         </motion.div>
+
+        {/* Sits in the hero's own box, so it scrolls away as the sections
+            arrive rather than needing to be told when to go. */}
+        <ScrollCue />
       </div>
 
       <ForSchoolsSection />
