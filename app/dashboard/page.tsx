@@ -10,6 +10,7 @@ import { useAuthSession } from '@/hooks/useAuthSession'
 import { useProfile } from '@/lib/ProfileContext'
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
 import { DashboardMain } from '@/components/dashboard/DashboardMain'
+import { scopeConfig } from '@/components/dashboard/dashboardScope'
 import type { DashboardWorkspace } from '@/components/dashboard/DashboardMain'
 import type { Scope } from '@/components/dashboard/DashboardSidebar'
 
@@ -28,7 +29,7 @@ function DashboardContent() {
   const searchParams = useSearchParams()
   const { status: authStatus, user } = useAuthSession()
   const isLoaded = authStatus !== 'loading'
-  const { setProfile } = useProfile()
+  const { profile, setProfile } = useProfile()
 
   // Data
   const [allWorkspaces, setAllWorkspaces] = useState<DashboardWorkspace[]>([])
@@ -260,6 +261,13 @@ function DashboardContent() {
     return false
   })
 
+  // The sidebar now renders this scope's studio list and its own "New studio"
+  // button, so it needs the same create gate and the same hrefs the main pane
+  // derives. Both read them from dashboardScope rather than one passing the
+  // other's copy down.
+  const canCreate = currentScope !== 'wentworth' || profile.accountRole === 'instructor'
+  const sidebarCfg = scopeConfig(currentScope, organization, institutionHome, canCreate)
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (!isLoaded) {
@@ -302,6 +310,9 @@ function DashboardContent() {
         isAdmin={isAdmin}
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen((v) => !v)}
+        workspaces={scopedRooms}
+        scopeCfg={sidebarCfg}
+        institutionSlug={institutionHome}
       />
 
       <DashboardMain
@@ -339,13 +350,13 @@ function DashboardContent() {
                 if (e.key === 'Enter') submitRename()
                 if (e.key === 'Escape') { setRenamingId(null); setRenamingValue('') }
               }}
-              className="w-full px-4 py-3 border border-[#16181D]/12 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3B6EF6] mb-4"
+              className="w-full px-4 py-3 border border-[#16181D]/[0.12] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3B6EF6] mb-4"
               autoFocus
             />
             <div className="flex gap-3">
               <button
                 onClick={() => { setRenamingId(null); setRenamingValue('') }}
-                className="flex-1 px-4 py-2.5 border border-[#16181D]/12 text-[#5A5E6B] rounded-full hover:bg-[#16181D]/5 transition-colors font-semibold"
+                className="flex-1 px-4 py-2.5 border border-[#16181D]/[0.12] text-[#5A5E6B] rounded-full hover:bg-[#16181D]/5 transition-colors font-semibold"
               >
                 Cancel
               </button>
@@ -371,7 +382,7 @@ function DashboardContent() {
             <div className="flex gap-3">
               <button
                 onClick={() => { setConfirmDeleteId(null); setConfirmDeleteName('') }}
-                className="flex-1 px-4 py-2.5 border border-[#16181D]/12 text-[#5A5E6B] rounded-full hover:bg-[#16181D]/5 transition-colors font-semibold"
+                className="flex-1 px-4 py-2.5 border border-[#16181D]/[0.12] text-[#5A5E6B] rounded-full hover:bg-[#16181D]/5 transition-colors font-semibold"
               >
                 Cancel
               </button>
@@ -396,7 +407,7 @@ function DashboardContent() {
             <div className="flex gap-3">
               <button
                 onClick={() => { setConfirmLeaveId(null); setConfirmLeaveName('') }}
-                className="flex-1 px-4 py-2.5 border border-[#16181D]/12 text-[#5A5E6B] rounded-full hover:bg-[#16181D]/5 transition-colors font-semibold"
+                className="flex-1 px-4 py-2.5 border border-[#16181D]/[0.12] text-[#5A5E6B] rounded-full hover:bg-[#16181D]/5 transition-colors font-semibold"
               >
                 Cancel
               </button>

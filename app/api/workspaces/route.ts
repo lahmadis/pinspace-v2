@@ -86,7 +86,27 @@ export async function GET() {
       }
     }
 
-    const result = allWorkspaces.map((w) => ({ ...w, board_count: boardCountMap[w.id] ?? 0 }))
+    // Room counts, same one-query shape as the board counts above. The dashboard
+    // card reads "N rooms · M boards"; without this it could only say the second
+    // half, since a workspace's rooms are never joined onto this response.
+    const roomCountMap: Record<string, number> = {}
+    if (wsIds.length > 0) {
+      const { data: roomRows } = await admin
+        .from('rooms')
+        .select('workspace_id')
+        .in('workspace_id', wsIds)
+      if (roomRows) {
+        for (const row of roomRows) {
+          roomCountMap[row.workspace_id] = (roomCountMap[row.workspace_id] || 0) + 1
+        }
+      }
+    }
+
+    const result = allWorkspaces.map((w) => ({
+      ...w,
+      board_count: boardCountMap[w.id] ?? 0,
+      room_count: roomCountMap[w.id] ?? 0,
+    }))
     return NextResponse.json({ workspaces: result })
   } catch (error) {
     console.error('Unexpected error in GET /api/workspaces:', error)
