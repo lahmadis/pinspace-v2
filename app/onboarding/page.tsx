@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthSession } from '@/hooks/useAuthSession'
+import { DEPARTMENTS, YEAR_LEVELS, yearLabel } from '@/lib/constants/departments'
 
 const ROLES = ['Student', 'Faculty', 'Professional (working at a firm)', 'Independent Creator'] as const
 const ROLE_TO_VALUE: Record<string, 'student' | 'faculty' | 'professional' | null> = {
@@ -11,8 +12,11 @@ const ROLE_TO_VALUE: Record<string, 'student' | 'faculty' | 'professional' | nul
   'Professional (working at a firm)': 'professional',
   'Independent Creator': null,
 }
-const YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Masters'] as const
-const MAJORS = ['Architecture', 'Interior Design', 'Industrial Design', 'Other'] as const
+// Derived from the canonical list rather than repeating it — this was a
+// hand-rolled copy of DEPARTMENTS in a file that already imports from the
+// module. 'Other' is real here and not a department: onboarding accepts majors
+// pinspace has no studios for (user_profiles.major is free text).
+const MAJORS = [...DEPARTMENTS, 'Other'] as const
 const AGE_RANGES = ['18-22', '23-30', '31-40', '41+'] as const
 const HOW_HEARD = ['Professor or instructor', 'Classmate', 'School website', 'Social media', 'Other'] as const
 
@@ -200,8 +204,9 @@ function OnboardingContent() {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
               <option value="">Select year</option>
-              {YEARS.map((y) => (
-                <option key={y} value={y}>{y}</option>
+              {/* value stays the stored 'Year N'; only the text changes. */}
+              {YEAR_LEVELS.map((y) => (
+                <option key={y} value={y}>{yearLabel(y)}</option>
               ))}
             </select>
           </div>

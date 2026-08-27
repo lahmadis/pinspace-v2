@@ -1,5 +1,7 @@
 // Core data types for pinspace
 
+import type { Department, YearLevel } from '@/lib/constants/departments'
+
 export interface School {
   id: string
   name: string
@@ -212,9 +214,12 @@ export interface Workspace {
   institutionId?: string
   institution?: Institution
   // Institution categorization (required when isPublic is true)
+  // Spelled as the canonical types, not repeated inline. The inline copy was
+  // what made narrowing DEPARTMENTS a compile error here rather than a no-op:
+  // the two lists only ever agreed by hand.
   networkMetadata?: {
-    department: 'Aerospace Engineering' | 'Architecture' | 'Civil Engineering' | 'Electrical Engineering' | 'Industrial Design' | 'Interior Design' | 'Mechanical Engineering' | 'Robotics Engineering'
-    year: 'Year 1' | 'Year 2' | 'Year 3' | 'Year 4' | 'Year 5' | 'Masters'
+    department: Department
+    year: YearLevel
   }
   academicYear?: string
   isArchived: boolean

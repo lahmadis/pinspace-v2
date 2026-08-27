@@ -3,23 +3,16 @@
 import { useRef, useState } from 'react'
 
 import { Button, Dialog, Select, StatusState } from '@/components/ui'
+import { DEPARTMENTS, YEAR_LEVELS, yearLabel } from '@/lib/constants/departments'
 
 type Option = { label: string; value: string }
 
-const DEPT_OPTIONS: Option[] = [
-  { label: 'Architecture', value: 'Architecture' },
-  { label: 'Interior Design', value: 'Interior Design' },
-  { label: 'Industrial Design', value: 'Industrial Design' },
-]
+// Derived rather than hand-listed. Nothing imports this modal today, which is
+// exactly why its copies were the ones left behind when the canonical lists
+// changed — deriving them means a revived caller gets the current lists.
+const DEPT_OPTIONS: Option[] = DEPARTMENTS.map((d) => ({ label: d, value: d }))
 
-const YEAR_OPTIONS: Option[] = [
-  { label: 'Year 1', value: 'Year 1' },
-  { label: 'Year 2', value: 'Year 2' },
-  { label: 'Year 3', value: 'Year 3' },
-  { label: 'Year 4', value: 'Year 4' },
-  { label: 'Year 5', value: 'Year 5' },
-  { label: 'Masters', value: 'Masters' },
-]
+const YEAR_OPTIONS: Option[] = YEAR_LEVELS.map((y) => ({ label: yearLabel(y), value: y }))
 
 interface PublishCategoryModalProps {
   workspaceName: string

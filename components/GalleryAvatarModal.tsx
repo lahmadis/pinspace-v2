@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import { Button, Dialog, Select } from '@/components/ui'
+import { DEPARTMENTS, YEAR_LEVELS, yearLabel } from '@/lib/constants/departments'
 
 // Named 3D avatar material colors maintain readable contrast in the gallery scene.
 export const GALLERY_AVATAR_COLOR_OPTIONS = {
@@ -15,8 +16,9 @@ export const GALLERY_AVATAR_COLOR_OPTIONS = {
 export const DEFAULT_GALLERY_AVATAR_COLOR = GALLERY_AVATAR_COLOR_OPTIONS.yellow.value
 const AVATAR_COLORS = Object.values(GALLERY_AVATAR_COLOR_OPTIONS)
 const APPEARANCES = ['Explorer', 'Builder', 'Critic']
-const DEPARTMENTS = ['Architecture', 'Interior Design', 'Industrial Design']
-const YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Masters']
+// DEPARTMENTS and YEAR_LEVELS now come from lib/constants/departments — the
+// local copies here already matched the three design departments, which is
+// what the canonical list has been narrowed to.
 
 export interface AvatarFormValues {
   color: string
@@ -92,7 +94,8 @@ export default function GalleryAvatarModal({ isOpen, onClose, onEnter, pending =
             <label htmlFor="gallery-year" className="mb-2 block text-sm font-semibold text-text-primary">Year</label>
             <Select id="gallery-year" value={year} onChange={(event) => setYear(event.target.value)} disabled={pending}>
               <option value="">Select year…</option>
-              {YEARS.map((item) => <option key={item} value={item}>{item}</option>)}
+              {/* value stays the stored 'Year N'; only the text changes. */}
+              {YEAR_LEVELS.map((item) => <option key={item} value={item}>{yearLabel(item)}</option>)}
             </Select>
           </div>
           <p className="text-sm text-text-secondary">Keyboard: arrow keys move through choices. In the gallery, use the on-screen controls as a touch alternative.</p>

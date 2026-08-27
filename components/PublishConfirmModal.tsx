@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 
 import { Button, Dialog, Input, Select } from '@/components/ui'
 import { academicYearOptions, currentAcademicYear } from '@/lib/academicYear'
+import { DEPARTMENTS, YEAR_LEVELS, yearLabel } from '@/lib/constants/departments'
 
 export interface NetworkMetadata {
   department: string
@@ -20,18 +21,8 @@ interface PublishConfirmModalProps {
   onCancel: () => void
 }
 
-const DEPARTMENTS = [
-  'Aerospace Engineering',
-  'Architecture',
-  'Civil Engineering',
-  'Electrical Engineering',
-  'Industrial Design',
-  'Interior Design',
-  'Mechanical Engineering',
-  'Robotics Engineering',
-]
-
-const YEARS = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Masters']
+// Both lists now come from lib/constants/departments, which is what CLAUDE.md
+// asks for and what keeps this modal's options in step with the rest of the app.
 
 type FieldErrors = Partial<Record<'department' | 'year' | 'academicYear' | 'instructor', string>>
 
@@ -137,7 +128,10 @@ export default function PublishConfirmModal({
             aria-describedby={errors.year ? 'publish-year-error' : undefined}
           >
             <option value="">Select year</option>
-            {YEARS.map((item) => <option key={item} value={item}>{item}</option>)}
+            {/* value stays the stored 'Year N'; only the text changes. */}
+            {YEAR_LEVELS.map((item) => (
+              <option key={item} value={item}>{yearLabel(item)}</option>
+            ))}
           </Select>
         </Field>
 
