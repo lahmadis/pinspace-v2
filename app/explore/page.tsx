@@ -11,6 +11,8 @@ type StudioResponse = {
   studios: BubbleNode[]
   totals: { studios: number; students: number }
   hasOrg?: boolean
+  /** What this institution calls its network, e.g. "WIT Network". */
+  networkLabel?: string | null
 }
 
 /** How many matched names to spell out before collapsing to a count. */
@@ -24,6 +26,12 @@ function ExplorePageInner() {
   const [totalStudios, setTotalStudios] = useState(0)
   const [totalStudents, setTotalStudents] = useState(0)
   const [hasOrg, setHasOrg] = useState<boolean>(true)
+  /**
+   * Titles the page after the school. Null until the studios fetch resolves,
+   * and null for an org that has set neither a network_label nor a name — the
+   * heading falls back to a generic word rather than rendering "null network".
+   */
+  const [networkLabel, setNetworkLabel] = useState<string | null>(null)
 
   type ViewMode = 'flat' | 'hierarchy'
   type HierarchyLevel = 'years' | 'departments' | 'studios'
@@ -145,6 +153,7 @@ function ExplorePageInner() {
           setTotalStudios(data.totals?.studios ?? 0)
           setTotalStudents(data.totals?.students ?? 0)
           setHasOrg(data.hasOrg !== false)
+          setNetworkLabel(data.networkLabel ?? null)
           // Eager-prefetch first few studios so opening them is instant even without hover
           const toPrefetch = studios.filter((n) => n.url).slice(0, 5)
           for (const node of toPrefetch) {
@@ -225,7 +234,7 @@ function ExplorePageInner() {
         label: room.name,
         count: room.boardCount,
         url: `/studio/${room.id}/view`,
-        color: '#6366f1',
+        color: '#3B6EF6',
       })) as BubbleNode[]
     }
 
@@ -239,7 +248,7 @@ function ExplorePageInner() {
         label: y === 'Masters' ? 'Masters' : `Year ${y}`,
         name: String(y),
         year: y,
-        color: '#6366f1',
+        color: '#3B6EF6',
         radius: 70,
       })) as BubbleNode[]
     }
@@ -258,7 +267,7 @@ function ExplorePageInner() {
         name: d,
         year: selectedYear ?? undefined,
         department: d,
-        color: '#6366f1',
+        color: '#3B6EF6',
         radius: 70,
       })) as BubbleNode[]
     }
@@ -275,32 +284,45 @@ function ExplorePageInner() {
   }, [roomDrillWorkspace, viewMode, hierarchyLevel, searchFilteredNodes, selectedYear, selectedDepartment])
 
   return (
-    <div className="min-h-screen bg-slate-900">
+    <div className="min-h-screen bg-[#E6ECFC]">
       <DemoBanner />
       {/* Floating Header */}
-      <header ref={headerRef} className={`fixed ${isDemo ? 'top-12' : 'top-0'} left-0 right-0 z-40 border-b border-slate-700/50 bg-slate-900/90 backdrop-blur-md`}>
-        <div className="max-w-full px-4 md:px-6 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
+      {/* No bar: no fill, no border, no blur. The grid runs to the top of the
+          viewport and these controls sit on it. Each control keeps its own
+          background, so nothing here depends on the strip that used to be
+          behind them; the bubble simulation is biased below this height rather
+          than the canvas being inset by it (see BubbleNetwork). */}
+      <header
+        ref={headerRef}
+        // pointer-events-none on the strip, auto on the controls inside it.
+        // With no background the header is an invisible full-width box sitting
+        // on a drag-to-pan canvas; without this it would swallow every gesture
+        // along the top of the graph, including in the empty space between the
+        // title and the search box.
+        className={`fixed ${isDemo ? 'top-12' : 'top-0'} left-0 right-0 z-40 pointer-events-none`}
+      >
+        <div className="max-w-full px-4 md:px-6 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4 [&_a]:pointer-events-auto [&_button]:pointer-events-auto [&_input]:pointer-events-auto">
           {/* Left: logo + title */}
           <div className="flex flex-col md:flex-row md:items-center md:gap-4 md:min-w-0 md:flex-1 md:justify-start">
             <div className="flex items-center justify-between md:justify-start gap-4 w-full md:w-auto">
               <Link
                 href="/"
-                className="text-xl font-bold text-white hover:text-indigo-400 transition-colors shrink-0"
+                className="text-xl font-bold text-[#16181D] hover:text-[#3B6EF6] transition-colors shrink-0"
               >
                 pinspace
               </Link>
               {/* Dashboard link — mobile only (sits in top row opposite logo) */}
               <Link
                 href="/dashboard"
-                className="md:hidden text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors shrink-0"
+                className="md:hidden text-sm px-4 py-2 rounded-lg border border-[#16181D]/[0.12] text-[#5A5E6B] hover:bg-white transition-colors shrink-0"
               >
                 Dashboard
               </Link>
             </div>
-            <div className="hidden md:block h-5 w-px bg-slate-600 shrink-0" />
+            <div className="hidden md:block h-5 w-px bg-[#16181D]/15 shrink-0" />
             <div className="min-w-0">
-              <h1 className="text-lg font-semibold text-white">Space Network</h1>
-              <p className="text-xs text-slate-400">{totalStudios} spaces • {totalStudents} students</p>
+              <h1 className="text-lg font-semibold text-[#16181D]">{networkLabel ?? 'Network'}</h1>
+              <p className="text-xs text-[#5A5E6B]">{totalStudios} spaces • {totalStudents} students</p>
             </div>
           </div>
 
@@ -312,15 +334,15 @@ function ExplorePageInner() {
                 placeholder="Search by space, professor, or student…"
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); setRoomDrillWorkspace(null) }}
-                className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-3 py-2 rounded-lg bg-white/80 border border-[#16181D]/[0.12] text-[#16181D] placeholder-[#8A8FA0] text-sm focus:outline-none focus:ring-2 focus:ring-[#3B6EF6] focus:border-transparent"
                 aria-label="Search spaces by name, professor, or student"
               />
               {/* Says WHY these spaces matched. A student's name isn't written
                   on any bubble, so without this a name search looks like an
                   unexplained filter. */}
               {matchedPeople.length > 0 && (
-                <p className="mt-1 text-[11px] text-slate-400 truncate" aria-live="polite">
-                  <span className="text-slate-500">Work by </span>
+                <p className="mt-1 text-[11px] text-[#5A5E6B] truncate" aria-live="polite">
+                  <span className="text-[#8A8FA0]">Work by </span>
                   {matchedPeople.slice(0, MAX_NAMED_PEOPLE).join(', ')}
                   {matchedPeople.length > MAX_NAMED_PEOPLE &&
                     ` +${matchedPeople.length - MAX_NAMED_PEOPLE} more`}
@@ -338,8 +360,8 @@ function ExplorePageInner() {
                 }}
                 className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
                   viewMode === 'flat'
-                    ? 'bg-indigo-600 text-white border-indigo-500'
-                    : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
+                    ? 'bg-[#3B6EF6] text-[#16181D] border-[#3B6EF6]'
+                    : 'bg-white/80 text-[#16181D] border-[#16181D]/10 hover:bg-white'
                 }`}
               >
                 All Spaces
@@ -354,11 +376,12 @@ function ExplorePageInner() {
                 }}
                 className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
                   viewMode === 'hierarchy'
-                    ? 'bg-indigo-600 text-white border-indigo-500'
-                    : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
+                    ? 'bg-[#3B6EF6] text-[#16181D] border-[#3B6EF6]'
+                    : 'bg-white/80 text-[#16181D] border-[#16181D]/10 hover:bg-white'
                 }`}
               >
-                Drill-down<span className="hidden sm:inline"> (Year → Dept → Space)</span>
+                <span className="sm:hidden">Years</span>
+                <span className="hidden sm:inline">Year → Dept → Space</span>
               </button>
             </div>
           </div>
@@ -367,7 +390,7 @@ function ExplorePageInner() {
           <div className="hidden md:flex items-center justify-end min-w-0 md:flex-1">
             <Link
               href="/dashboard"
-              className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors shrink-0"
+              className="text-sm px-4 py-2 rounded-lg border border-[#16181D]/[0.12] text-[#5A5E6B] hover:bg-white transition-colors shrink-0"
             >
               Dashboard
             </Link>
@@ -377,13 +400,13 @@ function ExplorePageInner() {
 
       {/* Academic Year Tab Bar */}
       {!isDemo && availableAcademicYears.length > 0 && (
-        <div className="fixed top-[57px] left-0 right-0 z-30 bg-slate-900/95 border-b border-slate-700/50 px-6 py-2 flex items-center gap-2 overflow-x-auto">
+        <div className="fixed top-[57px] left-0 right-0 z-30 px-6 py-2 flex items-center gap-2 overflow-x-auto pointer-events-none [&_button]:pointer-events-auto">
           <button
             onClick={() => { setSelectedAcademicYear(''); setRoomDrillWorkspace(null) }}
             className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
               selectedAcademicYear === ''
-                ? 'bg-indigo-600 text-white'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600'
+                ? 'bg-[#3B6EF6] text-[#16181D]'
+                : 'bg-white/80 text-[#5A5E6B] hover:bg-white border border-[#16181D]/[0.12]'
             }`}
           >
             All Years
@@ -394,12 +417,12 @@ function ExplorePageInner() {
               onClick={() => { setSelectedAcademicYear(year); setRoomDrillWorkspace(null) }}
               className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
                 selectedAcademicYear === year
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600'
+                  ? 'bg-[#3B6EF6] text-[#16181D]'
+                  : 'bg-white/80 text-[#5A5E6B] hover:bg-white border border-[#16181D]/[0.12]'
               }`}
             >
               {year}
-              <span className={`ml-1.5 text-xs ${selectedAcademicYear === year ? 'text-indigo-200' : 'text-slate-500'}`}>
+              <span className={`ml-1.5 text-xs ${selectedAcademicYear === year ? 'text-[#16181D]/70' : 'text-[#8A8FA0]'}`}>
                 {count}
               </span>
             </button>
@@ -417,8 +440,8 @@ function ExplorePageInner() {
             style={{ height: '100vh', paddingTop: headerHeight }}
           >
             <div className="text-center">
-              <p className="text-slate-400 text-xl font-medium">No spaces yet</p>
-              <p className="text-slate-500 text-sm mt-2">
+              <p className="text-[#5A5E6B] text-xl font-medium">No spaces yet</p>
+              <p className="text-[#8A8FA0] text-sm mt-2">
                 {!isDemo && !hasOrg
                   ? "We couldn't find spaces for your institution. Contact support if this seems wrong."
                   : !isDemo && selectedAcademicYear
@@ -438,24 +461,12 @@ function ExplorePageInner() {
         )
       })()}
 
-      {/* Connection Legend - Bottom Left */}
-      <div className="fixed bottom-4 left-4 z-30 bg-slate-800/90 backdrop-blur-sm rounded-lg border border-slate-700 p-4">
-        <h4 className="text-sm font-semibold text-white mb-3">Connections</h4>
-        <div className="space-y-2 text-xs">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-0.5 bg-blue-500" />
-            <span className="text-slate-300">Same Instructor</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-0.5 border-t-2 border-dashed border-purple-500" />
-            <span className="text-slate-300">Same Year</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-0.5 border-t-2 border-dotted border-emerald-500" />
-            <span className="text-slate-300">Same Department</span>
-          </div>
-        </div>
-      </div>
+      {/* The Connections legend lives in BubbleNetwork, next to the styles it
+          describes. A second copy used to sit here at the same bottom-left
+          corner, painting over it — with blue/purple/emerald swatches that
+          matched none of the three lines actually drawn. Exactly the drift the
+          component's legend is now wired against, so it is gone rather than
+          re-coloured. */}
 
       {/* Floating back pill — shown while drilled into a workspace's rooms.
           Clearing roomDrillWorkspace lands back one level (studios list in
@@ -465,7 +476,7 @@ function ExplorePageInner() {
           type="button"
           onClick={() => setRoomDrillWorkspace(null)}
           aria-label="Back to spaces"
-          className="fixed left-4 z-30 flex items-center gap-2 max-w-[70vw] px-4 py-2 rounded-full bg-slate-800/90 hover:bg-slate-700 text-white text-sm font-medium border border-slate-600/50 backdrop-blur-sm shadow-lg transition-colors"
+          className="fixed left-4 z-30 flex items-center gap-2 max-w-[70vw] px-4 py-2 rounded-full bg-white/85 hover:bg-white text-[#16181D] text-sm font-medium border border-[#16181D]/10 backdrop-blur-sm shadow-lg transition-colors"
           style={{ top: measuredHeaderHeight + (!isDemo && availableAcademicYears.length > 0 ? 44 : 0) + 12 }}
         >
           <span aria-hidden className="text-base leading-none">←</span>

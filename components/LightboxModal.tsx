@@ -1853,18 +1853,28 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
   return (
     <div 
-      className={`fixed inset-0 bg-slate-950/85 z-50 transition-opacity duration-300 ${
+      className={`fixed inset-0 z-50 transition-opacity duration-300 ${
         isVisible ? 'opacity-100' : 'opacity-0'
       }`}
+      // A pale field, not a blackout. The old near-black scrim made every
+      // control on top of it a translucent-white pill, which is why the chrome
+      // read as heavy — on a light ground the sheet is the only bright object
+      // and the controls can recede.
+      style={{ background: 'linear-gradient(160deg, #E9EDF8 0%, #EDF0F8 55%, #E7EBF6 100%)' }}
       onClick={handleBackdropClick}
     >
-      {/* Top Header Bar (hidden in present mode) */}
+      {/* Top header, hidden in present mode.
+
+          No panel behind it: no fill, no blur, no border. The title block sits
+          at the left and every action stays at the right, both directly on the
+          field. Wider insets than the old bar, because a floating group needs
+          the margin the panel used to supply. */}
       {!isPresentMode && (
-      <div className="absolute top-3 left-3 right-3 rounded-2xl bg-slate-900/75 backdrop-blur-xl border border-slate-700/70 shadow-[0_10px_30px_rgba(2,6,23,0.45)] flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5 z-20">
+      <div className="absolute top-5 left-5 right-5 sm:top-7 sm:left-8 sm:right-8 flex items-start justify-between gap-4 z-20">
         {/* Title block — title + author · sheet size (title-block feel) */}
         <div className="flex-1 min-w-0">
           {compareBoards.length > 1 ? (
-            <h2 className="text-slate-50 font-semibold text-sm sm:text-[15px] truncate">
+            <h2 className="text-[#16181D] font-semibold text-sm sm:text-[15px] truncate">
               {`Compare selection (${compareBoards.length})`}
             </h2>
           ) : editingTitle && canEditTitle ? (
@@ -1889,12 +1899,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               autoFocus
               maxLength={120}
               disabled={savingTitle}
-              className="w-full text-slate-900 bg-white/95 border border-indigo-400 rounded px-2 py-0.5 text-sm sm:text-[15px] font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+              className="w-full text-slate-900 bg-white/95 border border-[#3B6EF6] rounded px-2 py-0.5 text-sm sm:text-[15px] font-semibold focus:outline-none focus:ring-1 focus:ring-[#3B6EF6] disabled:opacity-60"
               placeholder="Board title"
             />
           ) : canEditTitle ? (
             <h2
-              className="text-slate-50 font-semibold text-sm sm:text-[15px] flex items-center gap-1 min-w-0 group/title cursor-pointer hover:text-white"
+              className="text-[#16181D] font-semibold text-sm sm:text-[15px] flex items-center gap-1 min-w-0 group/title cursor-pointer hover:text-[#16181D]"
               onClick={(e) => {
                 e.stopPropagation()
                 // Clear a cancel flag left set by a prior Esc: the unmount that
@@ -1912,7 +1922,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               </svg>
             </h2>
           ) : (
-            <h2 className="text-slate-50 font-semibold text-sm sm:text-[15px] truncate">
+            <h2 className="text-[#16181D] font-semibold text-sm sm:text-[15px] truncate">
               {resolvedTitle}
             </h2>
           )}
@@ -1933,20 +1943,20 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                     onBlur={handleSaveAuthorName}
                     autoFocus
                     disabled={isSavingAuthorName}
-                    className="text-[11px] text-slate-900 bg-white/95 border border-indigo-400 rounded px-1.5 py-0.5 w-36 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+                    className="text-[11px] text-slate-900 bg-white/95 border border-[#3B6EF6] rounded px-1.5 py-0.5 w-36 focus:outline-none focus:ring-1 focus:ring-[#3B6EF6] disabled:opacity-60"
                     placeholder="Author name"
                   />
                   {isSavingAuthorName && (
-                    <div className="w-3 h-3 rounded-full border border-slate-400 border-t-white animate-spin flex-shrink-0" />
+                    <div className="w-3 h-3 rounded-full border border-[#16181D]/20 border-t-[#3B6EF6] animate-spin flex-shrink-0" />
                   )}
                 </div>
               )
             }
 
             return (
-              <p className="text-[11px] text-slate-300/90 truncate mt-0.5 flex items-center gap-1.5">
+              <p className="text-[11px] text-[#5A5E6B]/90 truncate mt-0.5 flex items-center gap-1.5">
                 <span
-                  className={`inline-flex items-center gap-1 ${isEditMode ? 'group/author cursor-pointer hover:text-white' : ''}`}
+                  className={`inline-flex items-center gap-1 ${isEditMode ? 'group/author cursor-pointer hover:text-[#16181D]' : ''}`}
                   onClick={isEditMode ? () => {
                     setAuthorNameInput(resolvedName === 'Unknown' ? '' : resolvedName)
                     setEditingAuthorName(true)
@@ -1959,10 +1969,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                     </svg>
                   )}
                 </span>
-                <span className="font-mono uppercase tracking-wider text-[10px] text-slate-400/80 flex-shrink-0">
+                <span className="font-mono uppercase tracking-wider text-[10px] text-[#8A8FA0]/80 flex-shrink-0">
                   · {sizeDisplay.label}
                   {sizeDisplay.provenance === 'assumed' && (
-                    <span className="text-slate-500/70"> (assumed)</span>
+                    <span className="text-[#8A8FA0]/70"> (assumed)</span>
                   )}
                 </span>
               </p>
@@ -1977,7 +1987,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             <button
               onClick={(e) => { e.stopPropagation(); onNavigate('prev') }}
               disabled={!hasPrev}
-              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-[#16181D]/10 bg-white/70 text-[#5A5E6B] hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               aria-label="Previous"
             >
               <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
@@ -1989,7 +1999,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 // Editable slideshow position. Same shell/typography as the
                 // read-only counter below, so the header is pixel-identical
                 // apart from the hover affordance.
-                <span className="px-1 text-[11px] font-mono tabular-nums text-slate-300/80 select-none whitespace-nowrap inline-flex items-center gap-1">
+                <span className="px-1 text-[11px] font-mono tabular-nums text-[#8A8FA0] select-none whitespace-nowrap inline-flex items-center gap-1">
                   {editingPosition ? (
                     <input
                       type="text"
@@ -2016,7 +2026,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       maxLength={navTotalLabel.length + 1}
                       disabled={savingPosition}
                       style={{ width: `${navPositionWidthCh}ch` }}
-                      className="text-slate-900 bg-white/95 border border-indigo-400 rounded px-1 py-0 text-[11px] font-mono tabular-nums text-center focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+                      className="text-slate-900 bg-white/95 border border-[#3B6EF6] rounded px-1 py-0 text-[11px] font-mono tabular-nums text-center focus:outline-none focus:ring-1 focus:ring-[#3B6EF6] disabled:opacity-60"
                       aria-label="Slideshow position"
                     />
                   ) : (
@@ -2035,7 +2045,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       }}
                       disabled={savingPosition}
                       style={{ width: `${navPositionWidthCh}ch` }}
-                      className="text-center rounded hover:bg-white/15 hover:text-white transition-colors disabled:opacity-60 disabled:cursor-wait"
+                      className="text-center rounded hover:bg-white hover:text-[#16181D] transition-colors disabled:opacity-60 disabled:cursor-wait"
                       title="Set slideshow position"
                     >
                       {navPositionLabel}
@@ -2044,7 +2054,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   <span>/ {navTotalLabel}</span>
                 </span>
               ) : (
-                <span className="px-1 text-[11px] font-mono tabular-nums text-slate-300/80 select-none whitespace-nowrap">
+                <span className="px-1 text-[11px] font-mono tabular-nums text-[#8A8FA0] select-none whitespace-nowrap">
                   {navCounter}
                 </span>
               )
@@ -2052,7 +2062,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             <button
               onClick={(e) => { e.stopPropagation(); onNavigate('next') }}
               disabled={!hasNext}
-              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-[#16181D]/10 bg-white/70 text-[#5A5E6B] hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               aria-label="Next"
             >
               <svg className="w-3.5 h-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
@@ -2068,7 +2078,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 e.stopPropagation()
                 setIsPresentMode(true)
               }}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold bg-indigo-500 text-white hover:bg-indigo-400 border border-indigo-400/50 shadow-sm transition-colors"
+              className="flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold bg-[#3B6EF6] text-white hover:bg-[#2F5CD6] border border-[#3B6EF6] shadow-sm transition-colors"
               title="Present (board fills screen)"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
@@ -2082,7 +2092,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {resolvedLinkUrl && (
             <button
               onClick={(e) => { e.stopPropagation(); openVideo() }}
-              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors"
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-[#16181D]/10 bg-white/70 text-[#5A5E6B] hover:bg-white transition-colors"
               title="Open link in a new tab"
               aria-label="Open link in a new tab"
             >
@@ -2100,8 +2110,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               }}
               className={`w-8 h-8 flex items-center justify-center rounded-full border transition-colors ${
                 editingLink
-                  ? 'border-indigo-300 bg-indigo-500/30 text-white'
-                  : 'border-white/20 bg-white/5 text-white/90 hover:bg-white/15'
+                  ? 'border-[#3B6EF6] bg-[#3B6EF6]/10 text-[#16181D]'
+                  : 'border-[#16181D]/10 bg-white/70 text-[#5A5E6B] hover:bg-white'
               }`}
               title={resolvedLinkUrl ? 'Edit link' : 'Add link'}
               aria-label={resolvedLinkUrl ? 'Edit link' : 'Add link'}
@@ -2129,8 +2139,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               }}
               className={`w-8 h-8 flex items-center justify-center rounded-full border transition-colors ${
                 editingSize
-                  ? 'border-indigo-300 bg-indigo-500/30 text-white'
-                  : 'border-white/20 bg-white/5 text-white/90 hover:bg-white/15'
+                  ? 'border-[#3B6EF6] bg-[#3B6EF6]/10 text-[#16181D]'
+                  : 'border-[#16181D]/10 bg-white/70 text-[#5A5E6B] hover:bg-white'
               }`}
               title="Set real-world board size"
               aria-label="Set board size"
@@ -2150,8 +2160,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
               }}
               className={`relative w-8 h-8 flex items-center justify-center rounded-full border transition-colors ${
                 commentsOpen
-                  ? 'border-indigo-300 bg-indigo-500/30 text-white'
-                  : 'border-white/20 bg-white/5 text-white/90 hover:bg-white/15'
+                  ? 'border-[#3B6EF6] bg-[#3B6EF6]/10 text-[#16181D]'
+                  : 'border-[#16181D]/10 bg-white/70 text-[#5A5E6B] hover:bg-white'
               }`}
               title="Toggle comments panel"
               aria-label="Toggle comments panel"
@@ -2160,7 +2170,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.3-3.9A7.6 7.6 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
               {comments.length > 0 && (
-                <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 text-[10px] font-semibold bg-indigo-500 text-white rounded-full border border-slate-900">
+                <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 text-[10px] font-semibold bg-[#3B6EF6] text-white rounded-full border border-white">
                   {comments.length}
                 </span>
               )}
@@ -2173,7 +2183,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {compareBoards.length <= 1 && !!imageUrl && (
             <button
               onClick={(e) => { e.stopPropagation(); void handleDownload() }}
-              className="w-8 h-8 flex items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/15 transition-colors"
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-[#16181D]/10 bg-white/70 text-[#5A5E6B] hover:bg-white transition-colors"
               title="Download image"
               aria-label="Download image"
             >
@@ -2184,11 +2194,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {/* Close */}
           <button
             onClick={handleClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 border border-white/30 transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/80 hover:bg-white border border-[#16181D]/10 transition-colors"
             aria-label="Close"
           >
             <svg
-              className="w-3.5 h-3.5 text-white"
+              className="w-3.5 h-3.5 text-[#16181D]"
               fill="none"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -2205,7 +2215,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             Opens under the Add/Edit-link icon button; all handlers preserved. */}
         {isEditMode && editingLink && (
           <div className="absolute right-4 top-full mt-2 z-30" onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-col gap-1 rounded-xl bg-slate-900/90 backdrop-blur-xl border border-slate-700/70 shadow-[0_10px_30px_rgba(2,6,23,0.45)] p-2">
+            <div className="flex flex-col gap-1 rounded-xl bg-white/90 backdrop-blur-xl border border-[#16181D]/10 shadow-[0_10px_30px_rgba(2,6,23,0.45)] p-2">
               <div className="flex items-center gap-1.5">
                 <input
                   type="text"
@@ -2221,24 +2231,24 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   autoFocus
                   disabled={savingLink}
                   placeholder="https://..."
-                  className="text-[11px] text-slate-900 bg-white/95 border border-indigo-400 rounded px-1.5 py-0.5 w-52 sm:w-64 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-60"
+                  className="text-[11px] text-slate-900 bg-white/95 border border-[#3B6EF6] rounded px-1.5 py-0.5 w-52 sm:w-64 focus:outline-none focus:ring-1 focus:ring-[#3B6EF6] disabled:opacity-60"
                 />
                 <button
                   onClick={handleSaveLink}
                   disabled={savingLink}
-                  className="text-[11px] px-2 py-0.5 rounded bg-indigo-500 text-white hover:bg-indigo-400 disabled:opacity-60"
+                  className="text-[11px] px-2 py-0.5 rounded bg-[#3B6EF6] text-white hover:bg-[#2F5CD6] disabled:opacity-60"
                 >
                   {savingLink ? 'Saving…' : 'Save'}
                 </button>
                 <button
                   onClick={() => { setEditingLink(false); setLinkError(null) }}
                   disabled={savingLink}
-                  className="text-[11px] px-2 py-0.5 rounded bg-white/10 text-white/80 hover:bg-white/20 disabled:opacity-60"
+                  className="text-[11px] px-2 py-0.5 rounded bg-white/80 text-[#5A5E6B] hover:bg-white disabled:opacity-60"
                 >
                   Cancel
                 </button>
               </div>
-              {linkError && <p className="text-[10px] text-red-300">{linkError}</p>}
+              {linkError && <p className="text-[10px] text-[#C2452D]">{linkError}</p>}
             </div>
           </div>
         )}
@@ -2249,8 +2259,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             editable. */}
         {canEditSize && editingSize && (
           <div className="absolute right-4 top-full mt-2 z-30" onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-col gap-2 w-64 rounded-xl bg-slate-900/90 backdrop-blur-xl border border-slate-700/70 shadow-[0_10px_30px_rgba(2,6,23,0.45)] p-3">
-              <div className="text-[10px] uppercase tracking-wider text-slate-400">Board size (real-world)</div>
+            <div className="flex flex-col gap-2 w-64 rounded-xl bg-white/90 backdrop-blur-xl border border-[#16181D]/10 shadow-[0_10px_30px_rgba(2,6,23,0.45)] p-3">
+              <div className="text-[10px] uppercase tracking-wider text-[#8A8FA0]">Board size (real-world)</div>
               <select
                 value=""
                 onChange={(e) => {
@@ -2261,7 +2271,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   setSizeHeightInput(String(Math.round(fit.heightIn * 10) / 10))
                   setSizeError(null)
                 }}
-                className="w-full text-xs text-slate-800 bg-white/95 border border-slate-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="w-full text-xs text-slate-800 bg-white/95 border border-[#16181D]/[0.12] rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#3B6EF6]"
               >
                 <option value="">Sheet preset…</option>
                 {SHEET_SIZE_PRESETS.map((p) => (
@@ -2269,48 +2279,48 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 ))}
               </select>
               <div className="flex items-center gap-1.5">
-                <label className="flex items-center gap-1 text-[11px] text-slate-300">
+                <label className="flex items-center gap-1 text-[11px] text-[#5A5E6B]">
                   <span className="font-semibold">W</span>
                   <input
                     type="number" min={1} max={600} step={0.5}
                     value={sizeWidthInput}
                     onChange={(e) => { setSizeWidthInput(e.target.value); if (sizeError) setSizeError(null) }}
-                    className="w-16 text-[11px] text-slate-900 bg-white/95 border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    className="w-16 text-[11px] text-slate-900 bg-white/95 border border-[#16181D]/[0.12] rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-[#3B6EF6]"
                   />
                 </label>
-                <label className="flex items-center gap-1 text-[11px] text-slate-300">
+                <label className="flex items-center gap-1 text-[11px] text-[#5A5E6B]">
                   <span className="font-semibold">H</span>
                   <input
                     type="number" min={1} max={600} step={0.5}
                     value={sizeHeightInput}
                     onChange={(e) => { setSizeHeightInput(e.target.value); if (sizeError) setSizeError(null) }}
-                    className="w-16 text-[11px] text-slate-900 bg-white/95 border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    className="w-16 text-[11px] text-slate-900 bg-white/95 border border-[#16181D]/[0.12] rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-[#3B6EF6]"
                   />
                 </label>
-                <span className="text-[11px] text-slate-400">in</span>
+                <span className="text-[11px] text-[#8A8FA0]">in</span>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] text-slate-500 truncate">
+                <span className="text-[10px] text-[#8A8FA0] truncate">
                   Now: {sizeDisplay.label}{sizeDisplay.provenance === 'assumed' ? ' (assumed)' : ''}
                 </span>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   <button
                     onClick={() => { setEditingSize(false); setSizeError(null) }}
                     disabled={savingSize}
-                    className="text-[11px] px-2 py-0.5 rounded bg-white/10 text-white/80 hover:bg-white/20 disabled:opacity-60"
+                    className="text-[11px] px-2 py-0.5 rounded bg-white/80 text-[#5A5E6B] hover:bg-white disabled:opacity-60"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={() => handleSaveSize(parseFloat(sizeWidthInput), parseFloat(sizeHeightInput))}
                     disabled={savingSize}
-                    className="text-[11px] px-2 py-0.5 rounded bg-indigo-500 text-white hover:bg-indigo-400 disabled:opacity-60"
+                    className="text-[11px] px-2 py-0.5 rounded bg-[#3B6EF6] text-white hover:bg-[#2F5CD6] disabled:opacity-60"
                   >
                     {savingSize ? 'Saving…' : 'Save'}
                   </button>
                 </div>
               </div>
-              {sizeError && <p className="text-[10px] text-red-300">{sizeError}</p>}
+              {sizeError && <p className="text-[10px] text-[#C2452D]">{sizeError}</p>}
             </div>
           </div>
         )}
@@ -2330,7 +2340,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 setIsPresentMode(false)
               }
             }}
-            className="absolute top-6 right-6 z-20 px-3 py-1.5 rounded-lg text-xs font-medium text-white/80 hover:text-white bg-black/40 hover:bg-black/60 border border-white/20 transition-colors"
+            className="absolute top-6 right-6 z-20 px-3 py-1.5 rounded-lg text-xs font-medium text-[#5A5E6B] hover:text-[#16181D] bg-white/85 hover:bg-white border border-[#16181D]/10 transition-colors"
           >
             Exit present
           </button>
@@ -2338,7 +2348,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {!isComparePresentMode && hasPrev && (
             <button
               onClick={(e) => { e.stopPropagation(); onNavigate('prev') }}
-              className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 text-white/90 hover:text-white border border-white/20 transition-colors"
+              className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-white/90 hover:bg-white text-[#5A5E6B] hover:text-[#16181D] border border-[#16181D]/10 transition-colors"
               aria-label="Previous board"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
@@ -2349,7 +2359,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {!isComparePresentMode && hasNext && (
             <button
               onClick={(e) => { e.stopPropagation(); onNavigate('next') }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 text-white/90 hover:text-white border border-white/20 transition-colors"
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-white/90 hover:bg-white text-[#5A5E6B] hover:text-[#16181D] border border-[#16181D]/10 transition-colors"
               aria-label="Next board"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
@@ -2388,7 +2398,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                             href={compareImageUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/80 hover:bg-white text-[#16181D] text-sm transition-colors"
                           >
                             Open PDF
                           </a>
@@ -2401,7 +2411,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           />
                         )
                       ) : (
-                        <p className="text-white/70 text-sm">No image available</p>
+                        <p className="text-[#8A8FA0] text-sm">No image available</p>
                       )}
                     </div>
                   )
@@ -2512,7 +2522,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 {!isPresentMode && (
                   <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
                     <div
-                      className="pointer-events-auto flex items-center gap-1 px-2 py-1.5 rounded-full bg-slate-900/85 backdrop-blur-md border border-white/15 shadow-[0_10px_30px_rgba(2,6,23,0.45)]"
+                      className="pointer-events-auto flex items-center gap-1 px-2 py-1.5 rounded-full bg-white/90 backdrop-blur-md border border-[#16181D]/[0.08] shadow-[0_10px_30px_rgba(2,6,23,0.45)]"
                       onClick={(e) => e.stopPropagation()}
                       onPointerDown={(e) => e.stopPropagation()}
                       onDoubleClick={(e) => e.stopPropagation()}
@@ -2528,8 +2538,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           }}
                           className={`flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium border transition-colors ${
                             calloutMode
-                              ? 'border-[#3B6EF6]/60 bg-[#3B6EF6]/40 text-white'
-                              : 'border-white/15 bg-white/5 text-white/90 hover:bg-white/15'
+                              ? 'border-[#3B6EF6]/60 bg-[#3B6EF6]/40 text-[#16181D]'
+                              : 'border-[#16181D]/[0.08] bg-white/70 text-[#5A5E6B] hover:bg-white'
                           }`}
                           title={calloutMode ? 'Click the image to place a callout (Esc to cancel)' : 'Add a callout pin to the image'}
                         >
@@ -2538,7 +2548,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           </svg>
                           <span className="hidden sm:inline">{calloutMode ? 'Placing…' : 'Add callout'}</span>
                           {rootCallouts.length > 0 && (
-                            <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-semibold bg-white/20 rounded-full">
+                            <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-semibold bg-[#16181D]/10 rounded-full">
                               {rootCallouts.length}
                             </span>
                           )}
@@ -2556,8 +2566,8 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           }}
                           className={`flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium border transition-colors ${
                             traceMode
-                              ? 'border-[#3B6EF6]/60 bg-[#3B6EF6]/40 text-white'
-                              : 'border-white/15 bg-white/5 text-white/90 hover:bg-white/15'
+                              ? 'border-[#3B6EF6]/60 bg-[#3B6EF6]/40 text-[#16181D]'
+                              : 'border-[#16181D]/[0.08] bg-white/70 text-[#5A5E6B] hover:bg-white'
                           }`}
                           title={traceMode ? 'Stop tracing (Esc)' : 'Draw a trace over the board'}
                         >
@@ -2570,14 +2580,14 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
 
                       {/* Separator — only when a tool button is present */}
                       {!hideCallouts && calloutsEnabled && calloutsAccessible && (canComment || canTrace) && (
-                        <span className="w-px h-5 bg-white/15 mx-0.5" />
+                        <span className="w-px h-5 bg-[#16181D]/10 mx-0.5" />
                       )}
 
                       {/* Zoom out (steps the existing viewport hook) */}
                       <button
                         onClick={(e) => { e.stopPropagation(); stepZoom(-1) }}
                         disabled={atMinZoom}
-                        className="w-8 h-8 flex items-center justify-center rounded-full text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        className="w-8 h-8 flex items-center justify-center rounded-full text-[#5A5E6B] hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         title="Zoom out"
                         aria-label="Zoom out"
                       >
@@ -2587,7 +2597,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       </button>
 
                       {/* Zoom % readout */}
-                      <span className="w-11 text-center text-[11px] font-mono tabular-nums text-white/85 select-none">
+                      <span className="w-11 text-center text-[11px] font-mono tabular-nums text-[#16181D]/85 select-none">
                         {zoomPct}%
                       </span>
 
@@ -2595,7 +2605,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       <button
                         onClick={(e) => { e.stopPropagation(); stepZoom(1) }}
                         disabled={atMaxZoom}
-                        className="w-8 h-8 flex items-center justify-center rounded-full text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        className="w-8 h-8 flex items-center justify-center rounded-full text-[#5A5E6B] hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         title="Zoom in"
                         aria-label="Zoom in"
                       >
@@ -2608,7 +2618,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       <button
                         onClick={(e) => { e.stopPropagation(); resetViewport() }}
                         disabled={atMinZoom}
-                        className="flex items-center h-8 px-3 rounded-full text-[11px] font-medium text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        className="flex items-center h-8 px-3 rounded-full text-[11px] font-medium text-[#5A5E6B] hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         title="Fit to screen"
                         aria-label="Fit to screen"
                       >
@@ -2658,7 +2668,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                             onClick={(e) => { e.stopPropagation(); setActiveThreadRootId(root.id) }}
                             className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 w-7 h-7 rounded-full border-2 text-[11px] font-bold flex items-center justify-center shadow-md transition-transform hover:scale-110 ${
                               root.resolved
-                                ? 'bg-slate-500/70 border-white/70 text-white/90 opacity-50'
+                                ? 'bg-[#8A8FA0] border-white text-white opacity-60'
                                 : 'bg-[#3B6EF6] border-white text-white'
                             } ${isActive ? 'ring-2 ring-white scale-110' : ''}`}
                             style={{ left: `${pt.x}px`, top: `${pt.y}px` }}
@@ -2735,21 +2745,21 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         onPointerDown={(e) => e.stopPropagation()}
                       >
                         {rootCallouts.length > 0 && (
-                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/70 backdrop-blur-md border border-white/15 text-white text-[11px] font-medium">
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/90 backdrop-blur-md border border-[#16181D]/[0.08] text-[#16181D] text-[11px] font-medium">
                             <span>{rootCallouts.length} callout{rootCallouts.length === 1 ? '' : 's'}</span>
                             <button
                               type="button"
                               onClick={() => setShowResolved((v) => !v)}
-                              className="flex items-center gap-1.5 text-[11px] text-white/90 hover:text-white"
+                              className="flex items-center gap-1.5 text-[11px] text-[#5A5E6B] hover:text-[#16181D]"
                               title="Toggle resolved callouts"
                             >
-                              <span className={`w-3 h-3 rounded-sm border flex items-center justify-center text-[8px] leading-none ${showResolved ? 'bg-[#3B6EF6] border-[#3B6EF6] text-white' : 'border-white/40 text-transparent'}`}>✓</span>
+                              <span className={`w-3 h-3 rounded-sm border flex items-center justify-center text-[8px] leading-none ${showResolved ? 'bg-[#3B6EF6] border-[#3B6EF6] text-[#16181D]' : 'border-white/40 text-transparent'}`}>✓</span>
                               Show resolved
                             </button>
                           </div>
                         )}
                         {calloutError && (
-                          <div className="px-3 py-1.5 rounded-full bg-red-600/85 text-white text-[11px] font-medium">{calloutError}</div>
+                          <div className="px-3 py-1.5 rounded-full bg-[#C2452D] text-white text-[11px] font-medium">{calloutError}</div>
                         )}
                       </div>
                     )}
@@ -2769,11 +2779,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       if (layers.length === 0) return null
                       return (
                         <div
-                          className="absolute top-3 right-3 z-40 pointer-events-auto w-44 rounded-xl bg-slate-900/80 backdrop-blur-md border border-white/15 p-2"
+                          className="absolute top-3 right-3 z-40 pointer-events-auto w-44 rounded-xl bg-white/90 backdrop-blur-md border border-[#16181D]/[0.08] p-2"
                           onClick={(e) => e.stopPropagation()}
                           onPointerDown={(e) => e.stopPropagation()}
                         >
-                          <div className="text-[10px] uppercase tracking-wide text-white/60 px-1 pb-1">Trace layers</div>
+                          <div className="text-[10px] uppercase tracking-wide text-[#8A8FA0] px-1 pb-1">Trace layers</div>
                           <div className="space-y-0.5 max-h-40 overflow-y-auto">
                             {layers.map((l) => {
                               const hidden = hiddenTraceAuthors.has(l.key)
@@ -2785,11 +2795,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                                     if (n.has(l.key)) n.delete(l.key); else n.add(l.key)
                                     return n
                                   })}
-                                  className="w-full flex items-center gap-2 px-1.5 py-1 rounded hover:bg-white/10 text-left"
+                                  className="w-full flex items-center gap-2 px-1.5 py-1 rounded hover:bg-white text-left"
                                   title={hidden ? 'Show layer' : 'Hide layer'}
                                 >
-                                  <span className="w-3 h-3 rounded-full flex-shrink-0 border border-white/30" style={{ backgroundColor: l.color, opacity: hidden ? 0.25 : 1 }} />
-                                  <span className={`text-[11px] truncate flex-1 ${hidden ? 'text-white/40 line-through' : 'text-white/90'}`}>{l.name}</span>
+                                  <span className="w-3 h-3 rounded-full flex-shrink-0 border border-[#16181D]/20" style={{ backgroundColor: l.color, opacity: hidden ? 0.25 : 1 }} />
+                                  <span className={`text-[11px] truncate flex-1 ${hidden ? 'text-[#16181D]/40 line-through' : 'text-[#5A5E6B]'}`}>{l.name}</span>
                                 </button>
                               )
                             })}
@@ -2803,7 +2813,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         never overlap and neither collides with the ESC hint. */}
                     {traceMode && (
                       <div
-                        className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-full bg-slate-900/85 backdrop-blur-md border border-white/15"
+                        className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-full bg-white/90 backdrop-blur-md border border-[#16181D]/[0.08]"
                         onClick={(e) => e.stopPropagation()}
                         onPointerDown={(e) => e.stopPropagation()}
                       >
@@ -2811,28 +2821,28 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           <button
                             key={c}
                             onClick={() => setTraceColor(c)}
-                            className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 ${traceColor === c ? 'border-white' : 'border-transparent'}`}
+                            className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 ${traceColor === c ? 'border-[#16181D]' : 'border-[#16181D]/15'}`}
                             style={{ backgroundColor: c }}
                             title="Ink color"
                             aria-label={`Ink color ${c}`}
                           />
                         ))}
-                        <span className="w-px h-5 bg-white/20" />
+                        <span className="w-px h-5 bg-[#16181D]/10" />
                         {TRACE_WIDTHS.map((w) => (
                           <button
                             key={w.value}
                             onClick={() => setTraceWidth(w.value)}
-                            className={`px-2 py-1 rounded text-[10px] font-medium ${traceWidth === w.value ? 'bg-white/25 text-white' : 'text-white/70 hover:text-white'}`}
+                            className={`px-2 py-1 rounded text-[10px] font-medium ${traceWidth === w.value ? 'bg-[#16181D]/10 text-[#16181D]' : 'text-[#8A8FA0] hover:text-[#16181D]'}`}
                             title={`${w.label} brush`}
                           >
                             {w.label}
                           </button>
                         ))}
-                        <span className="w-px h-5 bg-white/20" />
+                        <span className="w-px h-5 bg-[#16181D]/10" />
                         <button
                           onClick={handleTraceUndo}
                           disabled={myStrokes.length === 0}
-                          className="px-2 py-1 rounded text-[10px] font-medium text-white/80 hover:text-white disabled:opacity-40"
+                          className="px-2 py-1 rounded text-[10px] font-medium text-[#5A5E6B] hover:text-[#16181D] disabled:opacity-40"
                           title="Undo last stroke"
                         >
                           Undo
@@ -2840,7 +2850,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         {pendingClearTrace ? (
                           <button
                             onClick={handleTraceClear}
-                            className="px-2 py-1 rounded text-[10px] font-semibold bg-red-600 text-white hover:bg-red-500"
+                            className="px-2 py-1 rounded text-[10px] font-semibold bg-[#C2452D] text-white hover:bg-[#A93B25]"
                             title="Confirm — clear your whole trace"
                           >
                             Confirm clear
@@ -2849,7 +2859,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           <button
                             onClick={() => { setPendingClearTrace(true); window.setTimeout(() => setPendingClearTrace(false), 4000) }}
                             disabled={myStrokes.length === 0}
-                            className="px-2 py-1 rounded text-[10px] font-medium text-white/80 hover:text-white disabled:opacity-40"
+                            className="px-2 py-1 rounded text-[10px] font-medium text-[#5A5E6B] hover:text-[#16181D] disabled:opacity-40"
                             title="Clear my trace"
                           >
                             Clear
@@ -2878,12 +2888,12 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {/* Panel Header */}
           <div className="flex-shrink-0 px-5 py-4 border-b border-gray-200/80">
             <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-2">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-500">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#3B6EF6]/[0.08] text-[#3B6EF6]">
                 <span className="text-xs">💬</span>
               </span>
               Comments
               {comments.length > 0 && (
-                <span className="inline-flex items-center justify-center px-2 py-0.5 text-[11px] font-medium bg-indigo-50 text-indigo-600 rounded-full border border-indigo-100">
+                <span className="inline-flex items-center justify-center px-2 py-0.5 text-[11px] font-medium bg-[#3B6EF6]/[0.08] text-[#3B6EF6] rounded-full border border-[#3B6EF6]/20">
                   {comments.length}
                 </span>
               )}
@@ -2921,7 +2931,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 className="flex gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100 hover:border-gray-200 hover:bg-white transition-colors"
               >
                 {/* Avatar */}
-                <div className={`flex-shrink-0 w-8 h-8 rounded-full ${getAvatarColor(comment.authorName)} flex items-center justify-center text-white font-bold text-xs shadow-sm`}>
+                <div className={`flex-shrink-0 w-8 h-8 rounded-full ${getAvatarColor(comment.authorName)} flex items-center justify-center text-[#16181D] font-bold text-xs shadow-sm`}>
                   {getInitials(comment.authorName)}
                 </div>
 
@@ -2940,7 +2950,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                           <button
                             onClick={() => handleStartEdit(comment)}
                             disabled={deletingCommentId === comment.id || savingCommentId === comment.id}
-                            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-50"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[#3B6EF6] hover:bg-[#3B6EF6]/[0.08] hover:text-[#3B6EF6] disabled:opacity-50"
                             aria-label="Edit comment"
                             title="Edit"
                           >
@@ -2952,7 +2962,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                             <button
                               onClick={() => handleDeleteComment(comment.id)}
                               disabled={deletingCommentId === comment.id || savingCommentId === comment.id}
-                              className="inline-flex items-center justify-center rounded-md px-1.5 h-6 text-[10px] font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                              className="inline-flex items-center justify-center rounded-md px-1.5 h-6 text-[10px] font-semibold bg-red-600 text-[#16181D] hover:bg-red-700 disabled:opacity-50"
                               aria-label="Confirm delete comment"
                               title="Confirm delete"
                             >
@@ -2996,7 +3006,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         <button
                           onClick={() => handleSaveEdit(comment.id)}
                           disabled={!editingContent.trim() || savingCommentId === comment.id}
-                          className="px-2.5 py-1.5 bg-[#3B6EF6] text-white rounded-md hover:bg-[#2F5CD6] disabled:opacity-40 text-[11px] font-semibold"
+                          className="px-2.5 py-1.5 bg-[#3B6EF6] text-[#16181D] rounded-md hover:bg-[#2F5CD6] disabled:opacity-40 text-[11px] font-semibold"
                         >
                           {savingCommentId === comment.id ? 'Saving...' : 'Save'}
                         </button>
@@ -3044,7 +3054,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   <button
                     onClick={handlePost}
                     disabled={!newComment.trim() || posting}
-                    className="px-4 py-2 bg-[#3B6EF6] text-white rounded-lg hover:bg-[#2F5CD6] disabled:opacity-40 disabled:cursor-not-allowed transition-all text-xs font-semibold shadow-sm hover:shadow-md disabled:shadow-none"
+                    className="px-4 py-2 bg-[#3B6EF6] text-[#16181D] rounded-lg hover:bg-[#2F5CD6] disabled:opacity-40 disabled:cursor-not-allowed transition-all text-xs font-semibold shadow-sm hover:shadow-md disabled:shadow-none"
                   >
                     {posting ? (
                       <span className="flex items-center gap-2">
@@ -3063,7 +3073,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 <p className="text-xs text-gray-600 mb-3">Sign in to leave feedback</p>
                 <a
                   href="/sign-in"
-                  className="inline-block px-5 py-2 bg-[#3B6EF6] text-white rounded-lg hover:bg-[#2F5CD6] transition-all text-xs font-semibold shadow-md hover:shadow-lg"
+                  className="inline-block px-5 py-2 bg-[#3B6EF6] text-[#16181D] rounded-lg hover:bg-[#2F5CD6] transition-all text-xs font-semibold shadow-md hover:shadow-lg"
                 >
                   Sign In to Comment
                 </a>
@@ -3083,7 +3093,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {/* Header */}
           <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#3B6EF6] text-white text-[11px] font-bold">
+              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#3B6EF6] text-[#16181D] text-[11px] font-bold">
                 {calloutNumber.get(activeRoot.id)}
               </span>
               <h3 className="text-sm font-semibold text-gray-900 truncate">
@@ -3135,7 +3145,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                       {canEdit && !editing && (
                         <button
                           onClick={() => { setEditingCalloutId(c.id); setEditingCalloutText(c.body) }}
-                          className="text-[10px] text-indigo-600 hover:text-indigo-800"
+                          className="text-[10px] text-[#3B6EF6] hover:text-[#16181D]"
                           title="Edit"
                         >
                           Edit
@@ -3160,13 +3170,13 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         onChange={(e) => setEditingCalloutText(e.target.value)}
                         rows={2}
                         disabled={savingCalloutId === c.id}
-                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-400 resize-none bg-white text-gray-800"
+                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#3B6EF6] resize-none bg-white text-gray-800"
                       />
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => handleEditCallout(c.id)}
                           disabled={!editingCalloutText.trim() || savingCalloutId === c.id}
-                          className="px-2 py-1 text-[10px] font-semibold rounded-md bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40"
+                          className="px-2 py-1 text-[10px] font-semibold rounded-md bg-[#3B6EF6] text-[#16181D] hover:bg-[#3B6EF6] disabled:opacity-40"
                         >
                           {savingCalloutId === c.id ? 'Saving…' : 'Save'}
                         </button>

@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { Figtree, JetBrains_Mono } from 'next/font/google'
 import { Board } from '@/types'
 import ShareModal from '@/components/ShareModal'
+import { ROOM_SKY } from '@/lib/room/palette'
 import DemoBanner from '@/components/DemoBanner'
 import PresenceBar, { type PresentUser, friendlyName, colorFor } from '@/components/3d/PresenceBar'
 import type { FollowPose, LaserState, LbViewport, LbCursorState, CritDirtySignal, TraceStreamEntry } from '@/components/3d/CameraController'
@@ -1022,12 +1023,12 @@ function StudioPageInner() {
       )}
 
       {wallConfig && (
-        <div className={`${figtree.className} relative w-full h-screen overflow-hidden`} style={{ background: '#E7ECF5' }}>
+        <div className={`${figtree.className} relative w-full h-screen overflow-hidden`} style={{ background: ROOM_SKY }}>
           {/* The three pulsing indigo blur orbs that used to sit here were the
               remaining lavender in the room: they tinted the paper background
               and competed with the white sheets on the walls. A developed
               drawing surface wants a flat, neutral field behind it. Background
-              matches ROOM_SKY_COLOR (the room Canvas's own fog/sky color) so
+              matches ROOM_SKY (the room Canvas's own fog/sky color) so
               there's no color flash while the Canvas mounts on top of this. */}
 
           {/* Top Left - Logo and breadcrumb. Hidden in wall edit mode. */}

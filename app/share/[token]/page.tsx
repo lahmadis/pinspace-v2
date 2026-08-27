@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
@@ -302,7 +302,7 @@ export default function SharePage() {
 
   if (loadState === 'not-found') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#E7ECF5' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: ROOM_SKY_COLOR }}>
         <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
           <div className="text-6xl mb-4">🔗</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Link not found</h2>
@@ -314,7 +314,7 @@ export default function SharePage() {
 
   if (loadState === 'error') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#E7ECF5' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: ROOM_SKY_COLOR }}>
         <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
           <div className="text-6xl mb-4">😕</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Something went wrong</h2>
@@ -331,7 +331,7 @@ export default function SharePage() {
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#E7ECF5' }}>
+    <div className="relative w-full h-screen overflow-hidden" style={{ background: ROOM_SKY_COLOR }}>
       {/* Flat, neutral field matching ROOM_SKY_COLOR — see the comment on the
           equivalent wrapper in app/studio/[id]/page.tsx for why the previous
           pulsing indigo blur orbs were removed rather than recolored. */}
@@ -432,22 +432,29 @@ export default function SharePage() {
         <ShareViewCameraControls wallConfig={wallConfig} />
       </Canvas>
 
-      <LightboxModal
-        board={selectedBoard}
-        allBoards={lightboxBoards}
-        autoEnterPresentCompare={autoEnterPresentCompare}
-        compareBoards={compareBoardIds
-          .map((id) => boards.find((b) => b.id === id))
-          .filter((b): b is Board => Boolean(b))}
-        onClose={() => {
-          setSelectedBoard(null)
-          setAutoEnterPresentCompare(false)
-          setCompareBoardIds([])
-        }}
-        onNavigate={handleNavigate}
-        isEditMode={false}
-        currentUserRole={null}
-      />
+      {/* Suspense around the modal, not the page: LightboxModal calls
+          useSearchParams, and an unwrapped call to it is a VERCEL-BUILD-ONLY
+          failure — tsc and dev both pass. The two studio routes that mount this
+          same component already have a boundary; these guest routes did not,
+          and the asymmetry is the tell. Costs nothing at runtime. */}
+      <Suspense fallback={null}>
+        <LightboxModal
+          board={selectedBoard}
+          allBoards={lightboxBoards}
+          autoEnterPresentCompare={autoEnterPresentCompare}
+          compareBoards={compareBoardIds
+            .map((id) => boards.find((b) => b.id === id))
+            .filter((b): b is Board => Boolean(b))}
+          onClose={() => {
+            setSelectedBoard(null)
+            setAutoEnterPresentCompare(false)
+            setCompareBoardIds([])
+          }}
+          onNavigate={handleNavigate}
+          isEditMode={false}
+          currentUserRole={null}
+        />
+      </Suspense>
     </div>
   )
 }

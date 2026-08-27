@@ -99,18 +99,29 @@ function wrapLabel(text: string, radius: number): string[] {
   return lines.length ? lines : [raw]
 }
 
+/**
+ * The three edge styles — and the source the legend swatches read from.
+ *
+ * The legend used to hardcode its own colours (`bg-primary`, `border-accent`,
+ * `border-white`) and all three had drifted off the lines they describe: an
+ * indigo swatch for a #3B6EF6 line, a blue swatch for a teal one, and a white
+ * swatch for a line that is no longer white. A legend that disagrees with the
+ * graph is worse than none, so it is wired to these values directly.
+ */
 const RELATIONSHIP_STYLES = {
   instructor: {
-    color: 'rgb(var(--color-primary))',
+    color: '#3B6EF6',
     width: 3,
     dasharray: '', // Solid line
-    glowColor: 'rgb(var(--color-primary) / 0.55)',
+    glowColor: 'rgba(59, 110, 246, 0.55)',
   },
   year: {
-    color: 'rgb(var(--color-paper))',
+    // Was white — fine over near-black, invisible over the light ground this
+    // surface now uses.
+    color: '#8A8FA0',
     width: 2.5,
     dasharray: '8,4',
-    glowColor: 'rgb(var(--color-paper) / 0.45)',
+    glowColor: 'rgba(138, 143, 160, 0.45)',
   },
   department: {
     color: 'rgb(var(--color-secondary))',
@@ -126,22 +137,39 @@ const BUBBLE_SIZE_MIN = 55
 const BUBBLE_SIZE_MAX = 75
 const ANIMATION_DURATION = 300
 /**
- * Every bubble is this one indigo. The graph used to spread nodes across six
+ * Every bubble is this one blue. The graph used to spread nodes across six
  * hues from an ordinal scale, which read as categorical — six colours imply six
  * kinds of thing — when the only real distinction between nodes is what the
  * EDGES say. Colour was carrying no information, so it is now constant and the
  * relationship lines do the explaining.
  *
- * Matches Tailwind's `primary`, which the legend swatch beside the graph
- * already renders via `bg-primary`.
+ * It is #3B6EF6, the accent the rest of the app uses, NOT Tailwind's `primary`
+ * (the indigo #6366f1) which this surface alone used to reach for.
  */
-/** The network's own ground, and the ruling on it. */
-const NETWORK_BG = '#191a1a'
-const NETWORK_GRID = 'rgba(114, 114, 114, 0.3)'
+/**
+ * The network's own ground, and the ruling on it.
+ *
+ * This surface was near-black, which put it alone against every other field in
+ * the app and meant a blue grid had to fight the ground to be seen at all. It
+ * is now the same faint tint of the palette accent the 3D room's horizon uses
+ * (ROOM_SKY), stated locally rather than imported so the graph does not take a
+ * dependency on the room's palette for one colour.
+ */
+const NETWORK_BG = '#E6ECFC'
+/**
+ * The ruling. Now that the ground is light, this is the accent itself at low
+ * alpha rather than the accent-mixed-to-white it had to be on a dark field —
+ * on a light ground a pale line disappears, so the tint has to go the other
+ * way. Composites to about #CBD8FB over NETWORK_BG: clearly a blue ruling,
+ * nowhere near the strength of a bubble.
+ */
+const NETWORK_GRID = 'rgba(59, 110, 246, 0.16)'
 
-const NETWORK_NODE_COLOR = 'rgb(var(--color-primary))'
+// The app's one blue. Was rgb(var(--color-primary)) — the indigo #6366f1 —
+// which made the network the only surface using a second accent.
+const NETWORK_NODE_COLOR = '#3B6EF6'
 /** Same hue at half alpha, for the outer hover glow. */
-const NETWORK_NODE_GLOW = 'rgb(var(--color-primary) / 0.5)'
+const NETWORK_NODE_GLOW = 'rgba(59, 110, 246, 0.5)'
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -212,14 +240,14 @@ function Tooltip({ data, containerRect }: { data: TooltipData | null; containerR
         width: tooltipWidth,
       }}
     >
-      <div className="overflow-hidden rounded-pinspace-lg border border-white/20 bg-pinspace-forest/95 shadow-[var(--shadow-raised)] backdrop-blur-md">
+      <div className="overflow-hidden rounded-pinspace-lg border border-[#16181D]/10 bg-white/95 shadow-[var(--shadow-raised)] backdrop-blur-md">
         {/* Header */}
         <div 
-          className="border-b border-white/15 bg-white/5 px-4 py-3"
+          className="border-b border-[#16181D]/[0.08] bg-[#16181D]/[0.04] px-4 py-3"
         >
-          <h3 className="truncate text-sm font-bold text-white">{stripYearFromLabel(node.name || node.label)}</h3>
+          <h3 className="truncate text-sm font-bold text-[#16181D]">{stripYearFromLabel(node.name || node.label)}</h3>
           {node.instructor && (
-            <p className="mt-0.5 flex items-center gap-1 text-xs text-white/80">
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-[#5A5E6B]">
               <span aria-hidden="true">◦</span> {node.instructor}
             </p>
           )}
@@ -227,44 +255,44 @@ function Tooltip({ data, containerRect }: { data: TooltipData | null; containerR
         
         {/* Details */}
         <div className="px-4 py-3 space-y-2 text-xs">
-          <div className="flex justify-between gap-3 text-white">
-            <span className="text-white/65">Department</span>
+          <div className="flex justify-between gap-3 text-[#16181D]">
+            <span className="text-[#8A8FA0]">Department</span>
             <span className="font-medium">{node.department || '—'}</span>
           </div>
-          <div className="flex justify-between gap-3 text-white">
-            <span className="text-white/65">Year</span>
+          <div className="flex justify-between gap-3 text-[#16181D]">
+            <span className="text-[#8A8FA0]">Year</span>
             <span className="font-medium">
               {node.year ? (node.year === 'Masters' ? 'Masters' : `Year ${node.year}`) : '—'}
             </span>
           </div>
-          <div className="flex justify-between gap-3 text-white">
-            <span className="text-white/65">Members</span>
+          <div className="flex justify-between gap-3 text-[#16181D]">
+            <span className="text-[#8A8FA0]">Members</span>
             <span className="font-medium">{node.memberCount ?? node.count ?? 0}</span>
           </div>
         </div>
 
         {/* Connections */}
         {totalConnections > 0 && (
-          <div className="border-t border-white/15 bg-white/5 px-4 py-3">
-            <p className="mb-2 flex items-center gap-1 text-xs text-white/65">
+          <div className="border-t border-[#16181D]/[0.08] bg-[#16181D]/[0.04] px-4 py-3">
+            <p className="mb-2 flex items-center gap-1 text-xs text-[#8A8FA0]">
               Connected to:
             </p>
             <div className="space-y-1 text-xs">
               {connections.sameInstructor.length > 0 && node.instructor && (
                 <div className="flex items-center gap-2 text-primary">
-                  <span className="h-0.5 w-3 rounded bg-primary"></span>
+                  <span className="h-0.5 w-3 rounded" style={{ background: RELATIONSHIP_STYLES.instructor.color }} />
                   <span>{connections.sameInstructor.length} studios ({node.instructor})</span>
                 </div>
               )}
               {connections.sameYear.length > 0 && node.year && (
-                <div className="flex items-center gap-2 text-white">
-                  <span className="w-3 border-t-2 border-dashed border-white"></span>
+                <div className="flex items-center gap-2 text-[#16181D]">
+                  <span className="w-3 border-t-2 border-dashed" style={{ borderColor: RELATIONSHIP_STYLES.year.color }} />
                   <span>{connections.sameYear.length} studios ({node.year === 'Masters' ? 'Masters' : `Year ${node.year}`})</span>
                 </div>
               )}
               {connections.sameDepartment.length > 0 && node.department && (
-                <div className="flex items-center gap-2 text-white/80">
-                  <span className="w-3 border-t-2 border-dotted border-accent"></span>
+                <div className="flex items-center gap-2 text-[#5A5E6B]">
+                  <span className="w-3 border-t-2 border-dotted" style={{ borderColor: RELATIONSHIP_STYLES.department.color }} />
                   <span>{connections.sameDepartment.length} studios ({node.department})</span>
                 </div>
               )}
@@ -349,7 +377,10 @@ export default function BubbleNetwork({
       if (fullScreen || isFullscreen) {
         setDimensions({
           width: window.innerWidth,
-          height: fullScreen ? window.innerHeight - headerHeight : window.innerHeight,
+          // Full viewport even in fullScreen. headerHeight no longer insets the
+          // canvas — the chrome floats over the grid now — it only biases the
+          // simulation below, see the center force.
+          height: window.innerHeight,
         })
         if (containerRef.current) setContainerRect(containerRef.current.getBoundingClientRect())
       } else if (containerRef.current) {
@@ -371,7 +402,10 @@ export default function BubbleNetwork({
     
     window.addEventListener('resize', debouncedUpdateDimensions)
     return () => window.removeEventListener('resize', debouncedUpdateDimensions)
-  }, [fullScreen, headerHeight])
+    // isFullscreen, not headerHeight: this effect stopped reading headerHeight
+    // when the canvas went full-viewport, and it branches on isFullscreen — so
+    // as written it would not re-measure on entering browser fullscreen.
+  }, [fullScreen, isFullscreen])
 
   // ============================================================================
   // FORCE SIMULATION
@@ -419,7 +453,9 @@ export default function BubbleNetwork({
       .force('charge', d3.forceManyBody()
         .strength(-400) // Increased repulsion to spread bubbles further apart
       )
-      .force('center', d3.forceCenter(width / 2, height / 2).strength(0.01)) // Reduced center pull
+      // Centre pushed down by half the chrome height so the cloud settles
+      // clear of the floating controls rather than under them.
+      .force('center', d3.forceCenter(width / 2, (height + headerHeight) / 2).strength(0.01))
       .force('collision', d3.forceCollide<BubbleNode>()
         .radius(d => (d.radius || 60) + 30) // Increased spacing between bubbles
         .strength(0.9)
@@ -439,7 +475,6 @@ export default function BubbleNetwork({
 
     // Stop simulation once it has stabilized - FREEZE positions
     simulation.on('end', () => {
-      console.log('✅ Simulation stabilized - bubbles now FROZEN')
       // Save final positions
       setPositions([...simNodes])
       // Completely stop the simulation
@@ -452,7 +487,10 @@ export default function BubbleNetwork({
     return () => {
       simulation.stop()
     }
-  }, [nodes, dimensions])
+    // headerHeight belongs here now that the centre force reads it — the header
+    // is measured by a ResizeObserver, so it changes when the controls wrap on
+    // a narrow viewport, and the cloud has to re-settle clear of the new height.
+  }, [nodes, dimensions, headerHeight])
 
   // ============================================================================
   // ZOOM & PAN
@@ -721,14 +759,30 @@ export default function BubbleNetwork({
   return (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden ${isEffectiveFullscreen ? 'fixed inset-0 z-50 h-screen w-screen' : 'h-full w-full'}`}
+      /**
+       * z-0 when the graph merely fills the page, z-50 only in real browser
+       * fullscreen.
+       *
+       * Both used to be z-50, which was harmless while the canvas was inset by
+       * the header height and so never reached the chrome. Now that it fills
+       * the viewport so the grid can run behind the controls, a blanket z-50
+       * paints the whole canvas OVER the page's z-40 header and z-30 panels —
+       * the buttons are still mounted and still there, just buried. Real
+       * fullscreen keeps z-50 on purpose: covering that chrome is the point.
+       */
+      className={`relative overflow-hidden ${
+        isFullscreen
+          ? 'fixed inset-0 z-50 h-screen w-screen'
+          : fullScreen
+            ? 'fixed inset-0 z-0 h-screen w-screen'
+            : 'h-full w-full'
+      }`}
       style={{
-        // Set here rather than through bg-pinspace-forest: that class is not
+        // Set here rather than through bg-white: that class is not
         // defined in tailwind.config.js, so it emitted nothing and the surface
         // was taking whatever the page behind it happened to be.
         backgroundColor: NETWORK_BG,
-        ...(fullScreen && !isFullscreen ? { top: headerHeight } : {}),
-        height: isEffectiveFullscreen ? (fullScreen && !isFullscreen ? `calc(100vh - ${headerHeight}px)` : '100vh') : '100%',
+        height: isEffectiveFullscreen ? '100vh' : '100%',
         minHeight: isEffectiveFullscreen ? undefined : 600,
       }}
     >
@@ -736,8 +790,7 @@ export default function BubbleNetwork({
           Four-stop gradients rather than the usual 1px hairline: the line is
           drawn as a band between two transparent stops, which lets it stay a
           crisp hairline at any zoom without the shimmer a fractional 1px
-          border gets. The old layer used rgb(var(--color-paper) / 0.45) at 3%
-          opacity — and --color-paper was undefined, so it drew nothing at all. */}
+          border gets. */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
@@ -762,25 +815,29 @@ export default function BubbleNetwork({
         <defs>
           {/* Animated dash pattern for instructor connections */}
           <linearGradient id="lineGradientBlue" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="rgb(var(--color-primary))" stopOpacity="0.3" />
-            <stop offset="50%" stopColor="rgb(var(--color-primary))" stopOpacity="1" />
-            <stop offset="100%" stopColor="rgb(var(--color-primary))" stopOpacity="0.3" />
+            <stop offset="0%" stopColor={RELATIONSHIP_STYLES.instructor.color} stopOpacity="0.3" />
+            <stop offset="50%" stopColor={RELATIONSHIP_STYLES.instructor.color} stopOpacity="1" />
+            <stop offset="100%" stopColor={RELATIONSHIP_STYLES.instructor.color} stopOpacity="0.3" />
           </linearGradient>
+          {/* Same Year. Must track RELATIONSHIP_STYLES.year.color — the edges
+              paint with THIS gradient, not with that constant, so recolouring
+              one without the other draws an invisible line under a legend that
+              says otherwise. It was white here while the constant said grey. */}
           <linearGradient id="lineGradientPurple" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="rgb(var(--color-paper))" stopOpacity="0.3" />
-            <stop offset="50%" stopColor="rgb(var(--color-paper))" stopOpacity="1" />
-            <stop offset="100%" stopColor="rgb(var(--color-paper))" stopOpacity="0.3" />
+            <stop offset="0%" stopColor={RELATIONSHIP_STYLES.year.color} stopOpacity="0.3" />
+            <stop offset="50%" stopColor={RELATIONSHIP_STYLES.year.color} stopOpacity="1" />
+            <stop offset="100%" stopColor={RELATIONSHIP_STYLES.year.color} stopOpacity="0.3" />
           </linearGradient>
           <linearGradient id="lineGradientGreen" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="rgb(var(--color-secondary))" stopOpacity="0.3" />
-            <stop offset="50%" stopColor="rgb(var(--color-secondary))" stopOpacity="1" />
-            <stop offset="100%" stopColor="rgb(var(--color-secondary))" stopOpacity="0.3" />
+            <stop offset="0%" stopColor={RELATIONSHIP_STYLES.department.color} stopOpacity="0.3" />
+            <stop offset="50%" stopColor={RELATIONSHIP_STYLES.department.color} stopOpacity="1" />
+            <stop offset="100%" stopColor={RELATIONSHIP_STYLES.department.color} stopOpacity="0.3" />
           </linearGradient>
           
           {/* Glow filters */}
           <filter id="glowBlue" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="4" result="blur" />
-            <feFlood floodColor="rgb(var(--color-primary))" floodOpacity="0.5" />
+            <feFlood floodColor="#3B6EF6" floodOpacity="0.5" />
             <feComposite in2="blur" operator="in" />
             <feMerge>
               <feMergeNode />
@@ -908,11 +965,14 @@ export default function BubbleNetwork({
                         y={0}
                         textAnchor="middle"
                         dominantBaseline="middle"
-                        fill="rgb(var(--color-ink))"
+                        fill="#FFFFFF"
                         fontSize={r > 65 ? 13 : 11}
                         fontWeight={600}
                         className="pointer-events-none select-none"
-                        style={{ paintOrder: 'stroke', stroke: 'rgb(var(--color-paper) / 0.85)', strokeWidth: 3 }}
+                        // No paint-order halo. The label used to be dark ink
+                        // behind a 3px white stroke, which read as a highlight
+                        // box around every name; white on the accent carries
+                        // the same contrast with nothing drawn behind it.
                       >
                         {lines.map((line, i) => (
                           <tspan key={i} x={0} dy={i === 0 ? `${-0.6 * (lines.length - 1)}em` : '1.2em'}>
@@ -945,7 +1005,7 @@ export default function BubbleNetwork({
       {/* Zoom controls */}
       <div className="absolute bottom-4 right-4 z-20 flex flex-col gap-2">
         <button
-          className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-white/25 bg-pinspace-forest/90 text-white backdrop-blur-sm transition-colors hover:border-primary hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-[#16181D]/[0.12] bg-white/90 text-[#16181D] backdrop-blur-sm transition-colors hover:border-primary hover:bg-[#16181D]/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           aria-label="Zoom in"
           onClick={() => {
             if (svgRef.current && zoomRef.current) {
@@ -961,7 +1021,7 @@ export default function BubbleNetwork({
           </svg>
         </button>
         <button
-          className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-white/25 bg-pinspace-forest/90 text-white backdrop-blur-sm transition-colors hover:border-primary hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-[#16181D]/[0.12] bg-white/90 text-[#16181D] backdrop-blur-sm transition-colors hover:border-primary hover:bg-[#16181D]/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           aria-label="Zoom out"
           onClick={() => {
             if (svgRef.current && zoomRef.current) {
@@ -977,7 +1037,7 @@ export default function BubbleNetwork({
           </svg>
         </button>
         <button
-          className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-white/25 bg-pinspace-forest/90 text-white backdrop-blur-sm transition-colors hover:border-primary hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-[#16181D]/[0.12] bg-white/90 text-[#16181D] backdrop-blur-sm transition-colors hover:border-primary hover:bg-[#16181D]/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           aria-label={isFullscreen ? 'Exit full screen' : 'Toggle full screen'}
           onClick={() => void toggleFullscreen()}
           title={isFullscreen ? 'Exit full screen' : 'Full screen'}
@@ -995,20 +1055,20 @@ export default function BubbleNetwork({
       </div>
 
       {/* Legend */}
-      <div className="absolute bottom-4 left-4 z-20 hidden rounded-pinspace-lg border border-white/20 bg-pinspace-forest/90 p-4 backdrop-blur-md sm:block">
-        <p className="mb-3 text-xs font-medium text-white/65">Connections</p>
+      <div className="absolute bottom-4 left-4 z-20 hidden rounded-pinspace-lg border border-[#16181D]/10 bg-white/90 p-4 backdrop-blur-md sm:block">
+        <p className="mb-3 text-xs font-medium text-[#8A8FA0]">Connections</p>
         <div className="space-y-2 text-xs">
           <div className="flex items-center gap-3">
-            <div className="h-0.5 w-8 rounded bg-primary" />
-            <span className="text-white/80">Same Instructor</span>
+            <div className="h-0.5 w-8 rounded" style={{ background: RELATIONSHIP_STYLES.instructor.color }} />
+            <span className="text-[#5A5E6B]">Same Instructor</span>
           </div>
           <div className="flex items-center gap-3">
-            <div className="w-8 border-t-2 border-dashed border-white" />
-            <span className="text-white/80">Same Year</span>
+            <div className="w-8 border-t-2 border-dashed" style={{ borderColor: RELATIONSHIP_STYLES.year.color }} />
+            <span className="text-[#5A5E6B]">Same Year</span>
           </div>
           <div className="flex items-center gap-3">
-            <div className="w-8 border-t-2 border-dotted border-accent" />
-            <span className="text-white/80">Same Department</span>
+            <div className="w-8 border-t-2 border-dotted" style={{ borderColor: RELATIONSHIP_STYLES.department.color }} />
+            <span className="text-[#5A5E6B]">Same Department</span>
           </div>
         </div>
       </div>

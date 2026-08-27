@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
@@ -636,7 +636,7 @@ export default function CritPage() {
 
   if (loadState === 'not-found') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#E7ECF5' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: ROOM_SKY_COLOR }}>
         <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
           <div className="text-6xl mb-4">🔗</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Link not found</h2>
@@ -648,7 +648,7 @@ export default function CritPage() {
 
   if (loadState === 'error') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#E7ECF5' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: ROOM_SKY_COLOR }}>
         <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
           <div className="text-6xl mb-4">😕</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Something went wrong</h2>
@@ -666,7 +666,7 @@ export default function CritPage() {
 
   if (loadState === 'name') {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#E7ECF5' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: ROOM_SKY_COLOR }}>
         <div className="w-full max-w-sm p-8 bg-white/95 rounded-2xl shadow-2xl">
           <h2 className="text-xl font-bold text-gray-900 mb-1">Joining as a guest critic</h2>
           <p className="text-sm text-gray-600 mb-5">
@@ -696,7 +696,7 @@ export default function CritPage() {
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#E7ECF5' }}>
+    <div className="relative w-full h-screen overflow-hidden" style={{ background: ROOM_SKY_COLOR }}>
       {/* Flat, neutral field matching ROOM_SKY_COLOR — see the comment on the
           equivalent wrapper in app/studio/[id]/page.tsx for why the previous
           pulsing indigo blur orbs were removed rather than recolored. */}
@@ -823,38 +823,45 @@ export default function CritPage() {
         <LaserPointer laserRef={laserRef} color={laserColor} />
       </Canvas>
 
-      <LightboxModal
-        board={selectedBoard}
-        allBoards={lightboxBoards}
-        autoEnterPresentCompare={autoEnterPresentCompare}
-        compareBoards={compareBoardIds
-          .map((id) => boards.find((b) => b.id === id))
-          .filter((b): b is Board => Boolean(b))}
-        onClose={() => {
-          setSelectedBoard(null)
-          setAutoEnterPresentCompare(false)
-          setCompareBoardIds([])
-        }}
-        onNavigate={handleNavigate}
-        isEditMode={false}
-        currentUserRole={null}
-        guestToken={token}
-        guestName={guestName}
-        guestTokenId={guest?.tokenId ?? null}
-        guestCanComment={!!guest?.canComment}
-        guestCanTrace={!!guest?.canTrace}
-        // Phase B.4: lightbox follow. isPresenter is hardwired false — a guest
-        // never broadcasts "lbv". While following with a board open, the viewport
-        // is presenter-driven (local zoom/pan disabled); break-away restores it.
-        liveChannelRef={liveChannelRef}
-        isPresenter={false}
-        viewportDriven={isFollowing && selectedBoard !== null}
-        viewportTargetRef={lbViewportRef}
-        lbCursorRef={lbCursorRef}
-        cursorColor={laserColor}
-        critDirty={critDirty}
-        traceStreamRef={traceStreamRef}
-      />
+      {/* Suspense around the modal, not the page: LightboxModal calls
+          useSearchParams, and an unwrapped call to it is a VERCEL-BUILD-ONLY
+          failure — tsc and dev both pass. The two studio routes that mount this
+          same component already have a boundary; these guest routes did not,
+          and the asymmetry is the tell. Costs nothing at runtime. */}
+      <Suspense fallback={null}>
+        <LightboxModal
+          board={selectedBoard}
+          allBoards={lightboxBoards}
+          autoEnterPresentCompare={autoEnterPresentCompare}
+          compareBoards={compareBoardIds
+            .map((id) => boards.find((b) => b.id === id))
+            .filter((b): b is Board => Boolean(b))}
+          onClose={() => {
+            setSelectedBoard(null)
+            setAutoEnterPresentCompare(false)
+            setCompareBoardIds([])
+          }}
+          onNavigate={handleNavigate}
+          isEditMode={false}
+          currentUserRole={null}
+          guestToken={token}
+          guestName={guestName}
+          guestTokenId={guest?.tokenId ?? null}
+          guestCanComment={!!guest?.canComment}
+          guestCanTrace={!!guest?.canTrace}
+          // Phase B.4: lightbox follow. isPresenter is hardwired false — a guest
+          // never broadcasts "lbv". While following with a board open, the viewport
+          // is presenter-driven (local zoom/pan disabled); break-away restores it.
+          liveChannelRef={liveChannelRef}
+          isPresenter={false}
+          viewportDriven={isFollowing && selectedBoard !== null}
+          viewportTargetRef={lbViewportRef}
+          lbCursorRef={lbCursorRef}
+          cursorColor={laserColor}
+          critDirty={critDirty}
+          traceStreamRef={traceStreamRef}
+        />
+      </Suspense>
     </div>
   )
 }

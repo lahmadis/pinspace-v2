@@ -4,9 +4,13 @@ import { useId, useState } from 'react'
 import { CARD, CONTACT_MAILTO, Eyebrow, Reveal, SectionHeading } from './landingKit'
 
 /**
- * Every answer here is drawn from a claim the For schools section already
- * makes — pilot terms, setup, ownership, privacy, accreditation, pricing.
- * The FAQ is the same commitments asked as questions, so the two can't drift.
+ * Mostly the same commitments the For schools section makes, asked as questions
+ * — pilot terms, setup, ownership, privacy, pricing — so the two can't drift.
+ *
+ * Accreditation is the exception and is now load-bearing: the section that used
+ * to carry it was cut, so this answer is the only place on the page that says
+ * how the archive serves a review. Do not trim it to match a section that is no
+ * longer there.
  */
 const FAQS = [
   {
@@ -19,7 +23,7 @@ const FAQS = [
   },
   {
     q: 'How long does setup actually take?',
-    a: 'A coordinator builds the crit room in about thirty minutes — walls, student zones and deadlines. There is no data migration; you start the semester with an empty room and fill it as work gets pinned.',
+    a: 'A coordinator builds the space in about 2 minutes. There is no data migration; you start the semester with an empty space and fill it as work gets pinned.',
   },
   {
     q: 'Who owns the work?',
@@ -30,11 +34,7 @@ const FAQS = [
     a: 'No. Personal desk crit notes, voice memos and redlines are visible only to the student who made them. Pinned work and the crit comments on it are the shared part; the desk is not.',
   },
   {
-    q: 'Is student work used to train AI models?',
-    a: "No. Work is never used to train models, and it never leaves the school's account without permission.",
-  },
-  {
-    q: 'How does this help with accreditation?',
+    q: 'How does this help with program accreditation?',
     a: 'Every board carries its studio, brief, semester and criteria tags as it is pinned, so the evidence set is assembled during the semester rather than rebuilt after it. At review, filter the archive and export as a PDF set or a linked index — with crit comments attached or stripped out.',
   },
   {
@@ -42,7 +42,7 @@ const FAQS = [
     a: 'The archive does not change hands with it. Faculty picking up a studio inherit years of answers to the same brief, so a new coordinator starts with the section’s history rather than a blank folder.',
   },
   {
-    q: 'What does it cost after the pilot?',
+    q: 'What does it cost after a pilot?',
     a: 'Per student, per year, quoted by program size. That covers all sections, archive retention across cohorts, accreditation exports, single sign-on and an admin dashboard.',
   },
 ] as const

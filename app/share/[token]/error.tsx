@@ -17,7 +17,7 @@ export default function ShareViewError({
   }, [error])
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#E7ECF5]">
+    <div className="min-h-screen flex items-center justify-center bg-[#C8D6FC]">
       <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full mx-4 text-center">
         <div className="text-4xl mb-4">⚠️</div>
         <h2 className="text-xl font-bold text-gray-900 mb-2">Space failed to load</h2>

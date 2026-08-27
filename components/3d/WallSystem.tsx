@@ -245,9 +245,24 @@ function dimTowardSky(hex: string, amount: number): string {
 /* Horizon grid. Lines have to carry against the sky without turning it into a
  * drawing of its own: the foot lines do the visible work and the ten-foot lines
  * are a light structural beat, told apart by WEIGHT (sectionThickness is nearly
- * twice cellThickness) rather than by darkness. */
-const GRID_CELL_COLOR = '#E1E7F0'
-const GRID_SECTION_COLOR = '#D3DBE8'
+ * twice cellThickness) rather than by darkness.
+ *
+ * NEUTRAL GREY, deliberately. These used to be pale blue-greys, which was fine
+ * while the whole scene was slightly blue and the renderer's ACES tone curve
+ * muted them. Both of those changed: tone mapping is off (see RoomLighting) so
+ * they now render at full strength, and ROOM_SKY carries a real accent tint —
+ * so a blue-leaning grid on a blue sky read as one blue wash with no ruling in
+ * it. Grey lines give the sky its colour back and let the grid be structure.
+ *
+ * THEY ARE MID GREYS, NOT PALE ONES, AND HAVE TO BE. The floor and ground plane
+ * are gone, so the grid is drawn straight over the sky — there is no light
+ * surface behind it any more. ROOM_SKY's luminance lands almost exactly on
+ * #D8D8D8, so a grey near that value is a NULL: 1.02:1, invisible everywhere,
+ * not merely faint at the horizon. Anything lighter than the sky loses too, so
+ * these sit clearly below it — 1.35:1 for the foot lines and 1.70:1 for the
+ * ten-foot beat. Check any new value against ROOM_SKY before trusting it. */
+const GRID_CELL_COLOR = '#B9B9B9'
+const GRID_SECTION_COLOR = '#A5A5A5'
 
 /**
  * The grid sits slightly BELOW the walls' base rather than exactly on it. The

@@ -561,7 +561,7 @@ function StudioViewPageInner() {
 
   if (error) {
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={{ background: '#E7ECF5' }}>
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: ROOM_SKY_COLOR }}>
         <div className="text-center max-w-md p-8 bg-white/95 rounded-xl shadow-lg">
           <div className="text-6xl mb-4">😕</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Oops!</h2>
@@ -578,7 +578,7 @@ function StudioViewPageInner() {
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden" style={{ background: '#E7ECF5' }}>
+    <div className="relative w-full h-screen overflow-hidden" style={{ background: ROOM_SKY_COLOR }}>
       <DemoBanner />
 
       {/* Flat, neutral field behind the board grid — matches the room's own

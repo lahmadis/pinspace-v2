@@ -11,7 +11,10 @@ const CACHE_MAX_AGE = 60 // seconds
 const STALE_WHILE_REVALIDATE = 120
 
 // Single color for all bubbles - connections differentiate relationships
-const BUBBLE_COLOR = '#6366f1' // Indigo
+// The app's one blue. BubbleNetwork overrides node.color with its own constant
+// anyway, so this is belt-and-braces — but shipping a colour the UI contradicts
+// is how the next reader concludes the bubbles are supposed to be indigo.
+const BUBBLE_COLOR = '#3B6EF6'
 
 /** Search-index cap per studio — see contributorsByWorkspace below. */
 const MAX_CONTRIBUTORS_PER_STUDIO = 500
@@ -114,6 +117,24 @@ export async function GET(request: NextRequest) {
 
     // Use service role client to bypass RLS for the actual studio query.
     const supabase = supabaseServiceRole()
+
+    /**
+     * What this institution calls its network. `network_label` is the column
+     * that exists for exactly this; `name` is the fallback for orgs that never
+     * set one. Returned so the page can title itself after the school rather
+     * than hardcoding one institution's abbreviation into a shared component.
+     */
+    let networkLabel: string | null = null
+    {
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('name, network_label')
+        .eq('id', institutionFilterId)
+        .maybeSingle()
+      const label = (org?.network_label as string | null)?.trim()
+      const name = (org?.name as string | null)?.trim()
+      networkLabel = label || name || null
+    }
 
     // Bubble per published room. Query rooms.is_published with parent
     // workspace metadata joined for filtering/labeling. is_published is the
@@ -401,7 +422,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { studios, totals, hasOrg: true },
+      { studios, totals, hasOrg: true, networkLabel },
       // Per-user response now (depends on session) — don't share a CDN cache.
       { headers: { 'Cache-Control': 'private, no-store' } }
     )

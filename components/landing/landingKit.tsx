@@ -49,8 +49,19 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const
  * Scroll-triggered entrance.
  *
  * `once` because a section that re-animates every time it scrolls back into
- * view turns a rare, first-read animation into a frequent one. Under reduced
- * motion the rise is dropped and only the fade survives — gentler, not absent.
+ * view turns a rare, first-read animation into a frequent one.
+ *
+ * `initial` IS A CONSTANT, and must stay one. It used to branch on
+ * useReducedMotion(), which hydrates wrong: framer-motion reads the preference
+ * synchronously at first render (`useState(prefersReducedMotion.current)`), and
+ * on the server there is no matchMedia, so it is always false there. A
+ * reduced-motion visitor therefore got server HTML carrying
+ * `transform: translateY(18px)` and a client first render with no transform at
+ * all — a mismatch on every Reveal on the page.
+ *
+ * Reduced motion is expressed through `transition` instead, which is only read
+ * when an animation runs and so never reaches the server-rendered markup: the
+ * element still starts at the same place, it just arrives instantly.
  */
 export function Reveal({
   children,
@@ -65,10 +76,10 @@ export function Reveal({
   return (
     <motion.div
       className={className}
-      initial={reduce ? { opacity: 0 } : { opacity: 0, y: 18 }}
+      initial={{ opacity: 0, y: 18 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-80px' }}
-      transition={{ duration: reduce ? 0.2 : 0.55, delay: reduce ? 0 : delay, ease: EASE_OUT }}
+      transition={{ duration: reduce ? 0 : 0.55, delay: reduce ? 0 : delay, ease: EASE_OUT }}
     >
       {children}
     </motion.div>

@@ -227,7 +227,7 @@ export default function CritColumn({
       className={`w-[420px] shrink-0 rounded-2xl border transition-colors ${
         isActive
           ? 'border-[#3B6EF6]/50 bg-white shadow-[0_8px_30px_rgba(59,110,246,0.10)]'
-          : 'border-[#16181D]/8 bg-white/70'
+          : 'border-[#16181D]/[0.08] bg-white/70'
       }`}
     >
       {/* ---------------- header ---------------- */}
@@ -261,7 +261,7 @@ export default function CritColumn({
                   }
                 }}
                 aria-label="Crit name"
-                className="w-full bg-transparent text-lg font-bold text-[#16181D] truncate rounded-md -mx-1 px-1 py-0.5 outline-none hover:bg-[#16181D]/4 focus:bg-white focus:ring-2 focus:ring-[#3B6EF6]/40"
+                className="w-full bg-transparent text-lg font-bold text-[#16181D] truncate rounded-md -mx-1 px-1 py-0.5 outline-none hover:bg-[#16181D]/[0.04] focus:bg-white focus:ring-2 focus:ring-[#3B6EF6]/40"
               />
             ) : (
               <h2 className="text-lg font-bold text-[#16181D] truncate">{crit.title}</h2>
@@ -279,7 +279,7 @@ export default function CritColumn({
               className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
                 stage === 'today'
                   ? 'bg-[#3B6EF6] text-white'
-                  : 'bg-[#16181D]/6 text-[#5A5E6B]'
+                  : 'bg-[#16181D]/[0.06] text-[#5A5E6B]'
               }`}
             >
               {stageLabel(stage)}
@@ -294,7 +294,7 @@ export default function CritColumn({
                 onOpen?.()
               }}
               title="Open this crit to lay out and mark up the work"
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#16181D]/12 text-[11px] font-semibold text-[#5A5E6B] hover:bg-[#16181D]/5"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#16181D]/[0.12] text-[11px] font-semibold text-[#5A5E6B] hover:bg-[#16181D]/5"
             >
               Open
               <Maximize2 className="w-3 h-3" />
@@ -313,7 +313,7 @@ export default function CritColumn({
                 }}
                 title="Delete this crit"
                 aria-label={`Delete ${crit.title}`}
-                className="p-1.5 rounded-lg text-[#8A8FA0] hover:text-[#D64545] hover:bg-[#D64545]/8 transition-colors"
+                className="p-1.5 rounded-lg text-[#8A8FA0] hover:text-[#D64545] hover:bg-[#D64545]/[0.08] transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -331,7 +331,7 @@ export default function CritColumn({
             </CardAction>
           )}
         </div>
-        <div className="rounded-xl border border-[#16181D]/8 bg-[#F7F9FC] p-3 min-h-[132px]">
+        <div className="rounded-xl border border-[#16181D]/[0.08] bg-[#F7F9FC] p-3 min-h-[132px]">
           {nodesLoading && shared.length === 0 ? (
             <div className="flex items-center gap-2 text-xs text-[#8A8FA0] h-[108px]">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -380,7 +380,7 @@ export default function CritColumn({
 
         {notes.map(({ node, props }) =>
           node.type === 'image' ? (
-            <div key={node.id} className="rounded-xl border border-[#16181D]/8 bg-white p-3">
+            <div key={node.id} className="rounded-xl border border-[#16181D]/[0.08] bg-white p-3">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0]">
                   Photo / ref
@@ -420,7 +420,7 @@ export default function CritColumn({
         )}
 
         {/* Voice */}
-        <div className="rounded-xl border border-[#16181D]/8 bg-white p-3">
+        <div className="rounded-xl border border-[#16181D]/[0.08] bg-white p-3">
           <div className="flex items-center justify-between gap-2 mb-1.5">
             <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0]">
               Voice note
@@ -441,7 +441,7 @@ export default function CritColumn({
                   className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold ${
                     recording
                       ? 'bg-[#D64545] text-white'
-                      : 'bg-[#16181D]/6 text-[#5A5E6B] hover:bg-[#16181D]/10'
+                      : 'bg-[#16181D]/[0.06] text-[#5A5E6B] hover:bg-[#16181D]/10'
                   }`}
                 >
                   <Mic className="w-3 h-3" />
@@ -465,7 +465,7 @@ export default function CritColumn({
         </div>
 
         {/* Summary */}
-        <div className="rounded-xl border border-[#16181D]/8 bg-white p-3">
+        <div className="rounded-xl border border-[#16181D]/[0.08] bg-white p-3">
           <div className="flex items-center justify-between gap-2 mb-1.5">
             <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0]">
               Summary
@@ -516,7 +516,7 @@ export default function CritColumn({
         </div>
 
         {/* Next steps */}
-        <div className="rounded-xl border border-[#16181D]/8 bg-white p-3">
+        <div className="rounded-xl border border-[#16181D]/[0.08] bg-white p-3">
           <div className="flex items-center justify-between gap-2 mb-2">
             <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0]">
               Next steps
@@ -589,7 +589,7 @@ function RemoveButton({ onClick, label }: { onClick: () => void; label: string }
       }}
       title={`Remove ${label}`}
       aria-label={`Remove ${label}`}
-      className="p-1 rounded-md text-[#8A8FA0] hover:text-[#D64545] hover:bg-[#D64545]/8"
+      className="p-1 rounded-md text-[#8A8FA0] hover:text-[#D64545] hover:bg-[#D64545]/[0.08]"
     >
       <Trash2 className="w-3.5 h-3.5" />
     </button>
@@ -607,7 +607,7 @@ function PinnedWork({
 }) {
   return (
     <figure className="group relative w-[120px] shrink-0">
-      <div className="w-[120px] h-[108px] rounded-lg overflow-hidden bg-[#E7ECF5] border border-[#16181D]/8">
+      <div className="w-[120px] h-[108px] rounded-lg overflow-hidden bg-[#C8D6FC] border border-[#16181D]/[0.08]">
         {src ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img src={src} alt={name || 'Pinned work'} className="w-full h-full object-cover" />
@@ -683,7 +683,7 @@ function InlineComposer({
             commit()
           }
         }}
-        className="w-full text-[13px] leading-relaxed text-[#16181D] border border-[#16181D]/12 rounded-lg px-2.5 py-2 outline-none focus:border-[#3B6EF6]/50 resize-y"
+        className="w-full text-[13px] leading-relaxed text-[#16181D] border border-[#16181D]/[0.12] rounded-lg px-2.5 py-2 outline-none focus:border-[#3B6EF6]/50 resize-y"
       />
       <div className="flex items-center gap-2 mt-2">
         <button
@@ -697,7 +697,7 @@ function InlineComposer({
         <button
           type="button"
           onClick={onCancel}
-          className="px-3 py-1.5 rounded-lg border border-[#16181D]/12 text-[11px] font-semibold text-[#5A5E6B]"
+          className="px-3 py-1.5 rounded-lg border border-[#16181D]/[0.12] text-[11px] font-semibold text-[#5A5E6B]"
         >
           Cancel
         </button>
@@ -731,7 +731,7 @@ function CardAction({
         e.stopPropagation()
         onClick()
       }}
-      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-[#5A5E6B] hover:bg-[#16181D]/6 disabled:text-[#B6BAC6] disabled:hover:bg-transparent"
+      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-[#5A5E6B] hover:bg-[#16181D]/[0.06] disabled:text-[#B6BAC6] disabled:hover:bg-transparent"
     >
       {icon}
       {children}

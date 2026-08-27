@@ -64,13 +64,26 @@ export const ROOM = {
  * all, the ground plane's own edge shows up as a visible ring instead of an
  * invisible horizon.
  *
- * Note the sky is now DARKER than both the floor plate (#FFFFFF) and the ground
- * (#F7F9FC), where it used to sit between the walls and a mid-tone floor. The
- * ground therefore fades slightly darker toward the horizon, which reads as
- * haze. That inversion is fine — the ring failure above depends only on fog and
- * background matching each other, not on which side of the sky the ground sits.
+ * The floor plate and ground plane are BOTH GONE now (see WallSystem) — the
+ * horizon grid draws straight over this colour, with nothing behind it. The
+ * fog/background match rule above still stands and is still the reason a
+ * mismatch shows as a ring, but there is no ground left to fade into the sky,
+ * so this value is now read almost entirely against the walls and that grid.
+ *
+ * A light tint of the palette accent (#3B6EF6): white + 28% accent.
+ *
+ * An earlier pass held this at the luminance of the cool grey it replaced, on
+ * the theory that a lighter sky would let a white wall dissolve into it. That
+ * was the wrong constraint — holding the luminance meant the sky and the walls
+ * were the SAME value, 1.10:1, and the room lost its silhouette against the
+ * horizon entirely. The walls render at about sRGB 247 (see RoomLighting), so
+ * the sky has to sit clearly BELOW them, not level with them.
+ *
+ * 28% puts it at 1.34:1 against a wall face — a legible step while still
+ * reading as a pale sky rather than a coloured backdrop. If a wall ever looks
+ * cut out against it, that ratio is too high, not too low.
  */
-export const ROOM_SKY = '#E7ECF5'
+export const ROOM_SKY = '#C8D6FC'
 
 /** Monospace stack for sheet numbers, wall labels and the revision strip. */
 export const MONO_STACK = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
