@@ -55,8 +55,11 @@ export function EditModeOverlay({
             className="fixed inset-x-0 top-0 z-50 flex max-h-[45dvh] flex-col gap-3 overflow-y-auto px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] motion-reduce:transition-none sm:flex-row sm:items-start sm:justify-between sm:px-4"
           >
             <div className="rounded-pinspace border border-border bg-background-light px-4 py-2 text-text-primary shadow-[var(--shadow-raised)]">
-              <h2 className="font-mono text-base font-bold">Edit wall {wallIndex + 1}</h2>
-              <p className="mt-0.5 text-sm text-text-secondary">Use pointer, touch, or keyboard controls to add and arrange boards.</p>
+              {/* Zero-padded to match how walls are labelled everywhere else in the
+                  room, and no longer prefixed with the verb — the panel it sits in
+                  is already the edit surface. */}
+              <h2 className="font-mono text-base font-bold">Wall {String(wallIndex + 1).padStart(2, '0')}</h2>
+              <p className="mt-0.5 text-sm text-text-secondary">Add, arrange, and edit boards</p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
               {onClearWall && (
@@ -102,7 +105,7 @@ export function EditModeOverlay({
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
-              Add board
+              Add Board
             </button>
           </motion.div>
         </>

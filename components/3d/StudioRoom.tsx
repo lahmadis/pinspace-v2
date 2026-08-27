@@ -2637,19 +2637,35 @@ export default function StudioRoom(props: StudioRoomProps) {
         }
       }
 
-      // Escape = deselect, close comment panel, or leave wall focus
+      // Escape = deselect, close comment panel, leave 2D edit mode, or leave
+      // wall focus — unwinding the innermost thing first.
       if (e.key === 'Escape') {
+        // selectedBoardIds, NOT selectedBoardId: the latter is deliberately null
+        // whenever two or more boards are selected (see its definition), so
+        // reading it here made a multi-selection look like no selection at all —
+        // and Escape then cleared the selection AND left edit mode in one press,
+        // which is exactly what the guard below exists to prevent.
+        const hadSelection = selectedBoardIds.size > 0
         clearBoardSelection()
         if (commentPanelBoard) setCommentPanelBoard(null)
-        // Only meaningful outside edit mode; edit mode leaves via its own
-        // save-and-exit path, and focus is suppressed while editing anyway.
-        if (editingWall === null) setFocusedWall(null)
+        if (editingWall !== null) {
+          // Leaves through handleEditComplete, the same save-and-exit path the
+          // button and the canvas double-click use. Escape must not become the
+          // one exit that silently discards the arrangement you just made.
+          //
+          // Not when a board was selected: that keypress dismissed the
+          // selection, and dropping out of edit mode in the same press would be
+          // one gesture doing two things.
+          if (!hadSelection) handleEditComplete()
+          return
+        }
+        setFocusedWall(null)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedBoardId, editingWall, roomView, localBoards, handleBoardDelete, commentPanelBoard, undo, redo, undoPendingDelete, handleCopy, clearBoardSelection])
+  }, [selectedBoardId, editingWall, roomView, localBoards, handleBoardDelete, commentPanelBoard, undo, redo, undoPendingDelete, handleCopy, clearBoardSelection, handleEditComplete, selectedBoardIds])
 
   const [isDragOver, setIsDragOver] = useState(false)
   const dragCounterRef = useRef(0)

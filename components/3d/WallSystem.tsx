@@ -6,10 +6,9 @@ import { Text, Grid } from '@react-three/drei'
 import { Board } from '@/types'
 import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
-import { getWallTransformResolved, getWallEdgeJoins, getFloorRect, type WallTextItem } from '@/lib/wallLayout'
+import { getWallTransformResolved, getFloorRect, type WallTextItem } from '@/lib/wallLayout'
 import { ROOM_SKY, ROOM_GHOST, ROOM_FONT_3D } from '@/lib/room/palette'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
-import { useDisposableGeometry } from './useDisposableGeometry'
 
 interface WallDimensions {
   height: number
@@ -317,72 +316,6 @@ export function getRoomFogParams(wallConfig: WallConfig): { fogNear: number; fog
 const BAY_FRAME_PADDING_IN = 3
 
 /**
- * Corner radius as a fraction of the wall's shorter side, then clamped. A fixed
- * radius reads as a big soft pillow on a 4' partition and as a barely-chamfered
- * box on a 20' wall; scaling keeps the same softness at both.
- */
-const WALL_CORNER_RADIUS_FRACTION = 0.06
-const WALL_CORNER_RADIUS_MIN_IN = 2
-const WALL_CORNER_RADIUS_MAX_IN = 14
-
-export function getWallCornerRadius(width: number, height: number): number {
-  const scaled = Math.min(width, height) * WALL_CORNER_RADIUS_FRACTION
-  const clamped = Math.min(Math.max(scaled, WALL_CORNER_RADIUS_MIN_IN), WALL_CORNER_RADIUS_MAX_IN)
-  // Never let two radii on the same side meet or cross.
-  return Math.min(clamped, width / 2 - 0.01, height / 2 - 0.01)
-}
-
-/**
- * The wall panel: a rectangle extruded to `depth`, with rounding applied only
- * to the corners on a free vertical edge.
- *
- * Extrusion of a 2D shape rather than drei's RoundedBox, because RoundedBox
- * rounds every edge of the solid including the depth axis — its radius is
- * therefore capped at half the smallest dimension, and a wall is 6" deep. That
- * caps the face radius at 3", which on a 96" wall is invisible. Extruding a
- * rounded rectangle along Z decouples the face radius from the wall's
- * thickness, so the corners can be as soft as the reference while the wall
- * stays a 6" slab with square front and back faces.
- */
-function buildWallPanelGeometry(
-  width: number,
-  height: number,
-  depth: number,
-  radius: number,
-  roundLeft: boolean,
-  roundRight: boolean,
-): THREE.ExtrudeGeometry {
-  const w = width / 2
-  const h = height / 2
-  const rL = roundLeft ? radius : 0
-  const rR = roundRight ? radius : 0
-
-  const shape = new THREE.Shape()
-  // Anticlockwise from the bottom-left, quadratic corners where rounded and a
-  // plain lineTo where the edge butts a neighbour.
-  shape.moveTo(-w + rL, -h)
-  shape.lineTo(w - rR, -h)
-  if (rR) shape.quadraticCurveTo(w, -h, w, -h + rR)
-  shape.lineTo(w, h - rR)
-  if (rR) shape.quadraticCurveTo(w, h, w - rR, h)
-  shape.lineTo(-w + rL, h)
-  if (rL) shape.quadraticCurveTo(-w, h, -w, h - rL)
-  shape.lineTo(-w, -h + rL)
-  if (rL) shape.quadraticCurveTo(-w, -h, -w + rL, -h)
-
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth,
-    bevelEnabled: false,
-    curveSegments: 8,
-  })
-  // ExtrudeGeometry runs 0..depth on Z; the room positions walls about their
-  // centre and boards sit at ±(depth/2 + offset), so recentre it.
-  geometry.translate(0, 0, -depth / 2)
-  geometry.computeVertexNormals()
-  return geometry
-}
-
-/**
  * The soft blob a wall casts onto the floor.
  *
  * A gradient sprite, not a real shadow map and not drei's <ContactShadows>.
@@ -430,30 +363,6 @@ const SHADOW_DEPTH_IN = 52
 /** Clear of the floor plane, below the accent rim at the wall's foot. */
 const SHADOW_Y = 0.5
 
-/**
- * One wall's panel mesh. A component rather than inline JSX because the
- * geometry is built imperatively and has to be disposed when the wall's
- * dimensions change — the wall loop is a .map(), which cannot call hooks.
- */
-function WallPanel({
-  width, height, depth, radius, roundLeft, roundRight, children,
-}: {
-  width: number
-  height: number
-  depth: number
-  radius: number
-  roundLeft: boolean
-  roundRight: boolean
-  children: React.ReactNode
-}) {
-  const geometry = useDisposableGeometry(
-    () => buildWallPanelGeometry(width, height, depth, radius, roundLeft, roundRight),
-    [width, height, depth, radius, roundLeft, roundRight],
-  )
-  return <mesh geometry={geometry} renderOrder={0}>{children}</mesh>
-}
-
-
 export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'white', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick }: WallSystemProps) {
 
   const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
@@ -468,11 +377,6 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
   }), [wallPalette])
   const dimmedInk = useMemo(() => dimTowardSky(ROOM_PALETTE.ink, WALL_DIM_AMOUNT), [])
   const dimmedAccent = useMemo(() => dimTowardSky(ROOM_PALETTE.accent, WALL_DIM_AMOUNT), [])
-
-  // Which wall ends are open air, and so get a rounded corner. Memoized on the
-  // config: this walks every wall pair, and the answer only moves when a wall
-  // is resized, added, or dragged.
-  const edgeJoins = useMemo(() => getWallEdgeJoins(wallConfig), [wallConfig])
 
   // One gradient shared by every wall's floor pool — the sprite is identical
   // for all of them, only the plane it is stretched over differs.
@@ -582,16 +486,6 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
         const palette = isDimmed ? dimmedWallPalette : wallPalette
         const inkColor = isDimmed ? dimmedInk : ROOM_PALETTE.ink
 
-        // Corner rounding for this wall. An edge that butts a neighbour stays
-        // square; only ends in open air curve. radiusL/radiusR are the ACTUAL
-        // radius applied on each side (0 where square), and are what the edge
-        // bars and the accent rim inset by.
-        const joins = edgeJoins[wallIndex] ?? { left: false, right: false }
-        const roundLeft = !joins.left
-        const roundRight = !joins.right
-        const cornerRadius = getWallCornerRadius(transform.width, transform.height)
-        const radiusL = roundLeft ? cornerRadius : 0
-        const radiusR = roundRight ? cornerRadius : 0
         // Faint glow when another user is editing this wall (presence).
         // Suppressed while ghosted: a glowing accent on a wall we're actively
         // pushing into the background reads as a rendering bug, and PresenceBar
@@ -697,17 +591,11 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
               </mesh>
             )}
 
-            {/* Modern off-white wall with depth and shadows.
-                Corners round only where this wall ends in open air — see
-                getWallEdgeJoins for why a joined seam has to stay square. */}
-            <WallPanel
-              width={transform.width}
-              height={transform.height}
-              depth={6}
-              radius={cornerRadius}
-              roundLeft={roundLeft}
-              roundRight={roundRight}
-            >
+            {/* Modern off-white wall with depth and shadows. Square corners:
+                a room joins its walls, and a radius at a junction opens a notch
+                at eye level. */}
+            <mesh renderOrder={0}>
+              <boxGeometry args={[transform.width, transform.height, 6]} />
               <meshStandardMaterial
                 color={palette.main} // room wall color (grey default / paper white), ghosted when unfocused
                 // White mode matches the board material's roughness (0.7) so a
@@ -722,17 +610,14 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                 emissive={isOthersEditing ? ROOM_PALETTE.accent : '#000000'}
                 emissiveIntensity={isOthersEditing ? 0.45 : 0}
               />
-            </WallPanel>
+            </mesh>
 
-            {/* Subtle edge shadows for depth - creates modern panel effect.
-                Each bar is inset by the corner radius at any end that is
-                rounded, so it stops where the straight run stops instead of
-                cantilevering out past the curve into open air. */}
+            {/* Subtle edge shadows for depth - creates modern panel effect */}
             {/* Left edge shadow */}
             <mesh
               position={[-transform.width / 2 + 0.1, 0, 2.1]}
             >
-              <boxGeometry args={[0.2, transform.height - 2 * radiusL, 0.2]} />
+              <boxGeometry args={[0.2, transform.height, 0.2]} />
               <meshStandardMaterial
                 color={palette.sideEdge} // side edge shadow (per wall color)
                 roughness={0.9}
@@ -744,7 +629,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             <mesh
               position={[transform.width / 2 - 0.1, 0, 2.1]}
             >
-              <boxGeometry args={[0.2, transform.height - 2 * radiusR, 0.2]} />
+              <boxGeometry args={[0.2, transform.height, 0.2]} />
               <meshStandardMaterial
                 color={palette.sideEdge} // side edge shadow (per wall color)
                 roughness={0.9}
@@ -754,9 +639,9 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
 
             {/* Top edge shadow */}
             <mesh
-              position={[(radiusL - radiusR) / 2, transform.height / 2 - 0.1, 2.1]}
+              position={[0, transform.height / 2 - 0.1, 2.1]}
             >
-              <boxGeometry args={[transform.width - radiusL - radiusR, 0.2, 0.2]} />
+              <boxGeometry args={[transform.width, 0.2, 0.2]} />
               <meshStandardMaterial
                 color={palette.topEdge} // top edge shadow (per wall color)
                 roughness={0.9}
@@ -766,9 +651,9 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
 
             {/* Bottom edge shadow */}
             <mesh
-              position={[(radiusL - radiusR) / 2, -transform.height / 2 + 0.1, 2.1]}
+              position={[0, -transform.height / 2 + 0.1, 2.1]}
             >
-              <boxGeometry args={[transform.width - radiusL - radiusR, 0.2, 0.2]} />
+              <boxGeometry args={[transform.width, 0.2, 0.2]} />
               <meshStandardMaterial
                 color={palette.bottomEdge} // bottom edge shadow (per wall color)
                 roughness={0.9}

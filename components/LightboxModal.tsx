@@ -2371,7 +2371,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
       )}
 
       {/* Main Content */}
-      <div className={`h-full flex ${isPresentMode ? 'pt-0' : 'pt-20'}`}>
+      {/* pt-32 rather than pt-20 when the control strip is showing: the strip is
+          fixed at top-20 and ~44px tall, so the image area has to START below it.
+          Reserving the band is what keeps it off the sheet — positioning alone
+          cannot, because a fit-height board grows to whatever room it is given. */}
+      <div className={`h-full flex ${isPresentMode ? 'pt-0' : 'pt-32'}`}>
         {/* Left Side - Image/PDF Display (full area in present mode) */}
         <div 
           className={`flex-1 flex items-center justify-center ${isPresentMode ? 'absolute inset-0 p-4' : 'p-8 lg:p-12'}`}
@@ -2483,7 +2487,11 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   alt={board.title}
                   draggable={false}
                   onLoad={viewport.onImageLoad}
-                  className={`max-w-full max-h-full object-contain select-none ${isPresentMode ? 'rounded-none shadow-none w-full h-full' : 'rounded-lg shadow-2xl'}`}
+                  // Square corners. A drawing is a sheet of paper with cut edges, and a
+                  // radius here reads as a UI card containing the work rather than as
+                  // the work itself. (The present-mode arm no longer needs
+                  // 'rounded-none' — there is nothing left to undo.)
+                  className={`max-w-full max-h-full object-contain select-none ${isPresentMode ? 'shadow-none w-full h-full' : 'shadow-2xl'}`}
                   style={{
                     // Compose pan (screen px) + zoom + the existing rotate() so
                     // rotation is preserved exactly (dead data at 0 today).
@@ -2518,9 +2526,20 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                     callout/trace tools (moved out of the header, handlers/gates
                     unchanged) plus zoom controls that surface the EXISTING
                     viewport hook. Hidden in present mode (same gate as header).
-                    pointer-events isolated so it never starts a pan/zoom. */}
+                    pointer-events isolated so it never starts a pan/zoom.
+
+                    Sits BELOW the header rather than at the foot of the frame.
+                    A fit-to-screen board fills the frame vertically, so a
+                    bottom-anchored strip lands on the sheet itself.
+
+                    FIXED, not absolute: this lives inside the image container,
+                    which is positioned, so an absolute offset here would be
+                    measured from the top of the image area — already ~190px
+                    down — and would land back on the board. Fixed puts it in the
+                    same coordinate space as the header. The image area's pt-32
+                    then reserves the band it occupies. */}
                 {!isPresentMode && (
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
+                  <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
                     <div
                       className="pointer-events-auto flex items-center gap-1 px-2 py-1.5 rounded-full bg-white/90 backdrop-blur-md border border-[#16181D]/[0.08] shadow-[0_10px_30px_rgba(2,6,23,0.45)]"
                       onClick={(e) => e.stopPropagation()}
