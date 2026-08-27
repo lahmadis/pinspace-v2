@@ -9,6 +9,7 @@ import { useAuthSession } from '@/hooks/useAuthSession'
 import { useAccountMode } from '@/lib/useAccountMode'
 import { useProfile } from '@/lib/ProfileContext'
 import PublishConfirmModal, { NetworkMetadata } from '@/components/PublishConfirmModal'
+import type { Department, YearLevel } from '@/lib/constants/departments'
 import {
   DndContext,
   PointerSensor,
@@ -366,9 +367,12 @@ export default function WorkspaceRoomsPage() {
         if (!prev) return prev
         return {
           ...prev,
+          // Cast to the canonical types rather than re-spelling both unions
+          // inline — the inline copy is what had to be edited by hand every
+          // time either list changed.
           networkMetadata: {
-            department: metadata.department as 'Aerospace Engineering' | 'Architecture' | 'Civil Engineering' | 'Electrical Engineering' | 'Industrial Design' | 'Interior Design' | 'Mechanical Engineering' | 'Robotics Engineering',
-            year: metadata.year as 'Year 1' | 'Year 2' | 'Year 3' | 'Year 4' | 'Year 5' | 'Masters',
+            department: metadata.department as Department,
+            year: metadata.year as YearLevel,
           },
           academicYear: metadata.academicYear,
           instructor: metadata.instructor,
@@ -473,29 +477,45 @@ export default function WorkspaceRoomsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/dashboard">
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" aria-label="Back to Dashboard">
-                <ArrowLeft className="w-5 h-5 text-gray-600" />
-              </button>
+    <div className="min-h-screen bg-[#F4F6FB]">
+      {/* Header. Same ink/accent tokens and pill shapes as the dashboard — this
+          page was still on the old gray/indigo palette, which made stepping
+          into a studio look like leaving the product. */}
+      <div className="mx-auto max-w-5xl px-6 pt-8">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-4">
+            <Link
+              href="/dashboard"
+              aria-label="Back to Dashboard"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#16181D]/10 bg-white text-[#5A5E6B] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6]"
+            >
+              <ArrowLeft className="h-4 w-4" />
             </Link>
-            <div>
-              <h1 className="text-xl font-semibold text-gray-900">{workspace.name}</h1>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h1 className="truncate text-[30px] font-extrabold tracking-[-0.035em] text-[#16181D]">
+                  {workspace.name}
+                </h1>
+                {/* Real field, shown only when set — academic_year is populated
+                    on about half of workspaces. */}
+                {workspace.academicYear && (
+                  <span className="rounded-full bg-[#3B6EF6]/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.1em] text-[#3B6EF6]">
+                    {workspace.academicYear}
+                  </span>
+                )}
+              </div>
               {instructorName && (
-                <p className="text-sm text-gray-500 mt-0.5">Owner: {instructorName}</p>
+                <p className="mt-1 truncate text-sm text-[#8A8FA0]">Owner: {instructorName}</p>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex flex-wrap items-center gap-2">
             <Link
               href={`/workspace/${workspaceId}/people`}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
+              className="flex items-center gap-2 rounded-full border border-[#16181D]/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6]"
             >
-              <Contact className="w-4 h-4" />
+              <Contact className="h-4 w-4 text-[#8A8FA0]" />
               People
             </Link>
             {isInstructor && (
@@ -503,18 +523,18 @@ export default function WorkspaceRoomsPage() {
                 {orgModeAllowsPublish && canPublish && (
                   <button
                     onClick={() => setNetworkSettingsOpen(true)}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
+                    className="flex items-center gap-2 rounded-full border border-[#16181D]/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6]"
                     title="Edit network metadata (department, year, instructor)"
                   >
-                    <Network className="w-4 h-4" />
+                    <Network className="h-4 w-4 text-[#8A8FA0]" />
                     Network
                   </button>
                 )}
                 <Link
                   href={`/workspace/${workspaceId}/settings`}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm flex items-center gap-2"
+                  className="flex items-center gap-2 rounded-full border border-[#16181D]/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6]"
                 >
-                  <Settings className="w-4 h-4" />
+                  <Settings className="h-4 w-4 text-[#8A8FA0]" />
                   Settings
                 </Link>
               </>
@@ -529,25 +549,25 @@ export default function WorkspaceRoomsPage() {
         const missingMetadata = !workspace.networkMetadata?.department || !workspace.academicYear
         if (!isInstructor || !hasPublishedRoom || !missingMetadata || bannerDismissed) return null
         return (
-          <div className="max-w-5xl mx-auto px-6 pt-6">
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start justify-between gap-4">
-              <p className="text-sm text-amber-900">
-                <strong>This class is published but missing network info.</strong>{' '}
+          <div className="mx-auto max-w-5xl px-6 pt-6">
+            <div className="flex items-start justify-between gap-4 rounded-2xl border border-[#E0B44A]/40 bg-[#FDF6E7] p-4">
+              <p className="text-sm text-[#7A5A12]">
+                <strong className="font-bold">This class is published but missing network info.</strong>{' '}
                 Add it so students can find your studio on the Wentworth Network.
               </p>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex shrink-0 items-center gap-2">
                 <button
                   onClick={() => setNetworkSettingsOpen(true)}
-                  className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-sm font-medium transition-colors"
+                  className="rounded-full bg-[#7A5A12] px-3.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#16181D]"
                 >
                   Add network settings
                 </button>
                 <button
                   onClick={() => setBannerDismissed(true)}
-                  className="p-1.5 text-amber-700 hover:bg-amber-100 rounded-lg transition-colors"
+                  className="rounded-full p-1.5 text-[#7A5A12] transition-colors hover:bg-[#7A5A12]/10"
                   aria-label="Dismiss"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="h-4 w-4" />
                 </button>
               </div>
             </div>
@@ -556,18 +576,18 @@ export default function WorkspaceRoomsPage() {
       })()}
 
       {/* Body */}
-      <div className="max-w-5xl mx-auto px-6 py-12">
-        <div className="mb-8">
-          <h2 className="text-2xl font-semibold text-gray-900 flex items-center gap-2.5">
-            <DoorOpen className="w-6 h-6 text-indigo-600" />
-            Spaces
-          </h2>
-          <p className="text-sm text-gray-500 mt-1.5">
-            Click a space to enter its 3D studio.
-          </p>
+      <div className="mx-auto max-w-5xl px-6 pb-16 pt-10">
+        <div className="mb-5 flex items-end justify-between gap-4">
+          <div>
+            <h2 className="text-[22px] font-extrabold tracking-[-0.03em] text-[#16181D]">Spaces</h2>
+            <p className="mt-1 text-sm text-[#8A8FA0]">Click a space to enter its 3D studio.</p>
+          </div>
+          <span className="shrink-0 text-sm text-[#8A8FA0]">
+            {orderedRooms.length} space{orderedRooms.length === 1 ? '' : 's'}
+          </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
           {/* Room cards. Owners get drag-to-reorder (each card carries its own
               handle); everyone else gets the same cards statically. The Add
               Room card stays OUTSIDE the sortable context (S3) so it never
@@ -597,7 +617,7 @@ export default function WorkspaceRoomsPage() {
             orderedRooms.map((room) => (
               <div
                 key={room.id}
-                className="relative group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+                className="group relative rounded-3xl border border-[#16181D]/[0.08] bg-white p-3 shadow-[0_8px_24px_rgba(22,24,29,0.05)] transition-shadow duration-200 hover:shadow-[0_16px_40px_rgba(22,24,29,0.10)]"
               >
                 <RoomCardInner
                   room={room}
@@ -612,8 +632,8 @@ export default function WorkspaceRoomsPage() {
           {/* Add Room card — owner/instructor on class workspaces; any member on shared projects */}
           {canAddRoom && (
             addingRoom ? (
-              <div className="bg-indigo-50 border-2 border-indigo-200 rounded-xl p-6 flex flex-col gap-3">
-                <p className="text-sm font-semibold text-indigo-900">Name your new space</p>
+              <div className="flex flex-col gap-3 rounded-3xl border border-[#3B6EF6]/25 bg-[#3B6EF6]/[0.04] p-6">
+                <p className="text-sm font-bold text-[#16181D]">Name your new space</p>
                 <input
                   type="text"
                   value={newRoomName}
@@ -626,20 +646,20 @@ export default function WorkspaceRoomsPage() {
                   placeholder="e.g. Pin-up 2, Midterm Review"
                   disabled={roomBusy === 'create'}
                   autoFocus
-                  className="w-full px-3 py-2 border border-indigo-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full rounded-xl border border-[#16181D]/[0.12] bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
                 />
                 <div className="flex gap-2">
                   <button
                     onClick={handleCreateRoom}
                     disabled={roomBusy === 'create' || !newRoomName.trim()}
-                    className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm disabled:opacity-50"
+                    className="flex-1 rounded-full bg-[#3B6EF6] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#16181D] disabled:opacity-50"
                   >
                     {roomBusy === 'create' ? 'Creating…' : 'Create'}
                   </button>
                   <button
                     onClick={() => { setAddingRoom(false); setNewRoomName('') }}
                     disabled={roomBusy === 'create'}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm disabled:opacity-50"
+                    className="rounded-full border border-[#16181D]/[0.12] px-4 py-2.5 text-sm font-semibold text-[#5A5E6B] transition-colors hover:bg-[#16181D]/5 disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -648,24 +668,25 @@ export default function WorkspaceRoomsPage() {
             ) : (
               <button
                 onClick={() => setAddingRoom(true)}
-                className="bg-white border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-gray-500 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors min-h-[180px]"
+                className="group flex min-h-[280px] flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-[#16181D]/[0.12] p-6 transition-colors hover:border-[#3B6EF6] hover:bg-[#3B6EF6]/5"
               >
-                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
-                  <Plus className="w-5 h-5" />
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#3B6EF6]/10 transition-colors group-hover:bg-[#3B6EF6]/20">
+                  <Plus className="h-5 w-5 text-[#3B6EF6]" />
                 </div>
-                <span className="font-medium text-sm">Add Space</span>
+                <span className="mt-1 text-[15px] font-bold text-[#16181D]">Add space</span>
+                <span className="text-xs text-[#8A8FA0]">Another set of walls</span>
               </button>
             )
           )}
         </div>
 
         {orderedRooms.length === 0 && !canAddRoom && (
-          <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
-              <DoorOpen className="w-8 h-8 text-gray-600" />
+          <div className="rounded-3xl border border-[#16181D]/[0.08] bg-white py-16 text-center">
+            <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#16181D]/[0.06]">
+              <DoorOpen className="h-7 w-7 text-[#8A8FA0]" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No spaces yet</h3>
-            <p className="text-sm text-gray-500 max-w-sm mx-auto">
+            <h3 className="mb-2 text-lg font-bold text-[#16181D]">No spaces yet</h3>
+            <p className="mx-auto max-w-sm text-sm text-[#5A5E6B]">
               The instructor hasn&apos;t set up any spaces in this workspace yet. Check back later.
             </p>
           </div>
@@ -675,14 +696,16 @@ export default function WorkspaceRoomsPage() {
             already have a pinspace account into workspace_members (which is
             what actually grants room access; org membership alone does not). */}
         {isOwner && workspace.type === 'class' && (
-          <div className="mt-12 bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                  <UserPlus className="w-5 h-5 text-indigo-600" />
+          <div className="mt-10 rounded-3xl border border-[#16181D]/[0.08] bg-white p-6 shadow-[0_8px_24px_rgba(22,24,29,0.04)]">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="flex items-center gap-2.5 text-[17px] font-extrabold tracking-[-0.02em] text-[#16181D]">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#3B6EF6]/10">
+                    <UserPlus className="h-4 w-4 text-[#3B6EF6]" />
+                  </span>
                   Add students
                 </h2>
-                <p className="text-sm text-gray-500 mt-1 max-w-xl">
+                <p className="mt-2 max-w-xl text-sm leading-relaxed text-[#5A5E6B]">
                   Enroll students by email. They must already have a pinspace account —
                   anyone without one is listed below so you can ask them to sign up first.
                 </p>
@@ -690,9 +713,9 @@ export default function WorkspaceRoomsPage() {
               {!enrollOpen && (
                 <button
                   onClick={() => { setEnrollOpen(true); setEnrollResult(null) }}
-                  className="shrink-0 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm flex items-center gap-2"
+                  className="flex shrink-0 items-center gap-2 rounded-full bg-[#3B6EF6] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#16181D]"
                 >
-                  <UserPlus className="w-4 h-4" />
+                  <UserPlus className="h-4 w-4" />
                   Add students
                 </button>
               )}
@@ -706,20 +729,20 @@ export default function WorkspaceRoomsPage() {
                   rows={4}
                   placeholder={'Paste student emails, separated by commas or new lines\ne.g. jane@wit.edu, john@wit.edu'}
                   disabled={enrollBusy}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                  className="w-full rounded-2xl border border-[#16181D]/[0.12] px-3.5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3B6EF6] disabled:opacity-50"
                 />
-                <div className="flex gap-2 mt-3">
+                <div className="mt-3 flex gap-2">
                   <button
                     onClick={handleEnrollStudents}
                     disabled={enrollBusy || !enrollText.trim()}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm disabled:opacity-50"
+                    className="rounded-full bg-[#3B6EF6] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#16181D] disabled:opacity-50"
                   >
                     {enrollBusy ? 'Adding…' : 'Add students'}
                   </button>
                   <button
                     onClick={() => { setEnrollOpen(false); setEnrollText('') }}
                     disabled={enrollBusy}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm disabled:opacity-50"
+                    className="rounded-full border border-[#16181D]/[0.12] px-5 py-2.5 text-sm font-semibold text-[#5A5E6B] transition-colors hover:bg-[#16181D]/5 disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -728,22 +751,22 @@ export default function WorkspaceRoomsPage() {
             )}
 
             {enrollResult && (
-              <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                <p className="text-sm font-medium text-gray-900">
+              <div className="mt-4 rounded-2xl border border-[#16181D]/[0.08] bg-[#F4F6FB] p-4">
+                <p className="text-sm font-bold text-[#16181D]">
                   {enrollResult.enrolled.length} enrolled
-                  <span className="text-gray-400"> · </span>
+                  <span className="text-[#B6BAC4]"> · </span>
                   {enrollResult.alreadyMember.length} already in
-                  <span className="text-gray-400"> · </span>
+                  <span className="text-[#B6BAC4]"> · </span>
                   {enrollResult.notFound.length} have no account yet
                 </p>
                 {enrollResult.notFound.length > 0 && (
                   <div className="mt-3">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                    <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#8A8FA0]">
                       No account yet — ask them to sign up first
                     </p>
-                    <ul className="text-sm text-gray-700 space-y-0.5">
+                    <ul className="space-y-0.5 text-sm text-[#5A5E6B]">
                       {enrollResult.notFound.map((email) => (
-                        <li key={email} className="font-mono text-xs break-all">{email}</li>
+                        <li key={email} className="break-all font-mono text-xs">{email}</li>
                       ))}
                     </ul>
                   </div>
@@ -798,14 +821,14 @@ export default function WorkspaceRoomsPage() {
           boards.room_id FK. Spell that out so an instructor doesn't lose work
           by accident. */}
       {roomToDelete && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete space?</h3>
-            <p className="text-sm text-gray-700 mb-3">
-              <strong>&ldquo;{roomToDelete.name}&rdquo;</strong> will be permanently deleted.
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#16181D]/30 p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white p-7 shadow-[0_30px_90px_rgba(22,24,29,0.3)]">
+            <h3 className="mb-2 text-lg font-extrabold text-[#16181D]">Delete space?</h3>
+            <p className="mb-3 text-sm text-[#5A5E6B]">
+              <strong className="text-[#16181D]">&ldquo;{roomToDelete.name}&rdquo;</strong> will be permanently deleted.
             </p>
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-6">
-              <p className="text-sm text-red-800">
+            <div className="mb-6 rounded-2xl border border-[#C2452D]/20 bg-[#C2452D]/[0.06] p-3">
+              <p className="text-sm text-[#C2452D]">
                 Every board in this space will be deleted along with it. This cannot be undone.
               </p>
             </div>
@@ -813,14 +836,14 @@ export default function WorkspaceRoomsPage() {
               <button
                 onClick={() => setRoomToDelete(null)}
                 disabled={roomBusy === roomToDelete.id}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium disabled:opacity-50"
+                className="flex-1 rounded-full border border-[#16181D]/[0.12] px-4 py-2.5 font-semibold text-[#5A5E6B] transition-colors hover:bg-[#16181D]/5 disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmDeleteRoom}
                 disabled={roomBusy === roomToDelete.id}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium disabled:opacity-50"
+                className="flex-1 rounded-full bg-[#C2452D] px-4 py-2.5 font-bold text-white transition-colors hover:bg-[#a5391f] disabled:opacity-50"
               >
                 {roomBusy === roomToDelete.id ? 'Deleting…' : 'Delete space'}
               </button>
@@ -872,110 +895,124 @@ function RoomCardInner({
   onTogglePublish,
   onRequestDelete,
 }: RoomCardProps) {
+  const boards = room.boardCount ?? 0
+
   return (
     <>
-      {/* Card body — the Link is the click target unless we're inline editing */}
-      {isEditing ? (
-        <div className="p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <input
-              type="text"
-              value={editingRoomName}
-              maxLength={100}
-              onChange={(e) => setEditingRoomName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') onSaveRename(room)
-                if (e.key === 'Escape') onCancelEdit()
-              }}
-              disabled={isBusy}
-              autoFocus
-              className="flex-1 px-3 py-1.5 border border-indigo-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <button
-              onClick={() => onSaveRename(room)}
-              disabled={isBusy}
-              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-50"
-              aria-label="Save name"
-            >
-              <Check className="w-4 h-4" />
-            </button>
-            <button
-              onClick={onCancelEdit}
-              disabled={isBusy}
-              className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg disabled:opacity-50"
-              aria-label="Cancel"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      ) : (
-        <Link
-          href={`/studio/${room.id}`}
-          className="block p-6 cursor-pointer"
+      {/* Preview panel. A tinted stand-in, not a render of the room — the
+          published badge and the affordances both sit over it. */}
+      <Link href={`/studio/${room.id}`} className="block cursor-pointer">
+        <div
+          className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl"
+          style={{ background: 'linear-gradient(150deg, #EEF3FC, #DCE5F5)' }}
         >
-          <div className="flex items-start justify-between mb-3">
-            <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-              <DoorOpen className="w-5 h-5 text-indigo-600" />
-            </div>
-            {room.isPublished && (
-              <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-md text-xs font-medium flex items-center gap-1">
-                <Globe className="w-3 h-3" />
-                Published
-              </span>
-            )}
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-1.5 group-hover:text-indigo-700 transition-colors">
-            {room.name}
-          </h3>
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500">
-              {(room.boardCount ?? 0)} {(room.boardCount ?? 0) === 1 ? 'board' : 'boards'}
-            </p>
-            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
-          </div>
-        </Link>
-      )}
+          <DoorOpen className="h-9 w-9 text-[#9FB0CE]" />
+          {/* Bottom-left, not top-left as in the reference: the owner's drag
+              handle occupies the top-left corner and the affordances the
+              top-right, and those two only appear on the cards most likely to
+              be published. */}
+          {room.isPublished && (
+            <span className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-[#1F7A4D] backdrop-blur-sm">
+              <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[#22A366]" />
+              Published
+            </span>
+          )}
+        </div>
+      </Link>
 
-      {/* Edit affordances. Visible on hover so they don't crowd the card.
-          Hover effects suppressed when editing. Rename is open to any member
-          (Phase 10); publish + delete stay owner-only. */}
+      {/* Edit affordances, over the preview's top-right corner rather than in a
+          row of their own — a row that appears on hover shifts the card's
+          height, and this card is in a grid where that nudges its neighbours.
+
+          Faintly visible at rest rather than opacity-0: hover never fires on a
+          touch screen, which put publish, rename and delete permanently out of
+          reach on a phone. Rename is open to any member (Phase 10); publish and
+          delete stay owner-only. */}
       {canRename && !isEditing && (
-        <div className="px-6 pb-4 flex items-center justify-end gap-1 -mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute right-5 top-5 flex items-center gap-1 opacity-60 transition-opacity group-hover:opacity-100">
           {canShowPublish && (
             <button
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTogglePublish(room) }}
               disabled={isBusy}
-              className={`p-1.5 rounded-lg disabled:opacity-50 ${
+              className={`rounded-full bg-white/90 p-1.5 shadow-sm backdrop-blur-sm transition-colors disabled:opacity-50 ${
                 room.isPublished
-                  ? 'text-green-700 hover:text-gray-700 hover:bg-gray-50'
-                  : 'text-gray-500 hover:text-green-700 hover:bg-green-50'
+                  ? 'text-[#1F7A4D] hover:text-[#5A5E6B]'
+                  : 'text-[#8A8FA0] hover:text-[#1F7A4D]'
               }`}
               aria-label={room.isPublished ? 'Unpublish space' : 'Publish to Wentworth'}
               title={room.isPublished ? 'Unpublish' : 'Publish to Wentworth'}
             >
-              <Globe className="w-3.5 h-3.5" />
+              <Globe className="h-3.5 w-3.5" />
             </button>
           )}
           <button
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onStartEdit(room) }}
             disabled={isBusy}
-            className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-50"
+            className="rounded-full bg-white/90 p-1.5 text-[#8A8FA0] shadow-sm backdrop-blur-sm transition-colors hover:text-[#3B6EF6] disabled:opacity-50"
             aria-label="Rename space"
+            title="Rename space"
           >
-            <Pencil className="w-3.5 h-3.5" />
+            <Pencil className="h-3.5 w-3.5" />
           </button>
           {isInstructor && (
             <button
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRequestDelete(room) }}
               disabled={isBusy}
-              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
+              className="rounded-full bg-white/90 p-1.5 text-[#8A8FA0] shadow-sm backdrop-blur-sm transition-colors hover:text-[#C2452D] disabled:opacity-50"
               aria-label="Delete space"
+              title="Delete space"
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Trash2 className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
+      )}
+
+      {/* Name row, or the inline rename that replaces it */}
+      {isEditing ? (
+        <div className="flex items-center gap-2 px-1 pb-1 pt-3">
+          <input
+            type="text"
+            value={editingRoomName}
+            maxLength={100}
+            onChange={(e) => setEditingRoomName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onSaveRename(room)
+              if (e.key === 'Escape') onCancelEdit()
+            }}
+            disabled={isBusy}
+            autoFocus
+            className="min-w-0 flex-1 rounded-xl border border-[#16181D]/[0.12] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
+          />
+          <button
+            onClick={() => onSaveRename(room)}
+            disabled={isBusy}
+            className="rounded-full p-2 text-[#3B6EF6] transition-colors hover:bg-[#3B6EF6]/[0.08] disabled:opacity-50"
+            aria-label="Save name"
+          >
+            <Check className="h-4 w-4" />
+          </button>
+          <button
+            onClick={onCancelEdit}
+            disabled={isBusy}
+            className="rounded-full p-2 text-[#8A8FA0] transition-colors hover:bg-[#16181D]/5 disabled:opacity-50"
+            aria-label="Cancel"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ) : (
+        <Link href={`/studio/${room.id}`} className="flex items-end justify-between gap-2 px-2 pb-1 pt-3.5">
+          <span className="min-w-0">
+            <span className="block truncate text-[17px] font-extrabold tracking-[-0.02em] text-[#16181D] transition-colors group-hover:text-[#3B6EF6]">
+              {room.name}
+            </span>
+            <span className="mt-0.5 block text-[13px] text-[#8A8FA0]">
+              {boards} {boards === 1 ? 'board' : 'boards'}
+            </span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-[#B6BAC4] transition-all group-hover:translate-x-0.5 group-hover:text-[#3B6EF6]" />
+        </Link>
       )}
     </>
   )
@@ -1001,18 +1038,18 @@ function SortableRoomCard(props: RoomCardProps) {
     <div
       ref={setNodeRef}
       style={style}
-      className="relative group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+      className="group relative rounded-3xl border border-[#16181D]/[0.08] bg-white p-3 shadow-[0_8px_24px_rgba(22,24,29,0.05)] transition-shadow duration-200 hover:shadow-[0_16px_40px_rgba(22,24,29,0.10)]"
     >
       {!props.isEditing && (
         <button
           type="button"
           {...attributes}
           {...listeners}
-          className="absolute left-1 top-1/2 -translate-y-1/2 z-20 p-1 rounded-md text-gray-300 hover:text-gray-600 hover:bg-gray-100 cursor-grab active:cursor-grabbing touch-none"
+          className="absolute left-5 top-5 z-20 cursor-grab touch-none rounded-full bg-white/90 p-1.5 text-[#8A8FA0] opacity-60 shadow-sm backdrop-blur-sm transition-opacity hover:text-[#16181D] active:cursor-grabbing group-hover:opacity-100"
           aria-label={`Drag to reorder ${props.room.name}`}
           title="Drag to reorder"
         >
-          <GripVertical className="w-4 h-4" />
+          <GripVertical className="h-4 w-4" />
         </button>
       )}
       <RoomCardInner {...props} />
