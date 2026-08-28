@@ -121,7 +121,6 @@ export default function KineticGrid({ children, className = '' }: KineticGridPro
     let strength = 0
 
     let ripples: Ripple[] = []
-    let scrollOffset = 0
     let rafId = 0
     let running = false
     let dirty = true
@@ -149,9 +148,12 @@ export default function KineticGrid({ children, className = '' }: KineticGridPro
      * the two stroke passes below are pure reads.
      */
     const layout = (now: number) => {
-      // The grid scrolls with the page even though the canvas is viewport-fixed
-      // — without this it would read as a decal stuck to the screen.
-      const originY = -CELL + (-scrollOffset % CELL)
+      // Locked to the VIEWPORT, not the document: the canvas is fixed, and the
+      // ruling now stays put while the page scrolls under it. It used to be
+      // offset by scrollY so the grid travelled with the content; that made the
+      // whole background drift on every scroll, which competes with the reading
+      // rather than sitting behind it.
+      const originY = -CELL
       const originX = -CELL
 
       const warpActive = strength > SETTLE_EPSILON
@@ -232,7 +234,7 @@ export default function KineticGrid({ children, className = '' }: KineticGridPro
 
       // Restrike only what's under the cursor. Bounds come from the rest grid,
       // widened by one cell so a vertex warped inward is still included.
-      const originY = -CELL + (-scrollOffset % CELL)
+      const originY = -CELL
       const reach = WARP_RADIUS + CELL
       const c0 = Math.max(0, Math.floor((warpX + CELL - reach) / CELL))
       const c1 = Math.min(cols - 1, Math.ceil((warpX + CELL + reach) / CELL))
@@ -374,42 +376,30 @@ export default function KineticGrid({ children, className = '' }: KineticGridPro
       start()
     }
 
-    const onScroll = () => {
-      scrollOffset = window.scrollY
-      dirty = true
-      start()
-    }
-
     const onResize = () => {
       resize()
       start()
     }
 
-    scrollOffset = window.scrollY
     resize()
 
     if (reduceMotion) {
       // A full-viewport background that warps under the cursor is exactly the
-      // motion this setting exists to refuse. The ruling still draws — and
-      // still follows the scroll, which is the page's own movement rather than
-      // motion this component invented — but nothing reacts to the pointer.
+      // motion this setting exists to refuse. The ruling still draws, but
+      // nothing reacts to the pointer — and with the grid now locked to the
+      // viewport it never moves at all, so this branch only needs to redraw on
+      // resize.
       const redraw = () => {
         layout(performance.now())
         draw()
-      }
-      const onStaticScroll = () => {
-        scrollOffset = window.scrollY
-        redraw()
       }
       const onStaticResize = () => {
         resize()
         redraw()
       }
       redraw()
-      window.addEventListener('scroll', onStaticScroll, { passive: true })
       window.addEventListener('resize', onStaticResize)
       return () => {
-        window.removeEventListener('scroll', onStaticScroll)
         window.removeEventListener('resize', onStaticResize)
       }
     }
@@ -419,7 +409,6 @@ export default function KineticGrid({ children, className = '' }: KineticGridPro
     // which means it also can't hear one. Window still hears everything.
     window.addEventListener('pointermove', onPointerMove, { passive: true })
     window.addEventListener('pointerdown', onPointerDown, { passive: true })
-    window.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('resize', onResize)
     window.addEventListener('pointerout', onPointerOut, { passive: true })
     window.addEventListener('blur', onPointerLeave)
@@ -431,7 +420,6 @@ export default function KineticGrid({ children, className = '' }: KineticGridPro
       running = false
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerdown', onPointerDown)
-      window.removeEventListener('scroll', onScroll)
       window.removeEventListener('resize', onResize)
       window.removeEventListener('pointerout', onPointerOut)
       window.removeEventListener('blur', onPointerLeave)

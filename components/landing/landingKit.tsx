@@ -31,6 +31,7 @@ export const HAIRLINE = 'border border-[#16181D]/[0.08]'
  */
 export const CONTACT_EMAIL = 'slahmadi04@gmail.com'
 
+
 /** `mailto:` for CONTACT_EMAIL. Append `?subject=…` (URL-encoded) per button. */
 export const CONTACT_MAILTO = `mailto:${CONTACT_EMAIL}`
 

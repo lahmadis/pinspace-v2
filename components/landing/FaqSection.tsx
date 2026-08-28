@@ -65,7 +65,7 @@ export default function FaqSection() {
       <div className="max-w-3xl mx-auto">
         <Reveal>
           <Eyebrow>FAQ</Eyebrow>
-          <SectionHeading className="mt-5">Questions departments ask first.</SectionHeading>
+          <SectionHeading className="mt-5">Questions departments ask.</SectionHeading>
         </Reveal>
 
         <Reveal delay={0.06} className="mt-10">

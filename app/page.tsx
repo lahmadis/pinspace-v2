@@ -130,11 +130,10 @@ function HomeInner() {
             <div className="w-8 h-8 border-2 border-[#8A8FA0] border-t-[#3B6EF6] rounded-full animate-spin" />
           ) : user ? (
             <>
-              <Link href="/dashboard">
-                <button className="px-5 py-2.5 bg-white/80 hover:border-[#3B6EF6] hover:text-[#3B6EF6] text-[#16181D] rounded-full transition-colors font-semibold text-sm border border-[#16181D]/10">
-                  Dashboard
-                </button>
-              </Link>
+              {/* Dashboard has moved into the hero, under the tagline. It is
+                  the one thing a signed-in visitor came here to do, and a small
+                  bordered pill in the corner asked them to hunt for it. The
+                  avatar stays: that is the account control, not the way in. */}
               <AvatarMenu
                 email={user.email || user.user_metadata?.email}
                 onSignOut={() => supabase.auth.signOut().then(() => { window.location.href = '/' })}
@@ -197,13 +196,34 @@ function HomeInner() {
           </motion.h1>
 
           <motion.p
-            className="mt-5 mx-auto max-w-xl leading-relaxed text-[#5A5E6B] text-[clamp(1.05rem,1.9vw,1.6rem)]"
+            className="mt-9 mx-auto max-w-xl leading-relaxed text-[#5A5E6B] text-[clamp(1.25rem,2.4vw,2rem)]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.8, delay: 0.35 }}
           >
             where design work lives
           </motion.p>
+
+          {/* The way in, for someone already signed in. Sized to the hero
+              rather than to the nav, and delayed one beat past the tagline so
+              the page still reads wordmark -> line -> action. Rendered only
+              once auth has settled, so it cannot flash for a signed-out
+              visitor and then vanish. */}
+          {!loading && user && (
+            <motion.div
+              className="mt-9"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, delay: 0.5 }}
+            >
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center justify-center rounded-full bg-[#3B6EF6] px-9 py-4 text-[16px] font-bold text-white transition-[transform,background-color] duration-[160ms] ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[#16181D] active:scale-[0.97]"
+              >
+                Go to dashboard
+              </Link>
+            </motion.div>
+          )}
 
         </motion.div>
 
