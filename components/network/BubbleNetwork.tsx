@@ -49,6 +49,27 @@ interface BubbleNetworkProps {
   onNodeHover?: (node: BubbleNode) => void
   fullScreen?: boolean // When true, takes 100vw × 100vh minus header
   headerHeight?: number // Height of header to subtract (default 64px)
+  /**
+   * Floor for the canvas box. 600 suits a page that IS the network; a preview
+   * embedded in a dashboard band is ~190px and would otherwise overflow its
+   * container by 400px and be cropped to whatever the top third happens to hold.
+   */
+  minHeight?: number
+  /**
+   * Whether the viewer can pan and zoom the graph. Off for a preview: the whole
+   * band is a link, and a graph you can drag is a graph that eats the click that
+   * was meant to open it. Hovering a bubble still works either way — that is a
+   * different gesture, and the point of showing a live graph rather than a
+   * picture of one.
+   */
+  interactive?: boolean
+  /**
+   * Paint no ground and no ruling — just the bubbles and the edges between
+   * them. For a preview layered over a surface that already has its own colour:
+   * the network's own #E6ECFC ground is opaque, so full-bleed it would cover
+   * the band it is sitting in and the band would stop being itself.
+   */
+  transparent?: boolean
 }
 
 interface TooltipData {
@@ -164,6 +185,8 @@ const NETWORK_BG = '#E6ECFC'
  * nowhere near the strength of a bubble.
  */
 const NETWORK_GRID = 'rgba(59, 110, 246, 0.16)'
+/** Grid cell at zoom 1, in px. Scales with the zoom — see the grid div. */
+const NETWORK_GRID_CELL = 55
 
 // The app's one blue. Was rgb(var(--color-primary)) — the indigo #6366f1 —
 // which made the network the only surface using a second accent.
@@ -313,6 +336,9 @@ export default function BubbleNetwork({
   onNodeClick,
   onNodeHover,
   fullScreen = false,
+  minHeight = 600,
+  interactive = true,
+  transparent = false,
   headerHeight = 64,
 }: BubbleNetworkProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -510,8 +536,13 @@ export default function BubbleNetwork({
         g.attr('transform', `translate(${x},${y}) scale(${k})`)
       })
 
-    svg.call(zoom)
-    zoomRef.current = zoom
+    // A preview attaches no zoom behaviour at all, rather than attaching it and
+    // filtering events: d3.zoom binds wheel, drag and touch on the svg, and any
+    // of those firing inside a link is a gesture the reader did not ask for.
+    if (interactive) {
+      svg.call(zoom)
+      zoomRef.current = zoom
+    }
 
     // Disable double-click zoom
     svg.on('dblclick.zoom', null)
@@ -519,7 +550,9 @@ export default function BubbleNetwork({
     return () => {
       svg.on('.zoom', null)
     }
-  }, [])
+    // `interactive` is constant per mount today, but the effect reads it, so it
+    // belongs here rather than relying on that staying true.
+  }, [interactive])
 
   // ============================================================================
   // RELATIONSHIP CALCULATIONS
@@ -781,26 +814,39 @@ export default function BubbleNetwork({
         // Set here rather than through bg-white: that class is not
         // defined in tailwind.config.js, so it emitted nothing and the surface
         // was taking whatever the page behind it happened to be.
-        backgroundColor: NETWORK_BG,
+        backgroundColor: transparent ? undefined : NETWORK_BG,
         height: isEffectiveFullscreen ? '100vh' : '100%',
-        minHeight: isEffectiveFullscreen ? undefined : 600,
+        minHeight: isEffectiveFullscreen ? undefined : minHeight,
       }}
     >
       {/* Grid background.
           Four-stop gradients rather than the usual 1px hairline: the line is
           drawn as a band between two transparent stops, which lets it stay a
           crisp hairline at any zoom without the shimmer a fractional 1px
-          border gets. */}
-      <div
+          border gets.
+
+          PANS AND ZOOMS WITH THE GRAPH. It used to be pinned to the viewport
+          while the bubbles moved over it, which reads as the bubbles sliding
+          across a pane of glass rather than as a camera moving over a field —
+          there is no parallax cue, so the ground looks stuck. A repeating
+          background is periodic, so the same translate+scale the SVG group gets
+          is exactly backgroundPosition plus a scaled backgroundSize. That also
+          means it tiles forever: no edge to pan off, at any zoom.
+
+          The zoom-transform state driving it is already updated by the zoom
+          handler and already read during render (the hover callout positions
+          off it), so this costs no extra re-renders. */}
+      {!transparent && <div
         className="absolute inset-0 pointer-events-none"
         style={{
           backgroundImage: `
             linear-gradient(0deg, transparent 24%, ${NETWORK_GRID} 25%, ${NETWORK_GRID} 26%, transparent 27%, transparent 74%, ${NETWORK_GRID} 75%, ${NETWORK_GRID} 76%, transparent 77%, transparent),
             linear-gradient(90deg, transparent 24%, ${NETWORK_GRID} 25%, ${NETWORK_GRID} 26%, transparent 27%, transparent 74%, ${NETWORK_GRID} 75%, ${NETWORK_GRID} 76%, transparent 77%, transparent)
           `,
-          backgroundSize: '55px 55px',
+          backgroundSize: `${NETWORK_GRID_CELL * transform.k}px ${NETWORK_GRID_CELL * transform.k}px`,
+          backgroundPosition: `${transform.x}px ${transform.y}px`,
         }}
-      />
+      />}
 
       {/* SVG Canvas */}
       <svg
@@ -808,7 +854,7 @@ export default function BubbleNetwork({
         width={dimensions.width}
         height={dimensions.height}
         className="absolute inset-0"
-        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+        style={{ cursor: interactive ? (isDragging ? 'grabbing' : 'grab') : 'pointer' }}
         role="img"
         aria-label={`Network map with ${nodes.length} ${nodes.length === 1 ? 'studio' : 'studios'}. Use the network directory to select an item with the keyboard.`}
       >
@@ -912,9 +958,13 @@ export default function BubbleNetwork({
                   }}
                   onMouseEnter={(e) => handleMouseEnter(node, e)}
                   onMouseLeave={handleMouseLeave}
-                  onMouseDown={(e) => handleDragStart(node, e)}
-                  onMouseMove={(e) => handleDrag(node, e)}
-                  onMouseUp={() => handleDragEnd(node)}
+                  // Drag is gated with the rest of the gestures. Left live in a
+                  // preview it is worse than merely useless: the band wraps the
+                  // graph in a Link, a drag ends with a native click, and that
+                  // click bubbles — so dragging a bubble navigated away.
+                  onMouseDown={interactive ? (e) => handleDragStart(node, e) : undefined}
+                  onMouseMove={interactive ? (e) => handleDrag(node, e) : undefined}
+                  onMouseUp={interactive ? () => handleDragEnd(node) : undefined}
                   onClick={() => !isDragging && onNodeClick?.(node)}
                 >
                   {/* Inner group for opacity/filter animations - NO SCALE, position stays fixed */}
@@ -1002,8 +1052,9 @@ export default function BubbleNetwork({
       <Tooltip data={tooltipData} containerRect={containerRect} />
 
 
-      {/* Zoom controls */}
-      <div className="absolute bottom-4 right-4 z-20 flex flex-col gap-2">
+      {/* Zoom controls. Gated with the rest of the chrome — see the legend
+          below for why `interactive` carries this too. */}
+      {interactive && <div className="absolute bottom-4 right-4 z-20 flex flex-col gap-2">
         <button
           className="flex h-11 w-11 items-center justify-center rounded-pinspace border border-[#16181D]/[0.12] bg-white/90 text-[#16181D] backdrop-blur-sm transition-colors hover:border-primary hover:bg-[#16181D]/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           aria-label="Zoom in"
@@ -1052,10 +1103,15 @@ export default function BubbleNetwork({
             </svg>
           )}
         </button>
-      </div>
+      </div>}
 
-      {/* Legend */}
-      <div className="absolute bottom-4 left-4 z-20 hidden rounded-pinspace-lg border border-[#16181D]/10 bg-white/90 p-4 backdrop-blur-md sm:block">
+      {/* Legend.
+          `interactive` gates every piece of chrome, not just the gestures. A
+          preview shows the SHAPE of the network; the controls for driving it
+          and the key for reading its edge styles both belong to the page that
+          is the network, and in a band they sit over the copy as leftovers from
+          somewhere else. */}
+      {interactive && <div className="absolute bottom-4 left-4 z-20 hidden rounded-pinspace-lg border border-[#16181D]/10 bg-white/90 p-4 backdrop-blur-md sm:block">
         <p className="mb-3 text-xs font-medium text-[#8A8FA0]">Connections</p>
         <div className="space-y-2 text-xs">
           <div className="flex items-center gap-3">
@@ -1071,7 +1127,7 @@ export default function BubbleNetwork({
             <span className="text-[#5A5E6B]">Same Department</span>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* CSS Animations */}
       <style>{`

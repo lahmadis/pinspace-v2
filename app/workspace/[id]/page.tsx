@@ -10,6 +10,7 @@ import { useAccountMode } from '@/lib/useAccountMode'
 import { useProfile } from '@/lib/ProfileContext'
 import PublishConfirmModal, { NetworkMetadata } from '@/components/PublishConfirmModal'
 import type { Department, YearLevel } from '@/lib/constants/departments'
+import GridPreview from '@/components/ui/GridPreview'
 import {
   DndContext,
   PointerSensor,
@@ -899,14 +900,20 @@ function RoomCardInner({
 
   return (
     <>
-      {/* Preview panel. A tinted stand-in, not a render of the room — the
-          published badge and the affordances both sit over it. */}
+      {/* Preview panel. The room has no rendered thumbnail, so the tile is the
+          ruling the work sits on — the same cursor-reactive grid the landing
+          page and the dashboard cards use. It replaces a door icon, which was
+          identical on every space and said nothing about any of them.
+
+          The grid fills the panel rather than sitting centred as the icon did,
+          so it runs to the edges; the published badge and the edit affordances
+          are absolutely placed and still sit over it. */}
       <Link href={`/studio/${room.id}`} className="block cursor-pointer">
         <div
-          className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl"
+          className="relative aspect-[4/3] overflow-hidden rounded-2xl"
           style={{ background: 'linear-gradient(150deg, #EEF3FC, #DCE5F5)' }}
         >
-          <DoorOpen className="h-9 w-9 text-[#9FB0CE]" />
+          <GridPreview className="h-full w-full" />
           {/* Bottom-left, not top-left as in the reference: the owner's drag
               handle occupies the top-left corner and the affordances the
               top-right, and those two only appear on the cards most likely to

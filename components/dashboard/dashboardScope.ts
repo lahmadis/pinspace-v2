@@ -90,7 +90,7 @@ export function scopeConfig(
         // Only the class scope has a term to speak of, and even there
         // academic_year is set on about half the rows. The other two scopes
         // have no term at all, so they get the plain noun.
-        listLabel: 'This term',
+        listLabel: 'This semester',
       }
     case 'shared':
       return {

@@ -8,6 +8,8 @@ import {
 } from 'lucide-react'
 import { useProfile } from '@/lib/ProfileContext'
 import { getOrgBrand, withAlpha, type OrgBrand } from '@/lib/constants/orgBranding'
+import GridPreview from '@/components/ui/GridPreview'
+import NetworkBandPreview from './NetworkBandPreview'
 import { scopeConfig, withInstitution, metaLine } from './dashboardScope'
 import type { Scope, DashboardWorkspace } from './dashboardScope'
 
@@ -19,14 +21,13 @@ export type { DashboardWorkspace } from './dashboardScope'
 /**
  * A studio's preview tile.
  *
- * Studios have no rendered thumbnail, so this draws the thing a studio IS: a
- * corner of two walls, in the same near-white-on-pale-blue the 3D room itself
- * uses. Inline SVG rather than an asset — it is four shapes, it has to recolour
- * with the card, and it must stay crisp at every column width the grid can
- * produce.
+ * Studios have no rendered thumbnail, so the tile is the ruling the work sits
+ * on — the same cursor-reactive grid the landing page uses, contained to the
+ * card. It replaces a drawing of two walls, which claimed to depict a specific
+ * studio while being identical on every card.
  *
- * A studio with no boards gets the placeholder instead. A generic room drawing
- * on an empty studio reads as "here is your work" when there is none.
+ * A studio with no boards gets the placeholder instead. A grid that reacts to
+ * the cursor invites a click; on an empty studio there is nothing behind it.
  */
 function StudioPreview({ boards }: { boards: number }) {
   if (boards === 0) {
@@ -46,29 +47,7 @@ function StudioPreview({ boards }: { boards: number }) {
     )
   }
 
-  return (
-    <svg
-      viewBox="0 0 200 150"
-      className="h-full w-full"
-      aria-hidden="true"
-      preserveAspectRatio="xMidYMid meet"
-    >
-      {/* Soft pool under the walls — the same trick the 3D room uses to lift a
-          near-white surface off a near-white ground. */}
-      <ellipse cx="104" cy="118" rx="62" ry="9" fill="#16181D" opacity="0.06" />
-      {/* Left wall, angled away */}
-      <path d="M52 44 L104 58 L104 114 L52 100 Z" fill="#FFFFFF" opacity="0.95" />
-      {/* Right wall, catching a little less light */}
-      <path d="M104 58 L156 44 L156 100 L104 114 Z" fill="#F2F5FB" />
-      {/* Sheets pinned on each face */}
-      <rect x="63" y="60" width="13" height="17" rx="1.5" fill="#DCE4F2" />
-      <rect x="80" y="65" width="13" height="17" rx="1.5" fill="#DCE4F2" />
-      <rect x="115" y="65" width="13" height="17" rx="1.5" fill="#E2E9F5" />
-      <rect x="132" y="60" width="13" height="17" rx="1.5" fill="#E2E9F5" />
-      {/* The seam where the two walls meet, which is what reads as a corner */}
-      <path d="M104 58 L104 114" stroke="#16181D" strokeOpacity="0.07" strokeWidth="1" />
-    </svg>
-  )
+  return <GridPreview className="h-full w-full" />
 }
 
 // ── RoomCard ──────────────────────────────────────────────────────────────────
@@ -223,7 +202,10 @@ function RoomCard({
         className="mt-2.5 block overflow-hidden rounded-xl border border-[#16181D]/[0.06]"
       >
         <div
-          className="flex aspect-[16/11] items-center justify-center p-2"
+          // No padding: the grid runs to the tile's edges, which is what makes
+          // it read as ruled ground rather than as a picture of a grid. The
+          // empty-state placeholder centres itself, so it needs none either.
+          className="flex aspect-[16/11] items-center justify-center"
           style={{ background: isArchived
             ? 'linear-gradient(150deg, #F2F4F8, #E9ECF3)'
             : 'linear-gradient(150deg, #F4F7FD, #E4EBF7)' }}
@@ -260,9 +242,8 @@ function RoomCard({
  * accent to wash with, and a beige card with no mark on it is just a beige card.
  */
 function EnterNetworkCard({
-  href, studioCount, brand,
-}: { href: string; studioCount: number; brand: OrgBrand | null }) {
-  const blurb = `${studioCount > 0 ? `${studioCount} studio${studioCount === 1 ? '' : 's'} in one space. ` : ''}Walk the walls, read the boards, leave a crit.`
+  href, brand,
+}: { href: string; brand: OrgBrand | null }) {
 
   if (brand) {
     return (
@@ -272,7 +253,11 @@ function EnterNetworkCard({
           // in the class: a Tailwind arbitrary value is a static string, so an
           // org colour cannot be interpolated into one, but it CAN read a
           // variable that inline style sets per-org.
-          className="relative flex h-full min-h-[180px] flex-col justify-end overflow-hidden rounded-2xl border p-4 transition-shadow duration-200 hover:shadow-[0_16px_40px_var(--brand-shadow)]"
+          // Lays out ALONG its length now that it is a full-width band: seal and
+          // copy on the left, the action on the right, centred. Stacked
+          // bottom-anchored content was right for a tall grid cell and leaves a
+          // wide short band mostly empty.
+          className="relative flex min-h-[190px] items-center gap-5 overflow-hidden rounded-2xl border px-6 py-5 transition-shadow duration-200 hover:shadow-[0_16px_40px_var(--brand-shadow)]"
           style={{
             // Every stop derives from the brand — no literal golds, so a second
             // branded org gets its own colours rather than Wentworth's.
@@ -281,35 +266,42 @@ function EnterNetworkCard({
             '--brand-shadow': withAlpha(brand.accentInk, 0.16),
           } as React.CSSProperties}
         >
-          {/* The seal as a watermark, top-left, at the size it reads as a crest
-              rather than as an icon. Bleeds warm light behind it. */}
+          {/* The live network, filling the band behind everything else. It is
+              the first child so the copy and the action paint over it. */}
+          <NetworkBandPreview height={190} />
+
+          {/* Warm bleed, now on the right where the band has room for it. */}
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-10 -top-16 h-64 w-64 rounded-full opacity-40 blur-[2px]"
+            style={{ background: `radial-gradient(closest-side, ${brand.accent}55, transparent)` }}
+          />
+
+          {/* The seal, in the flow rather than absolutely placed — a band lays
+              its content out in a row, so it can just be the first item. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={brand.mark}
             alt=""
             aria-hidden="true"
-            className="pointer-events-none absolute left-5 top-5 h-24 w-24 opacity-95"
-          />
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute -bottom-12 -right-8 h-52 w-52 rounded-full opacity-40 blur-[2px]"
-            style={{ background: `radial-gradient(closest-side, ${brand.accent}55, transparent)` }}
+            className="relative hidden h-20 w-20 shrink-0 opacity-95 sm:block"
           />
 
-          <div className="relative rounded-2xl bg-white/85 p-3.5 backdrop-blur-sm">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[17px] font-extrabold tracking-[-0.02em] text-[#16181D]">
-                Enter network
-              </span>
-              <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform duration-200 group-hover:translate-x-0.5"
-                style={{ background: brand.accent }}
-              >
-                <ArrowRight className="h-4 w-4 text-white" />
-              </span>
-            </div>
-            <p className="mt-1 text-[12px] leading-relaxed text-[#5A5E6B]">{blurb}</p>
+          <div className="relative min-w-0 flex-1">
+            <span className="block text-[20px] font-extrabold tracking-[-0.02em] text-[#16181D]">
+              The Network
+            </span>
           </div>
+
+          {/* Hidden below md: at a phone's width the band is already carrying
+              a seal, a title and an action, and a 150px picture would push the
+              copy into a two-line squeeze. */}
+          <span
+            className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform duration-200 group-hover:translate-x-0.5"
+            style={{ background: brand.accent }}
+          >
+            <ArrowRight className="h-5 w-5 text-white" />
+          </span>
         </div>
       </Link>
     )
@@ -318,23 +310,26 @@ function EnterNetworkCard({
   return (
     <Link href={href} className="block h-full">
       <div
-        className="group relative flex h-full min-h-[180px] flex-col justify-between overflow-hidden rounded-2xl p-5 transition-shadow duration-200 hover:shadow-[0_20px_50px_rgba(22,24,29,0.28)]"
-        style={{ background: 'linear-gradient(150deg, #171A24 0%, #1D2436 55%, #27365C 100%)' }}
+        // Same band layout as the branded arm — copy left, action right.
+        className="group relative flex min-h-[190px] items-center gap-5 overflow-hidden rounded-2xl px-6 py-5 transition-shadow duration-200 hover:shadow-[0_20px_50px_rgba(22,24,29,0.28)]"
+        style={{ background: 'linear-gradient(120deg, #171A24 0%, #1D2436 55%, #27365C 100%)' }}
       >
-        {/* Decorative bubbles, echoing what the network itself renders. */}
-        <span aria-hidden="true" className="pointer-events-none absolute -bottom-16 -right-10 h-56 w-56 rounded-full bg-[#3B6EF6]/25 blur-[2px]" />
-        <span aria-hidden="true" className="pointer-events-none absolute bottom-6 right-24 h-24 w-24 rounded-full bg-white/[0.06]" />
+        <NetworkBandPreview height={190} />
 
-        <div className="relative">
-          <h3 className="text-[26px] font-extrabold leading-[1.05] tracking-[-0.03em] text-white">
-            The bubble<br />network
+        {/* Decorative bubbles, echoing what the network itself renders. Moved
+            right, where a wide band has the room for them. */}
+        <span aria-hidden="true" className="pointer-events-none absolute -top-12 right-16 h-56 w-56 rounded-full bg-[#3B6EF6]/25 blur-[2px]" />
+        <span aria-hidden="true" className="pointer-events-none absolute -bottom-8 right-56 h-28 w-28 rounded-full bg-white/[0.06]" />
+
+        <div className="relative min-w-0 flex-1">
+          <h3 className="text-[24px] font-extrabold leading-[1.05] tracking-[-0.03em] text-white">
+            The Network
           </h3>
-          <p className="mt-2.5 max-w-[15rem] text-[13px] leading-relaxed text-white/60">{blurb}</p>
         </div>
 
-        <span className="relative mt-5 inline-flex w-fit items-center gap-2 rounded-full bg-white px-5 py-2.5 text-[13px] font-bold text-[#16181D] transition-transform duration-200 group-hover:translate-x-0.5">
+        <span className="relative inline-flex w-fit shrink-0 items-center gap-2 rounded-full bg-white px-6 py-3 text-[14px] font-bold text-[#16181D] transition-transform duration-200 group-hover:translate-x-0.5">
           Enter
-          <ArrowRight className="h-3.5 w-3.5" />
+          <ArrowRight className="h-4 w-4" />
         </span>
       </div>
     </Link>
@@ -395,16 +390,6 @@ export function DashboardMain({
   const brandHeader = scope === 'wentworth' ? brand : null
   const hasArchived = rooms.some((r) => r.is_archived)
   const visibleRooms = showArchived ? rooms : rooms.filter((r) => !r.is_archived)
-  const openCount = rooms.filter((r) => !r.is_archived).length
-  const archivedCount = rooms.length - openCount
-
-  // Header meta, from counts alone — see dashboardScope.metaLine for why this
-  // isn't the mockup's "Architecture · Autumn 2026" template.
-  const headerMeta = metaLine([
-    `${openCount} studio${openCount === 1 ? '' : 's'} open`,
-    archivedCount > 0 ? `${archivedCount} archived` : null,
-  ])
-
   /**
    * The card grid shrinks its cells as studios accumulate rather than holding
    * one fixed size and wrapping: a lone studio gets a wide card, a term with
@@ -412,11 +397,9 @@ export function DashboardMain({
    * Tailwind scans source text and cannot resolve an interpolated column count.
    */
   const gridCols =
-    visibleRooms.length <= 1
-      ? 'grid-cols-1 lg:grid-cols-2'
-      : visibleRooms.length === 2
-        ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
-        : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+    visibleRooms.length <= 2
+      ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+      : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
 
   // Reset showArchived when scope changes
   useEffect(() => { setShowArchived(false); setOpenMenuId(null) }, [scope])
@@ -447,16 +430,6 @@ export function DashboardMain({
                 {cfg.title}
               </h1>
             )}
-            <p className="mt-2 flex items-center gap-2.5 pl-10 text-[13px] text-[#8A8FA0] md:pl-0">
-              {brandHeader && (
-                <span
-                  aria-hidden="true"
-                  className="h-[3px] w-8 shrink-0 rounded-full"
-                  style={{ background: brandHeader.accent }}
-                />
-              )}
-              {headerMeta}
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -524,8 +497,16 @@ export function DashboardMain({
                 the populated branch of an empty-state ternary — that structure
                 is what silently deleted Enter Network for every user with zero
                 rooms. Anything added to this grid later inherits the fix. */}
+            {/* The network is a BAND, not a cell. It is an entry point to a
+                different place rather than one more studio, and sitting it in
+                the same grid made it read as the first item in the list. Full
+                width also lets it lay out along its length instead of stacking
+                in a narrow column. */}
+            <div className="mb-4">
+              <EnterNetworkCard href={networkHref} brand={brandHeader} />
+            </div>
+
             <div className={`grid gap-4 ${gridCols}`}>
-              <EnterNetworkCard href={networkHref} studioCount={openCount} brand={brandHeader} />
               {visibleRooms.map((room) => (
                 <RoomCard
                   key={room.id}

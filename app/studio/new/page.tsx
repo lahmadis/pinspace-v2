@@ -142,23 +142,6 @@ export default function NewStudioPage() {
               />
             </div>
 
-            {/* Info Box */}
-            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-              <div className="flex gap-3">
-                <div className="text-2xl">💡</div>
-                <div>
-                  <p className="text-sm text-indigo-900 font-medium mb-1">
-                    What happens next?
-                  </p>
-                  <ul className="text-sm text-indigo-800 space-y-1">
-                    <li>• A new 3D studio space will be created</li>
-                    <li>• You can add boards and organize your work</li>
-                    <li>• The space will appear in &quot;My Personal Spaces&quot; on your dashboard</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
             {/* Submit Button */}
             <button
               type="submit"
