@@ -7,7 +7,7 @@ import { Board } from '@/types'
 import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
 import { getWallTransformResolved, getFloorRect, type WallTextItem } from '@/lib/wallLayout'
-import { ROOM_SKY, ROOM_GHOST, ROOM_FONT_3D } from '@/lib/room/palette'
+import { ROOM_SKY, ROOM_GHOST, ROOM_FONT_3D, ROOM_GRID_LINE, ROOM_GRID_INCHES } from '@/lib/room/palette'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
 
 interface WallDimensions {
@@ -271,18 +271,29 @@ function dimTowardSky(hex: string, amount: number): string {
  * on the near-white ground it just read as dark lines cutting across an
  * otherwise airy floor. The ten-foot rhythm is gone entirely rather than merely
  * lightened — a faint heavier line is still a heavier line. */
-const GRID_CELL_COLOR = '#D2DAEA'
+const GRID_CELL_COLOR = ROOM_GRID_LINE
 
 /**
- * The grid sits slightly BELOW the walls' base rather than exactly on it. The
- * gap only works because StudioRoom's camera uses near = 5 rather than
- * three.js's default 0.1 — resolvable depth goes as z²/(near·2²⁴), so that one
- * change buys ~50x precision and makes a few inches of separation safe even at
- * a large room's maximum zoom-out. If anyone lowers that near plane, the
+ * The grid sits a HAIR below the walls' base — not on it, and not the four
+ * inches it used to be.
+ *
+ * Four inches was clearance from the floor plate, which is gone; with nothing
+ * left to clear it just read as the walls hovering, since a wall is 8-10ft and
+ * a 4in gap under it is plainly visible. Half an inch is under half a percent
+ * of wall height, so the walls read as standing on the ruling, while still
+ * keeping the two planes out of exact coplanarity — a grid drawn exactly at
+ * y=0 z-fights the wall's own bottom face at grazing camera angles.
+ *
+ * The remaining gap only works because StudioRoom's camera uses near = 5
+ * rather than three.js's default 0.1 — resolvable depth goes as z²/(near·2²⁴),
+ * so that one change buys ~50x precision. If anyone lowers that near plane, the
  * symptom is the grid flickering in and out as the camera orbits.
+ *
+ * FLOOR_Y is not a surface: it positions an invisible raycast plane that
+ * catches the click-to-exit-focus gesture, so it cannot z-fight anything.
  */
 const FLOOR_Y = 0
-const GRID_Y = -4
+const GRID_Y = -0.5
 
 /**
  * Ground plane + fog scale with the room's own footprint rather than a fixed
@@ -360,8 +371,12 @@ function createSoftShadowTexture(): THREE.CanvasTexture | null {
  */
 const SHADOW_WIDTH_OVERHANG_RATIO = 0.22
 const SHADOW_DEPTH_IN = 52
-/** Clear of the floor plane, below the accent rim at the wall's foot. */
-const SHADOW_Y = 0.5
+/**
+ * Just above the grid, just above the wall's base. It was 0.5 while the grid
+ * sat at -4, which put the pool nearer the wall than the ground it was supposed
+ * to be cast on — the wall, its shadow and the grid were three separate heights.
+ */
+const SHADOW_Y = 0.15
 
 export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'white', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick }: WallSystemProps) {
 
@@ -426,7 +441,7 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
       <Grid
         position={[floorRect.centerX, GRID_Y, floorRect.centerZ]}
         args={[10, 10]}
-        cellSize={12}
+        cellSize={ROOM_GRID_INCHES}
         cellThickness={1}
         cellColor={GRID_CELL_COLOR}
         // Section lines disabled: zero thickness, and the colour matched to the

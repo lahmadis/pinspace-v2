@@ -109,6 +109,23 @@ export const ROOM_SKY = '#EDF1FB'
  */
 export const ROOM_GHOST = '#D3DCEC'
 
+/**
+ * The one-foot ruling the room stands on, in the 3D scene AND the plan editor.
+ *
+ * Shared because the two had already drifted: the 3D room draws a single weight
+ * at 12", while the plan had grown a heavier five-foot beat and a lighter,
+ * thinner minor line. Same 12" cell in both, but two different rulings — so the
+ * plan read as a different scale from the space it describes.
+ *
+ * ONE WEIGHT, no major/minor tier. The 3D room's ten-foot section lines were
+ * removed deliberately (they read as dark lines cutting across the floor), and
+ * a beat that exists in the plan but not in the space is the same mismatch in
+ * the other direction.
+ */
+export const ROOM_GRID_LINE = '#D2DAEA'
+/** Cell size of that ruling, in inches. 1 unit = 1 inch across the app. */
+export const ROOM_GRID_INCHES = 12
+
 /** Monospace stack for sheet numbers, wall labels and the revision strip. */
 export const MONO_STACK = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
 

@@ -13,6 +13,7 @@ import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from '@/components/3d/Wa
 import RoomLighting from '@/components/3d/RoomLighting'
 import { CameraController } from '@/components/3d/CameraController'
 import { EditModeOverlay } from '@/components/3d/EditModeOverlay'
+import { ROOM_DEFAULT_FOV } from '@/lib/room/cameraViews'
 
 export default function DemoStudioRoomPage() {
   const params = useParams()
@@ -134,7 +135,7 @@ export default function DemoStudioRoomPage() {
             const { fogNear, fogFar } = getRoomFogParams(wallConfig)
             return <fog attach="fog" args={[ROOM_SKY_COLOR, fogNear, fogFar]} />
           })()}
-          <PerspectiveCamera makeDefault position={[0, 60, 120]} fov={35} near={5} far={2000} />
+          <PerspectiveCamera makeDefault position={[0, 60, 120]} fov={ROOM_DEFAULT_FOV} near={5} far={2000} />
 
           {/* One shared rig for every room surface — see RoomLighting. */}
           <RoomLighting />

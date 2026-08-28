@@ -15,18 +15,46 @@ import * as THREE from 'three'
 import { getWallTransformResolved, calculateFloorBounds, getFloorRect, floorRectBounds, type WallConfig } from '@/lib/wallLayout'
 
 /**
- * The room's resting camera FOV. Lives here rather than in CameraController so
- * the preset math and the component can share it without an import cycle;
- * CameraController re-exports it for its existing importers.
+ * The room's lens, expressed the way a photographer would state it.
+ *
+ * three.js takes a VERTICAL field of view in degrees, which is a poor thing to
+ * pick by feel — 50° and 35° are indistinguishable as numbers but are a 26mm
+ * and a 38mm lens, and the room had drifted into using both. So the focal
+ * length is the input and the angle is derived: on a full-frame 36×24mm frame,
+ * half the frame height is 12mm, and vfov = 2·atan(12/f).
+ *
+ * 35mm is a mild wide angle — wide enough to hold a whole studio in shot, and
+ * short of the visible convergence a 26mm was putting on the walls at the edges
+ * of frame.
  */
-export const ROOM_DEFAULT_FOV = 50
+const FULL_FRAME_HALF_HEIGHT_MM = 12
+const ROOM_FOCAL_LENGTH_MM = 35
+
+/** Vertical FOV for a focal length, in degrees. */
+function fovForFocalLength(mm: number): number {
+  return 2 * Math.atan(FULL_FRAME_HALF_HEIGHT_MM / mm) * (180 / Math.PI)
+}
 
 /**
- * FOV the camera settles at when framing a single wall head-on. Narrower than
- * the resting FOV so a wall fills more of the frame with less perspective
- * distortion — matches the value edit mode has always animated to.
+ * The room's resting camera FOV — 35mm, so ≈37.9°. Lives here rather than in
+ * CameraController so the preset math and the component can share it without an
+ * import cycle; CameraController re-exports it for its existing importers.
  */
-export const WALL_FOCUS_FOV = 45
+export const ROOM_DEFAULT_FOV = fovForFocalLength(ROOM_FOCAL_LENGTH_MM)
+
+/**
+ * FOV when framing a single wall head-on. DELIBERATELY THE SAME as the resting
+ * FOV now: it used to narrow from 50° to 45° so a wall filled more of the frame
+ * with less convergence, but that made the room change lens as you moved
+ * through it. One focal length everywhere means a wall is the same shape when
+ * you walk up to it as it was across the room, and the framing work is done by
+ * moving the camera instead.
+ *
+ * Kept as its own name rather than folded into the constant above so the seam
+ * survives — if head-on framing ever needs its own lens again, this is where it
+ * goes, and no call site has to change.
+ */
+export const WALL_FOCUS_FOV = ROOM_DEFAULT_FOV
 
 /** Named camera angles the user can jump back to. */
 export type RoomCameraPreset = 'axon' | 'fit'

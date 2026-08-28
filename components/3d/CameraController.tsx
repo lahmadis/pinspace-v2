@@ -19,6 +19,28 @@ import {
  */
 export { ROOM_DEFAULT_FOV }
 
+/**
+ * How far wheel zoom may travel from the head-on framing while editing a wall,
+ * as a multiple of that framing's own distance.
+ *
+ * The head-on pose sits at wallWidth * 1.35, so an 8ft wall frames from about
+ * 130in out. The old 0.32 floor therefore stopped you 42in from the wall —
+ * still further back than you would stand to read a drawing, which is exactly
+ * what the close end of this range is for.
+ */
+const EDIT_ZOOM_MIN_FACTOR = 0.06
+const EDIT_ZOOM_MAX_FACTOR = 2.2
+
+/**
+ * Absolute floor in inches, whichever the factor above works out to.
+ *
+ * The camera's near plane is 5in (StudioRoom) and the wall surface stands ~3in
+ * proud of the centre the camera targets, so at 12in from target the sheet is
+ * ~9in from the camera — clear of the near plane with margin. Without this a
+ * narrow wall's small base distance would let the factor take you through it.
+ */
+const EDIT_ZOOM_MIN_INCHES = 12
+
 function getControls(ref: React.RefObject<unknown> | null | undefined): OrbitControlsType | null {
   const r = ref?.current
   if (!r) return null
@@ -168,7 +190,7 @@ export function CameraController({
   focusedWall = null,
   presetRequest = null,
 }: CameraControllerProps) {
-  const { camera } = useThree()
+  const { camera, gl } = useThree()
   const SWOOSH_DURATION_SECONDS = 0.95
   const MAX_SWOOSH_STEP_SECONDS = 1 / 45
 
@@ -207,6 +229,13 @@ export function CameraController({
   const pendingAnimation = useRef(false)
   const targetTarget = useRef(new THREE.Vector3())
   const shouldNotifyOnComplete = useRef(false)
+  /**
+   * Distance the head-on pose put the camera at for the wall being edited.
+   * Wheel zoom clamps against THIS rather than an absolute inch range: the
+   * head-on distance is derived from the wall's width, so one fixed range would
+   * be most of a 4ft wall's usable travel and almost none of a 40ft wall's.
+   */
+  const editBaseDistance = useRef(0)
 
   // Uniform swoosh animation state (same model for every wall).
   const isAnimating = useRef(false)
@@ -215,8 +244,10 @@ export function CameraController({
   const startTarget = useRef(new THREE.Vector3())
   const endPosition = useRef(new THREE.Vector3())
   const endTarget = useRef(new THREE.Vector3())
-  const startFov = useRef(35)
-  const endFov = useRef(35)
+  // Overwritten by beginSwoosh before either is read; seeded from the room's
+  // own lens so a stale literal cannot imply a focal length nothing uses.
+  const startFov = useRef(ROOM_DEFAULT_FOV)
+  const endFov = useRef(ROOM_DEFAULT_FOV)
 
   // When user releases mouse, OrbitControls still applies one frame of leftover delta.
   const restoreOnNextFrame = useRef(false)
@@ -297,10 +328,11 @@ export function CameraController({
       // wallRotation already carries the back-face half-turn from WallSystem.
       const pose = getHeadOnPose(wallPosition, wallRotation, (wallDimensions?.width ?? 8) * 12)
       targetTarget.current.copy(pose.target)
+      editBaseDistance.current = pose.position.distanceTo(pose.target)
 
       const controls = getControls(orbitControlsRef)
       const fromTarget = controls ? controls.target.clone() : targetTarget.current.clone()
-      const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : 35
+      const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : ROOM_DEFAULT_FOV
       beginSwoosh(
         camera.position.clone(),
         fromTarget,
@@ -316,7 +348,7 @@ export function CameraController({
       const returnTarget = savedCameraTarget.current || defaultPose.target
       const controls = getControls(orbitControlsRef)
       const fromTarget = controls ? controls.target.clone() : defaultPose.target.clone()
-      const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : 45
+      const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : ROOM_DEFAULT_FOV
       beginSwoosh(
         camera.position.clone(),
         fromTarget,
@@ -527,6 +559,50 @@ export function CameraController({
       camera.updateProjectionMatrix()
     }
   })
+
+  /**
+   * Wheel zoom while editing a wall.
+   *
+   * OrbitControls is switched off entirely in edit mode (StudioRoom passes
+   * enabled={false}) and its target prop points at the room's centre, so
+   * turning its zoom back on would dolly toward the middle of the room rather
+   * than the wall in front of you. This dollies along the camera-to-wall axis
+   * instead, which is the axis the head-on hold already maintains.
+   *
+   * Safe against that hold: the frame loop re-aims the camera every frame but
+   * never re-pins its POSITION, so a distance change survives.
+   *
+   * Exponential in deltaY, not a fixed step per event: a mouse wheel sends a
+   * few large deltas and a trackpad a stream of small ones, and a fixed step
+   * per event makes the trackpad fly.
+   */
+  useEffect(() => {
+    if (editingWall === null) return
+    const el = gl.domElement
+    const axis = new THREE.Vector3()
+
+    const onWheel = (e: WheelEvent) => {
+      // The canvas fills the viewport in edit mode; without this the page
+      // scrolls behind it.
+      e.preventDefault()
+      axis.subVectors(camera.position, targetTarget.current)
+      const dist = axis.length()
+      if (dist < 1e-3) return
+      axis.divideScalar(dist)
+
+      const base = editBaseDistance.current || dist
+      const next = THREE.MathUtils.clamp(
+        dist * Math.exp(e.deltaY * 0.0015),
+        Math.max(base * EDIT_ZOOM_MIN_FACTOR, EDIT_ZOOM_MIN_INCHES),
+        base * EDIT_ZOOM_MAX_FACTOR,
+      )
+      camera.position.copy(targetTarget.current).addScaledVector(axis, next)
+    }
+
+    // passive:false because the handler calls preventDefault.
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [editingWall, gl, camera])
 
   return null
 }

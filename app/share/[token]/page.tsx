@@ -14,6 +14,7 @@ import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
 import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
+import { ROOM_DEFAULT_FOV } from '@/lib/room/cameraViews'
 
 interface WallDimensions {
   height: number
@@ -129,7 +130,7 @@ function ShareViewCameraControls({ wallConfig }: { wallConfig: WallConfig | null
       <PerspectiveCamera
         makeDefault
         position={[cameraX, cameraHeight, cameraZ]}
-        fov={50}
+        fov={ROOM_DEFAULT_FOV}
         // See StudioRoom's camera: a 0.1 near plane leaves only inches of
         // depth precision at full zoom-out, which makes WallSystem's stacked
         // floor/grid/ground planes flicker. Nothing is ever within 5 inches

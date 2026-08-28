@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 import { getWallTransformResolved } from '@/lib/wallLayout'
 import { wallSegments, planBounds } from '@/lib/room/planGeometry'
+import { ROOM_DEFAULT_FOV } from '@/lib/room/cameraViews'
 
 export type RoomCameraMode = 'walk' | 'overview'
 
@@ -22,8 +23,8 @@ export const OVERVIEW_POLAR_MAX = (90 - 16) * DEG
 
 /** Radians per second the snap sweeps at; ~0.35s for a 90-degree turn. */
 const SNAP_EASE = 6.5
-/** Fov assumed when the active camera is not perspective. Matches ROOM_DEFAULT_FOV. */
-const ROOM_FALLBACK_FOV = 50
+/** Fov assumed when the active camera is not perspective. */
+const ROOM_FALLBACK_FOV = ROOM_DEFAULT_FOV
 /** Extra room around the wall so it never touches the frame edge. */
 const WALL_FRAMING_MARGIN = 1.12
 /** Below this the snap is considered finished and the rig stops writing. */

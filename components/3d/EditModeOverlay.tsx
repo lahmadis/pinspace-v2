@@ -54,12 +54,12 @@ export function EditModeOverlay({
             aria-label="Wall editing controls"
             className="fixed inset-x-0 top-0 z-50 flex max-h-[45dvh] flex-col gap-3 overflow-y-auto px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] motion-reduce:transition-none sm:flex-row sm:items-start sm:justify-between sm:px-4"
           >
-            <div className="rounded-pinspace border border-border bg-background-light px-4 py-2 text-text-primary shadow-[var(--shadow-raised)]">
+            <div className="rounded-2xl border border-[#16181D]/[0.08] bg-white px-4 py-3 text-[#16181D] shadow-[0_8px_24px_rgba(22,24,29,0.10)]">
               {/* Zero-padded to match how walls are labelled everywhere else in the
                   room, and no longer prefixed with the verb — the panel it sits in
                   is already the edit surface. */}
-              <h2 className="font-mono text-base font-bold">Wall {String(wallIndex + 1).padStart(2, '0')}</h2>
-              <p className="mt-0.5 text-sm text-text-secondary">Add, arrange, and edit boards</p>
+              <h2 className="text-base font-bold">Wall {String(wallIndex + 1).padStart(2, '0')}</h2>
+              <p className="mt-0.5 text-sm text-[#5A5E6B]">Add, arrange, and edit boards</p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
               {onClearWall && (
@@ -68,8 +68,8 @@ export function EditModeOverlay({
                   onClick={handleClearClick}
                   aria-label={clearArmed ? `Confirm clearing ${wallBoardCount} board${wallBoardCount === 1 ? '' : 's'}` : 'Clear wall'}
                   className={clearArmed
-                    ? "min-h-11 rounded-pinspace border border-[rgb(var(--color-danger))] bg-[rgb(var(--color-danger))] px-4 py-2 font-semibold text-white hover:bg-[rgb(var(--color-danger)/0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
-                    : "min-h-11 rounded-pinspace border border-border bg-background-light px-4 py-2 font-semibold text-text-primary hover:bg-background-lighter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+                    ? "min-h-11 rounded-full bg-[#C2452D] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#a5391f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]"
+                    : "min-h-11 rounded-full border border-[#16181D]/[0.12] bg-white px-5 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]"
                   }
                   title={clearArmed ? "Click again to confirm clearing the wall" : "Remove all boards from this wall"}
                 >
@@ -82,7 +82,7 @@ export function EditModeOverlay({
               <button
                 type="button"
                 onClick={onClose}
-                className="min-h-11 rounded-pinspace border border-pinspace-ink bg-primary px-5 py-2 font-semibold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+                className="min-h-11 rounded-full bg-[#16181D] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#3B6EF6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]"
               >
                 Save and exit
               </button>
@@ -100,7 +100,7 @@ export function EditModeOverlay({
             <button
               type="button"
               onClick={onUpload}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-pinspace border border-pinspace-ink bg-primary px-5 py-2.5 font-semibold text-pinspace-ink shadow-[0_3px_0_rgb(var(--color-ink))] hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[#16181D] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#3B6EF6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />

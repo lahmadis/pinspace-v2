@@ -19,6 +19,7 @@ import PresenceBar, { type PresentUser, friendlyName, colorFor } from '@/compone
 import { LaserPointer } from '@/components/3d/LaserPointer'
 import type { FollowPose, LaserState, LbViewport, LbCursorState, CritDirtySignal, TraceStreamEntry } from '@/components/3d/CameraController'
 import { Presentation } from 'lucide-react'
+import { ROOM_DEFAULT_FOV } from '@/lib/room/cameraViews'
 
 interface WallDimensions {
   height: number
@@ -183,7 +184,7 @@ function CritViewCameraControls({
       <PerspectiveCamera
         makeDefault
         position={[cameraX, cameraHeight, cameraZ]}
-        fov={50}
+        fov={ROOM_DEFAULT_FOV}
         // See StudioRoom's camera: a 0.1 near plane leaves only inches of
         // depth precision at full zoom-out, which makes WallSystem's stacked
         // floor/grid/ground planes flicker. Nothing is ever within 5 inches
