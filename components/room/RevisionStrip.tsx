@@ -10,7 +10,7 @@ import { ROOM, MONO_STACK } from '@/lib/room/palette'
  * contents sitting alongside them made the strip mean two different things. It
  * lives at /desk-crits/[id] instead.
  */
-export type RoomView = 'room' | 'unfolded' | 'plan' | '2d' | 'presentation'
+export type RoomView = 'room' | 'plan' | '2d' | 'presentation'
 
 interface RevisionStripProps {
   view: RoomView
@@ -21,15 +21,19 @@ interface RevisionStripProps {
 }
 
 /**
- * Only the three spatial readings of the room live in the strip. 2D and
- * Presentation moved to the menu beside Share: they are not ways of looking at
- * the SPACE — one is a per-person archive, the other a running order — and
- * sitting them in the same segmented control implied five peers when there are
- * three plus two different things.
+ * The three readings of the room that live in the strip.
+ *
+ * Presentation stays in the menu beside Share: it is a running order, not a way
+ * of looking at the space. 2D used to sit there with it and has moved in here —
+ * it IS a way of looking at the same room, per person rather than per wall — 
+ * taking the slot the Unfolded view held before it was removed.
  */
 const VIEWS: Array<{ id: RoomView; label: string }> = [
   { id: 'room', label: 'Space' },
-  { id: 'unfolded', label: 'Unfolded' },
+  // 2D was in the overflow menu while Unfolded held this slot. It is the
+  // per-person read of the same room, which is a way of LOOKING at the space —
+  // so it belongs beside Space and Plan, not behind a menu.
+  { id: '2d', label: '2D' },
   { id: 'plan', label: 'Plan' },
 ]
 

@@ -242,7 +242,7 @@ function EditableStudentName({
         className="group/name flex items-center gap-2 max-w-full text-left rounded-lg px-2 py-0.5 -ml-2 transition-colors hover:bg-white/70"
       >
         <span
-          className="text-[25px] font-semibold tracking-[-0.035em] truncate"
+          className="text-[25px] font-semibold tracking-[-0.035em]"
           style={{ color: ROOM.ink, fontFamily: SANS_STACK }}
         >
           {displayed}
@@ -368,6 +368,10 @@ export default function TwoDView({
                 <span aria-hidden>←</span>
               </button>
 
+              {/* min-w-0 so a very long name WRAPS instead of stretching the
+                  header past the page; the names themselves no longer truncate,
+                  since an ellipsis on a short name like "Prof Lahmadi" hid it
+                  for no reason with half the row empty. */}
               <div className="min-w-0">
                 {canRenameStudent && onRenameStudent ? (
                   // Keyed on the person so switching people remounts it —
@@ -380,7 +384,7 @@ export default function TwoDView({
                   />
                 ) : (
                   <h2
-                    className="text-[25px] font-semibold tracking-[-0.035em] truncate"
+                    className="text-[25px] font-semibold tracking-[-0.035em]"
                     style={{ color: ROOM.ink, fontFamily: SANS_STACK }}
                   >
                     {selected.name}

@@ -11,7 +11,7 @@ import { ROOM_SKY } from '@/lib/room/palette'
 import DemoBanner from '@/components/DemoBanner'
 import PresenceBar, { type PresentUser, friendlyName, colorFor } from '@/components/3d/PresenceBar'
 import type { FollowPose, LaserState, LbViewport, LbCursorState, CritDirtySignal, TraceStreamEntry } from '@/components/3d/CameraController'
-import { ArrowLeft, Share2, ChevronDown, Presentation, Menu, LayoutGrid, Users, Check } from 'lucide-react'
+import { ArrowLeft, Share2, ChevronDown, Presentation, Menu, Check } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import { DEFAULT_WALL_CONFIG, type WallConfig } from '@/lib/wallLayout'
@@ -70,11 +70,10 @@ function StudioPageInner() {
   const [showShareModal, setShowShareModal] = useState(false)
   /**
    * Lifted out of StudioRoom so the menu beside Share can drive them. The
-   * bottom strip still owns Space/Unfolded/Plan and writes back through the
+   * bottom strip still owns Space/2D/Plan and writes back through the
    * same setter, so the two controls can never disagree about which view is up.
    */
   const [roomView, setRoomView] = useState<RoomView>('room')
-  const [rosterOpen, setRosterOpen] = useState(true)
   const [showRoomMenu, setShowRoomMenu] = useState(false)
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -1172,9 +1171,8 @@ function StudioPageInner() {
               {/* Everything that isn't a spatial reading of the room. 2D is a
                   per-person archive and Presentation is a running order —
                   neither is a way of looking at the SPACE, so sitting them in
-                  the bottom strip beside Space/Unfolded/Plan implied five peers
-                  when there are three plus two different things. The roster is
-                  a panel rather than a view, and had no control at all. */}
+                  the bottom strip beside Space/2D/Plan implied more peers
+                  when there are three plus two different things. */}
               <div className="relative">
                 <button
                   onClick={() => setShowRoomMenu((v) => !v)}
@@ -1201,7 +1199,6 @@ function StudioPageInner() {
                       style={{ background: CHROME.paper, borderColor: CHROME.hairline }}
                     >
                       {([
-                        { id: '2d' as const, label: '2D', icon: <LayoutGrid className="w-4 h-4" /> },
                         { id: 'presentation' as const, label: 'Presentation', icon: <Presentation className="w-4 h-4" /> },
                       ]).map((item) => {
                         const active = roomView === item.id
@@ -1227,19 +1224,6 @@ function StudioPageInner() {
                         )
                       })}
 
-                      <div className="h-px" style={{ background: CHROME.hairline }} />
-
-                      <button
-                        role="menuitemcheckbox"
-                        aria-checked={rosterOpen}
-                        onClick={() => setRosterOpen((v) => !v)}
-                        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-left hover:bg-[#16181D]/[0.05] transition-colors"
-                        style={{ color: rosterOpen ? CHROME.accent : '#16181D' }}
-                      >
-                        <span className="shrink-0"><Users className="w-4 h-4" /></span>
-                        <span className="flex-1 truncate">Roster</span>
-                        {rosterOpen && <Check className="w-4 h-4 shrink-0" />}
-                      </button>
                     </div>
                   </>
                 )}
@@ -1284,7 +1268,6 @@ function StudioPageInner() {
             // strip drive one piece of state instead of two.
             roomView={roomView}
             onRoomViewChange={setRoomView}
-            rosterOpen={rosterOpen}
             canDeleteWalls={canDeleteWalls}
             wallColor={wallColor}
             wallConfigWriter={wallConfigWriter}

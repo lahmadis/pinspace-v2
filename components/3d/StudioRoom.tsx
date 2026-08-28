@@ -12,8 +12,6 @@ import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from './WallSystem'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry, type FocusedWall } from './CameraController'
-import RosterPanel from '@/components/room/RosterPanel'
-import UnfoldedView from '@/components/room/UnfoldedView'
 import PlanView, { PLAN_VIEW, PLAN_MARGIN } from '@/components/room/PlanView'
 import PresentationView from '@/components/room/PresentationView'
 import TwoDView from '@/components/room/TwoDView'
@@ -27,7 +25,6 @@ import { DraggableText } from './DraggableText'
 import { WallDropZone } from '@/components/3d/WallDropZone'
 import type { WallTextItem } from '@/lib/wallLayout'
 import type { WallConfigWriter } from '@/lib/wallConfigWriter'
-import { enqueueBoardWrite } from '@/lib/boardPositionWriteQueue'
 import RightCommentPanel from '@/components/RightCommentPanel'
 import LightboxModal from '@/components/LightboxModal'
 import { useBoardState } from './useBoardState'
@@ -131,11 +128,6 @@ interface StudioRoomProps {
    */
   roomView?: RoomView
   onRoomViewChange?: (view: RoomView) => void
-  /**
-   * Whether the floating roster is shown. Read-only from here — the menu
-   * beside Share owns it. Omit and the roster is always on, as before.
-   */
-  rosterOpen?: boolean
   /** 'tables' = place tables/models, 'walls' = move/rotate walls. */
   floorEditorMode?: 'tables' | 'walls'
   /**
@@ -751,7 +743,7 @@ export default function StudioRoom(props: StudioRoomProps) {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
 
   // Which of the the flat room views is showing. Room is the orbit-capable 3D
-  // Canvas; Unfolded and Plan are pure DOM/CSS, so switching to either from
+  // Canvas; 2D and Plan are pure DOM/CSS, so switching to either from
   // Room unmounts WebGL, and switching back remounts it.
   const [roomViewInternal, setRoomViewInternal] = useState<RoomView>('room')
   const roomView = props.roomView !== undefined ? props.roomView : roomViewInternal
@@ -763,14 +755,6 @@ export default function StudioRoom(props: StudioRoomProps) {
     [props.onRoomViewChange, props.roomView]
   )
 
-  // Read-only here: the roster has no toggle of its own any more, so the menu
-  // beside Share is the only thing that opens and closes it. Defaults open, so
-  // a surface that never passes the prop behaves exactly as it did.
-  const rosterOpen = props.rosterOpen ?? true
-
-  const handleSelectStudent = useCallback((student: RoomStudent) => {
-    setSelectedStudentId((prev) => (prev === student.id ? null : student.id))
-  }, [])
 
   /**
    * Wall focus — camera held square-on to one wall with every other wall
@@ -920,7 +904,6 @@ export default function StudioRoom(props: StudioRoomProps) {
     undo,
     redo,
     positionEpoch,
-    apiToNormalized,
   } = useBoardState(
     props.boards,
     props.studioId,
@@ -2055,267 +2038,6 @@ export default function StudioRoom(props: StudioRoomProps) {
     return true
   }, [])
 
-  /* ------------------------------------------------------------------ *
-   * Unfolded-view editing
-   *
-   * The developed surface can now be rearranged, with the same commands as
-   * 2D wall edit: drag to move, arrows to nudge, a corner to resize, Delete
-   * to remove, Ctrl+Z / Ctrl+Y to take it back.
-   *
-   * It keeps its OWN move history rather than sharing useBoardState's.
-   * That stack records positions only — "where this board was", never "which
-   * wall it was on" — because in wall edit there is exactly one wall in hand
-   * and the question cannot arise. Unfolded shows every wall at once and its
-   * whole point is that you can drag a sheet from one to another, so undoing
-   * through that stack would restore a board's x and y while leaving it on the
-   * wall it was dragged to. Recording the wall alongside the position is what
-   * makes Ctrl+Z here mean what it looks like it means.
-   * ------------------------------------------------------------------ */
-
-  /**
-   * One reversible unfolded edit.
-   *
-   * A union rather than just a position, because the surface has two kinds of
-   * change and Ctrl+Z has to undo whichever one actually happened. When resize
-   * was missing from this stack, undoing a resize silently teleported the sheet
-   * to an older POSITION instead — the toolbar promised undo and delivered a
-   * different edit.
-   */
-  type UnfoldedEdit =
-    | {
-        kind: 'move'
-        boardId: string
-        wallIndex: number
-        /** Normalised -0.5..0.5, the form updateBoardPosition takes. */
-        x: number
-        y: number
-        side: 'front' | 'back'
-      }
-    | { kind: 'size'; boardId: string; widthIn: number; heightIn: number }
-
-  /**
-   * Indirection so undo can replay a resize.
-   *
-   * handleUnfoldedBoardResize is defined below applyUnfoldedEdit and depends on
-   * it transitively, so naming it directly would be a temporal-dead-zone crash
-   * at render (the deps array is evaluated before the later const exists).
-   */
-  const unfoldedResizeRef = useRef<
-    ((boardId: string, widthIn: number, heightIn: number, record?: boolean) => void) | null
-  >(null)
-
-  const unfoldedUndoRef = useRef<UnfoldedEdit[]>([])
-  const unfoldedRedoRef = useRef<UnfoldedEdit[]>([])
-  const UNFOLDED_MAX_UNDO = 50
-
-  /** Where a board is right now, in the form the undo stack stores. */
-  const unfoldedMoveSnapshot = useCallback(
-    (boardId: string): UnfoldedEdit | null => {
-      const board = localBoards.find((b) => b.id === boardId)
-      const pos = board?.position
-      if (!pos || pos.wallIndex == null) return null
-      return {
-        kind: 'move',
-        boardId,
-        wallIndex: pos.wallIndex,
-        x: apiToNormalized(pos.x),
-        y: apiToNormalized(pos.y),
-        side: (pos.side as 'front' | 'back') || 'front',
-      }
-    },
-    [localBoards, apiToNormalized]
-  )
-
-  /** What size a board is right now, for the same purpose. */
-  const unfoldedSizeSnapshot = useCallback(
-    (boardId: string): UnfoldedEdit | null => {
-      const board = localBoards.find((b) => b.id === boardId)
-      if (!board) return null
-      const { widthIn, heightIn } = getBoardSizeInches(board)
-      return { kind: 'size', boardId, widthIn, heightIn }
-    },
-    [localBoards]
-  )
-
-  const pushUnfoldedEdit = useCallback((entry: UnfoldedEdit) => {
-    unfoldedUndoRef.current = [
-      ...unfoldedUndoRef.current.slice(-(UNFOLDED_MAX_UNDO - 1)),
-      entry,
-    ]
-    unfoldedRedoRef.current = []
-  }, [])
-
-  /** Replay one entry, in whichever direction it is being replayed. */
-  const applyUnfoldedEdit = useCallback(
-    (entry: UnfoldedEdit) => {
-      if (entry.kind === 'move') {
-        void updateBoardPosition(
-          entry.boardId, entry.wallIndex, entry.x, entry.y, undefined, undefined, entry.side
-        )
-      } else {
-        // record:false — the caller has already moved this entry between the
-        // undo and redo stacks; recording again would push a duplicate and
-        // clear the redo stack the caller just wrote to.
-        unfoldedResizeRef.current?.(entry.boardId, entry.widthIn, entry.heightIn, false)
-      }
-    },
-    [updateBoardPosition]
-  )
-
-  /**
-   * Arrow-key nudges are coalesced into ONE undo entry per run.
-   *
-   * A held arrow key repeats at the OS rate, and every repeat used to push its
-   * own snapshot — about two seconds of holding filled the 50-entry stack, so
-   * Ctrl+Z could no longer reach anything from before the nudge and instead
-   * walked back through the nudge one inch at a time. A run of nudges on one
-   * board is a single edit; only the position it started from is worth keeping.
-   */
-  const nudgeRunRef = useRef<{ boardId: string; at: number } | null>(null)
-  const NUDGE_RUN_MS = 700
-
-  const handleUnfoldedBoardMove = useCallback(
-    (
-      boardId: string,
-      wallIndex: number,
-      x: number,
-      y: number,
-      side: 'front' | 'back',
-      source: 'drag' | 'nudge' | 'place' = 'drag'
-    ) => {
-      const now = Date.now()
-      const run = nudgeRunRef.current
-      const continuesRun =
-        source === 'nudge' && run?.boardId === boardId && now - run.at < NUDGE_RUN_MS
-      nudgeRunRef.current = source === 'nudge' ? { boardId, at: now } : null
-
-      // A board being placed for the first time has no prior position, so
-      // there is nothing to go back to and nothing is pushed. Undoing an ADD
-      // would be a delete, which is a different operation with its own window.
-      if (!continuesRun) {
-        const prior = unfoldedMoveSnapshot(boardId)
-        if (prior) pushUnfoldedEdit(prior)
-      }
-      void updateBoardPosition(boardId, wallIndex, x, y, undefined, undefined, side)
-    },
-    [unfoldedMoveSnapshot, pushUnfoldedEdit, updateBoardPosition]
-  )
-
-  /** The state an entry is being undone FROM, so redo can return to it. */
-  const unfoldedCurrent = useCallback(
-    (entry: UnfoldedEdit): UnfoldedEdit | null =>
-      entry.kind === 'move' ? unfoldedMoveSnapshot(entry.boardId) : unfoldedSizeSnapshot(entry.boardId),
-    [unfoldedMoveSnapshot, unfoldedSizeSnapshot]
-  )
-
-  const handleUnfoldedUndo = useCallback(() => {
-    // Deletes first, same order as the 3D room: the thing you just did is the
-    // thing Ctrl+Z should take back, and a held delete is always more recent
-    // than anything still on the edit stack.
-    if (undoPendingDelete()) return
-    const stack = unfoldedUndoRef.current
-    if (stack.length === 0) return
-    const entry = stack[stack.length - 1]
-    const current = unfoldedCurrent(entry)
-    unfoldedUndoRef.current = stack.slice(0, -1)
-    if (current) unfoldedRedoRef.current = [...unfoldedRedoRef.current, current]
-    // A fresh run, so the next nudge starts its own undo entry rather than
-    // being folded into the one just undone.
-    nudgeRunRef.current = null
-    applyUnfoldedEdit(entry)
-  }, [undoPendingDelete, unfoldedCurrent, applyUnfoldedEdit])
-
-  const handleUnfoldedRedo = useCallback(() => {
-    const stack = unfoldedRedoRef.current
-    if (stack.length === 0) return
-    const entry = stack[stack.length - 1]
-    const current = unfoldedCurrent(entry)
-    unfoldedRedoRef.current = stack.slice(0, -1)
-    if (current) unfoldedUndoRef.current = [...unfoldedUndoRef.current, current]
-    nudgeRunRef.current = null
-    applyUnfoldedEdit(entry)
-  }, [unfoldedCurrent, applyUnfoldedEdit])
-
-  /**
-   * Resize a sheet from the unfolded view.
-   *
-   * Size is absolute inches on the board record, not a fraction of the wall,
-   * so this is the PATCH the lightbox's size picker uses rather than the
-   * position PUT — passing inches through updateBoardPosition would write the
-   * legacy percentage fields, which nothing reads for size any more, and the
-   * sheet would snap back on the next load.
-   */
-  const handleUnfoldedBoardResize = useCallback(
-    (boardId: string, widthIn: number, heightIn: number, record = true) => {
-      const board = localBoards.find((b) => b.id === boardId)
-      const pos = board?.position
-      if (!board || !pos || pos.wallIndex == null) return
-
-      if (record) {
-        const prior = unfoldedSizeSnapshot(boardId)
-        if (prior) pushUnfoldedEdit(prior)
-      }
-
-      const priorW = board.boardWidthIn
-      const priorH = board.boardHeightIn
-      applyBoardSizeLocal(boardId, widthIn, heightIn)
-
-      const isMockBoard =
-        boardId.startsWith('temp-') || boardId.startsWith('demo-') || boardId.startsWith('sample-')
-      if (isMockBoard) return
-
-      // Same per-board queue as every other board write, so a resize and a move
-      // for the same sheet can't land out of order.
-      enqueueBoardWrite(boardId, () =>
-        fetch(`/api/boards/${boardId}/position`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          keepalive: true,
-          body: JSON.stringify({
-            wallIndex: pos.wallIndex,
-            x: pos.x,
-            y: pos.y,
-            boardWidthIn: widthIn,
-            boardHeightIn: heightIn,
-            side: pos.side || 'front',
-          }),
-        })
-      )
-        .then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        })
-        .catch((err) => {
-          console.error('❌ [StudioRoom] Unfolded resize failed:', err)
-          // Put the size back rather than leaving the screen claiming a change
-          // that never saved. Boards with no stored inches had none to restore,
-          // so those keep the optimistic value until the next load corrects it.
-          if (priorW != null && priorH != null) applyBoardSizeLocal(boardId, priorW, priorH)
-          toast.error('Could not resize that board.')
-        })
-    },
-    [localBoards, applyBoardSizeLocal, unfoldedSizeSnapshot, pushUnfoldedEdit]
-  )
-
-  useEffect(() => {
-    unfoldedResizeRef.current = handleUnfoldedBoardResize
-  }, [handleUnfoldedBoardResize])
-
-  /** Boards in this room that aren't on a wall yet — what the + button offers. */
-  const unplacedBoards = useMemo(
-    () => localBoards.filter((b) => b.position?.wallIndex == null),
-    [localBoards]
-  )
-
-  // Leaving the unfolded view ends its history, for the same reason wall edit
-  // clears its own: a stack of moves is only meaningful inside the session that
-  // made them, and replaying one later would move boards the user is no longer
-  // looking at.
-  useEffect(() => {
-    if (roomView === 'unfolded') return
-    unfoldedUndoRef.current = []
-    unfoldedRedoRef.current = []
-  }, [roomView])
-
 
   /**
    * Send every held delete immediately.
@@ -2581,13 +2303,6 @@ export default function StudioRoom(props: StudioRoomProps) {
         return
       }
 
-      // The unfolded view runs its own keyboard handler, on this same window.
-      // preventDefault does not stop a sibling listener on the same target, so
-      // without this both fire: one Ctrl+Z called undoPendingDelete() twice and
-      // brought back TWO deleted boards, and Escape cleared two selections.
-      // Unfolded owns these keys while it is up.
-      if (roomView === 'unfolded' && editingWall === null) return
-
       // Ctrl/Cmd+Z = undo, Ctrl/Cmd+Y = redo, Ctrl/Cmd+C = copy, Ctrl/Cmd+V
       // = paste. metaKey covers Cmd on macOS; the browser's native `paste`
       // event already fires on Cmd+V, so Cmd+V is handled by the window
@@ -2791,6 +2506,7 @@ export default function StudioRoom(props: StudioRoomProps) {
           mode={props.floorEditorMode ?? 'tables'}
           onWallConfigChange={props.onWallConfigChange}
           boardWallIndices={boardWallIndices}
+          boards={localBoards}
           onWallRemoved={handleWallRemoved}
           onPersistWallConfig={handlePersistWallConfig}
           canDeleteWalls={props.canDeleteWalls ?? false}
@@ -2850,7 +2566,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         <div className="fixed left-6 top-48 z-50 flex flex-col gap-2 w-56">
           <button
             onClick={handleAddText}
-            className="px-4 py-2 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-lg text-sm font-medium flex items-center justify-center gap-2"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-full border border-[#16181D]/[0.12] bg-white px-5 py-2.5 text-sm font-semibold text-[#16181D] shadow-[0_8px_24px_rgba(22,24,29,0.10)] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6]"
           >
             <span className="text-lg leading-none text-indigo-600">＋</span>
             Add text
@@ -2914,54 +2630,6 @@ export default function StudioRoom(props: StudioRoomProps) {
         </div>
       )}
 
-      {/* Hidden in the 2D view, which is itself a list of everyone — a floating
-          roster there would both duplicate it and sit on top of the grid. */}
-      {editingWall === null && roomView !== '2d' && rosterOpen && (
-        <RosterPanel
-          students={roomStudents}
-          selectedStudentId={selectedStudentId}
-          onSelect={handleSelectStudent}
-        />
-      )}
-
-      {editingWall === null && roomView === 'unfolded' && (
-        <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
-          <UnfoldedView
-            boards={localBoards}
-            wallConfig={props.wallConfig}
-            students={roomStudents}
-            selectedStudentId={selectedStudentId}
-            onSelectStudent={handleSelectStudent}
-            onBoardClick={handleLightboxOpen}
-            // Same gate the wall-edit board tools use. A viewer who cannot
-            // change boards is never offered the Edit toggle at all, rather
-            // than being offered it and told no when they try to save.
-            canEdit={isWorkspaceMember}
-            onBoardMove={handleUnfoldedBoardMove}
-            onBoardResize={handleUnfoldedBoardResize}
-            onBoardDelete={handleBoardDelete}
-            onUndo={handleUnfoldedUndo}
-            onRedo={handleUnfoldedRedo}
-            unplacedBoards={unplacedBoards}
-            onPlaceBoard={(board, wallIndex, x, y) =>
-              handleUnfoldedBoardMove(board.id, wallIndex, x, y, 'front', 'place')
-            }
-          />
-        </div>
-      )}
-
-      {/* PLAN is the room editor now — there is no "Reconfigure walls" button
-          because arriving here IS reconfiguring. Anyone who can edit gets the
-          real editor (stretch/rotate/move walls, place models) drawn at the
-          plan's own scale; anyone who cannot still gets the read-only plan,
-          because a student needs to see the layout even though they can't
-          change it.
-
-          NOTE: this was the modal editor's only entry point, so the
-          floorEditorOpen branch below is now unreachable — nothing calls
-          setFloorEditorOpen(true) any more. Left mounted rather than ripped
-          out, since it is the same component this renders inline and is the
-          way back if the inline plan needs to fall back to a modal. */}
       {editingWall === null && roomView === 'plan' && (
         <div className="fixed inset-0 z-20" style={{ bottom: REVISION_STRIP_CLEARANCE }}>
           {canEditRoomLayout ? (
@@ -2976,6 +2644,7 @@ export default function StudioRoom(props: StudioRoomProps) {
               onModeChange={setPlanEditMode}
               onWallConfigChange={props.onWallConfigChange}
               boardWallIndices={boardWallIndices}
+              boards={localBoards}
               onWallRemoved={handleWallRemoved}
               onPersistWallConfig={handlePersistWallConfig}
               canDeleteWalls={props.canDeleteWalls ?? false}
@@ -3061,7 +2730,7 @@ export default function StudioRoom(props: StudioRoomProps) {
           enabled={editingWall === null} below (unchanged) now actually does
           something: previously this Canvas only ever mounted with
           editingWall already non-null, so that comparison was always false
-          and orbit was permanently disabled. Unfolded/Plan stay pure DOM/CSS,
+          and orbit was permanently disabled. 2D/Plan stay pure DOM/CSS,
           unaffected by any of this. Wall-edit entry is WallSystem's
           onWallDoubleClick (double-click a wall surface), wired below to
           handleWallDoubleClick — unchanged. */}
