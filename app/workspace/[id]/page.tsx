@@ -10,6 +10,7 @@ import { useAccountMode } from '@/lib/useAccountMode'
 import { useProfile } from '@/lib/ProfileContext'
 import PublishConfirmModal, { NetworkMetadata } from '@/components/PublishConfirmModal'
 import type { Department, YearLevel } from '@/lib/constants/departments'
+import type { Studio } from '@/lib/constants/studios'
 import GridPreview from '@/components/ui/GridPreview'
 import {
   DndContext,
@@ -357,6 +358,7 @@ export default function WorkspaceRoomsPage() {
         body: JSON.stringify({
           department: metadata.department,
           yearLevel: metadata.year,
+          studio: metadata.studio,
           instructor: metadata.instructor,
           academicYear: metadata.academicYear,
         }),
@@ -374,6 +376,7 @@ export default function WorkspaceRoomsPage() {
           networkMetadata: {
             department: metadata.department as Department,
             year: metadata.year as YearLevel,
+            studio: metadata.studio as Studio | undefined,
           },
           academicYear: metadata.academicYear,
           instructor: metadata.instructor,

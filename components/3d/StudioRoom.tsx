@@ -122,9 +122,9 @@ interface StudioRoomProps {
   onFloorEditorOpenChange?: (open: boolean) => void
   /**
    * Which reading of the room is on screen. Controlled/uncontrolled like
-   * floorEditorOpen above: lifted so the page's menu beside Share can switch to
-   * 2D and Presentation, which no longer have tabs in the bottom strip. Omit
-   * both and the room keeps its own state exactly as before.
+   * floorEditorOpen above: lifted so the page's Presentation button beside
+   * Share can switch to Presentation, which has no tab in the bottom strip.
+   * Omit both and the room keeps its own state exactly as before.
    */
   roomView?: RoomView
   onRoomViewChange?: (view: RoomView) => void

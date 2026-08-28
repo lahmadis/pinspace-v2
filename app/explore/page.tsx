@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
 import DemoBanner from '@/components/DemoBanner'
 import { prefetchStudioView } from '@/lib/studioViewCache'
+import { STUDIOS } from '@/lib/constants/studios'
 
 type StudioResponse = {
   studios: BubbleNode[]
@@ -17,6 +18,18 @@ type StudioResponse = {
 
 /** How many matched names to spell out before collapsing to a count. */
 const MAX_NAMED_PEOPLE = 3
+
+/**
+ * Bucket for spaces published before sections existed, i.e. with no
+ * network_metadata.studio.
+ *
+ * They need a bucket rather than a filter: dropping them would make every
+ * already-published studio in the network vanish the moment this level shipped,
+ * and the drill-down is the only way into them. The label is deliberately not a
+ * plausible studio name — it must never collide with a real value from
+ * lib/constants/studios, since the two are compared as plain strings here.
+ */
+const UNFILED_STUDIO = 'Not in a studio'
 
 
 function ExplorePageInner() {
@@ -34,12 +47,27 @@ function ExplorePageInner() {
   const [networkLabel, setNetworkLabel] = useState<string | null>(null)
 
   type ViewMode = 'flat' | 'hierarchy'
-  type HierarchyLevel = 'years' | 'departments' | 'studios'
+  /**
+   * The drill-down, one entry per level: year → department → studio → section.
+   *
+   * 'studios' is the level that was inserted here, and the rename underneath it
+   * is the part to read carefully. What used to be called 'studios' — the
+   * workspace bubbles — is now 'sections', because that is what a workspace is:
+   * one instructor's section of a studio. 'studios' now means the BUCKET
+   * (Studio 01 … Thesis Studio), which is a group-by over
+   * network_metadata.studio and not a row anywhere.
+   *
+   * Ten sections of Studio 01 used to land as ten sibling bubbles in a year's
+   * department, indistinguishable from the eight other studios' sections. The
+   * extra level is what makes "show me Studio 01" a thing you can click.
+   */
+  type HierarchyLevel = 'years' | 'departments' | 'studios' | 'sections'
 
   const [viewMode, setViewMode] = useState<ViewMode>('flat')
   const [hierarchyLevel, setHierarchyLevel] = useState<HierarchyLevel>('years')
   const [selectedYear, setSelectedYear] = useState<string | number | null>(null)
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
+  const [selectedStudio, setSelectedStudio] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   // Starts as All Years and is narrowed once we know which years actually have
   // published rooms. It used to start at today's calendar year, which meant
@@ -210,8 +238,14 @@ function ExplorePageInner() {
     } else if (hierarchyLevel === 'departments') {
       setSelectedDepartment(node.department || node.label)
       setHierarchyLevel('studios')
+    } else if (hierarchyLevel === 'studios') {
+      // Reads `studio` off the bucket node, which displayedNodes set from the
+      // group key — including UNFILED_STUDIO, so the unfiled bucket drills in
+      // like any other rather than being a dead bubble.
+      setSelectedStudio(node.studio ?? node.label)
+      setHierarchyLevel('sections')
     } else {
-      // Studios level: multi-room drills in-place; single-room opens directly.
+      // Sections level: multi-room drills in-place; single-room opens directly.
       if (node.publishedRooms && node.publishedRooms.length > 1) {
         setRoomDrillWorkspace(node)
         return
@@ -272,16 +306,65 @@ function ExplorePageInner() {
       })) as BubbleNode[]
     }
 
+    // Year + department are the filter every level below them shares, so it is
+    // written once here rather than repeated in the two branches under it.
+    const inSelectedYearAndDept = (n: BubbleNode) => {
+      const matchYear = selectedYear === null ? true : (n.year ?? '').toString() === selectedYear.toString()
+      const matchDept = selectedDepartment === null ? true : (n.department ?? '') === selectedDepartment
+      return matchYear && matchDept
+    }
+
     if (hierarchyLevel === 'studios') {
+      const scoped = source.filter(inSelectedYearAndDept)
+      // Counted, not just listed: a studio bucket with two sections and one
+      // with eleven are the same bubble otherwise, and `count` is what sizes
+      // them. Sections carry `count` = board total, so summing keeps the
+      // bucket's size proportional to the work inside it rather than to the
+      // number of sections, which is the same rule the level below uses.
+      const buckets = new Map<string, { sections: number; boards: number }>()
+      for (const n of scoped) {
+        const key = n.studio ?? UNFILED_STUDIO
+        const b = buckets.get(key) ?? { sections: 0, boards: 0 }
+        b.sections += 1
+        b.boards += n.count ?? 0
+        buckets.set(key, b)
+      }
+      return Array.from(buckets.entries())
+        // Ordered by the canonical list, not alphabetically: Studio 01 → 08 is
+        // a progression through the degree, and sorting the strings would open
+        // with 'Global Research Studio' because G precedes S. Anything not in
+        // the list — the unfiled bucket, or a value from a future edit to
+        // STUDIOS this build predates — gets index -1, so it is pushed to the
+        // end rather than silently leading the row.
+        .sort(([a], [b]) => {
+          const ia = STUDIOS.indexOf(a as (typeof STUDIOS)[number])
+          const ib = STUDIOS.indexOf(b as (typeof STUDIOS)[number])
+          return (ia === -1 ? STUDIOS.length : ia) - (ib === -1 ? STUDIOS.length : ib)
+        })
+        .map(([studio, { sections, boards }], idx) => ({
+          id: `studio-${studio}-${idx}`,
+          label: studio,
+          name: studio,
+          studio,
+          year: selectedYear ?? undefined,
+          department: selectedDepartment ?? undefined,
+          count: boards,
+          sectionCount: sections,
+          color: '#3B6EF6',
+          radius: 70,
+        })) as BubbleNode[]
+    }
+
+    if (hierarchyLevel === 'sections') {
       return source.filter(n => {
-        const matchYear = selectedYear === null ? true : (n.year ?? '').toString() === selectedYear.toString()
-        const matchDept = selectedDepartment === null ? true : (n.department ?? '') === selectedDepartment
-        return matchYear && matchDept
+        if (!inSelectedYearAndDept(n)) return false
+        if (selectedStudio === null) return true
+        return (n.studio ?? UNFILED_STUDIO) === selectedStudio
       })
     }
 
     return source
-  }, [roomDrillWorkspace, viewMode, hierarchyLevel, searchFilteredNodes, selectedYear, selectedDepartment])
+  }, [roomDrillWorkspace, viewMode, hierarchyLevel, searchFilteredNodes, selectedYear, selectedDepartment, selectedStudio])
 
   return (
     <div className="min-h-screen bg-[#E6ECFC]">
@@ -356,6 +439,7 @@ function ExplorePageInner() {
                   setHierarchyLevel('years')
                   setSelectedYear(null)
                   setSelectedDepartment(null)
+                  setSelectedStudio(null)
                   setRoomDrillWorkspace(null)
                 }}
                 className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
@@ -372,6 +456,7 @@ function ExplorePageInner() {
                   setHierarchyLevel('years')
                   setSelectedYear(null)
                   setSelectedDepartment(null)
+                  setSelectedStudio(null)
                   setRoomDrillWorkspace(null)
                 }}
                 className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
@@ -381,7 +466,7 @@ function ExplorePageInner() {
                 }`}
               >
                 <span className="sm:hidden">Years</span>
-                <span className="hidden sm:inline">Year → Dept → Space</span>
+                <span className="hidden sm:inline">Year → Dept → Studio → Section</span>
               </button>
             </div>
           </div>
@@ -468,21 +553,56 @@ function ExplorePageInner() {
           component's legend is now wired against, so it is gone rather than
           re-coloured. */}
 
-      {/* Floating back pill — shown while drilled into a workspace's rooms.
-          Clearing roomDrillWorkspace lands back one level (studios list in
-          either flat or hierarchy mode, since no other view state changed). */}
-      {roomDrillWorkspace && (
-        <button
-          type="button"
-          onClick={() => setRoomDrillWorkspace(null)}
-          aria-label="Back to spaces"
-          className="fixed left-4 z-30 flex items-center gap-2 max-w-[70vw] px-4 py-2 rounded-full bg-white/85 hover:bg-white text-[#16181D] text-sm font-medium border border-[#16181D]/10 backdrop-blur-sm shadow-lg transition-colors"
-          style={{ top: measuredHeaderHeight + (!isDemo && availableAcademicYears.length > 0 ? 44 : 0) + 12 }}
-        >
-          <span aria-hidden className="text-base leading-none">←</span>
-          <span className="truncate">{roomDrillWorkspace.name}</span>
-        </button>
-      )}
+      {/* Floating back pill.
+          It used to exist ONLY for the room drill, which meant the hierarchy
+          had no way back at all — you got to the studios list and your only
+          exit was the mode button, which resets to years. That was survivable
+          at three levels and is not at four, so the pill now walks the whole
+          stack: rooms → sections → studios → departments → years.
+
+          It names where you ARE, not where it takes you — the same thing the
+          room-drill version did with the workspace name — because on a canvas
+          of unlabelled sibling bubbles the useful information is which bucket
+          you are inside. */}
+      {(() => {
+        const back =
+          roomDrillWorkspace
+            ? { label: roomDrillWorkspace.name, go: () => setRoomDrillWorkspace(null) }
+            : viewMode !== 'hierarchy'
+              ? null
+              : hierarchyLevel === 'sections'
+                ? {
+                    label: selectedStudio ?? 'Studio',
+                    go: () => { setSelectedStudio(null); setHierarchyLevel('studios') },
+                  }
+                : hierarchyLevel === 'studios'
+                  ? {
+                      label: selectedDepartment ?? 'Department',
+                      go: () => { setSelectedDepartment(null); setHierarchyLevel('departments') },
+                    }
+                  : hierarchyLevel === 'departments'
+                    ? {
+                        label:
+                          selectedYear === 'Masters'
+                            ? 'Masters'
+                            : selectedYear !== null ? `Year ${selectedYear}` : 'Year',
+                        go: () => { setSelectedYear(null); setHierarchyLevel('years') },
+                      }
+                    : null
+        if (!back) return null
+        return (
+          <button
+            type="button"
+            onClick={back.go}
+            aria-label="Back one level"
+            className="fixed left-4 z-30 flex items-center gap-2 max-w-[70vw] px-4 py-2 rounded-full bg-white/85 hover:bg-white text-[#16181D] text-sm font-medium border border-[#16181D]/10 backdrop-blur-sm shadow-lg transition-colors"
+            style={{ top: measuredHeaderHeight + (!isDemo && availableAcademicYears.length > 0 ? 44 : 0) + 12 }}
+          >
+            <span aria-hidden className="text-base leading-none">←</span>
+            <span className="truncate">{back.label}</span>
+          </button>
+        )
+      })()}
     </div>
   )
 }

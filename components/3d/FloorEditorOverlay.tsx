@@ -159,34 +159,54 @@ function formatFeetInches(totalInches: number): string {
 type Point2 = { x: number; z: number }
 
 /**
- * The two ends of a wall's long axis, in world inches.
- *
- * Walls are stored as midpoint + angle + width, never as endpoints, so these
- * are derived. The width axis is (+cosθ, −sinθ) to match Three.js Ry(θ) — the
- * same convention the corner math and the stretch handler already use; getting
- * the z-sign wrong here mirrors the wall.
+ * Half a wall's plan thickness, in inches — walls draw and build 6" thick.
  */
-function wallEndpoints(t: { x: number; z: number; rotationY: number; width: number }): {
-  start: Point2
-  end: Point2
-} {
-  const half = t.width / 2
-  const axisX = Math.cos(t.rotationY)
-  const axisZ = -Math.sin(t.rotationY)
-  return {
-    start: { x: t.x - half * axisX, z: t.z - half * axisZ },
-    end: { x: t.x + half * axisX, z: t.z + half * axisZ },
-  }
+const WALL_HALF_THICKNESS_IN = 3
+
+/**
+ * The four plan corners of a wall, in world inches, in the order
+ * start-back, end-back, end-front, start-front.
+ *
+ * Walls are stored as midpoint + angle + width, never as corners, so these are
+ * derived. Both axes follow Three.js Ry(θ): the long axis (local +X) is
+ * (+cosθ, −sinθ) and the thickness axis (local +Z) is (+sinθ, +cosθ). Same
+ * convention as the render geometry below, so a handle drawn from these lands
+ * exactly on the drawn polygon's corner; get the z-sign wrong and the wall
+ * mirrors.
+ *
+ * Corners, NOT centre-line ends, are what the snap works in. Two walls whose
+ * centre-line ends coincide overlap by half a thickness each and read as a
+ * crossed joint with a stub poking out the far side — which is what an L-corner
+ * used to look like here. Two walls sharing a CORNER meet flush.
+ */
+function wallCorners(t: { x: number; z: number; rotationY: number; width: number }): Point2[] {
+  const halfW = t.width / 2
+  const halfD = WALL_HALF_THICKNESS_IN
+  const cos = Math.cos(t.rotationY)
+  const sin = Math.sin(t.rotationY)
+  return [
+    { x: t.x - halfW * cos - halfD * sin, z: t.z + halfW * sin - halfD * cos },
+    { x: t.x + halfW * cos - halfD * sin, z: t.z - halfW * sin - halfD * cos },
+    { x: t.x + halfW * cos + halfD * sin, z: t.z - halfW * sin + halfD * cos },
+    { x: t.x - halfW * cos + halfD * sin, z: t.z + halfW * sin + halfD * cos },
+  ]
 }
 
 /**
- * Closest endpoint belonging to a DIFFERENT wall, within `threshold`, or null.
- *
- * `excludeIndex` is what keeps a wall from snapping to its own other end (which
- * would collapse it). Strict `<` means an exact-threshold candidate doesn't
- * snap, and ties keep the first found rather than flapping between equals.
+ * Which end of the wall each corner from `wallCorners` belongs to — so a corner
+ * handle knows which end the stretch gesture should move.
  */
-function nearestOtherEndpoint(
+const CORNER_END: ReadonlyArray<'start' | 'end'> = ['start', 'end', 'end', 'start']
+
+/**
+ * Closest corner belonging to a DIFFERENT wall, within `threshold`, or null.
+ *
+ * `excludeIndex` is what keeps a wall from snapping to its own other corners
+ * (which would collapse it). Strict `<` means an exact-threshold candidate
+ * doesn't snap, and ties keep the first found rather than flapping between
+ * equals.
+ */
+function nearestOtherCorner(
   wallConfig: WallConfig,
   excludeIndex: number,
   point: Point2,
@@ -197,8 +217,7 @@ function nearestOtherEndpoint(
   for (let i = 0; i < wallConfig.walls.length; i++) {
     if (i === excludeIndex) continue
     const t = getWallTransformResolved(wallConfig, i)
-    const { start, end } = wallEndpoints(t)
-    for (const candidate of [start, end]) {
+    for (const candidate of wallCorners(t)) {
       const dx = candidate.x - point.x
       const dz = candidate.z - point.z
       const distSq = dx * dx + dz * dz
@@ -634,18 +653,18 @@ export default function FloorEditorOverlay({
         const rawX = wallDragStart.x + deltaPx * invScale
         const rawZ = wallDragStart.z + deltaPy * invScale
 
-        // Translate the whole wall so whichever of ITS endpoints is closest to a
-        // neighbour's endpoint lands exactly on it. Both ends are candidates;
-        // the smaller correction wins.
+        // Translate the whole wall so whichever of ITS CORNERS is closest to a
+        // neighbour's corner lands exactly on it. All four corners are
+        // candidates; the smaller correction wins. Corner-to-corner is what
+        // makes an L-joint flush — see wallCorners.
         let appliedX = rawX
         let appliedZ = rawZ
         let snapped: Point2 | null = null
         if (snapEnabledRef.current !== shiftHeldRef.current) {
           const t = getWallTransformResolved(wallConfig, draggingWallIndex)
-          const ends = wallEndpoints({ ...t, x: rawX, z: rawZ })
           let bestDistSq = Infinity
-          for (const own of [ends.start, ends.end]) {
-            const target = nearestOtherEndpoint(
+          for (const own of wallCorners({ ...t, x: rawX, z: rawZ })) {
+            const target = nearestOtherCorner(
               wallConfig, draggingWallIndex, own, ENDPOINT_SNAP_THRESHOLD_IN
             )
             if (!target) continue
@@ -719,7 +738,7 @@ export default function FloorEditorOverlay({
         const MIN_WALL_INCHES = 24
         const rawWidthInches = Math.max(MIN_WALL_INCHES, stretchStart.initialWidthInches + signedDelta)
 
-        // Endpoint snap for the stretch gesture adjusts LENGTH only. Stretching
+        // Corner snap for the stretch gesture adjusts LENGTH only. Stretching
         // must not translate or rotate the wall, so the dragged end is snapped
         // to the target's projection onto the wall axis: any perpendicular
         // offset (at most the threshold) is left in place deliberately rather
@@ -733,20 +752,37 @@ export default function FloorEditorOverlay({
           const fixedZ = stretchStart.initialCenterZ - sign * halfInit * stretchStart.axisZ
           const movingX = fixedX + sign * rawWidthInches * stretchStart.axisX
           const movingZ = fixedZ + sign * rawWidthInches * stretchStart.axisZ
-          const target = nearestOtherEndpoint(
-            wallConfig,
-            stretchingWallIndex,
-            { x: movingX, z: movingZ },
-            ENDPOINT_SNAP_THRESHOLD_IN
-          )
-          if (target) {
+          // Both CORNERS of the moving end are candidates, not the centre-line
+          // point between them. The thickness axis is (+sinθ, +cosθ); axis =
+          // (cosθ, −sinθ) is all stretchStart carries, so recover it as
+          // (−axisZ, +axisX) rather than re-deriving θ.
+          const perpX = -stretchStart.axisZ
+          const perpZ = stretchStart.axisX
+          let bestDistSq = Infinity
+          for (const s of [-1, 1]) {
+            const cornerX = movingX + s * WALL_HALF_THICKNESS_IN * perpX
+            const cornerZ = movingZ + s * WALL_HALF_THICKNESS_IN * perpZ
+            const target = nearestOtherCorner(
+              wallConfig,
+              stretchingWallIndex,
+              { x: cornerX, z: cornerZ },
+              ENDPOINT_SNAP_THRESHOLD_IN
+            )
+            if (!target) continue
+            const dx = target.x - cornerX
+            const dz = target.z - cornerZ
+            const distSq = dx * dx + dz * dz
+            if (distSq >= bestDistSq) continue
+            // The two corners of one end share an along-axis coordinate, so the
+            // width falls out of the target's projection from the fixed
+            // centre-line end whichever corner matched.
             const along =
               (target.x - fixedX) * stretchStart.axisX + (target.z - fixedZ) * stretchStart.axisZ
             const candidateWidth = along * sign
-            if (candidateWidth >= MIN_WALL_INCHES) {
-              nextWidthInches = candidateWidth
-              snapped = target
-            }
+            if (candidateWidth < MIN_WALL_INCHES) continue
+            bestDistSq = distSq
+            nextWidthInches = candidateWidth
+            snapped = target
           }
         }
         setActiveSnapTarget(snapped)
@@ -1067,7 +1103,7 @@ export default function FloorEditorOverlay({
   const wallGeometry = wallConfig.walls.map((_, index) => {
     const transform = getWallTransformResolved(wallConfig, index)
     const halfW = transform.width / 2
-    const halfD = 3 // half-thickness = 3 inches
+    const halfD = WALL_HALF_THICKNESS_IN
     const cos = Math.cos(transform.rotationY)
     const sin = Math.sin(transform.rotationY)
 
@@ -1091,7 +1127,9 @@ export default function FloorEditorOverlay({
       screenCorners[3][0], screenCorners[3][1],
     ]
 
-    // Endpoints (midpoints of short ends): start = midpoint(0,3), end = midpoint(1,2)
+    // Centre-line ends (midpoints of the short ends). No longer where the
+    // stretch handles are drawn — those sit on the corners now — but still the
+    // wall's long axis in screen space, which is what picks the resize cursor.
     // Width axis matches Three.js: (+cosθ, −sinθ).
     const startX = transform.x - halfW * cos
     const startZ = transform.z + halfW * sin
@@ -1131,6 +1169,21 @@ export default function FloorEditorOverlay({
       outUy: outDy / outLen,
     }
   })
+
+  /**
+   * Geometry of the one wall that carries handles.
+   *
+   * Rotate and corner handles used to be drawn on EVERY wall at once, so a
+   * four-wall room showed twelve grab points and four spokes over the linework
+   * before you had touched anything — the drawing read as a diagram of handles
+   * rather than a plan. They belong to the selection now: click a wall, get its
+   * handles. Indexed rather than found, and guarded, because the selection
+   * survives a wall delete that shortens the array.
+   */
+  const selectedGeom =
+    mode === 'walls' && selectedWallIndex != null
+      ? wallGeometry[selectedWallIndex] ?? null
+      : null
 
   // ── Grid pattern coords ───────────────────────────────────────────────────
   // World-aligned 12-inch grid, across the WHOLE canvas rather than clipped to
@@ -1434,10 +1487,17 @@ export default function FloorEditorOverlay({
                       style={{ pointerEvents: 'none' }}
                     />
                   )}
-                  {/* Wall name, set just off the front face.
+                  {/* Wall name, set just off the front face and RUNNING ALONG
+                      the wall.
                       The offset direction is derived from the polygon's own
                       centroid rather than assumed, so it stays on the outside
-                      for a wall at any rotation instead of landing under it. */}
+                      for a wall at any rotation instead of landing under it.
+                      The rotation is the other half of that: horizontal text
+                      beside a vertical wall is only 14px clear at its midpoint
+                      and lies straight across the wall for the rest of its
+                      length, which is what WALL 02 and WALL 04 were doing. Set
+                      along the wall it stays parallel and clear at every
+                      character, and reads like a drafting label. */}
                   {mode === 'walls' && (() => {
                     const cx = (points[0] + points[2] + points[4] + points[6]) / 4
                     const cy = (points[1] + points[3] + points[5] + points[7]) / 4
@@ -1446,10 +1506,26 @@ export default function FloorEditorOverlay({
                     const dx = fmx - cx
                     const dy = fmy - cy
                     const len = Math.hypot(dx, dy) || 1
+                    // The front edge IS the wall's long axis in screen space,
+                    // so no need to re-derive it from rotationY (which would
+                    // also have to re-apply the projection's handedness).
+                    let angle =
+                      (Math.atan2(frontEdge[3] - frontEdge[1], frontEdge[2] - frontEdge[0]) * 180) /
+                      Math.PI
+                    // Fold into (−90, 90] so the label is never upside down or
+                    // mirrored — a wall and the same wall turned 180° carry the
+                    // same name, so the reading direction shouldn't flip.
+                    if (angle > 90) angle -= 180
+                    else if (angle < -90) angle += 180
                     return (
                       <text
-                        x={fmx + (dx / len) * 14}
-                        y={fmy + (dy / len) * 14 + 3.5}
+                        // translate-then-rotate: x/y below are in the label's
+                        // own frame, so the 3.5 baseline nudge stays a vertical
+                        // centring of the glyphs and doesn't become a sideways
+                        // shift once the wall is turned.
+                        transform={`translate(${fmx + (dx / len) * 14}, ${fmy + (dy / len) * 14}) rotate(${angle})`}
+                        x={0}
+                        y={3.5}
                         textAnchor="middle"
                         fill={isSelected ? ROOM.accent : '#8A8FA0'}
                         fontSize={10}
@@ -1480,36 +1556,39 @@ export default function FloorEditorOverlay({
                 )
               })()}
 
-              {/* Rotate handle lines (wall center → handle) */}
-              {mode === 'walls' && wallGeometry.map(({ index, centerPx, centerPy, handlePx, handlePy }) => (
-                <line
-                  key={`rline-${index}`}
-                  x1={centerPx} y1={centerPy}
-                  x2={handlePx} y2={handlePy}
-                  stroke={ROOM.accent}
-                  strokeWidth={1}
-                  style={{ pointerEvents: 'none' }}
-                />
-              ))}
-
-              {/* Rotate handle circles */}
-              {mode === 'walls' && wallGeometry.map(({ index, handlePx, handlePy }) => (
-                <circle
-                  key={`rhandle-${index}`}
-                  cx={handlePx} cy={handlePy} r={5}
-                  fill={ROOM.accent}
-                  style={{ pointerEvents: 'all', cursor: 'crosshair' }}
-                  onPointerDown={(e) => handleWallRotatePointerDown(index, e)}
-                />
-              ))}
-
-              {/* Stretch endpoint circles (visible) */}
-              {mode === 'walls' && wallGeometry.map(({ index, startPx, startPy, endPx, endPy }) => (
-                <g key={`stretch-vis-${index}`} style={{ pointerEvents: 'none' }}>
-                  <circle cx={startPx} cy={startPy} r={5.5} fill="#ffffff" stroke={ROOM.accent} strokeWidth={2} />
-                  <circle cx={endPx} cy={endPy} r={5.5} fill="#ffffff" stroke={ROOM.accent} strokeWidth={2} />
+              {/* Handles — the SELECTED wall only. Rotate spoke and circle,
+                  then a corner grip at each of the four corners.
+                  The grips used to sit on the two centre-line ends, which put
+                  the connection point half a wall-thickness inside the drawing:
+                  you welded two walls by their centre-lines and got a crossed
+                  joint with a stub through the corner instead of a flush L.
+                  The snap works corner-to-corner now (see wallCorners), so the
+                  grips are drawn where the snap actually lands. */}
+              {selectedGeom && (
+                <g>
+                  <line
+                    x1={selectedGeom.centerPx} y1={selectedGeom.centerPy}
+                    x2={selectedGeom.handlePx} y2={selectedGeom.handlePy}
+                    stroke={ROOM.accent}
+                    strokeWidth={1}
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  <circle
+                    cx={selectedGeom.handlePx} cy={selectedGeom.handlePy} r={5}
+                    fill={ROOM.accent}
+                    style={{ pointerEvents: 'all', cursor: 'crosshair' }}
+                    onPointerDown={(e) => handleWallRotatePointerDown(selectedGeom.index, e)}
+                  />
+                  {selectedGeom.screenCorners.map(([cx, cy], i) => (
+                    <circle
+                      key={`corner-${i}`}
+                      cx={cx} cy={cy} r={5.5}
+                      fill="#ffffff" stroke={ROOM.accent} strokeWidth={2}
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  ))}
                 </g>
-              ))}
+              )}
 
               {/* Live dimension while stretching. The W/H fields below already
                   show the number, but they're off to the side of the canvas —
@@ -1547,27 +1626,25 @@ export default function FloorEditorOverlay({
               })()}
             </svg>
 
-            {/* Stretch invisible hitbox divs (20×20, easier grab) */}
-            {mode === 'walls' && wallGeometry.flatMap(({ index, startPx, startPy, endPx, endPy, centerPx, centerPy }) => {
-              const dx = endPx - startPx
-              const dy = endPy - startPy
+            {/* Stretch invisible hitbox divs (20×20, easier grab), on the
+                selected wall's four corner grips. Both corners of an end drive
+                the same end — the pair is one connection point drawn at its two
+                real positions, not two independent handles. */}
+            {selectedGeom && (() => {
+              const dx = selectedGeom.endPx - selectedGeom.startPx
+              const dy = selectedGeom.endPy - selectedGeom.startPy
               const stretchCursor = Math.abs(dy) > Math.abs(dx) ? 'ns-resize' : 'ew-resize'
-              void centerPx; void centerPy
-              return [
+              return selectedGeom.screenCorners.map(([cx, cy], i) => (
                 <div
-                  key={`sh-start-${index}`}
+                  key={`sh-${i}`}
                   className="absolute"
-                  style={{ left: startPx - 10, top: startPy - 10, width: 20, height: 20, cursor: stretchCursor }}
-                  onPointerDown={(e) => handleWallStretchPointerDown(index, 'start', e)}
-                />,
-                <div
-                  key={`sh-end-${index}`}
-                  className="absolute"
-                  style={{ left: endPx - 10, top: endPy - 10, width: 20, height: 20, cursor: stretchCursor }}
-                  onPointerDown={(e) => handleWallStretchPointerDown(index, 'end', e)}
-                />,
-              ]
-            })}
+                  style={{ left: cx - 10, top: cy - 10, width: 20, height: 20, cursor: stretchCursor }}
+                  onPointerDown={(e) =>
+                    handleWallStretchPointerDown(selectedGeom.index, CORNER_END[i], e)
+                  }
+                />
+              ))
+            })()}
 
             {/* Tables (tables mode only) */}
             {mode === 'tables' && tables.map((table) => {
@@ -1688,13 +1765,6 @@ export default function FloorEditorOverlay({
               )
             })}
           </div>
-
-          {/* Legend */}
-          {mode === 'walls' && (
-            <p className="mt-2 text-xs" style={{ color: ROOM.ink2 }}>
-              — thin light edge = front (side boards attach to)
-            </p>
-          )}
 
           {/* Always mounted, never inside a conditional panel: the picker is
               opened from a table's centre, and an input that only exists while

@@ -15,6 +15,21 @@ export interface StudioData {
   semester?: string
   year?: number | string // 1, 2, 3, 4, or Masters
   department?: string // Architecture, Interior Design, Industrial Design
+  /**
+   * Which studio this is a section of — 'Studio 01' … 'Thesis Studio', from
+   * lib/constants/studios. Undefined for anything published before sections
+   * existed; /explore buckets those rather than hiding them.
+   */
+  studio?: string
+  /**
+   * How many sections a STUDIO BUCKET holds. Set only on the bucket bubbles
+   * /explore synthesises at the studio level, never on a real workspace.
+   *
+   * Its own field rather than reusing memberCount, which the tooltip labels
+   * "Members": a bucket has no members, and "Members 10" on Studio 01 would be
+   * a plausible-looking wrong number rather than an obviously missing one.
+   */
+  sectionCount?: number
   memberCount?: number
   color?: string
   /**
@@ -288,9 +303,15 @@ function Tooltip({ data, containerRect }: { data: TooltipData | null; containerR
               {node.year ? (node.year === 'Masters' ? 'Masters' : `Year ${node.year}`) : '—'}
             </span>
           </div>
+          {node.studio && (
+            <div className="flex justify-between gap-3 text-[#16181D]">
+              <span className="text-[#8A8FA0]">Studio</span>
+              <span className="font-medium">{node.studio}</span>
+            </div>
+          )}
           <div className="flex justify-between gap-3 text-[#16181D]">
-            <span className="text-[#8A8FA0]">Members</span>
-            <span className="font-medium">{node.memberCount ?? node.count ?? 0}</span>
+            <span className="text-[#8A8FA0]">{node.sectionCount === undefined ? 'Members' : 'Sections'}</span>
+            <span className="font-medium">{node.sectionCount ?? node.memberCount ?? node.count ?? 0}</span>
           </div>
         </div>
 

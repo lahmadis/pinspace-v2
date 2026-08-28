@@ -49,6 +49,27 @@ export interface CreateWorkspaceInput {
    * that migration is applied — the column is only written when set.
    */
   createdByAdmin?: string | null
+  /**
+   * Everything the public network needs, stamped AT CREATION rather than
+   * collected later by the publish modal.
+   *
+   * This is what makes a section publishable without ever opening that modal:
+   * the instructor answers department / year / studio / their own name once, in
+   * the create dialog, and the publish toggle becomes a pure yes-no. It stays
+   * optional because the shared and personal creation paths reach the network
+   * and have nothing to file themselves under.
+   *
+   * All-or-nothing by construction — a half-written network_metadata is what
+   * silently drops a workspace out of the explore filters, so the caller either
+   * passes the whole object or none of it.
+   */
+  network?: {
+    department: string
+    year: string
+    studio: string
+    instructor: string
+    academicYear: string
+  }
 }
 
 export type CreateWorkspaceResult =
@@ -107,6 +128,18 @@ export async function createWorkspace(input: CreateWorkspaceInput): Promise<Crea
     description,
     owner_id: ownerId,
     academic_year: currentAcademicYear(),
+  }
+  // Section creation carries its own network filing, so it overrides the
+  // server-stamped academic year above with the term the instructor picked —
+  // a section set up in July for the coming Fall is the case that matters.
+  if (input.network) {
+    insertData.network_metadata = {
+      department: input.network.department,
+      year: input.network.year,
+      studio: input.network.studio,
+    }
+    insertData.instructor = input.network.instructor
+    insertData.academic_year = input.network.academicYear
   }
   if (organizationId) insertData.organization_id = organizationId
   if (type !== 'personal') insertData.invite_code = generateInviteCode()

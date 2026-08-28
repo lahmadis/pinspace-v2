@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { validateName } from '@/lib/validation/safeName'
+import { isStudio } from '@/lib/constants/studios'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * PATCH /api/workspaces/[id]/network-metadata
- * Writes department/yearLevel/instructor/academicYear onto the workspace so
- * the explore network can filter and label it correctly. Owner only.
+ * Writes department/yearLevel/studio/instructor/academicYear onto the workspace
+ * so the explore network can filter and label it correctly. Owner only.
+ *
+ * Sections created through the new-section dialog arrive here already filed —
+ * this route is now the EDIT path for them and the first-filing path for
+ * workspaces that predate it.
  */
 export async function PATCH(
   request: NextRequest,
@@ -27,7 +32,7 @@ export async function PATCH(
 
     const workspaceId = (await params).id
     const body = await request.json().catch(() => ({}))
-    const { department, yearLevel, instructor, academicYear } = body
+    const { department, yearLevel, instructor, academicYear, studio } = body
 
     if (!department || !yearLevel || !academicYear) {
       return NextResponse.json(
@@ -39,12 +44,21 @@ export async function PATCH(
     if (!instructorResult.ok) {
       return NextResponse.json({ error: instructorResult.error }, { status: 400 })
     }
+    // Optional, but never garbage: an unrecognised value would open a studio
+    // bucket in the drill-down that no other section can be filed into.
+    if (studio !== undefined && studio !== null && studio !== '' && !isStudio(studio)) {
+      return NextResponse.json({ error: 'Unknown studio' }, { status: 400 })
+    }
 
     const admin = supabaseServiceRole()
 
+    // network_metadata rides along because the UPDATE below REPLACES the whole
+    // jsonb value. A caller that doesn't send `studio` — the publish modal on a
+    // path that never asked for one — would otherwise erase the studio a
+    // section was created with, dropping it out of the drill-down silently.
     const { data: workspace } = await admin
       .from('workspaces')
-      .select('owner_id')
+      .select('owner_id, network_metadata')
       .eq('id', workspaceId)
       .maybeSingle()
 
@@ -58,10 +72,20 @@ export async function PATCH(
       )
     }
 
+    const existingStudio = (workspace.network_metadata as { studio?: unknown } | null)?.studio
+    const nextStudio = isStudio(studio) ? studio : isStudio(existingStudio) ? existingStudio : undefined
+
     const { error: updateError } = await admin
       .from('workspaces')
       .update({
-        network_metadata: { department, year: yearLevel },
+        network_metadata: {
+          department,
+          year: yearLevel,
+          // Omitted rather than written as null when there is no studio on
+          // either side: `network_metadata->>studio IS NULL` and `= 'null'`
+          // are different queries, and the drill-down groups on the former.
+          ...(nextStudio ? { studio: nextStudio } : {}),
+        },
         academic_year: academicYear,
         instructor: instructorResult.value,
       })

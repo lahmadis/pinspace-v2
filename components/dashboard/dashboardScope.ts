@@ -34,8 +34,13 @@ export type DashboardWorkspace = Workspace & {
   description?: string
   is_archived?: boolean
   academic_year?: string
-  /** jsonb. Carries department/year, and is populated on ~16% of rows. */
-  network_metadata?: { department?: string; year?: string } | null
+  /**
+   * jsonb. Carries department/year, and is populated on ~16% of rows. `studio`
+   * joins them for sections created through the new-section dialog; rows that
+   * predate it have the first two and not the third, which is why every
+   * consumer has to treat it as optional rather than assume the trio.
+   */
+  network_metadata?: { department?: string; year?: string; studio?: string } | null
   invite_code?: string
   instructor?: string
 }
@@ -54,6 +59,29 @@ export interface ScopeCfg {
   showJoin: boolean
   /** Heading over the sidebar's studio list. */
   listLabel: string
+  /**
+   * How the create affordance behaves.
+   *
+   * 'link' navigates to `newHref`; 'section-dialog' opens the new-section
+   * dialog in place and `newHref` is unused. Only the class scope takes the
+   * dialog: a section needs its studio, department, year and term answered at
+   * creation (see CreateSectionModal), and a full-page form for six fields is a
+   * navigation an instructor doing this ten times a term does not need. Shared
+   * and personal studios still ask for nothing but a name, so they keep the
+   * page they already had.
+   */
+  newMode: 'link' | 'section-dialog'
+  /**
+   * What one card in this scope IS, lowercase, for use inside a sentence
+   * ("Open section").
+   *
+   * Scoped rather than hardcoded on the card because the three tabs no longer
+   * hold the same kind of thing. A class-tab workspace is an instructor's
+   * SECTION of a studio; a shared or personal one is a studio in its own right
+   * and is a section of nothing. One card component renders all three, so the
+   * noun has to travel with the scope.
+   */
+  itemNoun: string
 }
 
 // One vocabulary for every org type. This used to swap "Project"/"Class" on
@@ -77,7 +105,17 @@ export function scopeConfig(
     case 'wentworth':
       return {
         title: organization?.name || 'Network',
-        newLabel: 'New Studio',
+        // "New Section", not "New Studio". An instructor does not create a
+        // studio — Studio 01 through 08 plus the two standing ones are the
+        // department's, fixed, and shared by everyone teaching them (see
+        // lib/constants/studios). What an instructor creates is their SECTION
+        // of one. The old label had them naming the studio itself, which is why
+        // the network carried several spellings of the same bucket.
+        newLabel: 'New Section',
+        itemNoun: 'section',
+        newMode: 'section-dialog',
+        // Unused under 'section-dialog'. Kept so the shape is uniform and so
+        // the page is one line away if the dialog ever needs a full-page twin.
         newHref: withInstitution('/workspace/new', institutionHome),
         emptyTitle: 'Nothing here yet',
         // Students are the people who see this copy most, and the same
@@ -96,6 +134,8 @@ export function scopeConfig(
       return {
         title: 'Shared Studios',
         newLabel: 'New Shared Studio',
+        itemNoun: 'studio',
+        newMode: 'link',
         newHref: '/workspace/new?type=shared',
         emptyTitle: 'Nothing here yet',
         emptySubtext: 'Anything you collaborate on with others will appear here.',
@@ -106,6 +146,8 @@ export function scopeConfig(
       return {
         title: 'Personal Studios',
         newLabel: 'New Personal Studio',
+        itemNoun: 'studio',
+        newMode: 'link',
         newHref: withInstitution('/studio/new', institutionHome),
         emptyTitle: 'Nothing here yet',
         emptySubtext: 'Create one to get started.',

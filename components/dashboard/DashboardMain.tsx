@@ -11,6 +11,7 @@ import { getOrgBrand, withAlpha, type OrgBrand } from '@/lib/constants/orgBrandi
 import GridPreview from '@/components/ui/GridPreview'
 import NetworkBandPreview from './NetworkBandPreview'
 import { scopeConfig, withInstitution, metaLine } from './dashboardScope'
+import CreateSectionModal from './CreateSectionModal'
 import type { Scope, DashboardWorkspace } from './dashboardScope'
 
 // Re-exported so /dashboard and /archive keep importing this type from here.
@@ -62,11 +63,13 @@ interface RoomCardProps {
   onDelete: (id: string, name: string) => void
   onRename: (id: string, name: string) => void
   onLeave: (id: string, name: string) => void
+  /** What this card is, from the scope's vocabulary — 'section' or 'studio'. */
+  itemNoun: string
 }
 
 function RoomCard({
   workspace, isOwner, openMenuId, setOpenMenuId, institutionSlug, brand,
-  onDelete, onRename, onLeave,
+  onDelete, onRename, onLeave, itemNoun,
 }: RoomCardProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const isMenuOpen = openMenuId === workspace.id
@@ -221,7 +224,7 @@ function RoomCard({
         href={withInstitution(`/workspace/${workspace.id}`, institutionSlug)}
         className="mt-2.5 block rounded-full bg-[#16181D] px-4 py-2 text-center text-[12.5px] font-bold text-white transition-colors hover:bg-[#3B6EF6]"
       >
-        Open studio
+        Open {itemNoun}
       </Link>
     </div>
   )
@@ -357,6 +360,10 @@ export function DashboardMain({
 }: DashboardMainProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
+  // Owned here rather than by each trigger: the header button and the
+  // empty-state button are two affordances for one dialog, and they are never
+  // both on screen — an empty scope has no header row to hang the first on.
+  const [showCreateSection, setShowCreateSection] = useState(false)
   const { profile } = useProfile()
 
   // Only instructors may create org-facing classes (the Wentworth tab). Shared
@@ -465,13 +472,24 @@ export function DashboardMain({
               </button>
             )}
             {canCreate && (
-              <Link
-                href={cfg.newHref}
-                className="flex items-center gap-1.5 rounded-full bg-[#16181D] px-3.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#3B6EF6]"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                {cfg.newLabel}
-              </Link>
+              cfg.newMode === 'section-dialog' ? (
+                <button
+                  type="button"
+                  onClick={() => setShowCreateSection(true)}
+                  className="flex items-center gap-1.5 rounded-full bg-[#16181D] px-3.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#3B6EF6]"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {cfg.newLabel}
+                </button>
+              ) : (
+                <Link
+                  href={cfg.newHref}
+                  className="flex items-center gap-1.5 rounded-full bg-[#16181D] px-3.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#3B6EF6]"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {cfg.newLabel}
+                </Link>
+              )
             )}
           </div>
         </div>
@@ -492,7 +510,8 @@ export function DashboardMain({
           </div>
         ) : (
           <>
-            {/* Persistent chrome. Enter Network and New Studio are entry points,
+            {/* Persistent chrome. Enter Network and the create button (New
+                Section on the class tab) are entry points,
                 not content, so they render unconditionally rather than inside
                 the populated branch of an empty-state ternary — that structure
                 is what silently deleted Enter Network for every user with zero
@@ -519,6 +538,7 @@ export function DashboardMain({
                   onDelete={onDelete}
                   onRename={onRename}
                   onLeave={onLeave}
+                  itemNoun={cfg.itemNoun}
                 />
               ))}
             </div>
@@ -538,12 +558,22 @@ export function DashboardMain({
                     </button>
                   )}
                   {canCreate && (
-                    <Link
-                      href={cfg.newHref}
-                      className="flex items-center gap-1.5 rounded-full bg-[#16181D] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[#3B6EF6]"
-                    >
-                      <Plus className="h-4 w-4" /> {cfg.newLabel}
-                    </Link>
+                    cfg.newMode === 'section-dialog' ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowCreateSection(true)}
+                        className="flex items-center gap-1.5 rounded-full bg-[#16181D] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[#3B6EF6]"
+                      >
+                        <Plus className="h-4 w-4" /> {cfg.newLabel}
+                      </button>
+                    ) : (
+                      <Link
+                        href={cfg.newHref}
+                        className="flex items-center gap-1.5 rounded-full bg-[#16181D] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[#3B6EF6]"
+                      >
+                        <Plus className="h-4 w-4" /> {cfg.newLabel}
+                      </Link>
+                    )
                   )}
                 </div>
               </div>
@@ -551,6 +581,18 @@ export function DashboardMain({
           </>
         )}
       </div>
+
+      {/* Mounted unconditionally under canCreate rather than beside either
+          trigger: it renders nothing while closed, and hanging it off one of
+          the two buttons would unmount the open dialog the moment creating a
+          section emptied — or filled — the scope it was launched from. */}
+      {canCreate && cfg.newMode === 'section-dialog' && (
+        <CreateSectionModal
+          open={showCreateSection}
+          onOpenChange={setShowCreateSection}
+          defaultInstructorName={profile.fullName}
+        />
+      )}
     </div>
   )
 }

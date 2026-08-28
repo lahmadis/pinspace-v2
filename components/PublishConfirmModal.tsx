@@ -5,10 +5,20 @@ import { useRef, useState } from 'react'
 import { Button, Dialog, Input, Select } from '@/components/ui'
 import { academicYearOptions, currentAcademicYear } from '@/lib/academicYear'
 import { DEPARTMENTS, YEAR_LEVELS, yearLabel } from '@/lib/constants/departments'
+import { STUDIOS } from '@/lib/constants/studios'
 
 export interface NetworkMetadata {
   department: string
   year: string
+  /**
+   * Which studio this section belongs to (lib/constants/studios).
+   *
+   * Optional on the TYPE, required by this form. Sections created through the
+   * new-section dialog always carry one; workspaces that predate it do not, and
+   * this modal is where they get one — so the field has to be able to arrive
+   * empty and leave filled.
+   */
+  studio?: string
   instructor: string
   academicYear: string
 }
@@ -24,7 +34,7 @@ interface PublishConfirmModalProps {
 // Both lists now come from lib/constants/departments, which is what CLAUDE.md
 // asks for and what keeps this modal's options in step with the rest of the app.
 
-type FieldErrors = Partial<Record<'department' | 'year' | 'academicYear' | 'instructor', string>>
+type FieldErrors = Partial<Record<'department' | 'year' | 'studio' | 'academicYear' | 'instructor', string>>
 
 export default function PublishConfirmModal({
   workspaceName,
@@ -35,6 +45,7 @@ export default function PublishConfirmModal({
 }: PublishConfirmModalProps) {
   const [department, setDepartment] = useState(currentMetadata?.department || '')
   const [year, setYear] = useState(currentMetadata?.year || '')
+  const [studio, setStudio] = useState(currentMetadata?.studio || '')
   const [academicYear, setAcademicYear] = useState(currentMetadata?.academicYear || currentAcademicYear())
   const [instructor, setInstructor] = useState(currentMetadata?.instructor || '')
   const [errors, setErrors] = useState<FieldErrors>({})
@@ -53,6 +64,7 @@ export default function PublishConfirmModal({
     const newErrors: FieldErrors = {}
     if (!department) newErrors.department = 'Select a department.'
     if (!year) newErrors.year = 'Select a year.'
+    if (!studio) newErrors.studio = 'Select a studio.'
     if (!academicYear) newErrors.academicYear = 'Select an academic year.'
     if (!instructor.trim()) newErrors.instructor = 'Enter the instructor name.'
     if (Object.keys(newErrors).length > 0) {
@@ -61,7 +73,7 @@ export default function PublishConfirmModal({
     }
 
     confirmingRef.current = true
-    onConfirm({ department, year, academicYear, instructor: instructor.trim() })
+    onConfirm({ department, year, studio, academicYear, instructor: instructor.trim() })
   }
 
   if (isCurrentlyPublic) {
@@ -132,6 +144,26 @@ export default function PublishConfirmModal({
             {YEAR_LEVELS.map((item) => (
               <option key={item} value={item}>{yearLabel(item)}</option>
             ))}
+          </Select>
+        </Field>
+
+        {/* The drill-down level between year and section. Required here as
+            well as in the create dialog: a published workspace with no studio
+            has no bucket to appear in, so it would reach the network and then
+            be unreachable from it. */}
+        <Field label="Studio" id="publish-studio" error={errors.studio}>
+          <Select
+            id="publish-studio"
+            value={studio}
+            onChange={(event) => {
+              setStudio(event.target.value)
+              setErrors((previous) => ({ ...previous, studio: undefined }))
+            }}
+            aria-invalid={Boolean(errors.studio)}
+            aria-describedby={errors.studio ? 'publish-studio-error' : undefined}
+          >
+            <option value="">Select studio</option>
+            {STUDIOS.map((item) => <option key={item} value={item}>{item}</option>)}
           </Select>
         </Field>
 

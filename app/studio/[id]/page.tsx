@@ -4,14 +4,14 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { Figtree, JetBrains_Mono } from 'next/font/google'
+import { Figtree } from 'next/font/google'
 import { Board } from '@/types'
 import ShareModal from '@/components/ShareModal'
 import { ROOM_SKY } from '@/lib/room/palette'
 import DemoBanner from '@/components/DemoBanner'
 import PresenceBar, { type PresentUser, friendlyName, colorFor } from '@/components/3d/PresenceBar'
 import type { FollowPose, LaserState, LbViewport, LbCursorState, CritDirtySignal, TraceStreamEntry } from '@/components/3d/CameraController'
-import { ArrowLeft, Share2, ChevronDown, Presentation, Menu, Check } from 'lucide-react'
+import { ArrowLeft, Share2, ChevronDown, Presentation } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import { DEFAULT_WALL_CONFIG, type WallConfig } from '@/lib/wallLayout'
@@ -24,11 +24,13 @@ type RealtimeBoardPayload = {
   old: Record<string, unknown>
 }
 
-// Room chrome type ramp. Figtree carries the UI; JetBrains Mono is reserved for
-// drawing-sheet metadata — breadcrumb, sheet numbers, wall labels — so those read
-// as annotation rather than interface.
+// Room chrome type ramp. Figtree carries ALL of it. The breadcrumb pill used to
+// be JetBrains Mono on the theory that a workspace/room path is drawing-sheet
+// metadata like a wall label — but it sits in the same row of pills as Share and
+// Presentation, and a mono pill beside two Figtree pills just reads as the one
+// that got the wrong font. Wall labels on the plan are still mono; those are
+// drawn ON a sheet, which is where that voice belongs.
 const figtree = Figtree({ subsets: ['latin'], weight: ['400', '500', '600', '700'], display: 'swap' })
-const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500'], display: 'swap' })
 
 /**
  * Room chrome palette — the app's one blue accent (matches lib/room/palette.ts's
@@ -69,12 +71,12 @@ function StudioPageInner() {
   const [boards, setBoards] = useState<Board[]>([])
   const [showShareModal, setShowShareModal] = useState(false)
   /**
-   * Lifted out of StudioRoom so the menu beside Share can drive them. The
+   * Lifted out of StudioRoom so the Presentation button beside Share can drive
+   * it. The
    * bottom strip still owns Space/2D/Plan and writes back through the
    * same setter, so the two controls can never disagree about which view is up.
    */
   const [roomView, setRoomView] = useState<RoomView>('room')
-  const [showRoomMenu, setShowRoomMenu] = useState(false)
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [boardsError, setBoardsError] = useState(false)
@@ -1036,14 +1038,32 @@ function StudioPageInner() {
             // workspace + room breadcrumb pill drops to a second line on
             // narrow viewports instead of running off the right edge.
             <div className="fixed top-4 left-4 z-40 flex flex-wrap items-center gap-2.5 max-w-[calc(100vw-2rem)] sm:flex-nowrap sm:max-w-none">
-              {/* pinspace Logo - links to home */}
-              <button
-                onClick={() => router.push('/')}
-                style={{ background: CHROME.accent, color: CHROME.paper }}
-                className={`${figtree.className} px-5 py-2.5 rounded-xl shadow-lg transition-colors duration-200 font-semibold text-base hover:opacity-90`}
+              {/* The wordmark, not a button. It was a filled blue pill the same
+                  size and shape as Share, which made the brand read as an
+                  action you were being offered — and it was the only place in
+                  the product where "pinspace" appeared without its blue
+                  terminal period. This is the landing page's own lockup
+                  (app/page.tsx nav): ink wordmark, extrabold, tight tracking,
+                  the period as a true circle rather than the font's '.' so it
+                  stays round and on-brand at any size. Still a link home;
+                  nothing but the chrome came off. */}
+              <Link
+                href="/"
+                aria-label="pinspace home"
+                // Onest inline, not inherited: this whole page is wrapped in
+                // Figtree, and Figtree is loaded here at 400–700 — so the
+                // extrabold-800 wordmark would both change typeface AND get
+                // synthesised or clamped to 700. Onest at 800 is what the
+                // landing page draws, and the mark has to be one mark.
+                style={{ fontFamily: "'Onest', 'Inter', system-ui, sans-serif" }}
+                className="text-[#16181D] font-extrabold text-xl tracking-[-0.045em] hover:opacity-80 transition-opacity"
               >
                 pinspace
-              </button>
+                <span
+                  aria-hidden="true"
+                  className="inline-block align-baseline rounded-full bg-[#3B6EF6] w-[0.2em] h-[0.2em] ml-[0.06em]"
+                />
+              </Link>
 
               {/* Phase 6.2: breadcrumb + room switcher. Workspace name links
                   back to the rooms list page; room name opens a dropdown
@@ -1053,7 +1073,7 @@ function StudioPageInner() {
               {workspaceName && workspaceId ? (
                 <div
                   style={{ background: CHROME.accent, color: CHROME.paper, borderColor: CHROME.hairline }}
-                  className={`${jetbrainsMono.className} px-3 py-2 rounded-xl shadow-lg border transition-colors flex items-center gap-2 text-xs uppercase tracking-[0.14em] relative`}
+                  className={`${figtree.className} px-4 py-2.5 rounded-xl shadow-lg border transition-colors flex items-center gap-2 text-sm font-semibold relative`}
                 >
                   <button
                     onClick={() => router.push(`/workspace/${workspaceId}`)}
@@ -1077,21 +1097,20 @@ function StudioPageInner() {
                   </button>
 
                   {showRoomSwitcher && allRooms.length > 1 && (
-                    // The pill above is JetBrains Mono with uppercase and wide
-                    // tracking — drafting-annotation styling, deliberate there.
-                    // This menu is a DOM child of it, so it was inheriting all
-                    // three: mono glyphs, 0.14em tracking, and a text-transform
-                    // that hit the <div> and <a> but NOT the <button>s (Chrome's
-                    // UA sheet resets text-transform on buttons), which is why
-                    // the list read "SITE ANALYSIS" next to "Precedents". Room
-                    // names are content, not annotation, so all three are reset
-                    // back to the app's own Onest here.
+                    // The pill above used to be JetBrains Mono with uppercase
+                    // and 0.14em tracking, and this menu — a DOM child of it —
+                    // inherited all three, with the text-transform hitting the
+                    // <div> and <a> but NOT the <button>s (Chrome's UA sheet
+                    // resets it there), so the list read "SITE ANALYSIS" next to
+                    // "Precedents". The pill is plain Figtree now, so the
+                    // font-sans/normal-case/tracking-normal antidote it needed
+                    // is gone with the thing it was undoing.
                     <div
-                      className="absolute left-0 top-full mt-2 w-56 bg-white text-gray-900 rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50 font-sans normal-case tracking-normal"
+                      className="absolute left-0 top-full mt-2 w-56 bg-white text-gray-900 rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50"
                       onMouseLeave={() => setShowRoomSwitcher(false)}
                     >
-                      {/* Deliberately keeps its own caps + tracking: this is a
-                          section label, not a room name. */}
+                      {/* Its own caps + tracking: this is a section label, not a
+                          room name. */}
                       <div className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-[0.12em] bg-gray-50 border-b border-gray-100 truncate">
                         Spaces in {workspaceName}
                       </div>
@@ -1103,8 +1122,7 @@ function StudioPageInner() {
                               {isCurrent ? (
                                 <div className="px-3 py-2 text-[13px] bg-[#3B6EF6]/10 text-[#3B6EF6] font-semibold flex items-center justify-between gap-2">
                                   <span className="truncate">{r.name}</span>
-                                  {/* Its own caps rather than the inherited
-                                      ones, so it reads as a badge instead of
+                                  {/* Caps so it reads as a badge instead of
                                       running into the name. */}
                                   <span className="shrink-0 text-[10px] uppercase tracking-[0.1em] opacity-70">
                                     current
@@ -1150,15 +1168,36 @@ function StudioPageInner() {
           )}
 
           {/* Top-right buttons (desktop / >= sm) - Hide when in edit mode.
-              Phones get the hamburger panel right below; the `hidden sm:flex`
-              switch swaps the two without changing handlers. */}
+              Phones get the Share-only panel right below; the `hidden sm:flex`
+              switch swaps the two without changing handlers.
+
+              Two named buttons, no menu. The hamburger here held exactly one
+              item — Presentation — after room configuration moved onto the Plan
+              view, so it was a menu you had to open to discover its only
+              choice. A button that says what it does costs the same pixels. */}
           {!isEditMode && (
             <div className="hidden sm:flex fixed top-4 right-4 z-40 flex-nowrap justify-end items-center gap-2.5">
-              {/* Share — now the only chrome over the 3D view.
-                  Room configuration used to sit beside it behind a hamburger;
-                  it moved onto the Plan view, which is the drawing those
-                  actions actually operate on. Share stays out here because it
-                  is the action that brings other people in, not setup. */}
+              {/* Presentation is a running order, not a way of looking at the
+                  SPACE — that's why it isn't a tab in the bottom strip beside
+                  Space/2D/Plan. It's a toggle: pressing it while you're already
+                  presenting returns you to the room, which is the only way back
+                  now that it has no tab. */}
+              <button
+                onClick={() => setRoomView(roomView === 'presentation' ? 'room' : 'presentation')}
+                aria-pressed={roomView === 'presentation'}
+                style={
+                  roomView === 'presentation'
+                    ? { background: CHROME.accent, color: CHROME.paper, borderColor: CHROME.accent }
+                    : { background: CHROME.paper, color: '#16181D', borderColor: CHROME.hairline }
+                }
+                className={`${figtree.className} px-5 py-2.5 rounded-xl shadow-lg border transition-opacity duration-200 font-semibold text-sm flex items-center gap-2 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]/40`}
+              >
+                <Presentation className="w-4 h-4" />
+                Presentation
+              </button>
+
+              {/* Share sits rightmost — it's the action that brings other people
+                  in, not a view. */}
               <button
                 onClick={() => setShowShareModal(true)}
                 style={{ background: CHROME.accent, color: CHROME.paper }}
@@ -1167,67 +1206,6 @@ function StudioPageInner() {
                 <Share2 className="w-4 h-4" />
                 Share
               </button>
-
-              {/* Everything that isn't a spatial reading of the room. 2D is a
-                  per-person archive and Presentation is a running order —
-                  neither is a way of looking at the SPACE, so sitting them in
-                  the bottom strip beside Space/2D/Plan implied more peers
-                  when there are three plus two different things. */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowRoomMenu((v) => !v)}
-                  aria-haspopup="menu"
-                  aria-expanded={showRoomMenu}
-                  aria-label="Views and panels"
-                  style={{ background: CHROME.paper, color: CHROME.accent, borderColor: CHROME.hairline }}
-                  className={`${figtree.className} p-2.5 rounded-xl shadow-lg border transition-opacity duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]/40`}
-                >
-                  <Menu className="w-4 h-4" />
-                </button>
-
-                {showRoomMenu && (
-                  <>
-                    {/* Click-away sits behind the menu, not over it. */}
-                    <div
-                      className="fixed inset-0 z-40"
-                      onClick={() => setShowRoomMenu(false)}
-                      aria-hidden
-                    />
-                    <div
-                      role="menu"
-                      className={`${figtree.className} absolute right-0 top-full mt-2 w-56 rounded-xl shadow-2xl border overflow-hidden z-50`}
-                      style={{ background: CHROME.paper, borderColor: CHROME.hairline }}
-                    >
-                      {([
-                        { id: 'presentation' as const, label: 'Presentation', icon: <Presentation className="w-4 h-4" /> },
-                      ]).map((item) => {
-                        const active = roomView === item.id
-                        return (
-                          <button
-                            key={item.id}
-                            role="menuitemradio"
-                            aria-checked={active}
-                            onClick={() => {
-                              // Re-picking the view you're already in returns to
-                              // the space, so the menu can toggle out of a view
-                              // whose tab no longer exists in the strip.
-                              setRoomView(active ? 'room' : item.id)
-                              setShowRoomMenu(false)
-                            }}
-                            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-left hover:bg-[#16181D]/[0.05] transition-colors"
-                            style={{ color: active ? CHROME.accent : '#16181D' }}
-                          >
-                            <span className="shrink-0">{item.icon}</span>
-                            <span className="flex-1 truncate">{item.label}</span>
-                            {active && <Check className="w-4 h-4 shrink-0" />}
-                          </button>
-                        )
-                      })}
-
-                    </div>
-                  </>
-                )}
-              </div>
             </div>
           )}
 

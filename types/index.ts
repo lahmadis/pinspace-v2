@@ -1,6 +1,10 @@
 // Core data types for pinspace
 
 import type { Department, YearLevel } from '@/lib/constants/departments'
+// Aliased: `Studio` is already taken in this file by the legacy network shape
+// below (id/yearId/instructor/studentCount), which is a different thing
+// entirely — that one is a ROW, this one is a taxonomy string.
+import type { Studio as StudioName } from '@/lib/constants/studios'
 
 export interface School {
   id: string
@@ -220,6 +224,13 @@ export interface Workspace {
   networkMetadata?: {
     department: Department
     year: YearLevel
+    /**
+     * The studio this section belongs to. Optional because it postdates the
+     * other two: rows written before the new-section dialog have a department
+     * and a year and no studio, and the network drill-down has to render them
+     * rather than assume the trio.
+     */
+    studio?: StudioName
   }
   academicYear?: string
   isArchived: boolean

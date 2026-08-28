@@ -14,6 +14,7 @@ import KineticGrid from '@/components/ui/kinetic-grid'
 import ForSchoolsSection from '@/components/landing/ForSchoolsSection'
 import FaqSection from '@/components/landing/FaqSection'
 import ScrollCue from '@/components/landing/ScrollCue'
+import HeroPin from '@/components/landing/HeroPin'
 
 function HomeInner() {
   const router = useRouter()
@@ -185,14 +186,11 @@ function HomeInner() {
             transition={{ duration: 0.9, delay: 0.15 }}
           >
             pinspace
-            {/* Terminal period as a true circle rather than the font's own '.',
-                so it stays perfectly round and on-brand blue at any size. Sized
-                in em so it scales with the wordmark; baseline-aligned so it sits
-                exactly where a period would. */}
-            <span
-              aria-hidden="true"
-              className="inline-block align-baseline rounded-full bg-[#3B6EF6] w-[0.2em] h-[0.2em] ml-[0.06em]"
-            />
+            {/* The terminal period, and the pin that drops in and becomes it.
+                Its own component only because it is three nested spans and an
+                SVG; it holds no state and takes no props, and the type is still
+                sized and tracked entirely by this <h1>. */}
+            <HeroPin />
           </motion.h1>
 
           <motion.p

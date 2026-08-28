@@ -327,56 +327,20 @@ export function getRoomFogParams(wallConfig: WallConfig): { fogNear: number; fog
 const BAY_FRAME_PADDING_IN = 3
 
 /**
- * The soft blob a wall casts onto the floor.
+ * Walls cast NOTHING onto the floor.
  *
- * A gradient sprite, not a real shadow map and not drei's <ContactShadows>.
- * Both of those re-render the scene into a texture every frame, and this room
- * can hold a lot of boards and loaded 3D models; the shadow here is a fixed
- * soft ellipse under a wall that does not move, so paying a render pass per
- * frame for it would buy nothing. It is also more directable — the reference
- * this matches has a diffuse pool under each panel rather than a cast shadow
- * with a light direction, and that is exactly what a radial gradient is.
+ * There used to be a soft radial-gradient pool under each wall — a sprite, not
+ * a shadow map — sized past the wall's ends and 52 in deep. It was there to
+ * give a near-white wall a silhouette against a near-white sky. It did the
+ * opposite of what a shadow does: a pool that wide, that diffuse and that far
+ * out from the base reads as a wall hovering above the ground rather than
+ * standing on it, because a real contact shadow is tightest exactly where the
+ * object touches down. The walls sit on the grid now with nothing between them
+ * and it.
  *
- * Cool and blue-leaning rather than neutral grey: on a near-white sky a grey
- * pool reads as dirt, and every other shaded tone in the room is cool.
+ * If the silhouette problem comes back on the white palette, the fix is more
+ * contrast in the wall's own bottom edge or a darker sky — not a floor pool.
  */
-const SHADOW_TEXTURE_PX = 128
-const SHADOW_TINT = '64, 84, 126'
-
-function createSoftShadowTexture(): THREE.CanvasTexture | null {
-  // Client components still render on the server for the initial HTML, and R3F
-  // would otherwise evaluate this during that pass.
-  if (typeof document === 'undefined') return null
-  const canvas = document.createElement('canvas')
-  canvas.width = SHADOW_TEXTURE_PX
-  canvas.height = SHADOW_TEXTURE_PX
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return null
-  const c = SHADOW_TEXTURE_PX / 2
-  const gradient = ctx.createRadialGradient(c, c, 0, c, c, c)
-  // Three stops, not two: a straight linear falloff reads as a hard-edged disc
-  // because most of its opacity sits in the outer ring.
-  gradient.addColorStop(0, `rgba(${SHADOW_TINT}, 0.34)`)
-  gradient.addColorStop(0.4, `rgba(${SHADOW_TINT}, 0.16)`)
-  gradient.addColorStop(1, `rgba(${SHADOW_TINT}, 0)`)
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, SHADOW_TEXTURE_PX, SHADOW_TEXTURE_PX)
-  return new THREE.CanvasTexture(canvas)
-}
-
-/**
- * How far past the wall's ends the pool spreads, as a FRACTION of the wall's
- * width. NOT inches, unlike SHADOW_DEPTH_IN on the next line — the two sit
- * together and read alike, so the name carries the unit.
- */
-const SHADOW_WIDTH_OVERHANG_RATIO = 0.22
-const SHADOW_DEPTH_IN = 52
-/**
- * Just above the grid, just above the wall's base. It was 0.5 while the grid
- * sat at -4, which put the pool nearer the wall than the ground it was supposed
- * to be cast on — the wall, its shadow and the grid were three separate heights.
- */
-const SHADOW_Y = 0.15
 
 export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'white', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick }: WallSystemProps) {
 
@@ -392,11 +356,6 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
   }), [wallPalette])
   const dimmedInk = useMemo(() => dimTowardSky(ROOM_PALETTE.ink, WALL_DIM_AMOUNT), [])
   const dimmedAccent = useMemo(() => dimTowardSky(ROOM_PALETTE.accent, WALL_DIM_AMOUNT), [])
-
-  // One gradient shared by every wall's floor pool — the sprite is identical
-  // for all of them, only the plane it is stretched over differs.
-  const shadowTexture = useMemo(() => createSoftShadowTexture(), [])
-  useEffect(() => () => { shadowTexture?.dispose() }, [shadowTexture])
 
   // Backstop for the hover cursor set by clickable name plates. The click path
   // clears it inline, but a plate can also stop being hoverable without an
@@ -579,32 +538,6 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
               }}
               onSurfaceHover={({ side }) => onWallHover?.(wallIndex, side)}
             />
-
-            {/* Floor pool. Transparent and depth-write-off, so it draws after
-                the opaque walls and cannot punch a hole in one. This is what
-                gives a near-white wall its silhouette against a near-white sky
-                — see the note on ROOM_SKY: the two are one decision, and
-                since the accent rim was removed this is the ONLY thing doing
-                that job, so weakening it puts the walls straight back to
-                dissolving into the horizon. Sits inside the rotated wall group, so it stays aligned
-                under the wall whatever the layout does with it. */}
-            {shadowTexture && (
-              <mesh
-                position={[0, -transform.height / 2 + SHADOW_Y, 0]}
-                rotation={[-Math.PI / 2, 0, 0]}
-                renderOrder={-1}
-              >
-                <planeGeometry
-                  args={[transform.width * (1 + SHADOW_WIDTH_OVERHANG_RATIO), SHADOW_DEPTH_IN]}
-                />
-                <meshBasicMaterial
-                  map={shadowTexture}
-                  transparent
-                  depthWrite={false}
-                  opacity={isDimmed ? 0.4 : 1}
-                />
-              </mesh>
-            )}
 
             {/* Modern off-white wall with depth and shadows. Square corners:
                 a room joins its walls, and a radius at a junction opens a notch

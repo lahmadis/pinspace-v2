@@ -181,6 +181,154 @@
     }
   }
 
+  /* -- Hero pin drop --------------------------------------------------------
+   *
+   * A pin falls from above the page onto the end of the wordmark, its point
+   * strikes the baseline, and it is pushed in - the needle retracting as the
+   * head sinks into place as the blue terminal period. See
+   * components/landing/HeroPin.tsx for the markup these drive.
+   *
+   * CSS rather than the framer-motion the rest of the hero uses: this is
+   * predetermined, uninterruptible motion firing at the single busiest moment
+   * of the page's life (webfont swap, kinetic grid mounting, auth resolving),
+   * and keyframes run off the main thread where a rAF-driven animation drops
+   * frames under exactly that load.
+   *
+   * Two elements, two animations, for the same reason the scroll cue above has
+   * two: the pin's transform is the flight, the needle's is the retract.
+   * Stacked on one element the second would overwrite the first.
+   */
+
+  @keyframes heroPinDrop {
+    /* Above the page. -100vh clears the top of the document at any viewport,
+       and the landing root's overflow-x-hidden (which forces overflow-y to a
+       clipping auto) hides the first part of the fall - so the pin enters the
+       frame already moving rather than starting from rest at the top edge. */
+    0% {
+      opacity: 0;
+      transform: translateY(-100vh) scaleX(0.8) scaleY(1.32);
+      animation-timing-function: cubic-bezier(0.55, 0.06, 0.68, 0.19);
+    }
+
+    /* Opacity only. A keyframe naming ONE property leaves the others to
+       interpolate across it, so the fall stays a single uninterrupted segment;
+       the timing function is repeated because it governs the interval that
+       STARTS at this keyframe, not the property list. */
+    10% {
+      opacity: 1;
+      animation-timing-function: cubic-bezier(0.55, 0.06, 0.68, 0.19);
+    }
+
+    /* Point strikes the baseline, head still a full needle above it.
+       Accelerating into this frame is deliberate: anywhere else in the app an
+       ease-in is a defect, because it delays the moment the user is waiting on.
+       Here the curve is not pacing a UI response, it is drawing gravity - a pin
+       that falls at a constant speed does not read as falling. */
+    48% {
+      transform: translateY(calc(var(--pin-needle) * -1)) scaleX(0.8) scaleY(1.32);
+      animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Impact. transform-origin is the pin's POINT, so the stretch trails
+       upward behind the fall and this compression drives into the baseline
+       rather than sinking through it. */
+    57% {
+      transform: translateY(calc(var(--pin-needle) * -1)) scaleX(1.12) scaleY(0.9);
+      animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Standing in the paper, and held. The pause is load-bearing: without it
+       the strike and the push are one gesture, and the pin never reads as
+       having ARRIVED before it goes in. */
+    68%,
+    76% {
+      transform: translateY(calc(var(--pin-needle) * -1)) scale(1);
+      animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Pushed in. The head travels down by exactly the needle's length while
+       the needle retracts by that same amount from the other end (see
+       heroPinRetract), so the point stays on the baseline throughout and only
+       the head moves - which is what makes this read as going INTO the page
+       rather than as falling a second time. It comes to rest as the period. */
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  /*
+   * The needle retracts into the head. Timed to start exactly where the push
+   * begins so the two are one movement: shortening from the point while the
+   * head descends leaves the tip stationary on the baseline.
+   */
+  @keyframes heroPinRetract {
+    0%,
+    76% {
+      opacity: 1;
+      transform: scaleY(1);
+      animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    100% {
+      opacity: 0;
+      transform: scaleY(0);
+    }
+  }
+
+  /*
+   * 0.9s, delayed 0.45s. The point hits the baseline at ~0.88s, just as the
+   * wordmark's own entrance (0.15s + 0.9s) finishes resolving, and the pin is
+   * seated by ~1.35s - so the hero reads wordmark, then pin, then tagline
+   * rather than everything arriving at once.
+   *
+   * `both` holds the 0% frame through the delay; without it the pin would sit
+   * on the baseline and then jump upward to start.
+   */
+  .hero-pin {
+    /* 1.8 head-diameters of a 0.2em head. MUST agree with the 10-by-28 viewBox
+       in HeroPin.tsx and with that element's own h-[0.56em] - the three are one
+       shape described in three places, and the drop distance derives from it. */
+    --pin-needle: 0.36em;
+
+    transform-origin: 50% 100%;
+    animation: heroPinDrop 0.9s 0.45s both;
+  }
+
+  .hero-pin-needle {
+    /* fill-box puts the origin at the top-centre of the needle's own bounding
+       box - where it meets the head - without hand-computing viewBox
+       coordinates. It retracts INTO the head rather than shrinking toward its
+       own middle. */
+    transform-box: fill-box;
+    transform-origin: top center;
+    animation: heroPinRetract 0.9s 0.45s both;
+  }
+
+  /* The pin's head comes to rest as the period and holds that frame, so the
+     real dot stays out of the way - otherwise it would sit at the end of the
+     word from first paint and give the landing away. */
+  .hero-period-mark {
+    opacity: 0;
+  }
+
+  /*
+   * A pin falling the height of the viewport is precisely the large-
+   * displacement motion this preference exists to remove, and there is no
+   * gentler version of it that still means anything. So the drop goes entirely
+   * and the wordmark renders as it always did, period included - which is why
+   * this restores .hero-period-mark rather than leaving it hidden.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    .hero-pin {
+      display: none;
+    }
+
+    .hero-period-mark {
+      opacity: 1;
+    }
+  }
+
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold;
   }

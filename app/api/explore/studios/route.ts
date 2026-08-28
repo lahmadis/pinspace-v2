@@ -144,7 +144,7 @@ export async function GET(request: NextRequest) {
       id: string
       name: string
       organization_id: string | null
-      network_metadata: { department?: string; year?: string | number } | null
+      network_metadata: { department?: string; year?: string | number; studio?: string } | null
       academic_year: string | null
       instructor: string | null
       // Both carried solely to decide who may receive `contributors` below.
@@ -158,6 +158,13 @@ export async function GET(request: NextRequest) {
       workspaceName: string
       department: string | null
       year: string | number | null
+      /**
+       * Which studio (Studio 01 … Thesis Studio) this workspace is a section
+       * of — the drill-down level between year and section. Null on every row
+       * written before the new-section dialog, which is why the explore page
+       * has to bucket those rather than drop them.
+       */
+      studio: string | null
       academicYear: string | null
       instructor: string | null
       organizationId: string | null
@@ -210,6 +217,7 @@ export async function GET(request: NextRequest) {
         workspaceName: ws.name,
         department: ws.network_metadata?.department ?? null,
         year: ws.network_metadata?.year ?? null,
+        studio: ws.network_metadata?.studio ?? null,
         academicYear: ws.academic_year,
         instructor: ws.instructor,
         organizationId: ws.organization_id,
@@ -400,6 +408,11 @@ export async function GET(request: NextRequest) {
         workspaceName: e.workspaceName,
         workspaceId: e.workspaceId,
         department: e.department || 'Architecture',
+        // Undefined, NOT a placeholder string: the explore page needs to tell
+        // an unfiled workspace from one filed under a studio literally named
+        // whatever placeholder we picked, and it buckets the undefined ones
+        // itself under a label it owns.
+        studio: e.studio || undefined,
         instructor: e.instructor || undefined,
         semester: undefined,
         year: yearNum,

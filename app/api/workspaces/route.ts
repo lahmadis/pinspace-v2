@@ -2,6 +2,73 @@ import { NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { validateName } from '@/lib/validation/safeName'
 import { createWorkspace } from '@/lib/workspaces/createWorkspace'
+import { isDepartment, isYearLevel } from '@/lib/constants/departments'
+import { isStudio } from '@/lib/constants/studios'
+
+/** Academic year as academicYearOptions emits it: "2025-2026". */
+const ACADEMIC_YEAR_PATTERN = /^\d{4}-\d{4}$/
+
+/**
+ * created_at as a sortable number. `unknown` in, because the workspace rows
+ * come from `select('*')` and are typed as bare records.
+ *
+ * A missing or unparseable timestamp sorts to the very end rather than throwing
+ * the comparator into NaN — a NaN comparison makes Array.sort's result
+ * implementation-defined, which would scramble the whole grid rather than
+ * misplacing the one bad row.
+ */
+function createdAtMs(value: unknown): number {
+  const t = Date.parse(String(value ?? ''))
+  return Number.isNaN(t) ? 0 : t
+}
+
+/**
+ * The network filing a section carries from its create dialog.
+ *
+ * Returns `{ ok: true, network: undefined }` when the body has none of these
+ * fields — the shared and personal creation paths post a bare name and must
+ * keep working. It is ALL-OR-NOTHING once any of them appears: a workspace with
+ * a department but no year is invisible to the explore year filter and visible
+ * to the department one, which is worse than a workspace with no filing at all.
+ *
+ * Every value is checked against the canonical list rather than trusted. These
+ * strings are what the explore queries filter on (`network_metadata->>studio`),
+ * so an unrecognised one creates a studio bucket nothing else can reach.
+ */
+function parseSectionNetwork(
+  body: Record<string, unknown>
+):
+  | { ok: true; network?: { department: string; year: string; studio: string; instructor: string; academicYear: string } }
+  | { ok: false; error: string } {
+  const keys = ['department', 'yearLevel', 'studio', 'instructor', 'academicYear'] as const
+  const present = keys.filter((k) => body[k] !== undefined && body[k] !== null && body[k] !== '')
+  if (present.length === 0) return { ok: true, network: undefined }
+  if (present.length !== keys.length) {
+    const missing = keys.filter((k) => !present.includes(k))
+    return { ok: false, error: `Incomplete network details: ${missing.join(', ')} missing` }
+  }
+
+  const { department, yearLevel, studio, academicYear } = body
+  if (!isDepartment(department)) return { ok: false, error: 'Unknown department' }
+  if (!isYearLevel(yearLevel)) return { ok: false, error: 'Unknown year level' }
+  if (!isStudio(studio)) return { ok: false, error: 'Unknown studio' }
+  if (typeof academicYear !== 'string' || !ACADEMIC_YEAR_PATTERN.test(academicYear)) {
+    return { ok: false, error: 'Invalid academic year' }
+  }
+  const instructorResult = validateName(body.instructor, { maxLength: 80, fieldLabel: 'Instructor name' })
+  if (!instructorResult.ok) return { ok: false, error: instructorResult.error }
+
+  return {
+    ok: true,
+    network: {
+      department,
+      year: yearLevel,
+      studio,
+      instructor: instructorResult.value,
+      academicYear,
+    },
+  }
+}
 
 // GET: list workspaces owned by or shared with the current user
 export async function GET() {
@@ -107,6 +174,25 @@ export async function GET() {
       board_count: boardCountMap[w.id] ?? 0,
       room_count: roomCountMap[w.id] ?? 0,
     }))
+
+    /**
+     * Newest first.
+     *
+     * Nothing ordered this response before, at any layer. What came back was
+     * the two unordered SELECTs above merged through a Map — owned rows, then
+     * member-only ones, each in whatever order Postgres happened to return —
+     * so a freshly created section landed at an arbitrary position in the
+     * dashboard grid, and the position could change between reloads without
+     * anything having changed.
+     *
+     * Sorted HERE rather than in the dashboard because /archive reads the same
+     * endpoint and had the same problem, and because ordering a list is a
+     * property of the response, not of one of its two renderers. It cannot be
+     * pushed down into the queries either: two ordered SELECTs merged still
+     * need a final pass over the union.
+     */
+    result.sort((a, b) => createdAtMs(b.created_at) - createdAtMs(a.created_at))
+
     return NextResponse.json({ workspaces: result })
   } catch (error) {
     console.error('Unexpected error in GET /api/workspaces:', error)
@@ -161,6 +247,23 @@ export async function POST(req: Request) {
       )
     }
 
+    // Parsed AFTER the instructor gate: a section's filing is org-facing, so a
+    // student probing this endpoint should be refused for who they are before
+    // the body is inspected at all.
+    const networkResult = parseSectionNetwork(body ?? {})
+    if (!networkResult.ok) {
+      return NextResponse.json({ error: networkResult.error }, { status: 400 })
+    }
+    // Sections are classes. Accepting a filing on a shared or personal
+    // workspace would put a room that never reaches the org network into the
+    // explore drill-down, where nobody could open it.
+    if (networkResult.network && type !== 'class') {
+      return NextResponse.json(
+        { error: 'Only class workspaces can carry network details' },
+        { status: 400 }
+      )
+    }
+
     const ownerName =
       user.user_metadata?.full_name ||
       user.email?.split('@')[0] ||
@@ -177,6 +280,7 @@ export async function POST(req: Request) {
       ownerId: userId,
       ownerName,
       organizationId: type === 'class' ? profile?.organization_id ?? null : null,
+      network: networkResult.network,
     })
 
     if (!result.ok) {
