@@ -1,20 +1,23 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
-import { calculateFloorBounds, getFloorRect, floorRectBounds, FLOOR_MIN_INCHES, getWallTransformResolved, getWallTransform } from '@/lib/wallLayout'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { calculateFloorBounds, getWallTransformResolved, getWallTransform } from '@/lib/wallLayout'
 import { makePlanProjection } from '@/lib/room/planProjection'
-import { ROOM, MONO_STACK } from '@/lib/room/palette'
+import { ROOM, MONO_STACK, ROOM_GRID_LINE, ROOM_GRID_INCHES } from '@/lib/room/palette'
 import type { WallConfig, WallTransformOverride } from '@/lib/wallLayout'
 import type { FloorTable } from '@/types'
 import { X, Plus, Upload, Trash2, Loader2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { maxModelBytesForName } from '@/lib/uploadLimits'
+import type { Board } from '@/types'
 import { useDirectUpload } from '@/lib/useDirectUpload'
 
 const TABLE_HEIGHT_INCHES = 18 // 1.5 feet
 const DEFAULT_TABLE_WIDTH = 24
 const DEFAULT_TABLE_DEPTH = 18
-const GRID_INCHES = 12 // 1 ft grid (visual reference only; wall transforms are free-continuous)
+// 1 ft ruling, shared with the 3D room so the plan reads at the same scale as
+// the space. Visual reference only — wall transforms stay free-continuous.
+const GRID_INCHES = ROOM_GRID_INCHES
 
 /** Bytes → MB with one decimal, for upload progress copy. */
 const toMb = (bytes: number): string => (bytes / (1024 * 1024)).toFixed(1)
@@ -54,6 +57,13 @@ interface FloorEditorOverlayProps {
    * unrelated board updates.
    */
   boardWallIndices?: ReadonlyArray<number | null | undefined>
+  /**
+   * Boards, for the sidebar's per-wall thumbnails. Optional and read-only —
+   * the editor never mutates them. boardWallIndices above already carries the
+   * COUNT (and is what the delete guard checks); this exists only so the panel
+   * can show what is actually on the selected wall.
+   */
+  boards?: ReadonlyArray<Board>
   /**
    * Decrements `position.wallIndex` for every board with index > deletedIndex
    * (both in DB and in local state) so boards stay pinned to the correct
@@ -221,6 +231,7 @@ export default function FloorEditorOverlay({
   mode = 'tables',
   onWallConfigChange,
   boardWallIndices,
+  boards,
   onWallRemoved,
   onPersistWallConfig,
   canDeleteWalls = false,
@@ -234,6 +245,21 @@ export default function FloorEditorOverlay({
   // pointer-down) so it can be toggled mid-drag; `lastPointerRef` lets the
   // key-toggle effect replay the gesture at the current cursor position.
   const shiftHeldRef = useRef(false)
+
+  /**
+   * Snapping is a persistent mode now, on by default, rather than something you
+   * had to hold Shift for on every gesture. Shift INVERTS it rather than
+   * enabling it, so the old muscle memory still does something useful: with snap
+   * on, holding Shift is how you place a wall freely.
+   *
+   * The ref shadows the state because every consumer is inside a pointer
+   * handler that must read the current value without being re-created — the
+   * same reason shiftHeldRef exists.
+   */
+  const [snapEnabled, setSnapEnabled] = useState(true)
+  const snapEnabledRef = useRef(true)
+  useEffect(() => { snapEnabledRef.current = snapEnabled }, [snapEnabled])
+
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null)
   /** Neighbour endpoint the current gesture is snapped to, for the highlight. */
   const [activeSnapTarget, setActiveSnapTarget] = useState<Point2 | null>(null)
@@ -267,6 +293,26 @@ export default function FloorEditorOverlay({
   // button). null = nothing selected. Set by pointerdown on a wall polygon.
   const [selectedWallIndex, setSelectedWallIndex] = useState<number | null>(null)
 
+  /**
+   * What the inspector describes. Both are plain derivations rather than state,
+   * so they cannot drift from the selection that produced them.
+   *
+   * `boards` is optional, so the thumbnail strip simply doesn't render for a
+   * caller that doesn't pass it — the panel loses a section rather than
+   * throwing. The delete guard keeps reading boardWallIndices, which is a
+   * separate prop and the one the server is held to.
+   */
+  const selectedWallBoards = useMemo(
+    () => (selectedWallIndex == null
+      ? []
+      : (boards ?? []).filter((b) => b.position?.wallIndex === selectedWallIndex)),
+    [boards, selectedWallIndex]
+  )
+  const selectedTable = useMemo(
+    () => tables.find((t) => t.id === selectedTableId) ?? null,
+    [tables, selectedTableId]
+  )
+
   // Walls mode: numeric Width/Height (FEET) inputs for the selected wall. Local
   // string state so typing is smooth; committed to wallConfig on blur / Enter.
   // Stored unit is feet (lib/wallLayout.ts SCALE=12), same as drag-to-stretch.
@@ -295,20 +341,6 @@ export default function FloorEditorOverlay({
     initialCenterZ: number
     axisX: number
     axisZ: number
-  } | null>(null)
-
-  /**
-   * Floor move/resize. The floor is a surface you edit, not a by-product of
-   * where the walls happen to be, so it gets its own gesture rather than
-   * riding along with a wall's.
-   */
-  const [floorGesture, setFloorGesture] = useState<
-    { kind: 'move' } | { kind: 'resize'; corner: 'nw' | 'ne' | 'sw' | 'se' } | null
-  >(null)
-  const [floorStart, setFloorStart] = useState<{
-    startPx: number
-    startPy: number
-    rect: { centerX: number; centerZ: number; width: number; depth: number }
   } | null>(null)
 
   const floorPlanRef = useRef<HTMLDivElement>(null)
@@ -360,18 +392,18 @@ export default function FloorEditorOverlay({
   undoHistoryRef.current = undoHistory
   undoIndexRef.current = undoIndex
 
-  // The floor is its own surface now, so the drawing has to frame the UNION of
-  // the walls and the slab — either can extend past the other, and cropping
-  // whichever is bigger would hide exactly the thing you came here to drag.
-  const floorRect = getFloorRect(wallConfig)
+  // Framed on the WALLS alone. The slab used to be drawn and draggable here, so
+  // the view had to frame the union of the two; with it gone, including it would
+  // silently zoom the plan out to fit something invisible.
   const wallBounds = calculateFloorBounds(wallConfig)
-  const fb = floorRectBounds(floorRect)
   const hasWalls = wallConfig.walls.length > 0 && Number.isFinite(wallBounds.minX)
-  const bounds = {
-    minX: hasWalls ? Math.min(wallBounds.minX, fb.minX) : fb.minX,
-    maxX: hasWalls ? Math.max(wallBounds.maxX, fb.maxX) : fb.maxX,
-    minZ: hasWalls ? Math.min(wallBounds.minZ, fb.minZ) : fb.minZ,
-    maxZ: hasWalls ? Math.max(wallBounds.maxZ, fb.maxZ) : fb.maxZ,
+  // A room with no walls still needs a finite box or the projection divides by
+  // zero and the grid never draws — 20ft square, which is a plausible studio and
+  // gives Add wall somewhere to land.
+  const EMPTY_ROOM_HALF_IN = 120
+  const bounds = hasWalls ? wallBounds : {
+    minX: -EMPTY_ROOM_HALF_IN, maxX: EMPTY_ROOM_HALF_IN,
+    minZ: -EMPTY_ROOM_HALF_IN, maxZ: EMPTY_ROOM_HALF_IN,
   }
   const { minX, maxX, minZ, maxZ } = bounds
 
@@ -506,7 +538,10 @@ export default function FloorEditorOverlay({
   }, [minX, maxX, minZ, maxZ, setTables])
 
   const handleRotateTable = useCallback(
-    (tableId: string, e: React.PointerEvent) => {
+    // SyntheticEvent, not PointerEvent: this only calls preventDefault and
+    // stopPropagation, and the sidebar button reaches it via onClick (a
+    // MouseEvent). Widening the parameter beats casting at each call site.
+    (tableId: string, e: React.SyntheticEvent) => {
       e.preventDefault()
       e.stopPropagation()
       setTables((prev) =>
@@ -590,50 +625,6 @@ export default function FloorEditorOverlay({
   // drifted one.
   const applyPointerAt = useCallback(
     (clientX: number, clientY: number) => {
-      // ── Floor move / resize ──
-      // Independent of every wall: nothing here reads or writes a wall
-      // transform, which is the whole point — the slab and the walls are
-      // separate objects that may disagree.
-      if (floorGesture && floorStart && onWallConfigChange) {
-        const dX = (clientX - floorStart.startPx) * invScale
-        const dZ = (clientY - floorStart.startPy) * invScale
-        const r = floorStart.rect
-        // Shift snaps to the same 12" ruling the grid draws.
-        const snap = (v: number) =>
-          shiftHeldRef.current ? Math.round(v / GRID_INCHES) * GRID_INCHES : v
-
-        let next = r
-        if (floorGesture.kind === 'move') {
-          next = { ...r, centerX: snap(r.centerX + dX), centerZ: snap(r.centerZ + dZ) }
-        } else {
-          // Resize from a corner: the OPPOSITE corner is pinned, so the slab
-          // grows away from the anchor the way a marquee does.
-          const west = floorGesture.corner === 'nw' || floorGesture.corner === 'sw'
-          const north = floorGesture.corner === 'nw' || floorGesture.corner === 'ne'
-          const anchorX = west ? r.centerX + r.width / 2 : r.centerX - r.width / 2
-          const anchorZ = north ? r.centerZ + r.depth / 2 : r.centerZ - r.depth / 2
-          const movingX = snap((west ? r.centerX - r.width / 2 : r.centerX + r.width / 2) + dX)
-          const movingZ = snap((north ? r.centerZ - r.depth / 2 : r.centerZ + r.depth / 2) + dZ)
-          const width = Math.max(FLOOR_MIN_INCHES, Math.abs(movingX - anchorX))
-          const depth = Math.max(FLOOR_MIN_INCHES, Math.abs(movingZ - anchorZ))
-          // Re-derive the centre from the pinned anchor so hitting the minimum
-          // size stops the slab dead instead of letting it drift.
-          const signX = movingX >= anchorX ? 1 : -1
-          const signZ = movingZ >= anchorZ ? 1 : -1
-          next = {
-            centerX: anchorX + (signX * width) / 2,
-            centerZ: anchorZ + (signZ * depth) / 2,
-            width,
-            depth,
-          }
-        }
-
-        const nextConfig = { ...wallConfig, floor: next }
-        lastAppliedWallConfigRef.current = nextConfig
-        onWallConfigChange(nextConfig)
-        return
-      }
-
       // ── Wall drag (move) ──
       if (draggingWallIndex !== null && wallDragStart && onWallConfigChange) {
         const deltaPx = clientX - wallDragStart.startPx
@@ -649,7 +640,7 @@ export default function FloorEditorOverlay({
         let appliedX = rawX
         let appliedZ = rawZ
         let snapped: Point2 | null = null
-        if (shiftHeldRef.current) {
+        if (snapEnabledRef.current !== shiftHeldRef.current) {
           const t = getWallTransformResolved(wallConfig, draggingWallIndex)
           const ends = wallEndpoints({ ...t, x: rawX, z: rawZ })
           let bestDistSq = Infinity
@@ -703,7 +694,7 @@ export default function FloorEditorOverlay({
         // rotateStart is never mutated mid-gesture, so rawRotationY is always
         // recomputed from the pointer — the accumulator is inherently raw and
         // the snap is a pure read-time transform, exactly as in DraggableBoard.
-        const newRotationY = shiftHeldRef.current
+        const newRotationY = (snapEnabledRef.current !== shiftHeldRef.current)
           ? Math.round(rawRotationY / ROTATION_SNAP_RAD) * ROTATION_SNAP_RAD
           : rawRotationY
         setActiveSnapTarget(null)
@@ -735,7 +726,7 @@ export default function FloorEditorOverlay({
         // than silently swinging the wall to close it.
         let nextWidthInches = rawWidthInches
         let snapped: Point2 | null = null
-        if (shiftHeldRef.current) {
+        if (snapEnabledRef.current !== shiftHeldRef.current) {
           const sign = stretchStart.end === 'end' ? 1 : -1
           const halfInit = stretchStart.initialWidthInches / 2
           const fixedX = stretchStart.initialCenterX - sign * halfInit * stretchStart.axisX
@@ -789,7 +780,6 @@ export default function FloorEditorOverlay({
     [
       draggingWallIndex, wallDragStart, rotatingWallIndex, rotateStart,
       stretchingWallIndex, stretchStart, draggingTableId, dragStart,
-      floorGesture, floorStart,
       invScale, setTables, wallConfig, onWallConfigChange,
       ensureCustomTransforms,
     ]
@@ -813,7 +803,7 @@ export default function FloorEditorOverlay({
   useEffect(() => {
     const gestureActive =
       draggingWallIndex !== null || rotatingWallIndex !== null ||
-      stretchingWallIndex !== null || floorGesture !== null
+      stretchingWallIndex !== null
     if (!gestureActive) return
     const onShiftToggle = (ev: KeyboardEvent) => {
       if (ev.key !== 'Shift') return
@@ -832,17 +822,9 @@ export default function FloorEditorOverlay({
       window.removeEventListener('keydown', onShiftToggle)
       window.removeEventListener('keyup', onShiftToggle)
     }
-  }, [draggingWallIndex, rotatingWallIndex, stretchingWallIndex, floorGesture, applyPointerAt])
+  }, [draggingWallIndex, rotatingWallIndex, stretchingWallIndex, applyPointerAt])
 
   const handlePointerUp = useCallback(() => {
-    if (mode === 'walls' && onWallConfigChange && floorGesture !== null) {
-      const configToPush = lastAppliedWallConfigRef.current ?? wallConfig
-      setUndoHistory((prev) => { const t = prev.slice(0, undoIndex + 1); t.push(configToPush); return t })
-      setUndoIndex((prev) => prev + 1)
-      lastAppliedWallConfigRef.current = null
-    }
-    setFloorGesture(null)
-    setFloorStart(null)
 
     if (mode === 'walls' && onWallConfigChange &&
       (draggingWallIndex !== null || rotatingWallIndex !== null || stretchingWallIndex !== null)) {
@@ -875,7 +857,7 @@ export default function FloorEditorOverlay({
     // the SNAPPED geometry — the snap is not a preview overlay.
     setActiveSnapTarget(null)
     lastPointerRef.current = null
-  }, [mode, onWallConfigChange, draggingWallIndex, rotatingWallIndex, stretchingWallIndex, floorGesture, wallConfig, undoIndex])
+  }, [mode, onWallConfigChange, draggingWallIndex, rotatingWallIndex, stretchingWallIndex, wallConfig, undoIndex])
 
   // ── Wall interaction starters ─────────────────────────────────────────────
 
@@ -1161,6 +1143,9 @@ export default function FloorEditorOverlay({
   // Extents come from the canvas corners through toWorld, not from `bounds`, so
   // the ruling reaches the edges at any zoom instead of stopping where the
   // geometry happens to end.
+  // The grid is the ground now — the floor slab that used to sit on it is gone,
+  // so this ruling IS the surface the walls stand on and it runs edge to edge.
+  // One weight, matching the 3D room exactly: see ROOM_GRID_LINE.
   const gridLines: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
   if (mode === 'walls') {
     const [worldLeft, worldTop] = proj.toWorld(0, 0)
@@ -1203,15 +1188,16 @@ export default function FloorEditorOverlay({
       <div
         className={
           embedded
-            ? 'relative flex flex-col h-full'
+            ? 'relative flex h-full w-full'
             : 'bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col'
         }
         style={embedded ? undefined : { width: VIEW_WIDTH + 48, maxHeight: '90vh' }}
       >
-        {/* Header. Embedded this is NOT a top bar: the top strip is taken by
-            fixed chrome on both sides (breadcrumb top-left at z-40, Share
-            top-right, roster below it), so the controls go bottom-left — the
-            one clear corner, and the same one the old plan panel used. */}
+        {/* The MODAL toolbar. Embedded now uses the right-hand sidebar further
+            down instead, so every embedded-conditional inside this block always
+            takes its else branch — left in place rather than unpicked so the
+            modal keeps byte-for-byte the markup it already shipped with. */}
+        {!embedded && (
         <div
           className={
             embedded
@@ -1368,14 +1354,15 @@ export default function FloorEditorOverlay({
             </div>
           )}
         </div>
+        )}
 
-        <div className={embedded ? 'flex-1 min-h-0 relative' : 'p-6 overflow-auto'}>
+        <div className={embedded ? 'relative flex min-w-0 flex-1 flex-col' : 'p-6 overflow-auto'}>
           {/* Embedded hides the prose: the plan has to fit the tab, and this
               paragraph is the one thing here that costs it height for nothing.
               The toolbar above already carries the controls. */}
           <p className={embedded ? 'hidden' : 'text-sm text-gray-500 mb-4'}>
             {mode === 'walls'
-              ? 'Top-down view. Click a wall to select it. Drag walls to move, endpoint handles to resize, the circle handle on the front edge to rotate. Hold Shift while dragging to snap — 90° on rotate, to a neighbouring wall corner on move and resize. Ctrl+Z undo, Ctrl+Y redo.'
+              ? 'Top-down view. Click a wall to select it. Drag walls to move, endpoint handles to resize, the circle handle on the front edge to rotate. Snapping is on by default — 90° on rotate, to a neighbouring wall corner on move and resize; hold Shift while dragging to turn it off. Ctrl+Z undo, Ctrl+Y redo.'
               : 'Top-down view. Drag a table to move it, click its middle to add a 3D model, its corners to rotate.'}
           </p>
 
@@ -1401,41 +1388,6 @@ export default function FloorEditorOverlay({
               // same value in both branches.)
               style={{ pointerEvents: 'none' }}
             >
-              {/* The floor slab — a real object drawn ON the grid, not the
-                  extent of the world. It used to be `proj`'s bounds rect, which
-                  meant it was always exactly the walls' bounding box and could
-                  never be edited or disagreed with. */}
-              {(() => {
-                const [fx1, fy1] = proj.toPx(
-                  floorRect.centerX - floorRect.width / 2,
-                  floorRect.centerZ - floorRect.depth / 2,
-                )
-                const [fx2, fy2] = proj.toPx(
-                  floorRect.centerX + floorRect.width / 2,
-                  floorRect.centerZ + floorRect.depth / 2,
-                )
-                const editable = mode === 'walls'
-                return (
-                  <rect
-                    x={Math.min(fx1, fx2)}
-                    y={Math.min(fy1, fy2)}
-                    width={Math.abs(fx2 - fx1)}
-                    height={Math.abs(fy2 - fy1)}
-                    fill="#faf9f6"
-                    stroke={floorGesture ? '#3B6EF6' : '#cbd5e1'}
-                    strokeWidth={floorGesture ? 2 : 1.5}
-                    className={editable ? 'cursor-move' : ''}
-                    style={{ pointerEvents: editable ? 'all' : 'none' }}
-                    onPointerDown={editable ? (e) => {
-                      e.stopPropagation()
-                      setSelectedWallIndex(null)
-                      setFloorGesture({ kind: 'move' })
-                      setFloorStart({ startPx: e.clientX, startPy: e.clientY, rect: floorRect })
-                    } : undefined}
-                  />
-                )
-              })()}
-
               {/* 12-inch grid, drawn OVER the slab and running to the canvas
                   edges — it's the drafting ruling the whole room sits on, so it
                   must not stop where the floor does. */}
@@ -1443,38 +1395,11 @@ export default function FloorEditorOverlay({
                 <line
                   key={i}
                   x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-                  stroke="#e2e8f0"
-                  strokeWidth={0.5}
+                  stroke={ROOM_GRID_LINE}
+                  strokeWidth={1}
                   style={{ pointerEvents: 'none' }}
                 />
               ))}
-
-              {/* Floor corner handles. Drawn after the grid so they stay
-                  visible, and only in walls mode — models mode has its own
-                  selection and a second draggable object would fight it. */}
-              {mode === 'walls' && (['nw', 'ne', 'sw', 'se'] as const).map((corner) => {
-                const cx = floorRect.centerX + (corner === 'nw' || corner === 'sw' ? -1 : 1) * floorRect.width / 2
-                const cz = floorRect.centerZ + (corner === 'nw' || corner === 'ne' ? -1 : 1) * floorRect.depth / 2
-                const [hx, hy] = proj.toPx(cx, cz)
-                return (
-                  <rect
-                    key={corner}
-                    x={hx - 5} y={hy - 5} width={10} height={10}
-                    rx={2}
-                    fill="#ffffff"
-                    stroke="#3B6EF6"
-                    strokeWidth={1.5}
-                    className={corner === 'nw' || corner === 'se' ? 'cursor-nwse-resize' : 'cursor-nesw-resize'}
-                    style={{ pointerEvents: 'all' }}
-                    onPointerDown={(e) => {
-                      e.stopPropagation()
-                      setSelectedWallIndex(null)
-                      setFloorGesture({ kind: 'resize', corner })
-                      setFloorStart({ startPx: e.clientX, startPy: e.clientY, rect: floorRect })
-                    }}
-                  />
-                )
-              })}
 
               {/* Wall polygons */}
               {wallGeometry.map(({ index, points, frontEdge }) => {
@@ -1483,27 +1408,59 @@ export default function FloorEditorOverlay({
                 <g key={index}>
                   <polygon
                     points={points.join(',')}
-                    // Walls draw as ink like they do in the read-only plan;
-                    // selection is the accent. Previously indigo fill with a
-                    // yellow selection ring — both from the retired palette.
-                    fill={isSelected ? ROOM.accent : ROOM.ink}
-                    stroke={isSelected ? ROOM.accent : ROOM.ink}
-                    strokeWidth={isSelected ? 2.5 : 0.5}
+                    // Drawn as a light panel with a hairline, not a solid ink
+                    // bar. At 6" thick a filled-black wall is the heaviest mark
+                    // on the sheet, so a plan of four walls read as four black
+                    // bars floating on nothing — the walls out-weighted the room
+                    // they describe. Selection is a blue outline and a blue
+                    // wash, which also frees the front-edge indicator below to
+                    // be legible against the wall instead of on top of black.
+                    fill={isSelected ? '#EDF3FE' : '#FFFFFF'}
+                    stroke={isSelected ? ROOM.accent : '#B9C4D8'}
+                    strokeWidth={isSelected ? 1.5 : 1}
+                    strokeLinejoin="round"
                     className={mode === 'walls' ? 'cursor-move' : ''}
                     style={{ pointerEvents: mode === 'walls' ? 'all' : 'none' }}
                     onPointerDown={mode === 'walls' ? (e) => handleWallPointerDown(index, e) : undefined}
                   />
-                  {/* Front-edge indicator: ROOM.ink2, 2px */}
+                  {/* Which face the boards hang on. */}
                   {mode === 'walls' && (
                     <line
                       x1={frontEdge[0]} y1={frontEdge[1]}
                       x2={frontEdge[2]} y2={frontEdge[3]}
-                      stroke={ROOM.ink2}
+                      stroke={isSelected ? ROOM.accent : '#8A99B5'}
                       strokeWidth={2}
                       strokeLinecap="round"
                       style={{ pointerEvents: 'none' }}
                     />
                   )}
+                  {/* Wall name, set just off the front face.
+                      The offset direction is derived from the polygon's own
+                      centroid rather than assumed, so it stays on the outside
+                      for a wall at any rotation instead of landing under it. */}
+                  {mode === 'walls' && (() => {
+                    const cx = (points[0] + points[2] + points[4] + points[6]) / 4
+                    const cy = (points[1] + points[3] + points[5] + points[7]) / 4
+                    const fmx = (frontEdge[0] + frontEdge[2]) / 2
+                    const fmy = (frontEdge[1] + frontEdge[3]) / 2
+                    const dx = fmx - cx
+                    const dy = fmy - cy
+                    const len = Math.hypot(dx, dy) || 1
+                    return (
+                      <text
+                        x={fmx + (dx / len) * 14}
+                        y={fmy + (dy / len) * 14 + 3.5}
+                        textAnchor="middle"
+                        fill={isSelected ? ROOM.accent : '#8A8FA0'}
+                        fontSize={10}
+                        fontWeight={700}
+                        letterSpacing={0.9}
+                        style={{ pointerEvents: 'none' }}
+                      >
+                        {`WALL ${String(index + 1).padStart(2, '0')}`}
+                      </text>
+                    )
+                  })()}
                 </g>
                 )
               })}
@@ -1549,8 +1506,8 @@ export default function FloorEditorOverlay({
               {/* Stretch endpoint circles (visible) */}
               {mode === 'walls' && wallGeometry.map(({ index, startPx, startPy, endPx, endPy }) => (
                 <g key={`stretch-vis-${index}`} style={{ pointerEvents: 'none' }}>
-                  <circle cx={startPx} cy={startPy} r={4} fill="#ffffff" stroke={ROOM.accent} strokeWidth={1.5} />
-                  <circle cx={endPx} cy={endPy} r={4} fill="#ffffff" stroke={ROOM.accent} strokeWidth={1.5} />
+                  <circle cx={startPx} cy={startPy} r={5.5} fill="#ffffff" stroke={ROOM.accent} strokeWidth={2} />
+                  <circle cx={endPx} cy={endPy} r={5.5} fill="#ffffff" stroke={ROOM.accent} strokeWidth={2} />
                 </g>
               ))}
 
@@ -1574,8 +1531,8 @@ export default function FloorEditorOverlay({
                   <g style={{ pointerEvents: 'none' }}>
                     <rect
                       x={lx - boxW / 2} y={ly - 11}
-                      width={boxW} height={20} rx={4}
-                      fill={ROOM.accent}
+                      width={boxW} height={20} rx={5}
+                      fill={ROOM.ink}
                     />
                     <text
                       x={lx} y={ly + 3}
@@ -1715,7 +1672,7 @@ export default function FloorEditorOverlay({
                         setTables((prev) => prev.filter((t) => t.id !== table.id))
                         setSelectedTableId(null)
                       }}
-                      className="absolute z-10 w-5 h-5 rounded-full bg-white border shadow-sm flex items-center justify-center hover:bg-[#D64545]/8"
+                      className="absolute z-10 w-5 h-5 rounded-full bg-white border shadow-sm flex items-center justify-center hover:bg-[#D64545]/[0.08]"
                       style={{
                         left: '50%',
                         top: 0,
@@ -1758,7 +1715,335 @@ export default function FloorEditorOverlay({
               {uploadLabel(modelUploadPct, modelUploadLoaded, modelUploadTotal)}
             </p>
           )}
+
+          {/* ---- Floating canvas chrome (embedded only) ----
+              Both pills sit over the plan rather than in the sidebar: they
+              describe the CANVAS gesture you are about to make, and reading
+              "hold Shift" from a column on the far right while your hand is on a
+              wall is the wrong place for it. pointer-events are off on the
+              wrapper so neither pill can swallow a drag that starts under it. */}
+          {embedded && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-end justify-between gap-3 p-4">
+              <span className="pointer-events-auto rounded-full border border-[#16181D]/[0.08] bg-white/90 px-4 py-2.5 text-xs text-[#5A5E6B] shadow-[0_4px_16px_rgba(22,24,29,0.08)] backdrop-blur-sm">
+                {mode === 'walls'
+                  ? 'Drag a wall to move · ends snap together, Shift to override'
+                  : 'Drag a table to move · click one to attach a 3D model'}
+              </span>
+              {/* The same switch as the sidebar's, deliberately duplicated: it
+                  is the one setting you reach for mid-gesture, and it reads the
+                  same state, so the two can never disagree. */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={snapEnabled}
+                onClick={() => setSnapEnabled((v) => !v)}
+                className="pointer-events-auto flex items-center gap-2.5 rounded-full border border-[#16181D]/[0.08] bg-white/90 px-4 py-2 text-xs font-semibold text-[#16181D] shadow-[0_4px_16px_rgba(22,24,29,0.08)] backdrop-blur-sm transition-colors hover:bg-white"
+              >
+                <span
+                  aria-hidden="true"
+                  className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                    snapEnabled ? 'bg-[#3B6EF6]' : 'bg-[#16181D]/[0.15]'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${
+                      snapEnabled ? 'left-[18px]' : 'left-0.5'
+                    }`}
+                  />
+                </span>
+                Snap {snapEnabled ? 'on' : 'off'}
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* ---- Right-hand inspector (embedded plan tab only) ----
+            Replaces the old bottom-left card. A sidebar rather than a floating
+            panel because the wall inspector has to hold a name, three numeric
+            fields, a thumbnail strip and two destructive-ish actions — that is a
+            column of content, and a 252px card over the canvas could only ever
+            show a slice of it while covering the plan it describes.
+
+            pt-16 clears the room's own fixed chrome, which owns the top strip on
+            both sides — the breadcrumb at top-left, Share and the menu at
+            top-right, all at a higher z than this panel. Without it the
+            Walls/Models toggle sits underneath the Share button. */}
+        {embedded && (
+          <aside className="relative z-10 flex w-[272px] shrink-0 flex-col border-l border-[#16181D]/[0.08] bg-white pt-16">
+            {/* Which layer you are grabbing. Kept from the old panel: it is the
+                only way to reach tables and models at all. */}
+            {onModeChange && (
+              <div className="flex shrink-0 gap-1 border-b border-[#16181D]/[0.06] p-2">
+                {([
+                  { key: 'walls' as const, label: 'Walls' },
+                  { key: 'tables' as const, label: 'Models' },
+                ]).map(({ key, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => onModeChange(key)}
+                    aria-pressed={mode === key}
+                    className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
+                      mode === key ? 'bg-[#3B6EF6] text-white' : 'text-[#5A5E6B] hover:bg-[#16181D]/5'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex-1 space-y-5 overflow-y-auto p-4">
+              {mode === 'walls' ? (
+                selectedWallIndex != null && selectedWallIndex < wallConfig.walls.length ? (
+                  <>
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#A8ADBA]">
+                          Selected
+                        </span>
+                        {selectedWallBoards.length > 0 && (
+                          <span className="rounded-full bg-[#3B6EF6]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#3B6EF6]">
+                            {selectedWallBoards.length} board{selectedWallBoards.length === 1 ? '' : 's'}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="mt-0.5 text-[22px] font-extrabold tracking-[-0.02em] text-[#16181D]">
+                        Wall {String(selectedWallIndex + 1).padStart(2, '0')}
+                      </h3>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#A8ADBA]">
+                        Transform
+                      </span>
+                      <div className="mt-2 space-y-2">
+                        {/* Width is the wall THICKNESS and is the same for every
+                            wall in the room, so it reads rather than edits.
+                            Shown anyway: without it the panel offers "length"
+                            and "height" and leaves you hunting for the third
+                            dimension. */}
+                        <div className="flex items-center justify-between rounded-xl border border-[#16181D]/[0.08] px-3 py-2.5">
+                          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#A8ADBA]">Width</span>
+                          <span className="text-sm font-semibold text-[#8A8FA0]">6&quot;</span>
+                        </div>
+                        {/* LENGTH is wall.width in the data model — the span
+                            along the floor. Renamed in the UI only: "width"
+                            beside a 6" width field would be two different things
+                            wearing one word. */}
+                        {([
+                          { key: 'width' as const, label: 'Length', value: wallWidthInput, set: setWallWidthInput },
+                          { key: 'height' as const, label: 'Height', value: wallHeightInput, set: setWallHeightInput },
+                        ]).map(({ key, label, value, set }) => (
+                          <label
+                            key={key}
+                            className="flex items-center justify-between gap-2 rounded-xl border border-[#16181D]/[0.08] px-3 py-1.5 focus-within:border-[#3B6EF6] focus-within:ring-1 focus-within:ring-[#3B6EF6]"
+                          >
+                            <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#A8ADBA]">{label}</span>
+                            <span className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min={WALL_FT_MIN}
+                                max={WALL_FT_MAX}
+                                step={0.5}
+                                value={value}
+                                onChange={(e) => set(e.target.value)}
+                                onBlur={() => applyWallDimension(selectedWallIndex, key, parseFloat(value))}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    applyWallDimension(selectedWallIndex, key, parseFloat(value))
+                                    ;(e.target as HTMLInputElement).blur()
+                                  }
+                                }}
+                                className="w-14 bg-transparent py-1 text-right text-sm font-semibold text-[#16181D] focus:outline-none"
+                                aria-label={`Wall ${selectedWallIndex + 1} ${label.toLowerCase()} in feet`}
+                              />
+                              <span className="text-xs text-[#A8ADBA]">ft</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {selectedWallBoards.length > 0 && (
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#A8ADBA]">
+                          Boards on this wall
+                        </span>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {selectedWallBoards.slice(0, 8).map((b) => (
+                            <span
+                              key={b.id}
+                              title={b.title}
+                              className="block h-14 w-12 overflow-hidden rounded-lg border border-[#16181D]/[0.08] bg-[#F4F6FB]"
+                            >
+                              {b.thumbnailUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={b.thumbnailUrl} alt="" className="h-full w-full object-cover" />
+                              ) : null}
+                            </span>
+                          ))}
+                          {selectedWallBoards.length > 8 && (
+                            <span className="flex h-14 w-12 items-center justify-center rounded-lg border border-dashed border-[#16181D]/[0.12] text-[11px] font-semibold text-[#A8ADBA]">
+                              +{selectedWallBoards.length - 8}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-[#8A8FA0]">Click a wall in the plan to select it.</p>
+                )
+              ) : (
+                <>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#A8ADBA]">
+                      Selected
+                    </span>
+                    <h3 className="mt-0.5 text-[22px] font-extrabold tracking-[-0.02em] text-[#16181D]">
+                      {selectedTable ? 'Table' : 'Nothing'}
+                    </h3>
+                    <p className="mt-1 text-sm text-[#8A8FA0]">
+                      {selectedTable
+                        ? 'Drag it in the plan to move it. Rotate it or attach a 3D model below.'
+                        : 'Add a table, or click one in the plan.'}
+                    </p>
+                  </div>
+
+                  {selectedTable && (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={(e) => handleRotateTable(selectedTable.id, e)}
+                        className="w-full rounded-xl border border-[#16181D]/[0.12] px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:bg-[#16181D]/5"
+                      >
+                        Rotate 90°
+                      </button>
+                      {/* Opens the same picker the table's own in-plan button
+                          opens, through the same ref handshake — uploadTargetRef
+                          is what tells the change handler which table the file
+                          belongs to, and it must be set before the click. */}
+                      <button
+                        type="button"
+                        disabled={uploadingTableId === selectedTable.id}
+                        onClick={() => {
+                          uploadTargetRef.current = selectedTable.id
+                          fileInputRef.current?.click()
+                        }}
+                        className="w-full rounded-xl bg-[#3B6EF6] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#16181D] disabled:opacity-50"
+                      >
+                        {uploadingTableId === selectedTable.id
+                          ? 'Uploading…'
+                          : selectedTable.modelUrl ? 'Replace 3D model' : 'Add 3D model'}
+                      </button>
+                      {selectedTable.modelUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setTables((prev) => prev.map((t) => (
+                            t.id === selectedTable.id ? { ...t, modelUrl: undefined } : t
+                          )))}
+                          className="w-full rounded-xl px-4 py-2 text-sm font-semibold text-[#C2452D] transition-colors hover:bg-[#C2452D]/[0.06]"
+                        >
+                          Remove 3D model
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Snap is a property of the editor, not of the selection, so it
+                  stays put in both modes rather than vanishing when nothing is
+                  selected. */}
+              <div className="rounded-2xl border border-[#16181D]/[0.08] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-bold text-[#16181D]">Snap</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={snapEnabled}
+                    aria-label="Snap"
+                    onClick={() => setSnapEnabled((v) => !v)}
+                    className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+                      snapEnabled ? 'bg-[#3B6EF6]' : 'bg-[#16181D]/[0.15]'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                        snapEnabled ? 'left-[22px]' : 'left-0.5'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <p className="mt-1.5 text-xs leading-relaxed text-[#8A8FA0]">
+                  Drag a wall near another and its end clicks onto it. Hold Shift
+                  to turn it off for one drag.
+                </p>
+              </div>
+            </div>
+
+            <div className="shrink-0 space-y-2 border-t border-[#16181D]/[0.06] p-3">
+              {mode === 'walls' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleAddWall}
+                    className="w-full rounded-xl border border-[#16181D]/[0.12] px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:bg-[#16181D]/5"
+                  >
+                    Add wall
+                  </button>
+                  {/* Delete-gated as before: removing a wall removes its boards,
+                      so it is withheld rather than shown disabled. */}
+                  {canDeleteWalls && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveWall}
+                      disabled={selectedWallIndex == null || wallConfig.walls.length <= 1}
+                      className="w-full rounded-xl border border-[#C2452D]/30 px-4 py-2.5 text-sm font-semibold text-[#C2452D] transition-colors hover:bg-[#C2452D]/[0.06] disabled:cursor-not-allowed disabled:opacity-40"
+                      title={selectedWallIndex == null ? 'Click a wall to select it first' : `Remove wall ${selectedWallIndex + 1}`}
+                    >
+                      Remove wall
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleAddTable}
+                    className="w-full rounded-xl border border-[#16181D]/[0.12] px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:bg-[#16181D]/5"
+                  >
+                    Add table
+                  </button>
+                  {selectedTable && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTables((prev) => prev.filter((t) => t.id !== selectedTable.id))
+                        setSelectedTableId(null)
+                      }}
+                      className="w-full rounded-xl border border-[#C2452D]/30 px-4 py-2.5 text-sm font-semibold text-[#C2452D] transition-colors hover:bg-[#C2452D]/[0.06]"
+                    >
+                      Remove table
+                    </button>
+                  )}
+                </>
+              )}
+              {/* Walls autosave through onWallConfigChange; tables do not, so
+                  this stays an explicit Save rather than becoming a second
+                  debounced writer on the versioned wall-config blob. */}
+              <button
+                type="button"
+                onClick={() => onSaveAndExit()}
+                className="w-full rounded-xl bg-[#16181D] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#3B6EF6]"
+              >
+                Save
+              </button>
+            </div>
+          </aside>
+        )}
       </div>
 
       {pendingDelete && (
