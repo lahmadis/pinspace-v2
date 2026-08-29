@@ -1,101 +1,235 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import BubbleNetwork, { type BubbleNode } from '@/components/network/BubbleNetwork'
+import { useEffect, useRef, useState } from 'react'
+import * as d3 from 'd3'
 
 /**
- * A live bubble network, filling the dashboard band behind its own copy.
+ * The bubbles behind the dashboard's network band.
  *
- * The real component, with the real force simulation and the real hover
- * behaviour — not a drawing of one. The graph is simply cropped by the band, so
- * you see part of the network rather than all of it, and clicking anywhere opens
- * the whole thing.
+ * A DIAGRAM, not a preview. This used to mount the real <BubbleNetwork> with
+ * the real studios fetched from /api/explore/studios — a live, faithful,
+ * labelled graph shrunk into a 190px strip. Faithful was the problem: at that
+ * size the labels were unreadable, so the band showed real data that could not
+ * be read and implied the crop was meaningful when which twelve studios landed
+ * in frame was arbitrary. It also spent a network request and a full force
+ * simulation on decoration.
  *
- * Four things make that work at this size:
+ * So: plain grey circles, no text, no data, no fetch. It says "a network lives
+ * behind this" and leaves the reading of it to the page the band opens.
  *
- * - `transparent` so it paints no ground and no ruling. Its own #E6ECFC is
- *   opaque, and full-bleed that would cover the band's gradient — the band would
- *   stop being the school's surface and become a small copy of the network page.
- * - `interactive={false}` attaches no d3 zoom, so wheel and drag never bind. A
- *   graph you can pan is a graph that eats the click meant to open it. Hovering
- *   a bubble still works: that is a different gesture, and it is the whole point
- *   of showing a live graph rather than a picture.
- * - Held at low opacity, because the band's job is still to say "The Network"
- *   and be clicked. At full strength the bubbles win against the title.
- * - The simulation runs `alphaDecay(0.1)` and stops itself, so this is a burst
- *   of work on mount, not a loop running while the dashboard is open.
- *
- * Fetches on mount rather than taking nodes from the dashboard: the dashboard
- * holds WORKSPACES (what you belong to), the network holds PUBLISHED STUDIOS
- * across the school. Different sets — previewing the former while linking to the
- * latter would misrepresent what a click gets you.
+ * The one thing it does do is respond. Bubbles shove away from the cursor and
+ * bounce back, which is what makes a static-looking band feel like something
+ * rather than a printed pattern — and it is honest about being decoration in a
+ * way a shrunken real graph was not.
  */
 
 /** Faint enough that the band's title stays the loudest thing on it. */
-const PREVIEW_OPACITY = 0.4
+const PREVIEW_OPACITY = 0.55
 
-interface NetworkBandPreviewProps {
-  /** The band's height, so the simulation centres in the box that exists. */
-  height: number
+/**
+ * The layout, as fractions of the band so it holds its composition at any
+ * width, plus a radius in px.
+ *
+ * Hand-placed rather than random: a random scatter clumps and leaves holes at
+ * this count, and re-rolls on every mount so the dashboard never looks the
+ * same twice. These are also only STARTING points — the simulation spreads
+ * them from here, and the cursor pushes them anywhere.
+ */
+const LAYOUT: ReadonlyArray<{ fx: number; fy: number; r: number }> = [
+  { fx: 0.06, fy: 0.30, r: 26 },
+  { fx: 0.14, fy: 0.72, r: 16 },
+  { fx: 0.23, fy: 0.22, r: 13 },
+  { fx: 0.29, fy: 0.58, r: 30 },
+  { fx: 0.38, fy: 0.86, r: 12 },
+  { fx: 0.42, fy: 0.30, r: 20 },
+  { fx: 0.50, fy: 0.64, r: 15 },
+  { fx: 0.56, fy: 0.18, r: 24 },
+  { fx: 0.63, fy: 0.78, r: 19 },
+  { fx: 0.69, fy: 0.40, r: 32 },
+  { fx: 0.77, fy: 0.72, r: 14 },
+  { fx: 0.82, fy: 0.24, r: 18 },
+  { fx: 0.88, fy: 0.60, r: 22 },
+  { fx: 0.94, fy: 0.34, r: 12 },
+  { fx: 0.97, fy: 0.82, r: 17 },
+]
+
+/** How close the cursor gets before a bubble starts moving, in px. */
+const REPEL_RADIUS = 130
+
+/** Shove strength at the cursor's exact position, falling to 0 at the radius. */
+const REPEL_STRENGTH = 7
+
+type Bubble = d3.SimulationNodeDatum & {
+  r: number
+  homeX: number
+  homeY: number
 }
 
-export default function NetworkBandPreview({ height }: NetworkBandPreviewProps) {
-  const [nodes, setNodes] = useState<BubbleNode[]>([])
+interface NetworkBandPreviewProps {
+  /** The band's height, so the simulation lays out in the box that exists. */
+  height: number
+  /**
+   * Which way to tint the circles.
+   *
+   * 'dark' for a pale band (grey on light), 'light' for the near-black one
+   * (white on dark). A single grey that "works on both" works on neither: it
+   * is the same lightness as one of the two grounds.
+   */
+  tone?: 'dark' | 'light'
+}
+
+export default function NetworkBandPreview({ height, tone = 'dark' }: NetworkBandPreviewProps) {
+  const hostRef = useRef<HTMLDivElement>(null)
+  const circleRefs = useRef<(SVGCircleElement | null)[]>([])
+  /** Cursor in local coords, or null when it is not over the band. */
+  const pointerRef = useRef<{ x: number; y: number } | null>(null)
+  const [width, setWidth] = useState(0)
   const [shown, setShown] = useState(false)
 
+  // Width has to be measured — the band is full-bleed and its height is the
+  // only dimension the caller knows.
   useEffect(() => {
-    let cancelled = false
-    // The route derives the institution from the session, so there is nothing
-    // to pass here and nothing to get wrong about scope.
-    fetch('/api/explore/studios', { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (cancelled || !data) return
-        // A handful is a preview; the whole school is a hairball at this size,
-        // and every extra node is simulation work for a background.
-        setNodes((data.studios ?? []).slice(0, 12))
-      })
-      .catch(() => {
-        // Silent: this is a layer on a band that already works as a link. An
-        // error state here would be louder than the thing it reports.
-      })
-    return () => { cancelled = true }
+    const host = hostRef.current
+    if (!host) return
+    const measure = () => setWidth(host.clientWidth)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(host)
+    return () => observer.disconnect()
   }, [])
+
+  useEffect(() => {
+    if (width === 0) return
+
+    // Movement is the whole of what this adds, so under reduced motion the
+    // circles simply sit at their layout positions. Nothing is lost but the
+    // response to the cursor.
+    const reduced =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    const nodes: Bubble[] = LAYOUT.map((b) => ({
+      r: b.r,
+      homeX: b.fx * width,
+      homeY: b.fy * height,
+      x: b.fx * width,
+      y: b.fy * height,
+    }))
+
+    const paint = () => {
+      nodes.forEach((n, i) => {
+        const el = circleRefs.current[i]
+        if (!el) return
+        el.setAttribute('cx', String(n.x ?? 0))
+        el.setAttribute('cy', String(n.y ?? 0))
+      })
+    }
+
+    paint()
+    if (reduced) return
+
+    /**
+     * Push every bubble within REPEL_RADIUS directly away from the cursor.
+     *
+     * Written as velocity rather than position so the collide and homing
+     * forces still get their say in the same tick — the bubble is shoved, then
+     * settles back and knocks its neighbours on the way. Setting x/y outright
+     * would teleport it and kill the bounce that is the point.
+     */
+    const repel = () => {
+      const p = pointerRef.current
+      if (!p) return
+      for (const n of nodes) {
+        const dx = (n.x ?? 0) - p.x
+        const dy = (n.y ?? 0) - p.y
+        const distSq = dx * dx + dy * dy
+        if (distSq > REPEL_RADIUS * REPEL_RADIUS || distSq < 0.01) continue
+        const dist = Math.sqrt(distSq)
+        const push = (1 - dist / REPEL_RADIUS) * REPEL_STRENGTH
+        n.vx = (n.vx ?? 0) + (dx / dist) * push
+        n.vy = (n.vy ?? 0) + (dy / dist) * push
+      }
+    }
+
+    const sim = d3
+      .forceSimulation(nodes)
+      .force('collide', d3.forceCollide<Bubble>((d) => d.r + 5).strength(0.85))
+      // Weak homing: strong enough to reassemble the composition after a shove,
+      // weak enough that the shove is visible for a moment first.
+      .force('x', d3.forceX<Bubble>((d) => d.homeX).strength(0.035))
+      .force('y', d3.forceY<Bubble>((d) => d.homeY).strength(0.05))
+      .force('repel', repel)
+      // Low velocity decay is the bounce. The d3 default (0.4) is a damper and
+      // would have them glide back into place like oil.
+      .velocityDecay(0.2)
+      .on('tick', paint)
+
+    // Settles and STOPS on its own, so an untouched dashboard runs no loop.
+    // Hovering is what revives it, below.
+    sim.alpha(0.35).restart()
+
+    const host = hostRef.current
+    const onMove = (event: PointerEvent) => {
+      const rect = host?.getBoundingClientRect()
+      if (!rect) return
+      pointerRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+      // alphaTarget, not alpha: it holds the simulation awake while the cursor
+      // is over the band instead of giving it one decaying kick per event.
+      sim.alphaTarget(0.3).restart()
+    }
+    const onLeave = () => {
+      pointerRef.current = null
+      // Releasing the target lets alpha decay to zero and the loop end.
+      sim.alphaTarget(0)
+    }
+
+    host?.addEventListener('pointermove', onMove)
+    host?.addEventListener('pointerleave', onLeave)
+
+    return () => {
+      host?.removeEventListener('pointermove', onMove)
+      host?.removeEventListener('pointerleave', onLeave)
+      sim.stop()
+    }
+  }, [width, height])
 
   // Second tick, deliberately: the fade has to start from 0 in a frame the
   // browser actually painted, or it mounts already-opaque and there is no
-  // transition to see. It also lets the simulation take its first steps behind
-  // a transparent layer, so the graph eases in already settling rather than
-  // visibly springing apart.
+  // transition to see.
   useEffect(() => {
-    if (nodes.length === 0) return
+    if (width === 0) return
     let inner = 0
     const outer = requestAnimationFrame(() => {
       inner = requestAnimationFrame(() => setShown(true))
     })
-    // Both ids, not just the outer: once the outer frame has fired, cancelling
-    // it is a no-op and the inner one is the only thing still pending.
     return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
-  }, [nodes.length])
+  }, [width])
 
-  if (nodes.length === 0) return null
+  const fill = tone === 'light' ? '#FFFFFF' : '#8A8FA0'
 
   return (
     <div
+      ref={hostRef}
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 overflow-hidden transition-opacity duration-[1400ms] ease-out motion-reduce:transition-none"
+      // pointer-events stay ON so the bubbles can feel the cursor. Clicks are
+      // unaffected: this sits inside the band's <Link>, so anything landing
+      // here still bubbles up and opens the network.
+      className="absolute inset-0 overflow-hidden transition-opacity duration-[1200ms] ease-out motion-reduce:transition-none"
       style={{ opacity: shown ? PREVIEW_OPACITY : 0 }}
     >
-      {/* pointer-events restored on the graph itself so bubbles stay hoverable,
-          while the wrapper lets clicks fall through to the band's link. */}
-      <div className="pointer-events-auto h-full w-full">
-        <BubbleNetwork
-          nodes={nodes}
-          minHeight={height}
-          interactive={false}
-          transparent
-        />
-      </div>
+      <svg width="100%" height="100%" className="block">
+        {LAYOUT.map((b, i) => (
+          <circle
+            key={i}
+            ref={(el) => { circleRefs.current[i] = el }}
+            r={b.r}
+            cx={b.fx * (width || 0)}
+            cy={b.fy * height}
+            fill={fill}
+            fillOpacity={0.5}
+          />
+        ))}
+      </svg>
     </div>
   )
 }

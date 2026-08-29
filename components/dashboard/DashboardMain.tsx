@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRef, useEffect, useState } from 'react'
 import {
   MoreVertical, Plus,
-  Settings, Trash2, Pencil, Archive, UserPlus, LogOut, ArrowRight,
+  Trash2, Pencil, Archive, UserPlus, LogOut, ArrowRight,
 } from 'lucide-react'
 import { useProfile } from '@/lib/ProfileContext'
 import { getOrgBrand, withAlpha, type OrgBrand } from '@/lib/constants/orgBranding'
@@ -27,28 +27,26 @@ export type { DashboardWorkspace } from './dashboardScope'
  * card. It replaces a drawing of two walls, which claimed to depict a specific
  * studio while being identical on every card.
  *
- * A studio with no boards gets the placeholder instead. A grid that reacts to
- * the cursor invites a click; on an empty studio there is nothing behind it.
+ * EVERY card gets the grid, including an empty one. It used to swap to a
+ * dashed-rectangles placeholder at zero boards, on the reasoning that a
+ * cursor-reactive grid invites a click toward nothing. But the grid is the
+ * ground, not a depiction of contents — a studio with no work still HAS the
+ * ruling, the way an empty sheet does — and swapping it out made a new section
+ * look like a different kind of object than the studio beside it. The empty
+ * state is still said, in the caption below and in the card's own "0 boards"
+ * meta line.
  */
 function StudioPreview({ boards }: { boards: number }) {
-  if (boards === 0) {
-    return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-2.5">
-        <div className="flex items-end gap-1.5" aria-hidden="true">
-          {[0, 1, 2].map((i) => (
-            <span
-              key={i}
-              className="block rounded border border-dashed border-[#16181D]/[0.18]"
-              style={{ width: 22, height: i === 1 ? 30 : 24 }}
-            />
-          ))}
-        </div>
-        <span className="text-[11px] text-[#A8ADBA]">Nothing pinned yet</span>
-      </div>
-    )
-  }
-
-  return <GridPreview className="h-full w-full" />
+  return (
+    <div className="relative h-full w-full">
+      <GridPreview className="h-full w-full" />
+      {boards === 0 && (
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] text-[#8A8FA0]">
+          Nothing pinned yet
+        </span>
+      )}
+    </div>
+  )
 }
 
 // ── RoomCard ──────────────────────────────────────────────────────────────────
@@ -96,8 +94,10 @@ function RoomCard({
   // Shown only when actually present, hence metaLine rather than a template.
   const subMeta = metaLine([workspace.network_metadata?.department, workspace.academic_year])
 
+  // Prefixed: a bare "Aug 6" on a card reads as a deadline or an event. The
+  // badge is the day the studio was made, and saying so costs one word.
   const created = workspace.created_at
-    ? new Date(workspace.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    ? `Created ${new Date(workspace.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
     : null
 
   return (
@@ -131,7 +131,8 @@ function RoomCard({
 
           {/* Every dashboard card is a workspace the user owns or is a member of
               (the list is owned ∪ member), so Rename is available on all cards.
-              Settings + Delete remain owner-only.
+              Delete remains owner-only. (Settings was here too, until the
+              workspace settings page was folded into the spaces page.)
 
               Faintly visible at rest rather than opacity-0: hover never fires on
               a touch screen, so the old version put Rename, Delete and Leave
@@ -147,15 +148,6 @@ function RoomCard({
             </button>
             {isMenuOpen && (
               <div className="absolute right-0 top-9 z-20 w-44 rounded-2xl border border-[#16181D]/[0.08] bg-white py-1.5 shadow-[0_20px_50px_rgba(22,24,29,0.18)]">
-                {isOwner && (
-                  <Link
-                    href={withInstitution(`/workspace/${workspace.id}/settings`, institutionSlug)}
-                    onClick={() => setOpenMenuId(null)}
-                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-[#16181D] hover:bg-[#3B6EF6]/5"
-                  >
-                    <Settings className="h-4 w-4" /> Settings
-                  </Link>
-                )}
                 <button
                   type="button"
                   onClick={() => { onRename(workspace.id, workspace.name || ''); setOpenMenuId(null) }}
@@ -260,7 +252,7 @@ function EnterNetworkCard({
           // copy on the left, the action on the right, centred. Stacked
           // bottom-anchored content was right for a tall grid cell and leaves a
           // wide short band mostly empty.
-          className="relative flex min-h-[190px] items-center gap-5 overflow-hidden rounded-2xl border px-6 py-5 transition-shadow duration-200 hover:shadow-[0_16px_40px_var(--brand-shadow)]"
+          className="relative min-h-[190px] overflow-hidden rounded-2xl border px-6 py-5 transition-shadow duration-200 hover:shadow-[0_16px_40px_var(--brand-shadow)]"
           style={{
             // Every stop derives from the brand — no literal golds, so a second
             // branded org gets its own colours rather than Wentworth's.
@@ -269,9 +261,10 @@ function EnterNetworkCard({
             '--brand-shadow': withAlpha(brand.accentInk, 0.16),
           } as React.CSSProperties}
         >
-          {/* The live network, filling the band behind everything else. It is
-              the first child so the copy and the action paint over it. */}
-          <NetworkBandPreview height={190} />
+          {/* The bubble diagram, filling the band behind everything else. It
+              is the first child so the seal, the name and the action paint
+              over it. */}
+          <NetworkBandPreview height={190} tone="dark" />
 
           {/* Warm bleed, now on the right where the band has room for it. */}
           <span
@@ -280,31 +273,37 @@ function EnterNetworkCard({
             style={{ background: `radial-gradient(closest-side, ${brand.accent}55, transparent)` }}
           />
 
-          {/* The seal, in the flow rather than absolutely placed — a band lays
-              its content out in a row, so it can just be the first item. */}
+          {/* Seal in one corner, name and action in the opposite one, with the
+              live graph running between them. A single centred row put all
+              three abreast and left the band reading as a toolbar; pushed to
+              opposite corners they frame the network instead of sitting on it.
+              Absolute rather than flexed, so neither corner constrains the
+              other and the bubbles get the whole width. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={brand.mark}
             alt=""
             aria-hidden="true"
-            className="relative hidden h-20 w-20 shrink-0 opacity-95 sm:block"
+            className="absolute left-6 top-5 hidden h-20 w-20 opacity-95 sm:block"
           />
 
-          <div className="relative min-w-0 flex-1">
-            <span className="block text-[20px] font-extrabold tracking-[-0.02em] text-[#16181D]">
+          <div className="absolute bottom-5 right-6 flex items-center gap-4">
+            <span className="text-[20px] font-extrabold tracking-[-0.02em] text-[#16181D]">
               The Network
             </span>
+            {/* Says Enter, like the Shared and Personal bands do. A bare arrow
+                disc was the only action in the product that made you infer the
+                verb from a glyph. Filled with the brand accent rather than the
+                white those two use — white on this pale gradient would have no
+                edge to it. */}
+            <span
+              className="inline-flex shrink-0 items-center gap-2 rounded-full px-5 py-2.5 text-[14px] font-bold text-white transition-transform duration-200 group-hover:translate-x-0.5"
+              style={{ background: brand.accent }}
+            >
+              Enter
+              <ArrowRight className="h-4 w-4" />
+            </span>
           </div>
-
-          {/* Hidden below md: at a phone's width the band is already carrying
-              a seal, a title and an action, and a 150px picture would push the
-              copy into a two-line squeeze. */}
-          <span
-            className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform duration-200 group-hover:translate-x-0.5"
-            style={{ background: brand.accent }}
-          >
-            <ArrowRight className="h-5 w-5 text-white" />
-          </span>
         </div>
       </Link>
     )
@@ -317,7 +316,7 @@ function EnterNetworkCard({
         className="group relative flex min-h-[190px] items-center gap-5 overflow-hidden rounded-2xl px-6 py-5 transition-shadow duration-200 hover:shadow-[0_20px_50px_rgba(22,24,29,0.28)]"
         style={{ background: 'linear-gradient(120deg, #171A24 0%, #1D2436 55%, #27365C 100%)' }}
       >
-        <NetworkBandPreview height={190} />
+        <NetworkBandPreview height={190} tone="light" />
 
         {/* Decorative bubbles, echoing what the network itself renders. Moved
             right, where a wide band has the room for them. */}
@@ -468,7 +467,7 @@ export function DashboardMain({
                 className="flex items-center gap-1.5 rounded-full border border-[#3B6EF6]/40 px-3 py-1.5 text-xs font-semibold text-[#3B6EF6] transition-colors hover:bg-[#3B6EF6]/[0.08]"
               >
                 <UserPlus className="h-3.5 w-3.5" />
-                Join with code
+                Join with Code
               </button>
             )}
             {canCreate && (
@@ -554,7 +553,7 @@ export function DashboardMain({
                       onClick={onShowJoinModal}
                       className="flex items-center gap-1.5 rounded-full border border-[#3B6EF6]/40 px-4 py-2 text-sm font-semibold text-[#3B6EF6] transition-colors hover:bg-[#3B6EF6]/[0.08]"
                     >
-                      <UserPlus className="h-4 w-4" /> Join with code
+                      <UserPlus className="h-4 w-4" /> Join with Code
                     </button>
                   )}
                   {canCreate && (

@@ -2655,6 +2655,11 @@ export default function StudioRoom(props: StudioRoomProps) {
               viewWidth={PLAN_VIEW}
               viewHeight={PLAN_VIEW}
               padding={PLAN_MARGIN}
+              // Same lightbox the 3D space opens, not a second viewer: this is
+              // the handler the walls and the 2D grid already call, so the
+              // compare set, the follow-mode gate and the comment panel all
+              // behave identically whichever surface the board was clicked on.
+              onBoardOpen={handleLightboxOpen}
             />
           ) : (
             <PlanView

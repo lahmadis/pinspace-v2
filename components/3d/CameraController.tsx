@@ -198,6 +198,23 @@ export function CameraController({
   const savedCameraPosition = useRef<THREE.Vector3 | null>(null)
   const savedCameraTarget = useRef<THREE.Vector3 | null>(null)
 
+  /**
+   * The same thing for wall FOCUS, which is a separate journey with its own
+   * entry and exit.
+   *
+   * Its own refs rather than the pair above: focus and edit can be entered from
+   * one another, and sharing one slot would mean whichever was entered second
+   * overwrote the pose the first still needs to return to.
+   *
+   * Focus had no restore at all until now. Edit mode saved and flew back, so
+   * Escape in the editor returned you to where you double-clicked from; focus
+   * simply released the camera and left it staring at the wall, which is what
+   * made the read-only view page behave differently from the editor for what
+   * looks like the same gesture.
+   */
+  const savedFocusPosition = useRef<THREE.Vector3 | null>(null)
+  const savedFocusTarget = useRef<THREE.Vector3 | null>(null)
+
   // Fallback pose for exiting edit mode with nothing saved. Derived from the
   // room's own geometry via the shared preset math, so it matches where the
   // room actually loads; the hardcoded numbers that used to live here were a
@@ -393,9 +410,12 @@ export function CameraController({
    * pinned and OrbitControls off for as long as focus lasts. Read-only, so you
    * get the square-on view of the wall without the editing UI.
    *
-   * Clearing focus deliberately does NOT fly the camera back. It leaves you
-   * looking at the wall you asked for, with control handed back — flying you
-   * somewhere else on exit would be a second unrequested camera move.
+   * Clearing focus flies the camera BACK to wherever it was when focus began.
+   * It used to just release the camera and leave you facing the wall, on the
+   * reasoning that returning was a second unrequested move — but exiting edit
+   * mode had always flown back, so the same gesture behaved differently in the
+   * editor and on the read-only view page. Returning is the expectation the
+   * rest of the app already set. See savedFocusPosition above.
    */
   useEffect(() => {
     // editingWall is part of the key, not just a guard below, so that any future
@@ -407,12 +427,50 @@ export function CameraController({
     const key = focusedWall
       ? `${focusedWall.wallIndex}:${focusedWall.side}:${focusedWall.nonce ?? 0}:${editingWall ?? 'none'}`
       : null
-    if (key === prevFocusedWallKey.current) return
+    const prevKey = prevFocusedWallKey.current
+    if (key === prevKey) return
     prevFocusedWallKey.current = key
 
-    if (!focusedWall || !wallConfig || editingWall !== null) {
+    // Leaving focus. Fly back to wherever the camera was when focus began,
+    // matching what exiting edit mode does.
+    if (!focusedWall) {
+      focusPoseArmed.current = false
+      // Not while edit mode is running: that path saved its own pose on the
+      // way in and will restore it on the way out, and two swooshes competing
+      // for the same camera is worse than one.
+      if (prevKey !== null && editingWall === null && savedFocusPosition.current) {
+        const controls = getControls(orbitControlsRef)
+        const fromTarget = controls ? controls.target.clone() : defaultPose.target.clone()
+        const fromFov = camera instanceof THREE.PerspectiveCamera ? camera.fov : ROOM_DEFAULT_FOV
+        const returnTarget = savedFocusTarget.current ?? defaultPose.target
+        targetTarget.current.copy(returnTarget)
+        beginSwoosh(
+          camera.position.clone(),
+          fromTarget,
+          savedFocusPosition.current.clone(),
+          returnTarget.clone(),
+          fromFov,
+          ROOM_DEFAULT_FOV,
+          false
+        )
+      }
+      savedFocusPosition.current = null
+      savedFocusTarget.current = null
+      return
+    }
+
+    if (!wallConfig || editingWall !== null) {
       focusPoseArmed.current = false
       return
+    }
+
+    // Save only on the way IN. Moving focus straight from one wall to another
+    // keeps the original pre-focus pose, so Escape returns you to where you
+    // started rather than to the last wall you looked at.
+    if (prevKey === null) {
+      savedFocusPosition.current = camera.position.clone()
+      const enterControls = getControls(orbitControlsRef)
+      savedFocusTarget.current = enterControls ? enterControls.target.clone() : null
     }
 
     const pose = getWallFocusPose(wallConfig, focusedWall.wallIndex, focusedWall.side)

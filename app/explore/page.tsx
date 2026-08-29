@@ -46,9 +46,15 @@ function ExplorePageInner() {
    */
   const [networkLabel, setNetworkLabel] = useState<string | null>(null)
 
-  type ViewMode = 'flat' | 'hierarchy'
   /**
-   * The drill-down, one entry per level: year → department → studio → section.
+   * The drill-down, one entry per level: department → year → studio → section.
+   *
+   * Department leads. It is the stable, self-contained thing — a visitor knows
+   * which one they are looking for before they know anything else, and the
+   * three of them partition the network cleanly. Year led originally, which
+   * opened the map on a set of buckets that each still mixed every department
+   * together, so the first click narrowed nothing anyone had actually asked
+   * about.
    *
    * 'studios' is the level that was inserted here, and the rename underneath it
    * is the part to read carefully. What used to be called 'studios' — the
@@ -63,8 +69,7 @@ function ExplorePageInner() {
    */
   type HierarchyLevel = 'years' | 'departments' | 'studios' | 'sections'
 
-  const [viewMode, setViewMode] = useState<ViewMode>('flat')
-  const [hierarchyLevel, setHierarchyLevel] = useState<HierarchyLevel>('years')
+  const [hierarchyLevel, setHierarchyLevel] = useState<HierarchyLevel>('departments')
   const [selectedYear, setSelectedYear] = useState<string | number | null>(null)
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
   const [selectedStudio, setSelectedStudio] = useState<string | null>(null)
@@ -210,6 +215,18 @@ function ExplorePageInner() {
   const handleClick = (node: BubbleNode) => {
     const demoParam = isDemo ? '?demo=true' : ''
 
+    /** A section bubble: multi-room drills into its rooms, single-room opens. */
+    const openSection = (n: BubbleNode) => {
+      if (n.publishedRooms && n.publishedRooms.length > 1) {
+        setRoomDrillWorkspace(n)
+        return
+      }
+      if (n.url) {
+        const url = n.url.includes('?') ? `${n.url}&demo=true` : `${n.url}${demoParam}`
+        router.push(url)
+      }
+    }
+
     // Already drilled into a workspace: bubbles here are its rooms — open one.
     if (roomDrillWorkspace) {
       if (node.url) {
@@ -219,24 +236,19 @@ function ExplorePageInner() {
       return
     }
 
-    if (viewMode === 'flat') {
-      // Multi-room workspace: drill into its rooms in-place. Single-room: open directly.
-      if (node.publishedRooms && node.publishedRooms.length > 1) {
-        setRoomDrillWorkspace(node)
-        return
-      }
-      if (node.url) {
-        const url = node.url.includes('?') ? `${node.url}&demo=true` : `${node.url}${demoParam}`
-        router.push(url)
-      }
+    // While searching, what is on screen is matching SECTIONS regardless of
+    // which level the drill-down is on — see displayedNodes — so a click here
+    // opens one rather than descending a level.
+    if (searchQuery.trim()) {
+      openSection(node)
       return
     }
 
-    if (hierarchyLevel === 'years') {
-      setSelectedYear(node.year ?? node.label)
-      setHierarchyLevel('departments')
-    } else if (hierarchyLevel === 'departments') {
+    if (hierarchyLevel === 'departments') {
       setSelectedDepartment(node.department || node.label)
+      setHierarchyLevel('years')
+    } else if (hierarchyLevel === 'years') {
+      setSelectedYear(node.year ?? node.label)
       setHierarchyLevel('studios')
     } else if (hierarchyLevel === 'studios') {
       // Reads `studio` off the bucket node, which displayedNodes set from the
@@ -245,15 +257,7 @@ function ExplorePageInner() {
       setSelectedStudio(node.studio ?? node.label)
       setHierarchyLevel('sections')
     } else {
-      // Sections level: multi-room drills in-place; single-room opens directly.
-      if (node.publishedRooms && node.publishedRooms.length > 1) {
-        setRoomDrillWorkspace(node)
-        return
-      }
-      if (node.url) {
-        const url = node.url.includes('?') ? `${node.url}&demo=true` : `${node.url}${demoParam}`
-        router.push(url)
-      }
+      openSection(node)
     }
   }
 
@@ -273,40 +277,53 @@ function ExplorePageInner() {
     }
 
     const source = searchFilteredNodes
-    if (viewMode === 'flat') return source
 
-    if (hierarchyLevel === 'years') {
-      const years = Array.from(new Set(source.map(n => n.year ?? 'Unknown')))
-      return years.map((y, idx) => ({
-        id: `year-${y}-${idx}`,
-        label: y === 'Masters' ? 'Masters' : `Year ${y}`,
-        name: String(y),
-        year: y,
-        color: '#3B6EF6',
-        radius: 70,
-      })) as BubbleNode[]
-    }
+    /*
+     * A search shows its matches DIRECTLY, skipping the drill-down.
+     *
+     * This is what the removed "All Spaces" button used to provide. Without it
+     * a query would only prune which department bubbles appear, so finding a
+     * person still meant three more clicks through levels you had already
+     * narrowed to one — which is not a search, it is a filter on a menu.
+     */
+    if (searchQuery.trim()) return source
 
-    if (hierarchyLevel === 'departments' && selectedYear !== null) {
-      const departments = Array.from(
-        new Set(
-          source
-            .filter(n => (n.year ?? '').toString() === selectedYear!.toString())
-            .map(n => n.department ?? 'Unknown')
-        )
-      )
+    // Top level: every department that has anything published, unfiltered.
+    if (hierarchyLevel === 'departments') {
+      const departments = Array.from(new Set(source.map(n => n.department ?? 'Unknown')))
       return departments.map((d, idx) => ({
         id: `dept-${d}-${idx}`,
         label: d,
         name: d,
-        year: selectedYear ?? undefined,
         department: d,
         color: '#3B6EF6',
         radius: 70,
       })) as BubbleNode[]
     }
 
-    // Year + department are the filter every level below them shares, so it is
+    // Second level: the years that department actually runs. Scoped to the
+    // chosen department, so a department with no fifth year simply has no
+    // fifth-year bubble rather than an empty one.
+    if (hierarchyLevel === 'years' && selectedDepartment !== null) {
+      const years = Array.from(
+        new Set(
+          source
+            .filter(n => (n.department ?? '') === selectedDepartment)
+            .map(n => n.year ?? 'Unknown')
+        )
+      )
+      return years.map((y, idx) => ({
+        id: `year-${y}-${idx}`,
+        label: y === 'Masters' ? 'Masters' : `Year ${y}`,
+        name: String(y),
+        year: y,
+        department: selectedDepartment ?? undefined,
+        color: '#3B6EF6',
+        radius: 70,
+      })) as BubbleNode[]
+    }
+
+    // Department + year are the filter every level below them shares, so it is
     // written once here rather than repeated in the two branches under it.
     const inSelectedYearAndDept = (n: BubbleNode) => {
       const matchYear = selectedYear === null ? true : (n.year ?? '').toString() === selectedYear.toString()
@@ -364,7 +381,7 @@ function ExplorePageInner() {
     }
 
     return source
-  }, [roomDrillWorkspace, viewMode, hierarchyLevel, searchFilteredNodes, selectedYear, selectedDepartment, selectedStudio])
+  }, [roomDrillWorkspace, hierarchyLevel, searchQuery, searchFilteredNodes, selectedYear, selectedDepartment, selectedStudio])
 
   return (
     <div className="min-h-screen bg-[#E6ECFC]">
@@ -393,11 +410,19 @@ function ExplorePageInner() {
                 className="text-xl font-bold text-[#16181D] hover:text-[#3B6EF6] transition-colors shrink-0"
               >
                 pinspace
+                {/* The blue terminal period, as on the landing page and the
+                    studio header. This was the last surface still spelling the
+                    wordmark without it. A true circle rather than the font's
+                    '.', sized in em so it tracks the text. */}
+                <span
+                  aria-hidden="true"
+                  className="inline-block align-baseline rounded-full bg-[#3B6EF6] w-[0.2em] h-[0.2em] ml-[0.06em]"
+                />
               </Link>
               {/* Dashboard link — mobile only (sits in top row opposite logo) */}
               <Link
                 href="/dashboard"
-                className="md:hidden text-sm px-4 py-2 rounded-lg border border-[#16181D]/[0.12] text-[#5A5E6B] hover:bg-white transition-colors shrink-0"
+                className="md:hidden text-sm px-4 py-2 rounded-full bg-white text-[#16181D] font-medium border border-[#16181D]/[0.12] hover:bg-[#F4F6FB] transition-colors shrink-0"
               >
                 Dashboard
               </Link>
@@ -432,41 +457,33 @@ function ExplorePageInner() {
                 </p>
               )}
             </div>
+            {/*
+              There were two buttons here and they were a mode toggle: All
+              Spaces (every section at once) against the drill-down. All Spaces
+              is gone, so there is no mode left to pick and nothing to show as
+              selected — this is now a single ACTION that returns the map to the
+              top of the drill-down, and it is styled as one. Neutral, not the
+              filled blue an active toggle wore.
+
+              It also keeps the path visible, which is the other half of what
+              the pair did: it is the only place the four levels are named in
+              order, and from three levels deep that is worth reading.
+            */}
             <div className="flex items-center gap-2 sm:gap-3">
               <button
                 onClick={() => {
-                  setViewMode('flat')
-                  setHierarchyLevel('years')
+                  setHierarchyLevel('departments')
                   setSelectedYear(null)
                   setSelectedDepartment(null)
                   setSelectedStudio(null)
                   setRoomDrillWorkspace(null)
+                  setSearchQuery('')
                 }}
-                className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
-                  viewMode === 'flat'
-                    ? 'bg-[#3B6EF6] text-[#16181D] border-[#3B6EF6]'
-                    : 'bg-white/80 text-[#16181D] border-[#16181D]/10 hover:bg-white'
-                }`}
+                title="Back to all departments"
+                className="px-4 py-2 text-sm rounded-full bg-white text-[#16181D] font-medium border border-[#16181D]/[0.12] hover:bg-[#F4F6FB] transition-colors"
               >
-                All Spaces
-              </button>
-              <button
-                onClick={() => {
-                  setViewMode('hierarchy')
-                  setHierarchyLevel('years')
-                  setSelectedYear(null)
-                  setSelectedDepartment(null)
-                  setSelectedStudio(null)
-                  setRoomDrillWorkspace(null)
-                }}
-                className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
-                  viewMode === 'hierarchy'
-                    ? 'bg-[#3B6EF6] text-[#16181D] border-[#3B6EF6]'
-                    : 'bg-white/80 text-[#16181D] border-[#16181D]/10 hover:bg-white'
-                }`}
-              >
-                <span className="sm:hidden">Years</span>
-                <span className="hidden sm:inline">Year → Dept → Studio → Section</span>
+                <span className="sm:hidden">Departments</span>
+                <span className="hidden sm:inline">Department → Year → Studio → Section</span>
               </button>
             </div>
           </div>
@@ -475,7 +492,7 @@ function ExplorePageInner() {
           <div className="hidden md:flex items-center justify-end min-w-0 md:flex-1">
             <Link
               href="/dashboard"
-              className="text-sm px-4 py-2 rounded-lg border border-[#16181D]/[0.12] text-[#5A5E6B] hover:bg-white transition-colors shrink-0"
+              className="text-sm px-4 py-2 rounded-full bg-white text-[#16181D] font-medium border border-[#16181D]/[0.12] hover:bg-[#F4F6FB] transition-colors shrink-0"
             >
               Dashboard
             </Link>
@@ -490,7 +507,7 @@ function ExplorePageInner() {
             onClick={() => { setSelectedAcademicYear(''); setRoomDrillWorkspace(null) }}
             className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
               selectedAcademicYear === ''
-                ? 'bg-[#3B6EF6] text-[#16181D]'
+                ? 'bg-[#3B6EF6] text-white'
                 : 'bg-white/80 text-[#5A5E6B] hover:bg-white border border-[#16181D]/[0.12]'
             }`}
           >
@@ -502,12 +519,12 @@ function ExplorePageInner() {
               onClick={() => { setSelectedAcademicYear(year); setRoomDrillWorkspace(null) }}
               className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
                 selectedAcademicYear === year
-                  ? 'bg-[#3B6EF6] text-[#16181D]'
+                  ? 'bg-[#3B6EF6] text-white'
                   : 'bg-white/80 text-[#5A5E6B] hover:bg-white border border-[#16181D]/[0.12]'
               }`}
             >
               {year}
-              <span className={`ml-1.5 text-xs ${selectedAcademicYear === year ? 'text-[#16181D]/70' : 'text-[#8A8FA0]'}`}>
+              <span className={`ml-1.5 text-xs ${selectedAcademicYear === year ? 'text-white/70' : 'text-[#8A8FA0]'}`}>
                 {count}
               </span>
             </button>
@@ -568,25 +585,23 @@ function ExplorePageInner() {
         const back =
           roomDrillWorkspace
             ? { label: roomDrillWorkspace.name, go: () => setRoomDrillWorkspace(null) }
-            : viewMode !== 'hierarchy'
-              ? null
-              : hierarchyLevel === 'sections'
+            : hierarchyLevel === 'sections'
                 ? {
                     label: selectedStudio ?? 'Studio',
                     go: () => { setSelectedStudio(null); setHierarchyLevel('studios') },
                   }
                 : hierarchyLevel === 'studios'
                   ? {
-                      label: selectedDepartment ?? 'Department',
-                      go: () => { setSelectedDepartment(null); setHierarchyLevel('departments') },
+                      label:
+                        selectedYear === 'Masters'
+                          ? 'Masters'
+                          : selectedYear !== null ? `Year ${selectedYear}` : 'Year',
+                      go: () => { setSelectedYear(null); setHierarchyLevel('years') },
                     }
-                  : hierarchyLevel === 'departments'
+                  : hierarchyLevel === 'years'
                     ? {
-                        label:
-                          selectedYear === 'Masters'
-                            ? 'Masters'
-                            : selectedYear !== null ? `Year ${selectedYear}` : 'Year',
-                        go: () => { setSelectedYear(null); setHierarchyLevel('years') },
+                        label: selectedDepartment ?? 'Department',
+                        go: () => { setSelectedDepartment(null); setHierarchyLevel('departments') },
                       }
                     : null
         if (!back) return null

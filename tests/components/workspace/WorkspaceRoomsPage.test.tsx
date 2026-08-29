@@ -72,7 +72,8 @@ describe('WorkspaceRoomsPage', () => {
     expect(await screen.findByRole('link', { name: 'Back to projects' })).toHaveAttribute('href', '/dashboard')
     expect(screen.queryByRole('navigation', { name: 'Primary navigation' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Enter A room name long enough/ })).toHaveAttribute('href', '/studio/room-1')
-    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/workspace/workspace-1/settings')
+    // The Settings link is gone; what it led to is on this page now.
+    expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument()
     const actions = screen.getByRole('button', { name: /Actions for A room name/ })
     expect(actions).toHaveClass('min-h-11')
     expect(actions).not.toHaveClass('opacity-0')
@@ -131,7 +132,9 @@ describe('WorkspaceRoomsPage', () => {
     render(<WorkspaceRoomsPage />)
 
     expect(await screen.findByRole('link', { name: 'Project details' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Network settings' })).not.toBeInTheDocument()
+    // Renamed from 'Network settings' to 'Settings'. Asserting the old name
+    // passed vacuously and stopped guarding the account-capability gate.
+    expect(screen.queryByRole('button', { name: 'Settings' })).not.toBeInTheDocument()
   })
 
   it('renders an empty state and validates space creation inline', async () => {

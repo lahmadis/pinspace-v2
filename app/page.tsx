@@ -115,7 +115,7 @@ function HomeInner() {
               href="#for-schools"
               className="text-sm font-medium text-[#5A5E6B] hover:text-[#3B6EF6] transition-colors"
             >
-              For schools
+              For Universities
             </a>
             <a
               href="#faq"
@@ -162,7 +162,7 @@ function HomeInner() {
       {/* Hero */}
       {/* Two rules, because the page has two shapes. flex-1 takes whatever the
           column has left over — which is what centred the hero when the footer
-          sat directly below it. Now that the For schools and FAQ sections follow,
+          sat directly below it. Now that the For Universities and FAQ sections follow,
           there IS no leftover space, so the min-height is what holds the hero to
           the first screen. 104px is the nav's own height; svh so mobile browser
           chrome doesn't push the fold. Padding is symmetric so the content sits
@@ -218,7 +218,7 @@ function HomeInner() {
                 href="/dashboard"
                 className="inline-flex items-center justify-center rounded-full bg-[#3B6EF6] px-9 py-4 text-[16px] font-bold text-white transition-[transform,background-color] duration-[160ms] ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[#16181D] active:scale-[0.97]"
               >
-                Go to dashboard
+                Go to Dashboard
               </Link>
             </motion.div>
           )}

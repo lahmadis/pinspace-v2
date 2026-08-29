@@ -48,7 +48,7 @@ describe('NewWorkspacePage', () => {
     await user.type(await screen.findByLabelText('Project name'), '  Material Futures  ')
     await user.click(screen.getByRole('button', { name: 'Create project' }))
 
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/workspace/workspace-1/settings'))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/workspace/workspace-1'))
     expect(fetchMock).toHaveBeenCalledWith('/api/workspaces', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({ name: 'Material Futures', creatorName: 'Ada Lovelace', institution_slug: 'wit' }),

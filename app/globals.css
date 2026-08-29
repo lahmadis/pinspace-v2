@@ -60,6 +60,21 @@
   --radius-lg: 20px;
   --shadow-soft: 0 10px 30px rgb(10 47 40 / 0.10);
   --shadow-raised: 0 18px 50px rgb(10 47 40 / 0.16);
+
+  /*
+   * Filled-button glows, tinted from the same token as the fill they sit under
+   * so they cannot drift from it the next time the brand moves.
+   *
+   * Declared HERE rather than as Tailwind arbitrary values on the button
+   * itself. `shadow-[0_4px_16px_rgb(var(--color-primary)/0.35)]` reads fine but
+   * puts a slash inside the brackets, and that is exactly the character
+   * Tailwind splits on to find an opacity modifier — nothing else in this repo
+   * does it, so it is an untested path through the class parser. A variable has
+   * no slash in the class name at all.
+   */
+  --shadow-btn-primary: 0 4px 16px rgb(var(--color-primary) / 0.35);
+  --shadow-btn-primary-hover: 0 6px 20px rgb(var(--color-primary) / 0.45);
+  --shadow-btn-secondary: 0 4px 16px rgb(var(--color-accent) / 0.25);
 }
 
 @layer base {
@@ -277,10 +292,24 @@
   }
 
   /*
-   * 0.9s, delayed 0.45s. The point hits the baseline at ~0.88s, just as the
-   * wordmark's own entrance (0.15s + 0.9s) finishes resolving, and the pin is
-   * seated by ~1.35s - so the hero reads wordmark, then pin, then tagline
-   * rather than everything arriving at once.
+   * 2.2s, delayed 0.35s. The point hits the baseline at ~1.4s and the pin is
+   * seated by ~2.55s, so the hero reads wordmark, then pin, then tagline rather
+   * than everything arriving at once.
+   *
+   * Was 0.9s, then 1.5s. At 0.9s the fall itself got only ~430ms - a full
+   * viewport height in under half a second, so the pin was past before the eye
+   * caught it and the drop read as a cut rather than a fall. It now gets
+   * ~1.06s, which is long enough to follow the whole way down.
+   *
+   * This is deliberately long for an animation, and it is allowed to be: it is
+   * a landing-page beat that plays once, not interface. The rule it must not
+   * break is that nothing WAITS on it - the wordmark, tagline and call to
+   * action all arrive on their own schedule, and the pin lands behind them.
+   *
+   * The retract animation below MUST carry the same duration and delay. Its
+   * keyframes are percentages of this timeline, and the needle shortening while
+   * the head descends is one movement expressed in two animations - drift them
+   * apart and the needle retracts while the pin is still in the air.
    *
    * `both` holds the 0% frame through the delay; without it the pin would sit
    * on the baseline and then jump upward to start.
@@ -292,7 +321,7 @@
     --pin-needle: 0.36em;
 
     transform-origin: 50% 100%;
-    animation: heroPinDrop 0.9s 0.45s both;
+    animation: heroPinDrop 2.2s 0.35s both;
   }
 
   .hero-pin-needle {
@@ -302,7 +331,7 @@
        own middle. */
     transform-box: fill-box;
     transform-origin: top center;
-    animation: heroPinRetract 0.9s 0.45s both;
+    animation: heroPinRetract 2.2s 0.35s both;
   }
 
   /* The pin's head comes to rest as the period and holds that frame, so the

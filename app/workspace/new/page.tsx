@@ -115,8 +115,10 @@ function NewWorkspaceForm() {
         throw new Error('Workspace created but no ID returned')
       }
 
-      // Redirect to workspace settings
-      router.push(`/workspace/${workspaceId}/settings`)
+      // The workspace's spaces page. It used to be the settings page, which
+      // is gone — and this is the better landing anyway: the rooms, the invite
+      // link and the student list are all here.
+      router.push(`/workspace/${workspaceId}`)
     } catch (error) {
       console.error('Error creating workspace:', error)
       const errorMessage = error instanceof Error ? error.message : 'Failed to create workspace'

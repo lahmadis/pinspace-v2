@@ -47,6 +47,14 @@ export async function GET(request: NextRequest) {
     // its own workspace fetch because it also needs the rooms-list (for the
     // switcher dropdown); single-room name is sufficient here.
     let scopedRoomName: string | null = null
+    /**
+     * The SECTION this room belongs to, e.g. "Section 02 - Lahmadi".
+     *
+     * Carried here for the same reason scopedRoomName is: the view page's top
+     * bar names the section above the room, and a second /api/workspaces fetch
+     * to learn one string would double the round-trips on a read-only page.
+     */
+    let scopedWorkspaceName: string | null = null
 
     // Inline helper for the fallback paths that previously called
     // resolveMainRoomId — we now need the name too, and one query is cheaper
@@ -102,6 +110,19 @@ export async function GET(request: NextRequest) {
 
     if (!scopedWorkspaceId) {
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+
+    // Service role, and deliberately: the RLS-bound `workspaces` read below can
+    // come back empty for a private workspace, and the header needs the section
+    // name whether or not that read succeeds. Reading it here leaks nothing —
+    // every auth gate below returns before this response is ever built.
+    {
+      const { data: wsMeta } = await adminDb
+        .from('workspaces')
+        .select('name')
+        .eq('id', scopedWorkspaceId)
+        .maybeSingle()
+      scopedWorkspaceName = (wsMeta?.name as string) ?? null
     }
 
     // Normal mode: use Supabase
@@ -353,7 +374,13 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.json({
       boards: transformedBoards,
       room: scopedRoomId
-        ? { id: scopedRoomId, workspaceId: scopedWorkspaceId, name: scopedRoomName, wallColor: scopedRoomWallColor }
+        ? {
+            id: scopedRoomId,
+            workspaceId: scopedWorkspaceId,
+            name: scopedRoomName,
+            workspaceName: scopedWorkspaceName,
+            wallColor: scopedRoomWallColor,
+          }
         : null,
     })
     response.headers.set('Cache-Control', 'no-store')

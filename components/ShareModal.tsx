@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { QRCodeCanvas } from 'qrcode.react'
 import { toast } from '@/lib/toast'
 
 interface ShareModalProps {
@@ -192,7 +191,7 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
         {/* Header */}
         <div className="flex items-start justify-between mb-6">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-1">🔗 Share Studio</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-1">Share Studio</h2>
             <p className="text-sm text-gray-600">Share for critique and comments</p>
           </div>
           <button
@@ -235,16 +234,6 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
         {/* Success */}
         {loadState === 'ok' && (
           <>
-            <div className="flex justify-center mb-6 p-6 bg-gray-50 rounded-xl">
-              <QRCodeCanvas
-                value={shareUrl}
-                size={200}
-                level="H"
-                includeMargin={true}
-                className="rounded-lg"
-              />
-            </div>
-
             <div className="mb-4">
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Shareable Link
@@ -285,14 +274,14 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
 
             <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg">
               <p className="text-sm text-blue-900">
-                <strong>📱 Anyone with this link</strong> can view your studio in 3D.
+                <strong>Anyone with this link</strong> can view your studio in 3D.
               </p>
             </div>
 
             {/* Guest critics — owner-only named, expiring links that can comment + trace */}
             {guestVisible && (
               <div className="mt-5 pt-5 border-t border-gray-200">
-                <h3 className="text-sm font-bold text-gray-900 mb-1">🎓 Guest critics</h3>
+                <h3 className="text-sm font-bold text-gray-900 mb-1">Guest critics</h3>
                 <p className="text-xs text-gray-500 mb-3">
                   Named, no-account links that can comment and trace on this space. Revoke anytime.
                 </p>
@@ -361,12 +350,6 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
                 </div>
               </div>
             )}
-
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <p className="text-xs text-gray-500 text-center">
-                Scan QR code with phone camera • Or copy link to share
-              </p>
-            </div>
           </>
         )}
       </div>

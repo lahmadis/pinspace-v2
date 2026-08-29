@@ -25,9 +25,23 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 type ButtonStyleProps = Pick<ButtonProps, 'variant' | 'size'> & { className?: string }
 
+/*
+ * Both filled variants were still dressed for a palette this app retired.
+ *
+ * `text-pinspace-ink` names no colour — `pinspace` exists in tailwind.config.js
+ * under borderRadius only, so the class emitted nothing and the label simply
+ * INHERITED the surrounding dark ink. On the old yellow fill that read as
+ * intentional; on today's indigo it is dark-on-dark.
+ *
+ * The glows were literal rgba() of the old brand — 255,200,0 (yellow) under an
+ * indigo button and 20,112,92 (forest) under a blue one. Both are now derived
+ * from the same token as the fill they sit under, so they cannot drift apart
+ * again the next time the brand moves. Matches the `danger` variant below,
+ * which already addressed its colour this way.
+ */
 const buttonVariants = {
-  primary: 'border-transparent bg-primary text-pinspace-ink shadow-[0_4px_16px_rgba(255,200,0,0.35)] hover:bg-primary-hover hover:shadow-[0_6px_20px_rgba(255,200,0,0.45)] hover:-translate-y-0.5',
-  secondary: 'border-transparent bg-accent text-white shadow-[0_4px_16px_rgba(20,112,92,0.25)] hover:bg-accent-light hover:-translate-y-0.5',
+  primary: 'border-transparent bg-primary text-white shadow-[var(--shadow-btn-primary)] hover:bg-primary-hover hover:shadow-[var(--shadow-btn-primary-hover)] hover:-translate-y-0.5',
+  secondary: 'border-transparent bg-accent text-white shadow-[var(--shadow-btn-secondary)] hover:bg-accent-light hover:-translate-y-0.5',
   ghost: 'border-transparent bg-transparent text-text-primary hover:bg-background-lighter',
   danger: 'border-transparent bg-[rgb(var(--color-danger))] text-white hover:bg-[rgb(var(--color-danger)/0.9)]',
 }

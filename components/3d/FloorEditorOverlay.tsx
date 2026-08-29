@@ -124,6 +124,15 @@ interface FloorEditorOverlayProps {
    * floating toggle stacked against it just made two panels to dodge.
    */
   onModeChange?: (next: 'tables' | 'walls') => void
+  /**
+   * Open a board in the lightbox, from the selected wall's thumbnail strip.
+   *
+   * The host owns the lightbox — it carries the compare set, the follow-mode
+   * gate and the comment panel — so this hands the board up rather than
+   * rendering a second viewer down here that would know none of that. Omit it
+   * and the strip stays a read-only inventory.
+   */
+  onBoardOpen?: (board: Board) => void
 }
 
 const VIEW_WIDTH = 700
@@ -254,6 +263,7 @@ export default function FloorEditorOverlay({
   onWallRemoved,
   onPersistWallConfig,
   canDeleteWalls = false,
+  onBoardOpen,
   viewWidth = VIEW_WIDTH,
   viewHeight = VIEW_HEIGHT,
   padding = PADDING,
@@ -1199,8 +1209,15 @@ export default function FloorEditorOverlay({
   // The grid is the ground now — the floor slab that used to sit on it is gone,
   // so this ruling IS the surface the walls stand on and it runs edge to edge.
   // One weight, matching the 3D room exactly: see ROOM_GRID_LINE.
+  //
+  // Built in BOTH modes. This was wrapped in `if (mode === 'walls')`, which is
+  // the second half of the same mistake as the render gate below it: the JSX
+  // stopped asking for the grid in Models mode AND the array it would have
+  // drawn was empty, so removing only one of the two changed nothing. A table
+  // is placed against the same 12-inch ruling a wall is, and with the wall
+  // handles gone the grid is the only thing left to judge a position by.
   const gridLines: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
-  if (mode === 'walls') {
+  {
     const [worldLeft, worldTop] = proj.toWorld(0, 0)
     const [worldRight, worldBottom] = proj.toWorld(planW, planH)
     const startGridX = Math.ceil(worldLeft / GRID_INCHES) * GRID_INCHES
@@ -1443,8 +1460,13 @@ export default function FloorEditorOverlay({
             >
               {/* 12-inch grid, drawn OVER the slab and running to the canvas
                   edges — it's the drafting ruling the whole room sits on, so it
-                  must not stop where the floor does. */}
-              {mode === 'walls' && gridLines.map((l, i) => (
+                  must not stop where the floor does.
+                  In BOTH modes. It used to be walls-only, which meant switching
+                  to Models dropped the ground out from under the room and left
+                  the walls floating on blank paper — but a table is placed
+                  against the same 12-inch ruling a wall is, and it is the only
+                  thing to judge a position by once the wall handles are gone. */}
+              {gridLines.map((l, i) => (
                 <line
                   key={i}
                   x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
@@ -1476,36 +1498,33 @@ export default function FloorEditorOverlay({
                     style={{ pointerEvents: mode === 'walls' ? 'all' : 'none' }}
                     onPointerDown={mode === 'walls' ? (e) => handleWallPointerDown(index, e) : undefined}
                   />
-                  {/* Which face the boards hang on. */}
-                  {mode === 'walls' && (
-                    <line
-                      x1={frontEdge[0]} y1={frontEdge[1]}
-                      x2={frontEdge[2]} y2={frontEdge[3]}
-                      stroke={isSelected ? ROOM.accent : '#8A99B5'}
-                      strokeWidth={2}
-                      strokeLinecap="round"
-                      style={{ pointerEvents: 'none' }}
-                    />
-                  )}
-                  {/* Wall name, set just off the front face and RUNNING ALONG
-                      the wall.
-                      The offset direction is derived from the polygon's own
-                      centroid rather than assumed, so it stays on the outside
-                      for a wall at any rotation instead of landing under it.
-                      The rotation is the other half of that: horizontal text
-                      beside a vertical wall is only 14px clear at its midpoint
-                      and lies straight across the wall for the rest of its
-                      length, which is what WALL 02 and WALL 04 were doing. Set
-                      along the wall it stays parallel and clear at every
-                      character, and reads like a drafting label. */}
-                  {mode === 'walls' && (() => {
+                  {/* A 2px #8A99B5 stroke ran along one long side of every
+                      wall here, marking which face boards hang on. It went with
+                      the legend that explained it: an unlabelled dark line down
+                      one edge of a white panel does not read as "this is the
+                      front", it reads as a wall drawn wrong on one side. The
+                      face is still known — frontEdge is what the label's
+                      rotation and the rotate handle are derived from — it is
+                      just no longer drawn. Walls are plain white panels with a
+                      hairline outline. */}
+                  {/* Wall name, set ON the wall and running along it.
+                      Drawn in Models mode too. The walls are still on screen
+                      there and are the room's only landmarks — an unlabelled
+                      set of white bars is a worse map to place a table against
+                      than a labelled one, and the label costs nothing when it
+                      is not the thing you are dragging.
+                      It used to sit 14px off the front face, which put every
+                      label in the space BETWEEN walls — so a label belonged to
+                      whichever wall you guessed, and in a tight corner it read
+                      as belonging to the wrong one. On the wall there is no
+                      guessing.
+                      The rotation is what makes that possible: horizontal text
+                      on a vertical wall would run straight off it. Set along
+                      the wall it stays within the panel for its whole length
+                      and reads like a drafting label. */}
+                  {(() => {
                     const cx = (points[0] + points[2] + points[4] + points[6]) / 4
                     const cy = (points[1] + points[3] + points[5] + points[7]) / 4
-                    const fmx = (frontEdge[0] + frontEdge[2]) / 2
-                    const fmy = (frontEdge[1] + frontEdge[3]) / 2
-                    const dx = fmx - cx
-                    const dy = fmy - cy
-                    const len = Math.hypot(dx, dy) || 1
                     // The front edge IS the wall's long axis in screen space,
                     // so no need to re-derive it from rotationY (which would
                     // also have to re-apply the projection's handedness).
@@ -1522,8 +1541,9 @@ export default function FloorEditorOverlay({
                         // translate-then-rotate: x/y below are in the label's
                         // own frame, so the 3.5 baseline nudge stays a vertical
                         // centring of the glyphs and doesn't become a sideways
-                        // shift once the wall is turned.
-                        transform={`translate(${fmx + (dx / len) * 14}, ${fmy + (dy / len) * 14}) rotate(${angle})`}
+                        // shift once the wall is turned. The anchor is the
+                        // polygon's own centroid — the middle of the wall.
+                        transform={`translate(${cx}, ${cy}) rotate(${angle})`}
                         x={0}
                         y={3.5}
                         textAnchor="middle"
@@ -1787,18 +1807,24 @@ export default function FloorEditorOverlay({
           )}
 
           {/* ---- Floating canvas chrome (embedded only) ----
-              Both pills sit over the plan rather than in the sidebar: they
-              describe the CANVAS gesture you are about to make, and reading
+              The Snap pill sits over the plan rather than in the sidebar: it
+              describes the CANVAS gesture you are about to make, and reading
               "hold Shift" from a column on the far right while your hand is on a
               wall is the wrong place for it. pointer-events are off on the
-              wrapper so neither pill can swallow a drag that starts under it. */}
-          {embedded && (
+              wrapper so it cannot swallow a drag that starts under it.
+
+              WALLS ONLY. Snapping is wall-to-wall corner welding; tables are
+              floor-anchored and their drag path never consults it (see the
+              table branch in applyPointerAt). In Models mode it was a live
+              switch for something that could not happen. */}
+          {embedded && mode === 'walls' && (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-end justify-between gap-3 p-4">
-              <span className="pointer-events-auto rounded-full border border-[#16181D]/[0.08] bg-white/90 px-4 py-2.5 text-xs text-[#5A5E6B] shadow-[0_4px_16px_rgba(22,24,29,0.08)] backdrop-blur-sm">
-                {mode === 'walls'
-                  ? 'Drag a wall to move · ends snap together, Shift to override'
-                  : 'Drag a table to move · click one to attach a 3D model'}
-              </span>
+              {/* A hint pill sat here reading "Drag a wall to move · ends snap
+                  together". It described the two most discoverable gestures on
+                  the surface — things you learn by touching a wall once — and
+                  paid for them with a permanent label across the plan. The
+                  spacer keeps the Snap pill pinned right. */}
+              <span aria-hidden="true" />
               {/* The same switch as the sidebar's, deliberately duplicated: it
                   is the one setting you reach for mid-gesture, and it reads the
                   same state, so the two can never disagree. */}
@@ -1840,30 +1866,7 @@ export default function FloorEditorOverlay({
             Walls/Models toggle sits underneath the Share button. */}
         {embedded && (
           <aside className="relative z-10 flex w-[272px] shrink-0 flex-col border-l border-[#16181D]/[0.08] bg-white pt-16">
-            {/* Which layer you are grabbing. Kept from the old panel: it is the
-                only way to reach tables and models at all. */}
-            {onModeChange && (
-              <div className="flex shrink-0 gap-1 border-b border-[#16181D]/[0.06] p-2">
-                {([
-                  { key: 'walls' as const, label: 'Walls' },
-                  { key: 'tables' as const, label: 'Models' },
-                ]).map(({ key, label }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => onModeChange(key)}
-                    aria-pressed={mode === key}
-                    className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
-                      mode === key ? 'bg-[#3B6EF6] text-white' : 'text-[#5A5E6B] hover:bg-[#16181D]/5'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="flex-1 space-y-5 overflow-y-auto p-4">
+            <div className="flex-1 space-y-5 overflow-y-auto p-4 pt-0">
               {mode === 'walls' ? (
                 selectedWallIndex != null && selectedWallIndex < wallConfig.walls.length ? (
                   <>
@@ -1941,21 +1944,42 @@ export default function FloorEditorOverlay({
                         <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#A8ADBA]">
                           Boards on this wall
                         </span>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {selectedWallBoards.slice(0, 8).map((b) => (
-                            <span
-                              key={b.id}
-                              title={b.title}
-                              className="block h-14 w-12 overflow-hidden rounded-lg border border-[#16181D]/[0.08] bg-[#F4F6FB]"
-                            >
-                              {b.thumbnailUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={b.thumbnailUrl} alt="" className="h-full w-full object-cover" />
-                              ) : null}
-                            </span>
-                          ))}
+                        {/* Two per row at the panel's width rather than four,
+                            because these are now the way INTO a board and not
+                            just a count of them — at 48px a drawing was a
+                            coloured smudge you could not recognise, let alone
+                            choose between. */}
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          {selectedWallBoards.slice(0, 8).map((b) => {
+                            const inner = b.thumbnailUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={b.thumbnailUrl} alt="" className="h-full w-full object-cover" />
+                            ) : null
+                            // A button only when the host gave us somewhere to
+                            // go. Rendering one that does nothing would be worse
+                            // than the plain tile it replaces.
+                            return onBoardOpen ? (
+                              <button
+                                key={b.id}
+                                type="button"
+                                title={b.title}
+                                onClick={() => onBoardOpen(b)}
+                                className="block aspect-[3/4] w-full overflow-hidden rounded-lg border border-[#16181D]/[0.08] bg-[#F4F6FB] transition-shadow hover:border-[#3B6EF6] hover:shadow-[0_6px_18px_rgba(59,110,246,0.18)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]/40"
+                              >
+                                {inner}
+                              </button>
+                            ) : (
+                              <span
+                                key={b.id}
+                                title={b.title}
+                                className="block aspect-[3/4] w-full overflow-hidden rounded-lg border border-[#16181D]/[0.08] bg-[#F4F6FB]"
+                              >
+                                {inner}
+                              </span>
+                            )
+                          })}
                           {selectedWallBoards.length > 8 && (
-                            <span className="flex h-14 w-12 items-center justify-center rounded-lg border border-dashed border-[#16181D]/[0.12] text-[11px] font-semibold text-[#A8ADBA]">
+                            <span className="flex aspect-[3/4] w-full items-center justify-center rounded-lg border border-dashed border-[#16181D]/[0.12] text-[13px] font-semibold text-[#A8ADBA]">
                               +{selectedWallBoards.length - 8}
                             </span>
                           )}
@@ -2024,37 +2048,46 @@ export default function FloorEditorOverlay({
                 </>
               )}
 
-              {/* Snap is a property of the editor, not of the selection, so it
-                  stays put in both modes rather than vanishing when nothing is
-                  selected. */}
-              <div className="rounded-2xl border border-[#16181D]/[0.08] p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-bold text-[#16181D]">Snap</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={snapEnabled}
-                    aria-label="Snap"
-                    onClick={() => setSnapEnabled((v) => !v)}
-                    className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                      snapEnabled ? 'bg-[#3B6EF6]' : 'bg-[#16181D]/[0.15]'
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
-                        snapEnabled ? 'left-[22px]' : 'left-0.5'
-                      }`}
-                    />
-                  </button>
-                </div>
-                <p className="mt-1.5 text-xs leading-relaxed text-[#8A8FA0]">
-                  Drag a wall near another and its end clicks onto it. Hold Shift
-                  to turn it off for one drag.
-                </p>
-              </div>
+              {/* Snap lives ONLY on the canvas pill now (bottom-right). It was
+                  in both places deliberately — same state, two reads — but the
+                  sidebar copy carried a paragraph of explanation nobody needs
+                  after the first drag, and it was the tallest block in a column
+                  that has real work to hold. The pill is the one you reach for
+                  mid-gesture; this was the one you read once. */}
             </div>
 
-            <div className="shrink-0 space-y-2 border-t border-[#16181D]/[0.06] p-3">
+            {/* Which layer you are grabbing.
+                Moved from the top of the panel down here, with the actions. It
+                is not a header — it does not describe what is above it, it
+                CHANGES what Add/Remove and the whole inspector operate on — so
+                it belongs in the same block as the buttons it re-aims. Sized
+                like them too: it was a 12px pair of tabs sitting above a
+                heading, which read as a caption rather than the mode switch for
+                the entire panel. */}
+            {onModeChange && (
+              <div className="flex shrink-0 gap-1.5 border-t border-[#16181D]/[0.06] p-3 pb-0">
+                {([
+                  { key: 'walls' as const, label: 'Walls' },
+                  { key: 'tables' as const, label: 'Models' },
+                ]).map(({ key, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => onModeChange(key)}
+                    aria-pressed={mode === key}
+                    className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors ${
+                      mode === key
+                        ? 'bg-[#3B6EF6] text-white'
+                        : 'border border-[#16181D]/[0.10] text-[#5A5E6B] hover:bg-[#16181D]/5'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="shrink-0 space-y-2 p-3">
               {mode === 'walls' ? (
                 <>
                   <button

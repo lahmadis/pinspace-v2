@@ -72,8 +72,8 @@ export interface ScopeCfg {
    */
   newMode: 'link' | 'section-dialog'
   /**
-   * What one card in this scope IS, lowercase, for use inside a sentence
-   * ("Open section").
+   * What one card in this scope IS, capitalised, as it appears in the card's
+   * button ("Open Section").
    *
    * Scoped rather than hardcoded on the card because the three tabs no longer
    * hold the same kind of thing. A class-tab workspace is an instructor's
@@ -112,7 +112,7 @@ export function scopeConfig(
         // of one. The old label had them naming the studio itself, which is why
         // the network carried several spellings of the same bucket.
         newLabel: 'New Section',
-        itemNoun: 'section',
+        itemNoun: 'Section',
         newMode: 'section-dialog',
         // Unused under 'section-dialog'. Kept so the shape is uniform and so
         // the page is one line away if the dialog ever needs a full-page twin.
@@ -134,7 +134,7 @@ export function scopeConfig(
       return {
         title: 'Shared Studios',
         newLabel: 'New Shared Studio',
-        itemNoun: 'studio',
+        itemNoun: 'Studio',
         newMode: 'link',
         newHref: '/workspace/new?type=shared',
         emptyTitle: 'Nothing here yet',
@@ -146,7 +146,7 @@ export function scopeConfig(
       return {
         title: 'Personal Studios',
         newLabel: 'New Personal Studio',
-        itemNoun: 'studio',
+        itemNoun: 'Studio',
         newMode: 'link',
         newHref: withInstitution('/studio/new', institutionHome),
         emptyTitle: 'Nothing here yet',

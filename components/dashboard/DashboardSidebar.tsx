@@ -261,17 +261,6 @@ export function DashboardSidebar({
             </span>
           </Link>
           <div className="flex items-center gap-1">
-            {/* The institution's mark beside the product's, so the sidebar says
-                whose pinspace this is at a glance. */}
-            {brand && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={brand.mark}
-                alt=""
-                aria-hidden="true"
-                className="hidden h-6 w-6 md:block"
-              />
-            )}
             <button
               type="button"
               onClick={onToggle}

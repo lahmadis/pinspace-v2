@@ -153,9 +153,10 @@ export default function CreateSectionModal({
       toast.success(`${name} created`)
       reset()
       onOpenChange(false)
-      // Settings, not the dashboard: the next thing an instructor does with a
-      // new section is add students to it.
-      router.push(`/workspace/${workspaceId}/settings`)
+      // The section's own spaces page, not the dashboard: the next thing an
+      // instructor does with a new section is add students and rooms to it,
+      // and both live there.
+      router.push(`/workspace/${workspaceId}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Request failed')
     } finally {
@@ -172,12 +173,30 @@ export default function CreateSectionModal({
       onOpenChange={setDialogOpen}
       closeOnOutsideClick={!loading}
       hideCloseButton={loading}
-      title="New section"
+      title="New Section"
       description="Set up your section of a studio. These details file it in the network, so you won't be asked again when you publish."
       className="max-w-lg pb-[max(1.5rem,env(safe-area-inset-bottom))]"
     >
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+        {/* Studio first, then the number. The studio is the thing being
+            taught and the one an instructor thinks of first; the section
+            number only says which run of it this is, and reading "Section 03"
+            before knowing 03 of WHAT is backwards. It also matches the order
+            of the generated path in the preview below. */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor={ids.studio} className="mb-1 block text-sm font-semibold text-text-primary">
+              Studio
+            </label>
+            <Select
+              id={ids.studio}
+              value={studio}
+              disabled={loading}
+              onChange={(event) => setStudio(event.target.value)}
+            >
+              {STUDIOS.map((item) => <option key={item} value={item}>{item}</option>)}
+            </Select>
+          </div>
           <div>
             <label htmlFor={ids.number} className="mb-1 block text-sm font-semibold text-text-primary">
               Section number
@@ -200,19 +219,6 @@ export default function CreateSectionModal({
               disabled={loading}
             />
           </div>
-          <div>
-            <label htmlFor={ids.studio} className="mb-1 block text-sm font-semibold text-text-primary">
-              Studio
-            </label>
-            <Select
-              id={ids.studio}
-              value={studio}
-              disabled={loading}
-              onChange={(event) => setStudio(event.target.value)}
-            >
-              {STUDIOS.map((item) => <option key={item} value={item}>{item}</option>)}
-            </Select>
-          </div>
         </div>
 
         <div>
@@ -232,9 +238,6 @@ export default function CreateSectionModal({
             placeholder="e.g. Sarah Lahmadi"
             disabled={loading}
           />
-          <p className="mt-1 text-xs text-text-secondary">
-            Your last name goes in the section name. Your full name is what students see in the network.
-          </p>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -298,7 +301,7 @@ export default function CreateSectionModal({
           <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)} disabled={loading}>
             Cancel
           </Button>
-          <Button type="submit" loading={loading}>Create section</Button>
+          <Button type="submit" loading={loading}>Create Section</Button>
         </div>
       </form>
     </Dialog>

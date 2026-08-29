@@ -1032,12 +1032,20 @@ function StudioPageInner() {
               matches ROOM_SKY (the room Canvas's own fog/sky color) so
               there's no color flash while the Canvas mounts on top of this. */}
 
-          {/* Top Left - Logo and breadcrumb. Hidden in wall edit mode. */}
-          {!isEditMode && (
-            // Same flex-wrap/max-w pattern as the right toolbar so a long
-            // workspace + room breadcrumb pill drops to a second line on
-            // narrow viewports instead of running off the right edge.
-            <div className="fixed top-4 left-4 z-40 flex flex-wrap items-center gap-2.5 max-w-[calc(100vw-2rem)] sm:flex-nowrap sm:max-w-none">
+          {/* Top Left - Logo and breadcrumb. Hidden in wall edit mode.
+
+              `floorEditorOpen` as well as `isEditMode`: the plan's wall editor
+              is a full-surface mode with chrome of its own, but it never set
+              isEditMode — so Presentation, Share and the breadcrumb kept
+              rendering underneath its panel and showed as half-covered buttons
+              in the corners. Same gate on all three blocks below. */}
+          {!isEditMode && !floorEditorOpen && (
+            // A COLUMN, matching the read-only view page (app/studio/[id]/
+            // view/page.tsx): the lockup on top, the way out underneath. The
+            // two routes show the same room to the same person a permission
+            // apart, and they were arriving at it through two different-looking
+            // headers. This is the same header.
+            <div className="fixed top-4 left-4 z-40 flex flex-col items-start gap-2.5 max-w-[calc(100vw-2rem)]">
               {/* The wordmark, not a button. It was a filled blue pill the same
                   size and shape as Share, which made the brand read as an
                   action you were being offered — and it was the only place in
@@ -1047,54 +1055,57 @@ function StudioPageInner() {
                   the period as a true circle rather than the font's '.' so it
                   stays round and on-brand at any size. Still a link home;
                   nothing but the chrome came off. */}
-              <Link
-                href="/"
-                aria-label="pinspace home"
-                // Onest inline, not inherited: this whole page is wrapped in
-                // Figtree, and Figtree is loaded here at 400–700 — so the
-                // extrabold-800 wordmark would both change typeface AND get
-                // synthesised or clamped to 700. Onest at 800 is what the
-                // landing page draws, and the mark has to be one mark.
-                style={{ fontFamily: "'Onest', 'Inter', system-ui, sans-serif" }}
-                className="text-[#16181D] font-extrabold text-xl tracking-[-0.045em] hover:opacity-80 transition-opacity"
-              >
-                pinspace
-                <span
-                  aria-hidden="true"
-                  className="inline-block align-baseline rounded-full bg-[#3B6EF6] w-[0.2em] h-[0.2em] ml-[0.06em]"
-                />
-              </Link>
-
-              {/* Phase 6.2: breadcrumb + room switcher. Workspace name links
-                  back to the rooms list page; room name opens a dropdown
-                  listing the other rooms in the same workspace. Falls back
-                  to a plain "← Dashboard" button while metadata is loading
-                  or in demo mode (no workspace context). */}
-              {workspaceName && workspaceId ? (
-                <div
-                  style={{ background: CHROME.accent, color: CHROME.paper, borderColor: CHROME.hairline }}
-                  className={`${figtree.className} px-4 py-2.5 rounded-xl shadow-lg border transition-colors flex items-center gap-2 text-sm font-semibold relative`}
+              {/* The lockup: wordmark, hairline rule, section over room.
+                  It replaces a filled-blue breadcrumb pill. The pill put the
+                  section and the room on ONE line separated by a slash, at pill
+                  size — so the section, which is the thing you are in, had the
+                  same weight as the room, which is one of several inside it.
+                  Stacked, the hierarchy is the layout. */}
+              <div className="flex items-center gap-4 px-1 py-0.5">
+                <Link
+                  href="/"
+                  aria-label="pinspace home"
+                  // Onest inline, not inherited: this whole page is wrapped in
+                  // Figtree, and Figtree is loaded here at 400–700 — so the
+                  // extrabold-800 wordmark would both change typeface AND get
+                  // synthesised or clamped to 700. Onest at 800 is what the
+                  // landing page draws, and the mark has to be one mark.
+                  style={{ fontFamily: "'Onest', 'Inter', system-ui, sans-serif" }}
+                  className="shrink-0 text-xl font-extrabold tracking-[-0.045em] text-[#16181D] transition-opacity hover:opacity-70"
                 >
-                  <button
-                    onClick={() => router.push(`/workspace/${workspaceId}`)}
-                    className="hover:underline"
-                    aria-label={`Back to ${workspaceName} spaces list`}
-                  >
-                    {workspaceName}
-                  </button>
-                  <span className="text-white/50">/</span>
-                  <button
-                    onClick={() => setShowRoomSwitcher((v) => !v)}
-                    disabled={allRooms.length <= 1}
-                    className="flex items-center gap-1 disabled:cursor-default"
-                    aria-label="Switch space"
-                    aria-expanded={showRoomSwitcher}
-                  >
-                    <span>{currentRoomName ?? '…'}</span>
-                    {allRooms.length > 1 && (
-                      <ChevronDown className={`w-4 h-4 transition-transform ${showRoomSwitcher ? 'rotate-180' : ''}`} />
-                    )}
-                  </button>
+                  pinspace
+                  <span
+                    aria-hidden="true"
+                    className="ml-[0.06em] inline-block h-[0.2em] w-[0.2em] rounded-full bg-[#3B6EF6] align-baseline"
+                  />
+                </Link>
+
+                {(workspaceName || currentRoomName) && (
+                  <>
+                    <span aria-hidden="true" className="h-8 w-px shrink-0 bg-[#16181D]/15" />
+                    <div className="relative min-w-0">
+                      <p
+                        className="truncate text-[15px] font-bold leading-tight text-[#16181D]"
+                        title={workspaceName ?? undefined}
+                      >
+                        {workspaceName ?? 'Space'}
+                      </p>
+                      {/* The room stays a SWITCHER — that is the one thing the
+                          old pill did that the view page's static subtitle does
+                          not need to. The chevron only appears when there is
+                          somewhere else to go. */}
+                      <button
+                        onClick={() => setShowRoomSwitcher((v) => !v)}
+                        disabled={allRooms.length <= 1}
+                        className="flex max-w-full items-center gap-1 text-xs text-[#5A5E6B] transition-colors hover:text-[#16181D] disabled:cursor-default disabled:hover:text-[#5A5E6B]"
+                        aria-label="Switch space"
+                        aria-expanded={showRoomSwitcher}
+                      >
+                        <span className="truncate">{currentRoomName ?? '…'}</span>
+                        {allRooms.length > 1 && (
+                          <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${showRoomSwitcher ? 'rotate-180' : ''}`} />
+                        )}
+                      </button>
 
                   {showRoomSwitcher && allRooms.length > 1 && (
                     // The pill above used to be JetBrains Mono with uppercase
@@ -1154,16 +1165,24 @@ function StudioPageInner() {
                       </div>
                     </div>
                   )}
-                </div>
-              ) : (
-                <button
-                  onClick={() => router.push('/dashboard')}
-                  className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Dashboard
-                </button>
-              )}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* The way out, on its own row — the slot the view page gives
+                  Network. Clicking the workspace NAME used to be the only route
+                  back to the section's room list, which is an unlabelled link
+                  inside a breadcrumb; this says where it goes. Falls back to the
+                  dashboard before the workspace resolves, and in demo mode,
+                  where there is no section to return to. */}
+              <button
+                onClick={() => router.push(workspaceId ? `/workspace/${workspaceId}` : '/dashboard')}
+                className="flex items-center gap-2 rounded-xl border border-[#16181D]/[0.10] bg-white px-4 py-2.5 text-sm font-medium text-[#16181D] shadow-lg transition-colors duration-200 hover:bg-[#F4F6FB]"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                {workspaceId ? 'Spaces' : 'Dashboard'}
+              </button>
             </div>
           )}
 
@@ -1174,22 +1193,28 @@ function StudioPageInner() {
               Two named buttons, no menu. The hamburger here held exactly one
               item — Presentation — after room configuration moved onto the Plan
               view, so it was a menu you had to open to discover its only
-              choice. A button that says what it does costs the same pixels. */}
-          {!isEditMode && (
+              choice. A button that says what it does costs the same pixels.
+
+              THE 3D SPACE ONLY. These two belong to the room you are standing
+              in: Share hands someone that room, and Presentation is the way
+              into the running order FROM it. On the 2D grid, the Plan and its
+              wall editor, and the running order itself, they were chrome from
+              another view floating over the one you were using — and over the
+              wall editor's panel they rendered underneath it as two
+              half-covered buttons.
+              Presentation is a one-way door as a result, and that is fine: the
+              bottom strip renders above the presentation overlay (see
+              REVISION_STRIP_CLEARANCE in StudioRoom), so SPACE is the way back
+              and it is on screen the whole time. */}
+          {roomView === 'room' && !isEditMode && !floorEditorOpen && (
             <div className="hidden sm:flex fixed top-4 right-4 z-40 flex-nowrap justify-end items-center gap-2.5">
-              {/* Presentation is a running order, not a way of looking at the
-                  SPACE — that's why it isn't a tab in the bottom strip beside
-                  Space/2D/Plan. It's a toggle: pressing it while you're already
-                  presenting returns you to the room, which is the only way back
-                  now that it has no tab. */}
+              {/* Not a toggle any more — it only ever renders from the room, so
+                  it only ever goes one way. It carried an active/pressed state
+                  for the case where you pressed it while already presenting,
+                  which the gate above makes unreachable. */}
               <button
-                onClick={() => setRoomView(roomView === 'presentation' ? 'room' : 'presentation')}
-                aria-pressed={roomView === 'presentation'}
-                style={
-                  roomView === 'presentation'
-                    ? { background: CHROME.accent, color: CHROME.paper, borderColor: CHROME.accent }
-                    : { background: CHROME.paper, color: '#16181D', borderColor: CHROME.hairline }
-                }
+                onClick={() => setRoomView('presentation')}
+                style={{ background: CHROME.paper, color: '#16181D', borderColor: CHROME.hairline }}
                 className={`${figtree.className} px-5 py-2.5 rounded-xl shadow-lg border transition-opacity duration-200 font-semibold text-sm flex items-center gap-2 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]/40`}
               >
                 <Presentation className="w-4 h-4" />
@@ -1212,8 +1237,9 @@ function StudioPageInner() {
           {/* Phone-only Share (< sm). The hamburger this replaces also held
               Place 3D model and Reconfigure Walls, both of which now live on
               the Plan view. Share has no other home on a phone, so it becomes
-              a plain button rather than a menu of one. */}
-          {!isEditMode && (
+              a plain button rather than a menu of one.
+              Same room-only gate as its desktop twin above. */}
+          {roomView === 'room' && !isEditMode && !floorEditorOpen && (
             <div className="sm:hidden fixed top-4 right-4 z-40">
               <button
                 onClick={() => setShowShareModal(true)}

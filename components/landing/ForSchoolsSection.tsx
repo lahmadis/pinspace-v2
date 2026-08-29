@@ -12,7 +12,7 @@ import {
 const PILLARS = [
   {
     n: '01',
-    title: 'Cross-disciplinary collaboration',
+    title: 'Collaboration',
     body: 'Students gain access to the work of their peers in other design disciplines, encouraging collaboration and inter-disciplinary learning.',
   },
   {
@@ -30,17 +30,17 @@ const PILLARS = [
 const STEPS = [
   {
     n: '01',
-    title: 'Create a section',
+    title: 'Create a Section',
     body: 'Think of this like your studio section — your individual group of students.',
   },
   {
     n: '02',
-    title: 'Add spaces',
+    title: 'Add Spaces',
     body: 'Spaces typically coincide with in-person pin-ups, such as mid-reviews and final reviews.',
   },
   {
     n: '03',
-    title: 'Publish and archive',
+    title: 'Publish and Archive',
     body: 'Publish to the network to add to the growing portfolio of student work.',
   },
 ] as const

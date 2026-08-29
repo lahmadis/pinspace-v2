@@ -27,22 +27,7 @@ import {
   rectSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import {
-  ArrowLeft,
-  Settings,
-  DoorOpen,
-  Plus,
-  Pencil,
-  Trash2,
-  X,
-  Check,
-  Globe,
-  ChevronRight,
-  Network,
-  GripVertical,
-  UserPlus,
-  Contact,
-} from 'lucide-react'
+import { Archive, ArrowLeft, Check, ChevronRight, Contact, DoorOpen, Download, Globe, GripVertical, Pencil, Plus, Settings, Trash2, UserPlus, X } from 'lucide-react'
 
 export default function WorkspaceRoomsPage() {
   const params = useParams()
@@ -54,6 +39,11 @@ export default function WorkspaceRoomsPage() {
   const { profile } = useProfile()
   const isAuthLoaded = authStatus !== 'loading'
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
+  // The three things that survived the workspace settings page. See the Manage
+  // block near the bottom of the render for why they live here now.
+  const [inviteCopied, setInviteCopied] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [archiveBusy, setArchiveBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
@@ -350,6 +340,76 @@ export default function WorkspaceRoomsPage() {
     }
   }
 
+  /**
+   * The join link students paste. Built from the invite code rather than
+   * stored, so it always matches whatever origin the app is served from.
+   */
+  const inviteLink =
+    workspace?.inviteCode && typeof window !== 'undefined'
+      ? `${window.location.origin}/join/${workspace.inviteCode}`
+      : ''
+
+  const handleCopyInvite = async () => {
+    if (!inviteLink) return
+    try {
+      await navigator.clipboard.writeText(inviteLink)
+      setInviteCopied(true)
+      window.setTimeout(() => setInviteCopied(false), 2000)
+    } catch {
+      toast.error('Could not copy the link')
+    }
+  }
+
+  const handleExport = async () => {
+    if (!workspace || exporting) return
+    try {
+      setExporting(true)
+      const response = await fetch(`/api/workspaces/${workspace.id}/export`, { method: 'GET' })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data?.error || 'Failed to export')
+      }
+      // The filename is the server's to choose — it names the zip after the
+      // section — so it is read back off the header rather than rebuilt here.
+      const disposition = response.headers.get('Content-Disposition') || ''
+      const match = disposition.match(/filename="?([^"]+)"?/)
+      const filename = match?.[1] || `${workspace.name || 'workspace'}_export.zip`
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast.success('Export downloaded')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Export failed. Please try again.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleArchiveToggle = async (archive: boolean) => {
+    if (!workspace || archiveBusy) return
+    try {
+      setArchiveBusy(true)
+      const response = await fetch(`/api/workspaces/${workspace.id}/archive`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_archived: archive }),
+      })
+      if (!response.ok) throw new Error('Failed to update')
+      toast.success(archive ? 'Section archived' : 'Section unarchived')
+      await fetchWorkspace()
+    } catch {
+      toast.error('Could not change the archive state')
+    } finally {
+      setArchiveBusy(false)
+    }
+  }
+
   const saveNetworkMetadata = async (metadata: NetworkMetadata): Promise<boolean> => {
     try {
       const res = await fetch(`/api/workspaces/${workspaceId}/network-metadata`, {
@@ -399,12 +459,24 @@ export default function WorkspaceRoomsPage() {
       return
     }
 
-    // Publishing ON: check if workspace already has metadata
+    /*
+     * Publishing ON. A section created through the new-section dialog already
+     * carries its department, year and studio — they are collected once, at
+     * creation, and written by createWorkspace — so this resolves true and the
+     * room just goes public. Publishing is a yes/no now, not a form.
+     *
+     * The modal below is the LEGACY path, for sections that predate that
+     * dialog and have nothing filed. It is deliberately still gated on
+     * department + year only: `studio` postdates both, and demanding it here
+     * would start interrogating old sections at exactly the moment someone is
+     * trying to publish one. An unfiled studio has a bucket of its own in the
+     * drill-down (see UNFILED_STUDIO in app/explore/page.tsx), so those rooms
+     * are reachable rather than lost.
+     */
     const hasMetadata = !!(workspace.networkMetadata?.department && workspace.networkMetadata?.year)
     if (hasMetadata) {
       await flipRoomPublish(room, true)
     } else {
-      // First publish in workspace — open modal to collect metadata
       setPublishModalRoom(room)
     }
   }
@@ -422,7 +494,7 @@ export default function WorkspaceRoomsPage() {
     setNetworkSettingsOpen(false)
     if (!metadata) return
     await saveNetworkMetadata(metadata)
-    toast.success('Network settings saved')
+    toast.success('Settings saved')
   }
 
   if (!isAuthLoaded || loading) {
@@ -450,7 +522,17 @@ export default function WorkspaceRoomsPage() {
     )
   }
 
-  const instructorName = workspace.members.find(m => m.role === 'instructor')?.name ?? null
+  /*
+   * `workspace.instructor` first: for a section it holds the full name the
+   * instructor typed into the create dialog, which is the name they meant to be
+   * known by. The member row is the fallback, and its `name` was stamped once
+   * at creation from whatever auth metadata existed then — for an email-only
+   * signup that is the local part of the address, not a name.
+   */
+  const instructorName =
+    workspace.instructor?.trim() ||
+    workspace.members.find(m => m.role === 'instructor')?.name ||
+    null
   // Reorder UI is an owner-only power. `createdBy` is the workspace owner_id.
   const isOwner = workspace.createdBy === user?.id
 
@@ -528,19 +610,12 @@ export default function WorkspaceRoomsPage() {
                   <button
                     onClick={() => setNetworkSettingsOpen(true)}
                     className="flex items-center gap-2 rounded-full border border-[#16181D]/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6]"
-                    title="Edit network metadata (department, year, instructor)"
+                    title="Studio, department, year and term for this section"
                   >
-                    <Network className="h-4 w-4 text-[#8A8FA0]" />
-                    Network
+                    <Settings className="h-4 w-4 text-[#8A8FA0]" />
+                    Settings
                   </button>
                 )}
-                <Link
-                  href={`/workspace/${workspaceId}/settings`}
-                  className="flex items-center gap-2 rounded-full border border-[#16181D]/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6]"
-                >
-                  <Settings className="h-4 w-4 text-[#8A8FA0]" />
-                  Settings
-                </Link>
               </>
             )}
           </div>
@@ -672,7 +747,10 @@ export default function WorkspaceRoomsPage() {
             ) : (
               <button
                 onClick={() => setAddingRoom(true)}
-                className="group flex min-h-[280px] flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-[#16181D]/[0.12] p-6 transition-colors hover:border-[#3B6EF6] hover:bg-[#3B6EF6]/5"
+                // min-h tracks the room cards beside it. It is a peer in the
+                // same grid, so a fixed 280px left it visibly short once the
+                // preview above went from 4:3 to 3:4.
+                className="group flex min-h-[380px] flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-[#16181D]/[0.12] p-6 transition-colors hover:border-[#3B6EF6] hover:bg-[#3B6EF6]/5"
               >
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#3B6EF6]/10 transition-colors group-hover:bg-[#3B6EF6]/20">
                   <Plus className="h-5 w-5 text-[#3B6EF6]" />
@@ -779,6 +857,91 @@ export default function WorkspaceRoomsPage() {
             )}
           </div>
         )}
+
+        {/*
+          Manage. What is left of the workspace settings page.
+
+          That page held eleven sections to reach these three, behind a
+          navigation away from the only screen that shows what they act ON. The
+          rest of it either duplicated something already editable in place (the
+          section name, the room list, network metadata — all on this page) or
+          configured behaviour nobody had changed. So the page is gone and its
+          three survivors sit under the spaces they belong to.
+
+          Gated on ownerOrInstructor, NOT isInstructor: `isInstructor` is
+          derived purely from workspace.members, and the note on that constant
+          above exists because one malformed members payload strips the real
+          owner of their own powers. Using it here would have hidden a section's
+          invite link, export and archive from the person who owns it. Export
+          and archive are narrowed to the owner inside, matching what their
+          routes enforce.
+        */}
+        {ownerOrInstructor && (
+          <div className="mt-10 rounded-3xl border border-[#16181D]/[0.08] bg-white p-6 shadow-[0_8px_24px_rgba(22,24,29,0.04)]">
+            <h2 className="text-[17px] font-extrabold tracking-[-0.02em] text-[#16181D]">Manage</h2>
+
+            {workspace.inviteCode && (
+              <div className="mt-5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#A8ADBA]">
+                  Invite students
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <input
+                    readOnly
+                    value={inviteLink}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="min-w-0 flex-1 rounded-xl border border-[#16181D]/[0.10] bg-[#F4F6FB] px-3 py-2.5 font-mono text-xs text-[#16181D]"
+                    aria-label="Invite link"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCopyInvite}
+                    className="shrink-0 rounded-xl bg-[#3B6EF6] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#2F5CD6]"
+                  >
+                    {inviteCopied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-[#5A5E6B]">
+                  Or share the code{' '}
+                  <span className="rounded bg-[#F4F6FB] px-1.5 py-0.5 font-mono font-semibold text-[#16181D]">
+                    {workspace.inviteCode}
+                  </span>
+                </p>
+              </div>
+            )}
+
+            {isOwner && (
+              <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-[#16181D]/[0.06] pt-5">
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  disabled={exporting}
+                  className="flex items-center gap-2 rounded-full border border-[#16181D]/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Download className="h-4 w-4 text-[#8A8FA0]" />
+                  {exporting ? 'Preparing zip…' : 'Export all boards'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleArchiveToggle(!workspace.isArchived)}
+                  disabled={archiveBusy}
+                  className="flex items-center gap-2 rounded-full border border-[#16181D]/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Archive className="h-4 w-4 text-[#8A8FA0]" />
+                  {workspace.isArchived ? 'Unarchive section' : 'Archive section'}
+                </button>
+
+                <p className="w-full text-xs text-[#5A5E6B]">
+                  {workspace.isArchived
+                    ? 'Archived: students can still read this section, but nothing new can be added.'
+                    : 'Archiving makes the section read-only. Students keep access to everything already in it, and you can undo it at any time.'}
+                  {' '}A large export can take 10–30 seconds to build.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Publish confirm modal — shown when publishing first room in workspace */}
@@ -791,6 +954,9 @@ export default function WorkspaceRoomsPage() {
               ? {
                   department: workspace.networkMetadata.department,
                   year: workspace.networkMetadata.year,
+                  // Was omitted, so the Studio select opened blank on a section
+                  // that already had one and the instructor had to re-pick it.
+                  studio: workspace.networkMetadata.studio,
                   instructor: workspace.instructor || '',
                   academicYear: workspace.academicYear || '',
                 }
@@ -801,7 +967,8 @@ export default function WorkspaceRoomsPage() {
         />
       )}
 
-      {/* Network settings modal — re-open from header button to edit existing metadata */}
+      {/* Section settings — the same form the create-section dialog uses,
+          reached from the header button to change a filing that already exists. */}
       {networkSettingsOpen && workspace && (
         <PublishConfirmModal
           workspaceName={workspace.name}
@@ -811,11 +978,15 @@ export default function WorkspaceRoomsPage() {
               ? {
                   department: workspace.networkMetadata.department,
                   year: workspace.networkMetadata.year,
+                  // Was omitted, so the Studio select opened blank on a section
+                  // that already had one and the instructor had to re-pick it.
+                  studio: workspace.networkMetadata.studio,
                   instructor: workspace.instructor || '',
                   academicYear: workspace.academicYear || '',
                 }
               : undefined
           }
+          variant="settings"
           onConfirm={handleNetworkSettingsConfirm}
           onCancel={() => setNetworkSettingsOpen(false)}
         />
@@ -913,7 +1084,12 @@ function RoomCardInner({
           are absolutely placed and still sit over it. */}
       <Link href={`/studio/${room.id}`} className="block cursor-pointer">
         <div
-          className="relative aspect-[4/3] overflow-hidden rounded-2xl"
+          // 3:4 rather than 4:3 — the preview is the ruled ground a room is
+          // built on, and the room is a space you stand in, not a photograph of
+          // one. Taller also lets the grid show more of itself before the card
+          // ends, which is the only thing distinguishing one preview from
+          // another at this size.
+          className="relative aspect-[3/4] overflow-hidden rounded-2xl"
           style={{ background: 'linear-gradient(150deg, #EEF3FC, #DCE5F5)' }}
         >
           <GridPreview className="h-full w-full" />

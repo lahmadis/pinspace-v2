@@ -9,9 +9,8 @@ import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 import { Board, FloorTable } from '@/types'
 import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from '@/components/3d/WallSystem'
 import RoomLighting from '@/components/3d/RoomLighting'
-import { CameraController, type FocusedWall, type PresetRequest } from '@/components/3d/CameraController'
-import { getInitialRoomPose, type RoomCameraPreset } from '@/lib/room/cameraViews'
-import RoomViewPresets from '@/components/room/RoomViewPresets'
+import { CameraController, type FocusedWall } from '@/components/3d/CameraController'
+import { getInitialRoomPose } from '@/lib/room/cameraViews'
 import TwoDView from '@/components/room/TwoDView'
 import { deriveRoomStudents } from '@/lib/room/students'
 import { ROOM } from '@/lib/room/palette'
@@ -23,7 +22,7 @@ import { getCachedStudioData } from '@/lib/studioViewCache'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import { useAuthSession } from '@/hooks/useAuthSession'
 import { useAccountMode } from '@/lib/useAccountMode'
-import { ArrowLeft, LayoutGrid, Box } from 'lucide-react'
+import { ArrowLeft, LayoutGrid, Box, ChevronDown } from 'lucide-react'
 
 interface WallDimensions {
   height: number
@@ -162,14 +161,15 @@ function StudioViewPageInner() {
    */
   const orbitControlsRef = useRef<OrbitControlsType | null>(null)
   const [focusedWall, setFocusedWall] = useState<FocusedWall | null>(null)
-  const [presetRequest, setPresetRequest] = useState<PresetRequest | null>(null)
-
-  const handlePreset = (preset: RoomCameraPreset) => {
-    // Counter-keyed so pressing the same preset twice re-frames both times.
-    setPresetRequest((prev) => ({ preset, key: (prev?.key ?? 0) + 1 }))
-    // A whole-room angle contradicts being focused on one wall.
-    setFocusedWall(null)
-  }
+  /*
+   * No presetRequest state here any more.
+   *
+   * It existed to serve the Axon/Fit buttons, and CameraController's
+   * `presetRequest` prop is optional and defaults to null — so with those
+   * buttons gone there is nothing left that could ever set it, and keeping the
+   * plumbing would mean a permanently-null prop plus a setter nothing calls.
+   * The editor still has both; this is the read-only page.
+   */
 
   // Escape leaves focus, matching the editor.
   useEffect(() => {
@@ -187,6 +187,9 @@ function StudioViewPageInner() {
   // the top bar so the user knows which studio they're viewing — view mode
   // had no room-name display previously.
   const [roomName, setRoomName] = useState<string | null>(null)
+  /** The section this room belongs to, e.g. "Studio 01 - Lahmadi". */
+  const [workspaceName, setWorkspaceName] = useState<string | null>(null)
+  const [rosterOpen, setRosterOpen] = useState(false)
   // Room-level wall color (migration 031), surfaced by /api/boards. Drives the
   // 3D wall material for viewers; defaults to 'grey' (the current look).
   const [wallColor, setWallColor] = useState<'grey' | 'white'>('white')
@@ -388,6 +391,7 @@ function StudioViewPageInner() {
       const resolvedRoomName: string | null = data.room?.name ?? null
       setResolvedWorkspaceId(wsId)
       setRoomName(resolvedRoomName)
+      setWorkspaceName(data.room?.workspaceName ?? null)
       setWallColor(data.room?.wallColor === 'grey' ? 'grey' : 'white')
 
       if (!isDemo && resolvedRoomId && resolvedRoomId !== studioId) {
@@ -586,14 +590,59 @@ function StudioViewPageInner() {
           previous pulsing indigo blur orbs, which read as a different, older
           design language than the rest of the app. */}
 
-      {/* Top Left - Logo and Back (match studio room chrome, but back to network/gallery) */}
-      <div className="fixed top-4 left-4 z-40 flex items-center gap-2.5">
-        <button
-          onClick={() => router.push('/')}
-          className="px-5 py-2.5 bg-[#3B6EF6] hover:bg-[#2F5CD6] text-white rounded-xl shadow-lg shadow-[#3B6EF6]/30 transition-all duration-300 font-semibold text-base backdrop-blur-sm border border-white/10"
-        >
-          pinspace
-        </button>
+      {/*
+        Top left. Laid out like the network's own header (app/explore/page.tsx):
+        wordmark, a hairline rule, then the title with its subtitle under it.
+        The two pages are the same product looking at the same hierarchy one
+        level apart, and they read as one place when the chrome matches.
+
+        WHAT the title is changed too. It was the room name alone in a pill,
+        which told you which room but never which SECTION — and a room called
+        "Mid Review" exists in every section in the school. Section over room,
+        the way the network lists them.
+      */}
+      <div className="fixed top-4 left-4 z-40 flex flex-col items-start gap-2.5">
+        {/* NO panel behind this. The chrome on this page was built for a dark
+            room and never revisited when the room turned near-white — white
+            text on a translucent white pane over ROOM_SKY (#EDF1FB) is very
+            nearly invisible, which is what you were seeing. The name of the
+            thing you are looking at does not need a container to read as a
+            heading; it is the only content in that corner. Ink, not white, for
+            the same reason the buttons below are dark-on-white. */}
+        <div className="flex items-center gap-4 px-1 py-0.5">
+          <button
+            onClick={() => router.push('/')}
+            className="shrink-0 text-lg font-extrabold tracking-[-0.045em] text-[#16181D] transition-opacity hover:opacity-70"
+          >
+            pinspace
+            {/* The blue terminal period, as on the landing page, the studio
+                header and the network. This was the last surface still
+                spelling the wordmark without it. */}
+            <span
+              aria-hidden="true"
+              className="ml-[0.06em] inline-block h-[0.2em] w-[0.2em] rounded-full bg-[#3B6EF6] align-baseline"
+            />
+          </button>
+
+          {(workspaceName || roomName) && (
+            <>
+              <span aria-hidden="true" className="h-8 w-px shrink-0 bg-[#16181D]/15" />
+              <div className="min-w-0">
+                <p
+                  className="truncate text-[15px] font-bold leading-tight text-[#16181D]"
+                  title={workspaceName ?? undefined}
+                >
+                  {workspaceName ?? 'Space'}
+                </p>
+                {roomName && (
+                  <p className="truncate text-xs text-[#5A5E6B]" title={roomName}>
+                    {roomName}
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
         <button
           onClick={() => {
@@ -616,48 +665,95 @@ function StudioViewPageInner() {
             }
             router.push(base)
           }}
-          className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2"
+          className="px-4 py-2.5 bg-white hover:bg-[#F4F6FB] text-[#16181D] rounded-xl shadow-lg border border-[#16181D]/[0.10] transition-colors duration-200 font-medium text-sm flex items-center gap-2"
         >
           <ArrowLeft className="w-4 h-4" />
           {searchParams.get('returnTo') === 'gallery' ? 'Gallery' : 'Network'}
         </button>
-
-        {/* Room name pill — gives view-mode users context for which studio
-            they're looking at. Sourced from /api/boards' response (extended
-            to include room.name), no extra fetch. Truncates on narrow
-            viewports so the Network button stays reachable. */}
-        {roomName && (
-          <div
-            className="px-3 py-2 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 text-sm font-medium max-w-[40vw] sm:max-w-xs truncate"
-            title={roomName}
-          >
-            {roomName}
-          </div>
-        )}
+        {/* The room-name pill that used to sit beside this is gone — the room
+            is the lockup's subtitle now, and naming it twice in one corner was
+            the same string in two boxes. */}
       </div>
 
-      {/* Top-right status pill (view mode + board count) */}
-      <div className="fixed top-4 right-4 z-40 flex items-center gap-2.5">
-        {/* Space ⇄ 2D. A single toggle rather than the editor's Views menu:
-            with Presentation, Roster and wall editing all absent here, a menu
-            holding one item is just a click in front of the thing. Labelled
-            with what you get, not what you're in — so it reads as the
-            destination the way the editor's menu items do. */}
-        <button
-          type="button"
-          onClick={() => setShow2D((v) => !v)}
-          aria-pressed={show2D}
-          title={show2D ? 'Back to the 3D space' : "Browse everyone's sheets as a flat archive"}
-          className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-colors duration-200 font-medium text-sm flex items-center gap-2"
-        >
-          {show2D ? <Box className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
-          {show2D ? 'Space' : '2D'}
-        </button>
+      {/*
+        Top right: where you are looking, then who is in the room.
 
-        <div className="px-4 py-2.5 bg-white/10 backdrop-blur-md text-white rounded-xl shadow-lg border border-white/20 transition-all duration-300 font-medium text-sm flex items-center gap-2">
-          <div className="w-2 h-2 bg-[#3B6EF6] rounded-full animate-pulse" />
-          <span>View Mode</span>
-          <span className="opacity-80">• {boards.length} boards</span>
+        Axon and Fit are gone. They were the only two controls here that moved
+        the camera without changing what you were looking AT, and a visitor who
+        has just been handed a link does not arrive wanting to re-frame the
+        room — dragging already orbits and scrolling already zooms.
+
+        "View Mode • N boards" went with them. It was a status readout dressed
+        as a button: it told you where you already were, and the board count is
+        the one number a visitor cannot act on.
+      */}
+      <div className="fixed top-4 right-4 z-40 flex items-start gap-2.5">
+        {/* Exit focus OUTLIVES the preset pair it used to sit inside. Focusing
+            a wall holds the camera square-on to it, and Escape or a floor click
+            are the only other ways out — neither discoverable. Rendered only
+            while that state exists, and only in 3D. */}
+        {!show2D && focusedWall !== null && (
+          <button
+            type="button"
+            onClick={() => setFocusedWall(null)}
+            title="Release the camera and show every wall again (Esc)"
+            className="rounded-xl bg-[#3B6EF6] px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-opacity hover:opacity-90"
+          >
+            Exit focus
+          </button>
+        )}
+
+        {/* The roster, behind a disclosure rather than always on screen. A
+            visitor's first question about a crit space is whose work is in it;
+            a permanent list of names is a sidebar this page does not have room
+            for. Counts come from the boards already loaded — no extra fetch. */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setRosterOpen((v) => !v)}
+            aria-expanded={rosterOpen}
+            aria-haspopup="true"
+            className="flex items-center gap-2 rounded-xl bg-[#3B6EF6] px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-colors hover:bg-[#2F5CD6]"
+          >
+            Students
+            <span className="opacity-75">{roomStudents.length}</span>
+            <ChevronDown
+              className={`h-4 w-4 opacity-70 transition-transform ${rosterOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          {rosterOpen && (
+            <>
+              {/* Click-away behind the panel, not over it. */}
+              <div className="fixed inset-0 z-40" onClick={() => setRosterOpen(false)} aria-hidden />
+              <div className="absolute right-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-[#16181D]/10 bg-white shadow-2xl">
+                {/* Was "ROSTER · 3". This panel hangs off a button that already
+                    says Students, so the label restated it in a word nobody
+                    outside a studio uses. The count was the informative half. */}
+                <p className="border-b border-[#16181D]/[0.06] bg-[#F4F6FB] px-3 py-2 text-[11px] font-semibold text-[#8A8FA0]">
+                  {roomStudents.length} {roomStudents.length === 1 ? 'student' : 'students'}
+                </p>
+                {roomStudents.length === 0 ? (
+                  <p className="px-3 py-3 text-sm text-[#8A8FA0]">Nobody has work pinned here yet.</p>
+                ) : (
+                  <ul className="max-h-72 overflow-y-auto py-1">
+                    {roomStudents.map((student) => (
+                      <li key={student.id}>
+                        <div className="flex items-center justify-between gap-3 px-3 py-2">
+                          <span className="truncate text-[13px] font-semibold text-[#16181D]">
+                            {student.name}
+                          </span>
+                          <span className="shrink-0 text-[11px] text-[#8A8FA0]">
+                            {student.boardIds.length} board{student.boardIds.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -692,36 +788,85 @@ function StudioViewPageInner() {
         </div>
       )}
 
-      {/* Instructions Overlay. Hidden in 2D — every line of it is about the
-          camera, which doesn't exist there. */}
-      {!show2D && (
-        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10 bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full shadow-lg border border-gray-200">
-          <p className="text-sm text-gray-700">
-            <span className="font-semibold">💬 Click boards</span> to view comments
-            <span className="mx-3 text-gray-400">•</span>
-            <span className="font-semibold">Double-click a wall</span> to focus it
-            <span className="mx-3 text-gray-400">•</span>
-            <span className="font-semibold">Drag</span> to rotate camera
-          </p>
-        </div>
-      )}
+      {/*
+        Bottom centre: how you get around, and what you can do once you are
+        there — one column, the control above the hints that describe it.
 
-      {/* Full-screen 3D model viewer overlay */}
+        The toggle moved here from the top-right corner. It is not chrome ABOUT
+        the space the way the section name and the roster are; it is the same
+        kind of thing as the gestures listed under it — a way of getting at the
+        work — and it belongs with them.
+
+        ONE container, stacked, rather than two fixed elements at hand-tuned
+        offsets. The hints disappear in 2D (every line of them is about a camera
+        that does not exist there) and the toggle then drops to the bottom on
+        its own, with no second magic number to keep in step.
+      */}
+      <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 flex-col items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setShow2D((v) => !v)}
+          aria-pressed={show2D}
+          title={show2D ? 'Back to the 3D space' : "Browse everyone's sheets as a flat archive"}
+          className="flex items-center gap-2 rounded-xl border border-[#16181D]/[0.10] bg-white px-4 py-2.5 text-sm font-medium text-[#16181D] shadow-lg transition-colors duration-200 hover:bg-[#F4F6FB]"
+        >
+          {show2D ? <Box className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
+          {show2D ? 'Space' : '2D'}
+        </button>
+
+        {/* Quiet. It was an opaque white pill with a heavy drop shadow — which
+            is how you dress a control, and this is a caption. At the bottom of
+            the room it was the second-loudest thing on the page after the
+            wordmark, for text you read once and then stop seeing. Now it is a
+            hairline outline over the ruled ground with the grid showing
+            through: present when you look for it, gone when you are not.
+
+            No shadow at all, rather than a lighter one. A shadow says an
+            element sits ABOVE the surface and can be acted on; nothing here
+            can be. The gesture names keep a little weight because that is what
+            makes the line scannable, but in the same grey family as the rest
+            rather than near-black. */}
+        {!show2D && (
+          <div className="rounded-xl border border-[#16181D]/[0.10] bg-white/45 px-5 py-2.5 backdrop-blur-[2px]">
+            <p className="text-[13px] text-[#8A8FA0]">
+              {/* The speech-balloon emoji that led this line is gone. It was the
+                  only emoji in the room's chrome, and it decorated the one hint
+                  that needed it least — "Click boards" is already the plainest
+                  instruction of the three. */}
+              <span className="font-semibold text-[#5A5E6B]">Click boards</span> to view comments
+              <span className="mx-2.5 text-[#16181D]/20">•</span>
+              <span className="font-semibold text-[#5A5E6B]">Double-click a wall</span> to focus it
+              <span className="mx-2.5 text-[#16181D]/20">•</span>
+              <span className="font-semibold text-[#5A5E6B]">Drag</span> to rotate camera
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/*
+        Full-screen model viewer. NO title bar.
+
+        It had a dark strip across the top reading "3D Model" beside a Close
+        button. The label named the obvious — you got here by clicking a model,
+        and the model is the only thing on screen — and the strip cost a band of
+        near-black across the top of an otherwise pale, quiet surface, which is
+        the first thing your eye landed on instead of the object.
+
+        Close survives as a floating control, because it has to: this overlay
+        covers the room and Escape is not discoverable. It sits over the canvas
+        rather than in a bar of its own.
+      */}
       {modelViewerUrl && (
-        <div className="fixed inset-0 z-50 bg-slate-900/90 flex flex-col">
-          <div className="flex items-center justify-between p-3 bg-white/10 border-b border-white/20">
-            <span className="text-white font-medium">3D Model</span>
-            <button
-              type="button"
-              onClick={() => setModelViewerUrl(null)}
-              className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium transition-colors"
-            >
-              Close
-            </button>
-          </div>
-          <div className="flex-1 min-h-0">
-            <ModelViewer modelUrl={modelViewerUrl} />
-          </div>
+        <div className="fixed inset-0 z-50">
+          <ModelViewer modelUrl={modelViewerUrl} />
+          <button
+            type="button"
+            onClick={() => setModelViewerUrl(null)}
+            aria-label="Close the model viewer"
+            className="absolute right-4 top-4 rounded-xl border border-[#16181D]/[0.10] bg-white px-4 py-2.5 text-sm font-medium text-[#16181D] shadow-lg transition-colors hover:bg-[#F4F6FB]"
+          >
+            Close
+          </button>
         </div>
       )}
 
@@ -795,25 +940,8 @@ function StudioViewPageInner() {
           wallRotation={0}
           wallConfig={wallConfig}
           focusedWall={focusedWall}
-          presetRequest={presetRequest}
         />
       </Canvas>
-
-      {/* Sits above the instructions pill below (absolute bottom-6, ~46px tall),
-          which is the only other bottom-centre element on this page. Gone in
-          2D, where there is no camera for a preset to move. */}
-      {!show2D && (
-        <div
-          className="fixed left-0 right-0 z-40 pointer-events-none flex justify-center"
-          style={{ bottom: 84 }}
-        >
-          <RoomViewPresets
-            onPreset={handlePreset}
-            isFocused={focusedWall !== null}
-            onExitFocus={() => setFocusedWall(null)}
-          />
-        </div>
-      )}
 
       {/* Lightbox Modal */}
       <LightboxModal
@@ -834,6 +962,10 @@ function StudioViewPageInner() {
         // Only the view page opts in; editor (via StudioRoom) and guest crit leave it default false.
         hideCallouts={true}
         currentUserRole={currentUserRole}
+        // Read-only surface: a board's name is set where the work is arranged,
+        // not where it is shown. Same reasoning as canRenameStudent={false} on
+        // the 2D grid above — this route presents the room, it does not edit it.
+        canRenameBoard={false}
         // Withheld while the arrows are scoped to one person. The reorder input
         // takes a position in the ROOM's running order but validates against
         // allBoards.length, so against a 3-sheet subset "2" would read as

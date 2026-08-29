@@ -3,9 +3,9 @@
 /* eslint-disable react-hooks/immutability -- R3F camera framing must update the Three.js camera instance after model geometry resolves. */
 
 import '@/components/3d/setupDraco'
-import { Suspense, useRef, useMemo, useEffect } from 'react'
+import { Suspense, useRef, useMemo, useEffect, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { OrbitControls, PerspectiveCamera, useGLTF, Html } from '@react-three/drei'
+import { ContactShadows, OrbitControls, PerspectiveCamera, useGLTF, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib'
 import { useRhino3dm } from '@/components/3d/useRhino3dm'
@@ -85,9 +85,77 @@ function FrameCamera({
 
 type ModelProps = { url: string; orbitControlsRef: React.RefObject<unknown> }
 
+/**
+ * Clone a loaded scene and flatten it to one matte tone.
+ *
+ * Same treatment TableWithModel gives models in the room, and for the same two
+ * reasons. Uploaded files arrive in whatever colours their author gave them, so
+ * a viewer that honoured them would show a different-looking object per upload.
+ * And glTF defaults `metallicFactor` to 1.0 — a fully metallic surface with no
+ * environment map reflects nothing and renders near-black — so metalness has to
+ * be forced off or some models simply arrive as silhouettes.
+ */
+function useFlatClone(scene: THREE.Object3D) {
+  const clone = useMemo(() => {
+    const cloned = scene.clone(true)
+    const color = new THREE.Color(ENGINE_PALETTE.viewerSurface)
+    cloned.traverse((child) => {
+      const mesh = child as THREE.Mesh
+      if (!mesh.isMesh || !mesh.material) return
+      // Own materials before touching them. clone() shares the source's, and
+      // the source is useGLTF's global cache — painting these white in place
+      // repainted the same model sitting on its plinth in the room behind this
+      // overlay, and it stayed white after the viewer closed.
+      mesh.material = Array.isArray(mesh.material)
+        ? mesh.material.map((m) => m.clone())
+        : mesh.material.clone()
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      mats.forEach((raw) => {
+        const m = raw as THREE.MeshStandardMaterial
+        if (m.color) m.color.copy(color)
+        if (m.map) m.map = null
+        if (m.metalnessMap) m.metalnessMap = null
+        if (m.roughnessMap) m.roughnessMap = null
+        if (m.metalness !== undefined) m.metalness = 0
+        if (m.roughness !== undefined) m.roughness = 0.85
+        // NO emissive. It was added to lift a grey model off a blue
+        // backdrop; on white-on-white the shading IS the read, and self-light
+        // is the one thing that would flatten it.
+        if (m.emissive) m.emissive.setRGB(0, 0, 0)
+      })
+    })
+    return cloned
+  }, [scene])
+
+  /*
+   * Free the cloned materials when this viewer closes.
+   *
+   * Cloning them (above) is what stopped this overlay repainting the model in
+   * the room, but a clone nobody frees is a GPU allocation per open — and this
+   * is a dialog people open, close and reopen.
+   *
+   * MATERIALS ONLY, never geometry: Object3D.clone() shares geometry with
+   * useGLTF's cache exactly the way it shared materials, so disposing it here
+   * would free buffers the next mount is still handed. Same rule as
+   * TableWithModel's cleanup.
+   */
+  useEffect(() => {
+    return () => {
+      clone.traverse((child) => {
+        const mesh = child as THREE.Mesh
+        if (!mesh.isMesh || !mesh.material) return
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        mats.forEach((m) => (m as THREE.Material)?.dispose())
+      })
+    }
+  }, [clone])
+
+  return clone
+}
+
 function GlbModel({ url, orbitControlsRef }: ModelProps) {
   const { scene } = useGLTF(url)
-  const cloned = useMemo(() => scene.clone(true), [scene])
+  const cloned = useFlatClone(scene)
   const { scale, center } = useMemo(() => fitToScene(cloned), [cloned])
   const groupRef = useRef<THREE.Group>(null)
   return (
@@ -104,7 +172,7 @@ function GlbModel({ url, orbitControlsRef }: ModelProps) {
 
 function RhinoModel({ url, orbitControlsRef }: ModelProps) {
   const { scene } = useRhino3dm(url)
-  const cloned = useMemo(() => scene.clone(true), [scene])
+  const cloned = useFlatClone(scene)
   const groupRef = useRef<THREE.Group>(null)
   return (
     <group ref={groupRef}>
@@ -116,7 +184,7 @@ function RhinoModel({ url, orbitControlsRef }: ModelProps) {
 
 function StlModel({ url, orbitControlsRef }: ModelProps) {
   const { scene } = useStlLoader(url)
-  const cloned = useMemo(() => scene.clone(true), [scene])
+  const cloned = useFlatClone(scene)
   const groupRef = useRef<THREE.Group>(null)
   return (
     <group ref={groupRef}>
@@ -179,14 +247,86 @@ function CrispOrbitRestore({ orbitControlsRef }: { orbitControlsRef: React.RefOb
   return null
 }
 
+/**
+ * The soft shadow the model sits on.
+ *
+ * Measured, not hardcoded. Only the .glb path runs through fitToScene — .3dm
+ * and .stl arrive at whatever size and origin their author saved them at — so
+ * there is no shared floor height to place this at. It watches the model group
+ * until its bounding box stops changing (loading is async, and a Suspense
+ * fallback has its own box), then pins itself to the underside and sizes itself
+ * to the footprint.
+ */
+function GroundShadow({ targetRef }: { targetRef: React.RefObject<THREE.Group | null> }) {
+  const [placement, setPlacement] = useState<{ y: number; scale: number } | null>(null)
+  const settledFrames = useRef(0)
+  const lastY = useRef<number | null>(null)
+
+  useFrame(() => {
+    const target = targetRef.current
+    if (!target) return
+    const box = new THREE.Box3().setFromObject(target)
+    if (box.isEmpty()) return
+    const size = box.getSize(new THREE.Vector3())
+    const y = box.min.y
+    // Two consecutive frames at the same height before committing: the first
+    // box after a model resolves is often still mid-layout.
+    if (lastY.current !== null && Math.abs(lastY.current - y) < 1e-4) {
+      settledFrames.current += 1
+    } else {
+      settledFrames.current = 0
+    }
+    lastY.current = y
+    if (settledFrames.current < 2) return
+    const footprint = Math.max(size.x, size.z, 1e-3)
+    const next = { y, scale: footprint * 4 }
+    setPlacement((prev) =>
+      prev && Math.abs(prev.y - next.y) < 1e-4 && Math.abs(prev.scale - next.scale) < 1e-4
+        ? prev
+        : next
+    )
+  })
+
+  if (!placement) return null
+  return (
+    <ContactShadows
+      position={[0, placement.y, 0]}
+      scale={placement.scale}
+      // Tied to the model's own size so the falloff looks the same whether the
+      // file was authored in millimetres or feet.
+      far={placement.scale * 0.35}
+      blur={2.6}
+      opacity={0.42}
+      resolution={1024}
+      color={ENGINE_PALETTE.viewerShadow}
+    />
+  )
+}
+
 function Scene({ url }: { url: string }) {
   const orbitControlsRef = useRef<OrbitControlsType | null>(null)
+  const modelRef = useRef<THREE.Group>(null)
 
   return (
     <>
       <PerspectiveCamera makeDefault position={[3, 2, 3]} fov={50} />
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[10, 20, 10]} intensity={1} castShadow shadow-mapSize={[1024, 1024]} />
+      {/*
+        A softbox, not a key/fill rig.
+
+        Ambient carries most of the budget (2.6 of ~3.9, so ~0.83 on a face
+        after three.js's physically-correct falloff) and the directionals only
+        tilt it. That is what makes an unlit side of a white object read as
+        light grey instead of dark grey — the reference has no face darker than
+        about 80%, and a conventional key/fill drops the away side far below
+        that. The top face clears 1.0 and clips to white, which is exactly the
+        product-shot look.
+
+        No castShadow on the key: the shadow under the model is drawn by
+        ContactShadows below, and a shadow map here would be a second, harder
+        one on top of it.
+      */}
+      <ambientLight intensity={2.6} />
+      <directionalLight position={[10, 20, 10]} intensity={0.9} />
       <directionalLight position={[-10, 10, -10]} intensity={0.4} />
       <Suspense
         fallback={
@@ -201,8 +341,11 @@ function Scene({ url }: { url: string }) {
           </group>
         }
       >
-        <Model url={url} orbitControlsRef={orbitControlsRef} />
+        <group ref={modelRef}>
+          <Model url={url} orbitControlsRef={orbitControlsRef} />
+        </group>
       </Suspense>
+      <GroundShadow targetRef={modelRef} />
       <CrispOrbitRestore orbitControlsRef={orbitControlsRef} />
       <OrbitControls
         ref={orbitControlsRef}
@@ -240,7 +383,7 @@ export default function ModelViewer({ modelUrl }: ModelViewerProps) {
         dpr={[1, 2]}
         gl={{ antialias: true }}
         camera={{ position: [3, 2, 3], fov: 50 }}
-        style={{ background: ENGINE_PALETTE.wallMain }}
+        style={{ background: ENGINE_PALETTE.viewerBackdrop }}
       >
         <Scene url={modelUrl} />
       </Canvas>

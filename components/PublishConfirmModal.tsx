@@ -26,6 +26,20 @@ export interface NetworkMetadata {
 interface PublishConfirmModalProps {
   workspaceName: string
   isCurrentlyPublic: boolean
+  /**
+   * What this dialog is being used AS.
+   *
+   * 'publish' is the original job: a room is going public and its section has
+   * never been filed, so these details are collected as a condition of
+   * publishing. 'settings' is the same form reached deliberately from the
+   * spaces page to CHANGE a filing that already exists — nothing is being
+   * published, and titling it "Publish to network" made an edit look like it
+   * would go live.
+   *
+   * Only the wording differs; the fields, the validation and the save are one
+   * implementation, which is what keeps the two from drifting.
+   */
+  variant?: 'publish' | 'settings'
   currentMetadata?: NetworkMetadata
   onConfirm: (metadata?: NetworkMetadata) => void
   onCancel: () => void
@@ -39,6 +53,7 @@ type FieldErrors = Partial<Record<'department' | 'year' | 'studio' | 'academicYe
 export default function PublishConfirmModal({
   workspaceName,
   isCurrentlyPublic,
+  variant = 'publish',
   currentMetadata,
   onConfirm,
   onCancel,
@@ -107,8 +122,12 @@ export default function PublishConfirmModal({
     <Dialog
       open
       onOpenChange={(open) => { if (!open) onCancel() }}
-      title="Publish to network"
-      description={<>Add public discovery details for <strong>{workspaceName}</strong>.</>}
+      title={variant === 'settings' ? 'Section settings' : 'Publish to network'}
+      description={
+        variant === 'settings'
+          ? <>Where <strong>{workspaceName}</strong> sits in the network.</>
+          : <>Add public discovery details for <strong>{workspaceName}</strong>.</>
+      }
       className="max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-2rem)] max-w-lg pb-[max(1.5rem,env(safe-area-inset-bottom))] [&>button.absolute]:h-11 [&>button.absolute]:w-11"
     >
       <form onSubmit={handleConfirm} className="space-y-4" noValidate>
@@ -199,13 +218,15 @@ export default function PublishConfirmModal({
           />
         </Field>
 
-        <p className="rounded-pinspace border border-border bg-primary-muted p-3 text-sm text-text-primary">
-          Anyone can view this studio in the network. Only workspace members can edit or add boards.
-        </p>
+        {variant === 'publish' && (
+          <p className="rounded-pinspace border border-border bg-primary-muted p-3 text-sm text-text-primary">
+            Anyone can view this studio in the network. Only workspace members can edit or add boards.
+          </p>
+        )}
 
         <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
           <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
-          <Button type="submit">Publish to network</Button>
+          <Button type="submit">{variant === 'settings' ? 'Save' : 'Publish to network'}</Button>
         </div>
       </form>
     </Dialog>

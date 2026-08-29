@@ -65,10 +65,9 @@ describe('DashboardMain', () => {
     await user.keyboard('{ArrowDown}')
 
     const menu = screen.getByRole('menu')
-    expect(within(menu).getByRole('menuitem', { name: 'Settings' })).toHaveAttribute(
-      'href',
-      '/workspace/workspace-1/settings'
-    )
+    // No Settings item: the workspace settings page is gone and its invite
+    // link, export and archive controls moved onto the spaces page.
+    expect(within(menu).queryByRole('menuitem', { name: 'Settings' })).not.toBeInTheDocument()
     await user.click(within(menu).getByRole('menuitem', { name: 'Rename' }))
     expect(onRename).toHaveBeenCalledWith('workspace-1', 'North Studio')
 

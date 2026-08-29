@@ -51,6 +51,19 @@ interface LightboxModalProps {
   /** Role of the currently authenticated user in this workspace. Instructors may resolve/delete any callout. */
   currentUserRole?: 'instructor' | 'student' | null
   /**
+   * May the board's title be renamed from here at all?
+   *
+   * A hard gate ABOVE the permission check below, not another input to it.
+   * Whether you are ALLOWED to rename a board is about who you are; whether
+   * this surface offers renaming is about what the surface is for. The
+   * read-only presentation routes are for reading the room, not editing it, so
+   * they pass false and the title is static text for everyone — the same call
+   * TwoDView's `canRenameStudent` already makes on those pages.
+   *
+   * Defaults true so the editor keeps behaving exactly as it did.
+   */
+  canRenameBoard?: boolean
+  /**
    * Phase 2: turns the leading number of the "06 / 07" counter into a
    * click-to-edit slideshow position. Default false, and when false the counter
    * renders EXACTLY as before — no affordance, no markup change. Only the
@@ -216,7 +229,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, hideCallouts = false, currentUserRole = null, canReorder = false, onReorder, onLinkSaved, onBoardSizeSaved, onTitleSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, hideCallouts = false, currentUserRole = null, canRenameBoard = true, canReorder = false, onReorder, onLinkSaved, onBoardSizeSaved, onTitleSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -1806,7 +1819,10 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
   // anyone not in it — which is what the share/crit/gallery callers pass. Widened
   // in step with the route; the two must not drift apart again.
   const isBoardUploader = !!user && !!board.ownerId && board.ownerId === user.id
-  const canEditTitle = isBoardUploader || currentUserRole !== null || isSuperadminViewer
+  // canRenameBoard first: a surface that does not offer renaming overrides
+  // every permission below it, including superadmin.
+  const canEditTitle =
+    canRenameBoard && (isBoardUploader || currentUserRole !== null || isSuperadminViewer)
   // Optimistic override wins over the stored value so a rename shows instantly.
   const resolvedTitle = titleOverride ?? board.title
 
@@ -2772,7 +2788,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                               className="flex items-center gap-1.5 text-[11px] text-[#5A5E6B] hover:text-[#16181D]"
                               title="Toggle resolved callouts"
                             >
-                              <span className={`w-3 h-3 rounded-sm border flex items-center justify-center text-[8px] leading-none ${showResolved ? 'bg-[#3B6EF6] border-[#3B6EF6] text-[#16181D]' : 'border-white/40 text-transparent'}`}>✓</span>
+                              <span className={`w-3 h-3 rounded-sm border flex items-center justify-center text-[8px] leading-none ${showResolved ? 'bg-[#3B6EF6] border-[#3B6EF6] text-white' : 'border-white/40 text-transparent'}`}>✓</span>
                               Show resolved
                             </button>
                           </div>
@@ -3025,7 +3041,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         <button
                           onClick={() => handleSaveEdit(comment.id)}
                           disabled={!editingContent.trim() || savingCommentId === comment.id}
-                          className="px-2.5 py-1.5 bg-[#3B6EF6] text-[#16181D] rounded-md hover:bg-[#2F5CD6] disabled:opacity-40 text-[11px] font-semibold"
+                          className="px-2.5 py-1.5 bg-[#3B6EF6] text-white rounded-md hover:bg-[#2F5CD6] disabled:opacity-40 text-[11px] font-semibold"
                         >
                           {savingCommentId === comment.id ? 'Saving...' : 'Save'}
                         </button>
@@ -3073,7 +3089,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                   <button
                     onClick={handlePost}
                     disabled={!newComment.trim() || posting}
-                    className="px-4 py-2 bg-[#3B6EF6] text-[#16181D] rounded-lg hover:bg-[#2F5CD6] disabled:opacity-40 disabled:cursor-not-allowed transition-all text-xs font-semibold shadow-sm hover:shadow-md disabled:shadow-none"
+                    className="px-4 py-2 bg-[#3B6EF6] text-white rounded-lg hover:bg-[#2F5CD6] disabled:opacity-40 disabled:cursor-not-allowed transition-all text-xs font-semibold shadow-sm hover:shadow-md disabled:shadow-none"
                   >
                     {posting ? (
                       <span className="flex items-center gap-2">
@@ -3092,7 +3108,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                 <p className="text-xs text-gray-600 mb-3">Sign in to leave feedback</p>
                 <a
                   href="/sign-in"
-                  className="inline-block px-5 py-2 bg-[#3B6EF6] text-[#16181D] rounded-lg hover:bg-[#2F5CD6] transition-all text-xs font-semibold shadow-md hover:shadow-lg"
+                  className="inline-block px-5 py-2 bg-[#3B6EF6] text-white rounded-lg hover:bg-[#2F5CD6] transition-all text-xs font-semibold shadow-md hover:shadow-lg"
                 >
                   Sign In to Comment
                 </a>
@@ -3112,7 +3128,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           {/* Header */}
           <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#3B6EF6] text-[#16181D] text-[11px] font-bold">
+              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#3B6EF6] text-white text-[11px] font-bold">
                 {calloutNumber.get(activeRoot.id)}
               </span>
               <h3 className="text-sm font-semibold text-gray-900 truncate">
@@ -3195,7 +3211,7 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
                         <button
                           onClick={() => handleEditCallout(c.id)}
                           disabled={!editingCalloutText.trim() || savingCalloutId === c.id}
-                          className="px-2 py-1 text-[10px] font-semibold rounded-md bg-[#3B6EF6] text-[#16181D] hover:bg-[#3B6EF6] disabled:opacity-40"
+                          className="px-2 py-1 text-[10px] font-semibold rounded-md bg-[#3B6EF6] text-white hover:bg-[#3B6EF6] disabled:opacity-40"
                         >
                           {savingCalloutId === c.id ? 'Saving…' : 'Save'}
                         </button>

@@ -232,7 +232,7 @@ export async function POST(req: Request) {
     const supabaseAdmin = supabaseServiceRole()
     const { data: profile } = await supabaseAdmin
       .from('user_profiles')
-      .select('organization_id, account_role')
+      .select('organization_id, account_role, full_name')
       .eq('user_id', userId)
       .maybeSingle()
 
@@ -264,7 +264,21 @@ export async function POST(req: Request) {
       )
     }
 
+    /*
+     * user_profiles.full_name FIRST.
+     *
+     * That is the name someone sets during onboarding and can change later;
+     * `user_metadata.full_name` is only populated when the identity provider
+     * happened to supply one at sign-up, and is never updated afterwards. With
+     * profiles skipped entirely, an email-only signup fell straight through to
+     * the local part of their address — which is how a workspace ended up
+     * labelled "Owner: tavaresn3" instead of the name that person chose.
+     *
+     * No extra query: the profile row above is already being read for
+     * organization_id and account_role.
+     */
     const ownerName =
+      profile?.full_name?.trim() ||
       user.user_metadata?.full_name ||
       user.email?.split('@')[0] ||
       'Owner'
