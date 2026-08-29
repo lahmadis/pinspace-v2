@@ -252,7 +252,7 @@ function EnterNetworkCard({
           // copy on the left, the action on the right, centred. Stacked
           // bottom-anchored content was right for a tall grid cell and leaves a
           // wide short band mostly empty.
-          className="relative min-h-[190px] overflow-hidden rounded-2xl border px-6 py-5 transition-shadow duration-200 hover:shadow-[0_16px_40px_var(--brand-shadow)]"
+          className="relative flex min-h-[190px] items-center gap-5 overflow-hidden rounded-2xl border px-6 py-5 transition-shadow duration-200 hover:shadow-[0_16px_40px_var(--brand-shadow)]"
           style={{
             // Every stop derives from the brand — no literal golds, so a second
             // branded org gets its own colours rather than Wentworth's.
@@ -273,37 +273,37 @@ function EnterNetworkCard({
             style={{ background: `radial-gradient(closest-side, ${brand.accent}55, transparent)` }}
           />
 
-          {/* Seal in one corner, name and action in the opposite one, with the
-              live graph running between them. A single centred row put all
-              three abreast and left the band reading as a toolbar; pushed to
-              opposite corners they frame the network instead of sitting on it.
-              Absolute rather than flexed, so neither corner constrains the
-              other and the bubbles get the whole width. */}
+          {/* Seal, then the name, then the action — one row, left to right,
+              with the live graph running behind all three. They were briefly in
+              opposite corners; a lockup reads as a lockup when the mark and the
+              name touch, and the band has the width to keep the bubbles visible
+              between the name and the button anyway.
+              `relative` on each so they paint over the absolutely-positioned
+              graph rather than under it. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={brand.mark}
             alt=""
             aria-hidden="true"
-            className="absolute left-6 top-5 hidden h-20 w-20 opacity-95 sm:block"
+            className="relative hidden h-20 w-20 shrink-0 opacity-95 sm:block"
           />
 
-          <div className="absolute bottom-5 right-6 flex items-center gap-4">
-            <span className="text-[20px] font-extrabold tracking-[-0.02em] text-[#16181D]">
-              The Network
-            </span>
-            {/* Says Enter, like the Shared and Personal bands do. A bare arrow
-                disc was the only action in the product that made you infer the
-                verb from a glyph. Filled with the brand accent rather than the
-                white those two use — white on this pale gradient would have no
-                edge to it. */}
-            <span
-              className="inline-flex shrink-0 items-center gap-2 rounded-full px-5 py-2.5 text-[14px] font-bold text-white transition-transform duration-200 group-hover:translate-x-0.5"
-              style={{ background: brand.accent }}
-            >
-              Enter
-              <ArrowRight className="h-4 w-4" />
-            </span>
-          </div>
+          <span className="relative min-w-0 flex-1 truncate text-[24px] font-extrabold tracking-[-0.02em] text-[#16181D]">
+            {brand.networkTitle}
+          </span>
+
+          {/* Says Enter, like the Shared and Personal bands do. A bare arrow
+              disc was the only action in the product that made you infer the
+              verb from a glyph. Filled with the brand accent rather than the
+              white those two use — white on this pale gradient would have no
+              edge to it. */}
+          <span
+            className="relative inline-flex shrink-0 items-center gap-2 rounded-full px-5 py-2.5 text-[14px] font-bold text-white transition-transform duration-200 group-hover:translate-x-0.5"
+            style={{ background: brand.accent }}
+          >
+            Enter
+            <ArrowRight className="h-4 w-4" />
+          </span>
         </div>
       </Link>
     )

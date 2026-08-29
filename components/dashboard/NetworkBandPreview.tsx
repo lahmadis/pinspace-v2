@@ -53,6 +53,24 @@ const LAYOUT: ReadonlyArray<{ fx: number; fy: number; r: number }> = [
   { fx: 0.97, fy: 0.82, r: 17 },
 ]
 
+/**
+ * Which bubbles are joined by a line.
+ *
+ * A FIXED edge list, not "join anything closer than N". A distance rule looks
+ * right in a still frame and falls apart in motion: shove a bubble with the
+ * cursor and edges blink in and out as pairs cross the threshold, which reads
+ * as a rendering fault rather than as a network. Fixed pairs stretch and settle
+ * instead, and the graph keeps the same shape it was drawn with.
+ *
+ * A meandering chain with two cross-links, so it reads as a network rather than
+ * as a single strand or a full mesh.
+ */
+const EDGES: ReadonlyArray<readonly [number, number]> = [
+  [0, 2], [2, 1], [1, 3], [3, 5], [5, 4], [4, 6], [6, 7],
+  [7, 8], [8, 9], [9, 11], [11, 10], [10, 12], [12, 13], [13, 14],
+  [3, 6], [9, 12],
+]
+
 /** How close the cursor gets before a bubble starts moving, in px. */
 const REPEL_RADIUS = 130
 
@@ -81,6 +99,7 @@ interface NetworkBandPreviewProps {
 export default function NetworkBandPreview({ height, tone = 'dark' }: NetworkBandPreviewProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const circleRefs = useRef<(SVGCircleElement | null)[]>([])
+  const lineRefs = useRef<(SVGLineElement | null)[]>([])
   /** Cursor in local coords, or null when it is not over the band. */
   const pointerRef = useRef<{ x: number; y: number } | null>(null)
   const [width, setWidth] = useState(0)
@@ -122,6 +141,16 @@ export default function NetworkBandPreview({ height, tone = 'dark' }: NetworkBan
         if (!el) return
         el.setAttribute('cx', String(n.x ?? 0))
         el.setAttribute('cy', String(n.y ?? 0))
+      })
+      // Edges follow the bubbles they join, so a shoved bubble drags its
+      // connections with it instead of leaving them behind.
+      EDGES.forEach(([a, b], i) => {
+        const el = lineRefs.current[i]
+        if (!el) return
+        el.setAttribute('x1', String(nodes[a]?.x ?? 0))
+        el.setAttribute('y1', String(nodes[a]?.y ?? 0))
+        el.setAttribute('x2', String(nodes[b]?.x ?? 0))
+        el.setAttribute('y2', String(nodes[b]?.y ?? 0))
       })
     }
 
@@ -218,6 +247,25 @@ export default function NetworkBandPreview({ height, tone = 'dark' }: NetworkBan
       style={{ opacity: shown ? PREVIEW_OPACITY : 0 }}
     >
       <svg width="100%" height="100%" className="block">
+        {/* Lines first, so each bubble sits ON TOP of the ends that meet it
+            rather than the other way round. They run to circle CENTRES, not to
+            edges — no edge-shortening maths — and the bubbles are drawn at
+            fillOpacity 0.5, so the last stub of each line reads faintly through
+            the circle instead of being hidden by it. That is the look: lines
+            passing behind translucent bubbles, not butting against them. */}
+        {EDGES.map(([a, b], i) => (
+          <line
+            key={`e${i}`}
+            ref={(el) => { lineRefs.current[i] = el }}
+            x1={(LAYOUT[a]?.fx ?? 0) * (width || 0)}
+            y1={(LAYOUT[a]?.fy ?? 0) * height}
+            x2={(LAYOUT[b]?.fx ?? 0) * (width || 0)}
+            y2={(LAYOUT[b]?.fy ?? 0) * height}
+            stroke={fill}
+            strokeOpacity={0.35}
+            strokeWidth={1}
+          />
+        ))}
         {LAYOUT.map((b, i) => (
           <circle
             key={i}

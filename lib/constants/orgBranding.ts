@@ -28,6 +28,16 @@ export interface OrgBrand {
   accentSoft: string
   /** Accent tone dark enough to sit as text/iconography on `accentSoft`. */
   accentInk: string
+  /**
+   * What this org's network band calls itself on the dashboard.
+   *
+   * Per-org rather than a literal in the card, because the card is branded and
+   * the next school to appear here must not be greeted with Wentworth's name.
+   * Short on purpose: it sits on one line beside the seal and the Enter button.
+   * The long form ("Wentworth School of Architecture and Design") lives in
+   * organizations.network_label and titles the network page itself.
+   */
+  networkTitle: string
 }
 
 const ORG_BRANDS: Record<string, OrgBrand> = {
@@ -40,6 +50,7 @@ const ORG_BRANDS: Record<string, OrgBrand> = {
     accent: '#F5A81C',
     accentSoft: '#FEF6E7',
     accentInk: '#8A5A05',
+    networkTitle: 'The Wentworth archive',
   },
 }
 
