@@ -79,7 +79,7 @@ export default function PublishConfirmModal({
     const newErrors: FieldErrors = {}
     if (!department) newErrors.department = 'Select a department.'
     if (!year) newErrors.year = 'Select a year.'
-    if (!studio) newErrors.studio = 'Select a studio.'
+    if (!studio) newErrors.studio = 'Select a class.'
     if (!academicYear) newErrors.academicYear = 'Select an academic year.'
     if (!instructor.trim()) newErrors.instructor = 'Enter the instructor name.'
     if (Object.keys(newErrors).length > 0) {
@@ -170,7 +170,7 @@ export default function PublishConfirmModal({
             well as in the create dialog: a published workspace with no studio
             has no bucket to appear in, so it would reach the network and then
             be unreachable from it. */}
-        <Field label="Studio" id="publish-studio" error={errors.studio}>
+        <Field label="Class" id="publish-studio" error={errors.studio}>
           <Select
             id="publish-studio"
             value={studio}
@@ -181,7 +181,7 @@ export default function PublishConfirmModal({
             aria-invalid={Boolean(errors.studio)}
             aria-describedby={errors.studio ? 'publish-studio-error' : undefined}
           >
-            <option value="">Select studio</option>
+            <option value="">Select class</option>
             {STUDIOS.map((item) => <option key={item} value={item}>{item}</option>)}
           </Select>
         </Field>

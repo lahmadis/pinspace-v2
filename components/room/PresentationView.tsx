@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import type { Board } from '@/types'
-import { ROOM, MONO_STACK, SANS_STACK } from '@/lib/room/palette'
+import { ROOM, SANS_STACK } from '@/lib/room/palette'
 import SortableBoardGrid from './SortableBoardGrid'
 
 interface PresentationViewProps {
@@ -33,7 +33,11 @@ export default function PresentationView({
   onBoardClick,
 }: PresentationViewProps) {
   const globalOrderIds = useMemo(() => boards.map((b) => b.id), [boards])
-  const headerStyle = { fontFamily: MONO_STACK, color: ROOM.ink2 } as const
+  // Identical to the 2D archive's people-grid caption (TwoDView's mutedStyle +
+  // classes). This line used to be 10px mono, uppercased and tracked out to
+  // 0.14em, which made the room's two captions read as two different products.
+  // The sans one won because it is the one that reads as a sentence.
+  const captionStyle = { color: '#7a8290', fontFamily: SANS_STACK } as const
 
   return (
     <div className="w-full h-full overflow-y-auto" style={{ background: ROOM.background }}>
@@ -43,10 +47,10 @@ export default function PresentationView({
             className="text-[20px] font-semibold"
             style={{ color: ROOM.ink, fontFamily: SANS_STACK }}
           >
-            Running order
+            Running Order
           </h2>
-          <p className="text-[10px] uppercase tracking-[0.14em] mt-1" style={headerStyle}>
-            {boards.length} sheet{boards.length === 1 ? '' : 's'}
+          <p className="mt-1 text-[13px] font-medium tracking-[-0.01em]" style={captionStyle}>
+            {boards.length} board{boards.length === 1 ? '' : 's'}
             {canReorder ? ' · drag to reorder' : ''}
           </p>
         </header>

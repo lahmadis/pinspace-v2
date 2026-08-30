@@ -66,7 +66,7 @@ export function EditModeOverlay({
                 <button
                   type="button"
                   onClick={handleClearClick}
-                  aria-label={clearArmed ? `Confirm clearing ${wallBoardCount} board${wallBoardCount === 1 ? '' : 's'}` : 'Clear wall'}
+                  aria-label={clearArmed ? `Confirm clearing ${wallBoardCount} board${wallBoardCount === 1 ? '' : 's'}` : 'Clear Wall'}
                   className={clearArmed
                     ? "min-h-11 rounded-full bg-[#C2452D] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#a5391f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]"
                     : "min-h-11 rounded-full border border-[#16181D]/[0.12] bg-white px-5 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]"
@@ -75,7 +75,7 @@ export function EditModeOverlay({
                 >
                   {clearArmed
                     ? `Click again to clear ${wallBoardCount} board${wallBoardCount === 1 ? '' : 's'}`
-                    : "Clear wall"
+                    : "Clear Wall"
                   }
                 </button>
               )}
@@ -84,7 +84,7 @@ export function EditModeOverlay({
                 onClick={onClose}
                 className="min-h-11 rounded-full bg-[#16181D] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#3B6EF6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B6EF6]"
               >
-                Save and exit
+                Save and Exit
               </button>
             </div>
           </motion.section>

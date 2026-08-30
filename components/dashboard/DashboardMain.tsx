@@ -10,7 +10,7 @@ import { useProfile } from '@/lib/ProfileContext'
 import { getOrgBrand, withAlpha, type OrgBrand } from '@/lib/constants/orgBranding'
 import GridPreview from '@/components/ui/GridPreview'
 import NetworkBandPreview from './NetworkBandPreview'
-import { scopeConfig, withInstitution, metaLine } from './dashboardScope'
+import { scopeConfig, withInstitution, metaLine, isSharedWorkspace } from './dashboardScope'
 import CreateSectionModal from './CreateSectionModal'
 import type { Scope, DashboardWorkspace } from './dashboardScope'
 
@@ -87,9 +87,14 @@ function RoomCard({
   // Counts only. Department and academic_year are set on 16% and 48% of rows,
   // so a card that leads with them is blank for most studios; these two are
   // computed server-side for every workspace and are always true.
+  // "Shared with N" is the only way a personal card announces that somebody
+  // else is in it, now that shared is not its own tab. N excludes you — the
+  // owner's own membership row is what makes the raw count start at 1.
+  const otherMembers = Math.max(0, (workspace.member_count ?? 0) - 1)
   const footerMeta = metaLine([
     rooms > 0 ? `${rooms} room${rooms === 1 ? '' : 's'}` : null,
     `${boards} board${boards === 1 ? '' : 's'}`,
+    isSharedWorkspace(workspace) ? `Shared with ${otherMembers}` : null,
   ])
   // Shown only when actually present, hence metaLine rather than a template.
   const subMeta = metaLine([workspace.network_metadata?.department, workspace.academic_year])
@@ -384,7 +389,7 @@ export function DashboardMain({
   const networkHref =
     scope === 'wentworth'
       ? organization?.slug ? `/explore?institution=${encodeURIComponent(organization.slug)}` : '/explore'
-      : scope === 'shared' ? '/network/shared' : '/network'
+      : '/network'
 
   const cfg = scopeConfig(scope, organization, institutionHome, canCreate)
 

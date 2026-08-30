@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isCritPhase } from '@/lib/constants/critPhases'
 import { supabaseServiceRole } from '@/lib/supabase/server'
 import { resolveCanvasAccess, readCappedJson } from '@/lib/canvas/access'
 
@@ -94,14 +95,38 @@ export async function PATCH(
     if (!parsed.ok) {
       return NextResponse.json({ error: parsed.error }, { status: parsed.status })
     }
-    const { title } = parsed.body
-    if (typeof title !== 'string' || !title.trim()) {
-      return NextResponse.json({ error: 'title is required' }, { status: 400 })
+    const { title, phase, project } = parsed.body
+
+    // Either field, or both. Renaming and re-phasing are separate gestures on
+    // the card, and requiring the title on a phase change would make the
+    // dropdown able to overwrite a rename that happened between renders.
+    const patch: Record<string, string | null> = {}
+    if (title !== undefined) {
+      if (typeof title !== 'string' || !title.trim()) {
+        return NextResponse.json({ error: 'title must not be empty' }, { status: 400 })
+      }
+      patch.title = title.trim().slice(0, 200)
+    }
+    if (phase !== undefined) {
+      if (!isCritPhase(phase)) {
+        return NextResponse.json({ error: 'Unknown phase' }, { status: 400 })
+      }
+      patch.phase = phase
+    }
+    if (project !== undefined) {
+      if (typeof project !== 'string') {
+        return NextResponse.json({ error: 'project must be text' }, { status: 400 })
+      }
+      // '' clears it. Sent as null so "no project" has one representation.
+      patch.project = project.trim() ? project.trim().slice(0, 120) : null
+    }
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
     }
 
     const { data, error } = await supabaseServiceRole()
       .from('canvases')
-      .update({ title: title.trim().slice(0, 200) })
+      .update(patch)
       .eq('id', (await params).id)
       .select('*')
       .maybeSingle()

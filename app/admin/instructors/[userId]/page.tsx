@@ -51,7 +51,7 @@ function formatDate(iso: string) {
 }
 
 export default function AdminInstructorPage({ params }: { params: Promise<{ userId: string }> }) {
-  // See the note in app/desk-crits/[id]/page.tsx — params is a Promise in
+  // params is a Promise in
   // Next 16 and has to be unwrapped before any property read.
   const { userId } = use(params)
   const [user, setUser] = useState<User | null>(null)

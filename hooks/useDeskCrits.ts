@@ -21,6 +21,10 @@ export interface DeskCrit {
   title: string
   createdAt: string
   updatedAt: string
+  /** Project phase. Null on crits made before migration 043. */
+  phase: string | null
+  /** The named project this crit is about. Null before migration 044. */
+  project: string | null
 }
 
 interface CanvasListRow {
@@ -28,6 +32,8 @@ interface CanvasListRow {
   title: string
   createdAt: string
   updatedAt: string
+  phase?: string | null
+  project?: string | null
 }
 
 export function useDeskCrits() {
@@ -55,6 +61,8 @@ export function useDeskCrits() {
           title: c.title || 'Untitled crit',
           createdAt: c.createdAt,
           updatedAt: c.updatedAt,
+          phase: c.phase ?? null,
+          project: c.project ?? null,
         }))
       )
       setError(null)
@@ -81,7 +89,8 @@ export function useDeskCrits() {
    * yet would land on a canvas that 404s. A create is fast and the button
    * disables while it runs.
    */
-  const createCrit = useCallback(async (title: string): Promise<DeskCrit | null> => {
+  const createCrit = useCallback(
+    async (title: string, phase?: string, project?: string): Promise<DeskCrit | null> => {
     // A double-click on "New crit" is one intent, not two. Without this it
     // makes two canvases and navigates into the second, leaving an empty one
     // behind in the list.
@@ -92,7 +101,7 @@ export function useDeskCrits() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // No roomId: that is what makes it personal. See app/api/canvases.
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ title, phase, project }),
       })
       if (!res.ok) {
         throw new Error((await res.json().catch(() => ({}))).error || 'Failed to create the crit')
@@ -103,6 +112,8 @@ export function useDeskCrits() {
         title: canvas.title || 'Untitled crit',
         createdAt: canvas.createdAt,
         updatedAt: canvas.updatedAt,
+        phase: canvas.phase ?? null,
+        project: canvas.project ?? null,
       }
       setCrits((prev) => [created, ...prev])
       setError(null)
@@ -113,7 +124,60 @@ export function useDeskCrits() {
     } finally {
       creatingRef.current = false
     }
-  }, [])
+    },
+    []
+  )
+
+  /**
+   * Change which phase a crit is about. Optimistic, rolled back on failure —
+   * same shape as renameCrit below, for the same reason: a dropdown that waits
+   * for a round trip before it shows the new value reads as broken.
+   */
+  const patchCrit = useCallback(
+    async (id: string, patch: { phase?: string; project?: string }): Promise<boolean> => {
+      const before = crits.find((c) => c.id === id)
+      setCrits((prev) =>
+        prev.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                ...(patch.phase !== undefined ? { phase: patch.phase } : {}),
+                // '' clears it, and the local copy has to agree with what the
+                // server stores or the next render puts the old name back.
+                ...(patch.project !== undefined
+                  ? { project: patch.project.trim() ? patch.project.trim() : null }
+                  : {}),
+              }
+            : c
+        )
+      )
+      try {
+        const res = await fetch(`/api/canvases/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        })
+        if (!res.ok) {
+          throw new Error((await res.json().catch(() => ({}))).error || 'Failed to save that')
+        }
+        return true
+      } catch (err) {
+        if (before) setCrits((prev) => prev.map((c) => (c.id === id ? before : c)))
+        setError((err as Error).message)
+        return false
+      }
+    },
+    [crits]
+  )
+
+  const setCritPhase = useCallback(
+    (id: string, phase: string) => patchCrit(id, { phase }),
+    [patchCrit]
+  )
+  const setCritProject = useCallback(
+    (id: string, project: string) => patchCrit(id, { project }),
+    [patchCrit]
+  )
 
   const renameCrit = useCallback(async (id: string, title: string): Promise<boolean> => {
     const next = title.trim()
@@ -171,6 +235,8 @@ export function useDeskCrits() {
     reload: load,
     createCrit,
     renameCrit,
+    setCritPhase,
+    setCritProject,
     deleteCrit,
   }
 }

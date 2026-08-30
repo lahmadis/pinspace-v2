@@ -2,6 +2,8 @@ import * as THREE from 'three'
 import { useMemo, useState } from 'react'
 import { ThreeEvent } from '@react-three/fiber'
 import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
+import { wallPanelShape, WALL_END_RADIUS_SEGMENTS } from '@/lib/room/wallPanelShape'
+import { useDisposableGeometry } from './useDisposableGeometry'
 
 // R3F reports `delta` on click-family events: pixels travelled since the last
 // pointerdown. The browser already refuses to fire dblclick when the two clicks
@@ -31,6 +33,16 @@ interface WallSurfaceProps {
    */
   onSurfaceHover?: (params: { side: 'front' | 'back' }) => void
   visibleOutline?: boolean
+  /**
+   * Which vertical edges of this wall are free, and so carry the corner radius.
+   * The pick plane MUST match the slab's silhouette: it is drawn at 1% opacity,
+   * which is invisible over the white wall but not over the pale background, so
+   * a square corner on a rounded wall leaves a faint grey right-angle hanging
+   * in space where the wall used to end. Defaults to square, which is correct
+   * for a wall joined at both ends.
+   */
+  roundPlusX?: boolean
+  roundMinusX?: boolean
 }
 
 /**
@@ -45,6 +57,8 @@ export function WallSurface({
   onSurfaceDoubleClick,
   onSurfaceHover,
   visibleOutline = false,
+  roundPlusX = false,
+  roundMinusX = false,
 }: WallSurfaceProps) {
   // Inches
   const width = wallDimensions.width * 12
@@ -56,6 +70,14 @@ export function WallSurface({
 
   // Optional hover outline (very light)
   const [hovered, setHovered] = useState(false)
+
+  const geometry = useDisposableGeometry(
+    () => new THREE.ShapeGeometry(
+      wallPanelShape(width, height, roundPlusX, roundMinusX),
+      WALL_END_RADIUS_SEGMENTS,
+    ),
+    [width, height, roundPlusX, roundMinusX],
+  )
 
   /**
    * Absorbs single clicks without doing anything with them.
@@ -94,6 +116,7 @@ export function WallSurface({
 
   return (
     <mesh
+      geometry={geometry}
       position={[0, 0, zOffset]}
       rotation={[0, 0, 0]}
       onClick={handleClick}
@@ -104,7 +127,6 @@ export function WallSurface({
       }}
       onPointerOut={() => setHovered(false)}
     >
-      <planeGeometry args={[width, height, 1, 1]} />
       <meshBasicMaterial
         transparent
         opacity={0.01}

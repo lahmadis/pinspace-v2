@@ -13,8 +13,13 @@ const SCOPE_KEY = 'pinspace-dashboard-scope'
 
 const TYPE_LABEL: Record<DashboardWorkspace['type'], string> = {
   class: 'Class',
+  // Retired as a type (migration 041); kept until every row is migrated so an
+  // unmigrated row still renders a word rather than `undefined`.
   shared: 'Shared',
   personal: 'Personal',
+  // Never displayed — the desk-crit container is not a space and is filtered
+  // out upstream. Present so this map stays exhaustive over the union.
+  deskcrit: 'Desk crit',
 }
 
 export default function ArchivePage() {

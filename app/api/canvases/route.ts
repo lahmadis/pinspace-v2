@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isCritPhase, DEFAULT_CRIT_PHASE } from '@/lib/constants/critPhases'
 import { supabaseServiceRole } from '@/lib/supabase/server'
 import { resolveRoomCanvasAccess, resolveViewer, readCappedJson } from '@/lib/canvas/access'
 
@@ -48,6 +49,10 @@ export interface CanvasSummary {
   createdBy: string | null
   createdAt: string
   updatedAt: string
+  /** Project phase, for a desk crit. NULL on crits made before it existed. */
+  phase: string | null
+  /** The named project this crit is about. NULL on crits made before 044. */
+  project: string | null
 }
 
 function transformCanvas(row: Record<string, unknown>): CanvasSummary {
@@ -59,6 +64,12 @@ function transformCanvas(row: Record<string, unknown>): CanvasSummary {
     createdBy: (row.created_by as string) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
+    // `?? null` rather than a cast: migration 043 is applied by hand, so this
+    // runs against a database without the column for a while and PostgREST
+    // simply omits it from a star select. Null reads as "no phase", which is
+    // exactly what an unmigrated row means.
+    phase: (row.phase as string | null) ?? null,
+    project: (row.project as string | null) ?? null,
   }
 }
 
@@ -152,7 +163,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.ok) {
       return NextResponse.json({ error: parsed.error }, { status: parsed.status })
     }
-    const { roomId, title } = parsed.body
+    const { roomId, title, phase, project } = parsed.body
 
     if (roomId !== undefined && (typeof roomId !== 'string' || !roomId)) {
       return NextResponse.json({ error: 'roomId must be a space id' }, { status: 400 })
@@ -173,6 +184,18 @@ export async function POST(request: NextRequest) {
           owner_id: viewer.userId,
           title: name,
           created_by: viewer.userId,
+          // Validated against the shared list, never taken as free text: a
+          // typo'd phase would file the crit under a bucket the explore-style
+          // groupings could never find. Anything unrecognised falls back to
+          // the default rather than 400-ing a create over a label.
+          phase: isCritPhase(phase) ? phase : DEFAULT_CRIT_PHASE,
+          // Free text, so the only guards are trim and a length cap — see
+          // migration 044 for why this is not a foreign key. Blank becomes
+          // NULL rather than '': one representation of "no project", so a
+          // filter does not have to test for both.
+          project: typeof project === 'string' && project.trim()
+            ? project.trim().slice(0, 120)
+            : null,
         })
         .select('*')
         .single()

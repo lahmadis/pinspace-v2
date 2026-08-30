@@ -25,7 +25,7 @@ export async function GET(
       .from('workspaces')
       .select('id, name, owner_id')
       .eq('id', workspaceId)
-      .eq('type', 'shared')
+      .not('type', 'in', '(class,deskcrit)')
       .maybeSingle()
 
     if (!workspace) {

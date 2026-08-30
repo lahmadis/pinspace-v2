@@ -5,12 +5,53 @@
 import { useRef, useState, useEffect } from 'react'
 import { useThree, ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
-import { Text } from '@react-three/drei'
+import { Text, Html } from '@react-three/drei'
 import type { WallTextItem } from '@/lib/wallLayout'
-import { ROOM_FONT_3D } from '@/lib/room/palette'
+import { ROOM_FONT_3D, ROOM } from '@/lib/room/palette'
 import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
 import { useDisposableGeometry } from './useDisposableGeometry'
-import { ENGINE_PALETTE } from './enginePalette'
+
+/**
+ * The box border, in three states.
+ *
+ * A label with no border is invisible as an OBJECT — you can read the words but
+ * nothing tells you there is a text box there to double-click, which is the
+ * whole reason this exists. So the resting state draws one too: light enough to
+ * disappear against the wall at a glance, present enough to find.
+ *
+ * Not the old ENGINE_PALETTE.selection yellow in any state — that read as a
+ * warning on a white wall rather than as a text box.
+ */
+const BORDER_IDLE = '#C3CAD9'
+const BORDER_HOVER = '#8A93A8'
+const BORDER_ACTIVE = ROOM.accent
+
+/** CSS px the in-place input is styled at before the 3D scale is applied. */
+const EDIT_FONT_PX = 15
+
+/**
+ * CSS pixels per scene unit inside drei's `<Html transform>`.
+ *
+ * Not a guess — read off drei/web/Html.js, which builds the inner matrix as
+ * `getObjectCSSMatrix(matrix, 1 / ((distanceFactor || 10) / 400))`. That factor
+ * divides the object's basis vectors (never its translation), so with no
+ * distanceFactor it is 400/10 = 40: an element P px wide at group scale S spans
+ * P·S/40 scene units. Matching a font therefore needs the scale multiplied by
+ * this, and leaving it out renders the input at 1/40 size — visible only as a
+ * speck on the wall.
+ */
+const HTML_TRANSFORM_PX_PER_UNIT = 40
+
+const STEP_BUTTON_STYLE: React.CSSProperties = {
+  width: 26,
+  height: 26,
+  borderRadius: 6,
+  border: '1px solid rgba(22,24,29,0.18)',
+  background: '#ffffff',
+  fontSize: 14,
+  lineHeight: 1,
+  cursor: 'pointer',
+}
 
 interface DraggableTextProps {
   item: WallTextItem
@@ -23,6 +64,11 @@ interface DraggableTextProps {
   isSelected: boolean
   onSelect: (id: string) => void
   onDragEnd: (id: string, x: number, y: number) => void
+  /** Off for viewers who may open a wall but not write the wall-config blob. */
+  canEdit?: boolean
+  onTextChange?: (id: string, text: string) => void
+  onFontSizeChange?: (id: string, fontSize: number) => void
+  onRemove?: (id: string) => void
 }
 
 /**
@@ -43,6 +89,10 @@ export function DraggableText({
   isSelected,
   onSelect,
   onDragEnd,
+  canEdit = false,
+  onTextChange,
+  onFontSizeChange,
+  onRemove,
 }: DraggableTextProps) {
   const { camera, gl, raycaster } = useThree()
 
@@ -52,6 +102,15 @@ export function DraggableText({
   const isBackSide = side === 'back'
   const renderXSign = isBackSide ? -1 : 1
 
+  /**
+   * Double-click opens the box for typing. Kept as its own state rather than
+   * folded into `isSelected` because the two mean different things: selected is
+   * "this is the label the controls act on", editing is "the keyboard goes
+   * here". Selecting alone must not swallow keystrokes — the room still has to
+   * respond to them — and it must not blank the 3D type either.
+   */
+  const [editing, setEditing] = useState(false)
+  const [hovered, setHovered] = useState(false)
   const [localPos, setLocalPos] = useState({ x: item.x, y: item.y })
   const posRef = useRef({ x: item.x, y: item.y })
   const [isDragging, setIsDragging] = useState(false)
@@ -67,6 +126,12 @@ export function DraggableText({
     posRef.current = { x: item.x, y: item.y }
     setLocalPos({ x: item.x, y: item.y })
   }, [item.x, item.y, isDragging])
+
+  // Deselecting from anywhere else (another label, the wall, leaving edit mode)
+  // has to close the input too, or a hidden field keeps the caret.
+  useEffect(() => {
+    if (!isSelected) setEditing(false)
+  }, [isSelected])
 
   // Remove any lingering window listeners if we unmount mid-drag.
   useEffect(() => {
@@ -165,12 +230,18 @@ export function DraggableText({
   const textY = localPos.y * scaledWallHeight
   const textZ = 3.3 // just in front of boards (3.2) so labels never z-fight
 
-  // Approximate bounds for the invisible grab target + selection outline.
-  // Sized from fontSize + text length (not position) so it doesn't churn while
-  // dragging. A generous width keeps the whole label grabbable.
+  // Approximate bounds for the invisible grab target. Sized from fontSize +
+  // text length (not position) so it doesn't churn while dragging. A generous
+  // width keeps the whole label grabbable.
   const hitWidth = Math.max(item.fontSize * 2, item.text.length * item.fontSize * 0.62)
   const hitHeight = item.fontSize * 1.6
-  const outlineGeom = useDisposableGeometry(
+
+  const showControls = isSelected && canEdit && !editing
+  const stepFontSize = (delta: number) =>
+    onFontSizeChange?.(item.id, THREE.MathUtils.clamp(Math.round(item.fontSize) + delta, 2, 96))
+
+  const borderColor = editing || isSelected ? BORDER_ACTIVE : hovered ? BORDER_HOVER : BORDER_IDLE
+  const borderGeom = useDisposableGeometry(
     () => new THREE.PlaneGeometry(hitWidth, hitHeight),
     [hitWidth, hitHeight],
   )
@@ -184,13 +255,20 @@ export function DraggableText({
           // The wall plane behind this label opens edit mode on double click,
           // and R3F only stops the walk on objects carrying that named handler.
           // Swallow it so double-clicking a label can't jump edit mode.
-          onDoubleClick={consumeDoubleClick}
+          onDoubleClick={(e) => {
+            consumeDoubleClick(e)
+            if (!canEdit) return
+            onSelect(item.id)
+            setEditing(true)
+          }}
           onPointerOver={(e) => {
             e.stopPropagation()
-            gl.domElement.style.cursor = 'grab'
+            setHovered(true)
+            gl.domElement.style.cursor = canEdit ? 'text' : 'grab'
           }}
           onPointerOut={(e) => {
             e.stopPropagation()
+            setHovered(false)
             if (!isDragging) gl.domElement.style.cursor = 'default'
           }}
         >
@@ -198,24 +276,169 @@ export function DraggableText({
           <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
         </mesh>
 
-        <Text
-          position={[0, 0, 0.05]}
-          raycast={() => null}
-          font={ROOM_FONT_3D}
-          fontSize={item.fontSize}
-          color={ENGINE_PALETTE.darkText}
-          anchorX="center"
-          anchorY="middle"
-          maxWidth={scaledWallWidth}
-        >
-          {item.text || ' '}
-        </Text>
+        {/* ROOM.ink, not ENGINE_PALETTE.darkText: WallSystem paints the
+            same label with the former once you leave edit mode, and two
+            near-blacks that don't match are the same class of bug as the
+            all-caps flip that used to happen here. */}
+        {/* The box itself. Drawn in EVERY state, not just when selected: a
+            label with no border is invisible as an object, and you cannot
+            double-click into something you can't see. It lightens to
+            BORDER_IDLE at rest, firms up on hover, and goes accent while
+            selected or editing. */}
+        <lineSegments position={[0, 0, 0.06]} raycast={() => null}>
+          <edgesGeometry args={[borderGeom]} />
+          <lineBasicMaterial color={borderColor} />
+        </lineSegments>
 
-        {isSelected && (
-          <lineSegments position={[0, 0, 0.06]} raycast={() => null}>
-            <edgesGeometry args={[outlineGeom]} />
-            <lineBasicMaterial color={ENGINE_PALETTE.selection} />
-          </lineSegments>
+        {/* Hidden while typing — the input below stands in for it, so the words
+            don't render twice on top of each other. */}
+        {!editing && (
+          <Text
+            position={[0, 0, 0.05]}
+            raycast={() => null}
+            font={ROOM_FONT_3D}
+            fontSize={item.fontSize}
+            color={ROOM.ink}
+            anchorX="center"
+            anchorY="middle"
+            maxWidth={scaledWallWidth}
+          >
+            {item.text || ' '}
+          </Text>
+        )}
+
+        {/* Type IN the box. `transform` puts the input on the wall plane in
+            scene space instead of pasting it flat over the canvas, so it sits
+            exactly where the 3D type was and grows and shrinks with the room as
+            you zoom. scale converts CSS px to scene inches: styled at
+            EDIT_FONT_PX and scaled by fontSize/EDIT_FONT_PX × the px-per-unit
+            factor, the input's em box measures item.fontSize inches — the same
+            size troika was drawing. */}
+        {editing && (
+          <Html
+            transform
+            position={[0, 0, 0.09]}
+            center
+            scale={(item.fontSize / EDIT_FONT_PX) * HTML_TRANSFORM_PX_PER_UNIT}
+            style={{ pointerEvents: 'auto' }}
+            zIndexRange={[100, 0]}
+          >
+            <div onDoubleClick={consumeDoubleClick} onPointerDown={(e) => e.stopPropagation()}>
+              <input
+                value={item.text}
+                autoFocus
+                maxLength={200}
+                placeholder="Text"
+                onFocus={(e) => e.currentTarget.select()}
+                onChange={(e) => onTextChange?.(item.id, e.target.value)}
+                // stopPropagation so the room's own key handling (escape out of
+                // edit mode, arrow-key nudges) doesn't fire on every keystroke.
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur()
+                }}
+                onBlur={() => setEditing(false)}
+                style={{
+                  width: `${Math.max(6, item.text.length + 2)}ch`,
+                  textAlign: 'center',
+                  padding: 0,
+                  margin: 0,
+                  border: 'none',
+                  outline: 'none',
+                  background: 'transparent',
+                  color: ROOM.ink,
+                  fontFamily: 'Onest, Inter, system-ui, sans-serif',
+                  fontSize: EDIT_FONT_PX,
+                  lineHeight: 1.15,
+                }}
+              />
+            </div>
+          </Html>
+        )}
+
+        {/* Size and Remove, anchored to the label. Not a text field any more —
+            the text is typed in the box itself on double-click — and not the
+            panel at the far left of the screen this replaced. Same <Html>
+            overlay pattern as DraggableBoard's "Reset to true scale" chip,
+            including the double-click guard on the wrapper: drei's inner div
+            owns the hit area and runs in its own React root, so a synthetic
+            stop here would not reach the native event that opens wall edit
+            mode. */}
+        {showControls && (
+          <Html
+            position={[0, hitHeight / 2 + 3, 0.1]}
+            center
+            distanceFactor={10}
+            style={{ pointerEvents: 'auto' }}
+          >
+            <div
+              onDoubleClick={consumeDoubleClick}
+              onPointerDown={(e) => e.stopPropagation()}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: 6,
+                borderRadius: 10,
+                background: '#ffffff',
+                border: '1px solid rgba(22,24,29,0.12)',
+                boxShadow: '0 8px 24px rgba(22,24,29,0.18)',
+                fontFamily: 'Onest, Inter, system-ui, sans-serif',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => stepFontSize(-2)}
+                aria-label="Decrease font size"
+                style={STEP_BUTTON_STYLE}
+              >
+                −
+              </button>
+              <span style={{ width: 30, textAlign: 'center', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+                {Math.round(item.fontSize)}
+              </span>
+              <button
+                type="button"
+                onClick={() => stepFontSize(2)}
+                aria-label="Increase font size"
+                style={STEP_BUTTON_STYLE}
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={() => { onSelect(item.id); setEditing(true) }}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  border: '1px solid rgba(22,24,29,0.18)',
+                  background: '#ffffff',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => onRemove?.(item.id)}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  border: '1px solid rgba(194,69,45,0.3)',
+                  background: 'rgba(194,69,45,0.08)',
+                  color: '#C2452D',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          </Html>
         )}
       </group>
     </group>

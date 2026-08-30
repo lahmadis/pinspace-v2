@@ -27,7 +27,7 @@ describe('dashboard accessibility', () => {
   it('has no serious or critical automated accessibility violations in the mocked empty state', async () => {
     const { container } = render(
       <DashboardMain
-        scope="shared"
+        scope="personal"
         rooms={[]}
         userId="user-1"
         institutionHome={null}

@@ -87,7 +87,10 @@ function DashboardContent() {
     const saved = typeof window !== 'undefined'
       ? (localStorage.getItem(SCOPE_STORAGE_KEY) as Scope | null)
       : null
-    const valid: Scope[] = ['wentworth', 'shared', 'personal']
+    // 'shared' is no longer a scope. A saved value of it falls through to the
+    // default below rather than sticking someone on a tab that no longer
+    // exists — localStorage outlives the release that removed it.
+    const valid: Scope[] = ['wentworth', 'personal']
     if (saved && valid.includes(saved)) {
       setCurrentScope(saved === 'wentworth' && !hasOrganization ? 'personal' : saved)
     } else {
@@ -256,8 +259,13 @@ function DashboardContent() {
 
   const scopedRooms = allWorkspaces.filter((w) => {
     if (currentScope === 'wentworth') return w.type === 'class'
-    if (currentScope === 'shared') return w.type === 'shared'
-    if (currentScope === 'personal') return w.type === 'personal'
+    // NOT `type === 'personal'`. Migration 041 collapses the old 'shared' type
+    // into 'personal', and migrations here are applied by hand — so until it is
+    // run, nine real workspaces still carry type='shared' and matching on
+    // 'personal' alone would strand every one of them with no tab to reach them
+    // from. Anything that is not a class belongs to the person who owns it —
+    // except the desk-crit container, which is not a space at all.
+    if (currentScope === 'personal') return w.type !== 'class' && w.type !== 'deskcrit'
     return false
   })
 

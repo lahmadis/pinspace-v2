@@ -10,7 +10,7 @@ import { Board, FloorTable } from '@/types'
 import WallSystem, { ROOM_SKY_COLOR, getRoomFogParams } from '@/components/3d/WallSystem'
 import RoomLighting from '@/components/3d/RoomLighting'
 import { CameraController, type FocusedWall } from '@/components/3d/CameraController'
-import { getInitialRoomPose } from '@/lib/room/cameraViews'
+import { getInitialRoomPose, ROOM_MIN_ZOOM_DISTANCE_INCHES } from '@/lib/room/cameraViews'
 import TwoDView from '@/components/room/TwoDView'
 import { deriveRoomStudents } from '@/lib/room/students'
 import { ROOM } from '@/lib/room/palette'
@@ -21,7 +21,6 @@ import DemoBanner from '@/components/DemoBanner'
 import { getCachedStudioData } from '@/lib/studioViewCache'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import { useAuthSession } from '@/hooks/useAuthSession'
-import { useAccountMode } from '@/lib/useAccountMode'
 import { ArrowLeft, LayoutGrid, Box, ChevronDown } from 'lucide-react'
 
 interface WallDimensions {
@@ -73,7 +72,9 @@ function StudioViewCameraControls({
   // Wider rooms (or more connected walls) push the camera back more.
   const distanceScale = ((maxWallWidthInches * layoutFactor) / baseWidthInches) || 1
 
-  const minDistance = 80 * distanceScale       // Pull camera back a bit more by default
+  // Zoom-IN floor: see ROOM_MIN_ZOOM_DISTANCE_INCHES. The zoom-out cap below
+  // still scales with the room; only the near end was a wall.
+  const minDistance = ROOM_MIN_ZOOM_DISTANCE_INCHES
   const maxDistance = 1200 * distanceScale     // Allow zooming further out for very long rooms
 
   // Aim slightly above mid-wall (where boards typically sit) so zoom goes toward the walls, not the floor.
@@ -128,7 +129,6 @@ function StudioViewPageInner() {
   const router = useRouter()
   const studioId = params.id as string
   const { user } = useAuthSession()
-  const { mode: accountMode, resolved: accountModeResolved } = useAccountMode(user?.id, user?.email)
   
   // Check if it's a demo studio (starts with "demo-studio-") or has demo=true param
   const isDemoStudio = studioId.startsWith('demo-studio-')
@@ -189,6 +189,13 @@ function StudioViewPageInner() {
   const [roomName, setRoomName] = useState<string | null>(null)
   /** The section this room belongs to, e.g. "Studio 01 - Lahmadi". */
   const [workspaceName, setWorkspaceName] = useState<string | null>(null)
+  /**
+   * The type of the workspace this room belongs to — what the back button
+   * routes on. Null until the role fetch below resolves, and for guests, who
+   * never make that call; both are treated as "not personal", which is the
+   * safe default (see the button).
+   */
+  const [workspaceType, setWorkspaceType] = useState<string | null>(null)
   const [rosterOpen, setRosterOpen] = useState(false)
   // Room-level wall color (migration 031), surfaced by /api/boards. Drives the
   // 3D wall material for viewers; defaults to 'grey' (the current look).
@@ -414,6 +421,7 @@ function StudioViewPageInner() {
   useEffect(() => {
     if (isDemo || !resolvedWorkspaceId || !user?.id) {
       setCurrentUserRole(null)
+      setWorkspaceType(null)
       return
     }
     let cancelled = false
@@ -422,12 +430,14 @@ function StudioViewPageInner() {
       try {
         const res = await fetch(`/api/workspaces/${resolvedWorkspaceId}`)
         if (!res.ok) {
-          if (!cancelled) { setCurrentUserRole(null); setCanReorderBoards(false) }
+          if (!cancelled) { setCurrentUserRole(null); setCanReorderBoards(false); setWorkspaceType(null) }
           return
         }
         const data = await res.json()
         const members = data?.workspace?.members
         if (cancelled) return
+        // Same response, no extra round trip — see the reorder note below.
+        setWorkspaceType(typeof data?.workspace?.type === 'string' ? data.workspace.type : null)
         if (Array.isArray(members)) {
           const mine = (members as Array<{ userId: string; role: string }>).find(
             (m) => m.userId === myUserId
@@ -646,12 +656,40 @@ function StudioViewPageInner() {
 
         <button
           onClick={() => {
-            const base = searchParams.get('returnTo') === 'gallery'
+            // An explicit return path wins over everything below.
+            //
+            // /explore keeps its drill position in the query, and a space is
+            // opened with that URL attached, so this lands you back on the
+            // section you came from rather than at the top of the map. Only a
+            // same-origin /explore path is honoured — `returnTo` arrives from
+            // the address bar, and pushing an arbitrary attacker-supplied value
+            // is an open redirect. A leading `//` is rejected with the rest:
+            // `//evil.com` is a protocol-relative URL, not a path.
+            const rawReturnTo = searchParams.get('returnTo')
+            const returnToExplore =
+              rawReturnTo && /^\/explore(\?|$)/.test(rawReturnTo) ? rawReturnTo : null
+
+            // Routed on the ROOM, not on the viewer.
+            //
+            // This used to read the viewer's account mode: a personal-mode
+            // account leaving a WIT section landed on /network, which is a FLAT
+            // field of that viewer's own personal workspaces — no departments,
+            // no drill-down, and not containing the room they just left. Two
+            // people could press the same button on the same room and end up in
+            // two different networks, and one of them in the wrong one.
+            //
+            // Where a room sends you back to is a property of the room. A
+            // personal workspace belongs to the personal network; everything
+            // else — sections, shared spaces — belongs to the org network, and
+            // /explore opens that at the top of the drill-down (Department).
+            // Unknown (a guest, or the type fetch not yet resolved) takes
+            // /explore too: /network requires sign-in and holds only your own
+            // spaces, so it is never the right guess for someone else's room.
+            const base = rawReturnTo === 'gallery'
               ? '/gallery'
-              // Only a resolved personal account goes to its own network; an
-              // unresolved mode is unknown, not personal, so it keeps the org
-              // destination rather than stranding a university user on /network.
-              : accountModeResolved && accountMode === 'personal' ? '/network' : '/explore'
+              : returnToExplore
+                ? returnToExplore
+                : workspaceType === 'personal' ? '/network' : '/explore'
             if (isDemo) {
               const originalParams = typeof window !== 'undefined' ? window.location.search : ''
               if (originalParams.includes('color=') || originalParams.includes('department=')) {

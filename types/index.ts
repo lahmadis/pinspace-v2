@@ -205,7 +205,14 @@ export interface Workspace {
   id: string
   name: string // "Studio 08 - Fall 2024"
   slug: string // for URL, e.g., "studio-08-fall-2024"
-  type: 'class' | 'personal' | 'shared'
+  /**
+   * 'shared' is retired as a distinct kind of space (migration 041) — it is
+   * derived from membership now — but the value stays in the union until every
+   * row is migrated. 'deskcrit' is not a space at all: it is the per-person
+   * container that gives desk-crit sheets a workspace_id, and every list query
+   * filters it out (see lib/deskCrits/workspace).
+   */
+  type: 'class' | 'personal' | 'shared' | 'deskcrit'
   createdBy: string // user ID of professor
   studioId: string // the shared 3D room ID
   members: WorkspaceMember[]

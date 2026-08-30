@@ -11,6 +11,7 @@ import { toast } from '@/lib/toast'
 import { maxModelBytesForName } from '@/lib/uploadLimits'
 import type { Board } from '@/types'
 import { useDirectUpload } from '@/lib/useDirectUpload'
+import { countWallCrossings } from '@/lib/room/planGeometry'
 
 const TABLE_HEIGHT_INCHES = 18 // 1.5 feet
 const DEFAULT_TABLE_WIDTH = 24
@@ -171,6 +172,31 @@ type Point2 = { x: number; z: number }
  * Half a wall's plan thickness, in inches — walls draw and build 6" thick.
  */
 const WALL_HALF_THICKNESS_IN = 3
+
+/**
+ * Walls are solid: they may meet, they may not pass through each other.
+ *
+ * Returns true when a candidate layout should be DISCARDED — the wall being
+ * dragged, rotated or stretched crosses more walls than it did before the
+ * frame. Compared as a count against the current config rather than tested
+ * absolutely, because a layout saved before this rule existed can already
+ * contain a crossing, and an absolute veto would weld those walls in place:
+ * every candidate position crosses, so they could never be dragged apart.
+ * "No worse than it was" always leaves a way out.
+ *
+ * Rejecting means the gesture's accumulator is left untouched too, so the wall
+ * stops dead against the obstruction and picks the cursor back up the moment it
+ * moves away — the standard way collision reads. Advancing the accumulator
+ * anyway would let the wall skip the barrier and reappear on the far side,
+ * which is the thing being fixed.
+ */
+function blocksWallMove(
+  current: Parameters<typeof countWallCrossings>[0],
+  candidate: Parameters<typeof countWallCrossings>[0],
+  index: number,
+): boolean {
+  return countWallCrossings(candidate, index) > countWallCrossings(current, index)
+}
 
 /**
  * The four plan corners of a wall, in world inches, in the order
@@ -543,6 +569,12 @@ export default function FloorEditorOverlay({
       if (Math.abs((cur[dim] ?? 0) - clamped) < 1e-6) return
       const nextWalls = wallConfig.walls.map((w, i) => (i === index ? { ...w, [dim]: clamped } : w))
       const next = { ...wallConfig, walls: nextWalls }
+      // Same solidity rule the drag gestures enforce — a length typed into the
+      // panel must not do what dragging the stretch handle is refused. Only
+      // width can: height is vertical and changes no footprint. The field
+      // reverts to the current value on the next render, which is the feedback
+      // that the length doesn't fit.
+      if (dim === 'width' && blocksWallMove(wallConfig, next, index)) return
       onWallConfigChange(next)
       setUndoHistory((prev) => { const t = prev.slice(0, undoIndex + 1); t.push(next); return t })
       setUndoIndex((prev) => prev + 1)
@@ -694,6 +726,7 @@ export default function FloorEditorOverlay({
         const custom = ensureCustomTransforms(wallConfig, draggingWallIndex)
         custom[draggingWallIndex] = { ...custom[draggingWallIndex], x: appliedX, z: appliedZ }
         const nextConfig = { ...wallConfig, customTransforms: custom }
+        if (blocksWallMove(wallConfig, nextConfig, draggingWallIndex)) return
         lastAppliedWallConfigRef.current = nextConfig
         onWallConfigChange(nextConfig)
         // Store the RAW position, not the snapped one: this gesture is
@@ -731,6 +764,7 @@ export default function FloorEditorOverlay({
         const custom = ensureCustomTransforms(wallConfig, rotatingWallIndex)
         custom[rotatingWallIndex] = { ...custom[rotatingWallIndex], rotationY: newRotationY }
         const nextConfig = { ...wallConfig, customTransforms: custom }
+        if (blocksWallMove(wallConfig, nextConfig, rotatingWallIndex)) return
         lastAppliedWallConfigRef.current = nextConfig
         onWallConfigChange(nextConfig)
         return
@@ -808,6 +842,7 @@ export default function FloorEditorOverlay({
         const custom = ensureCustomTransforms(wallConfig, stretchingWallIndex)
         custom[stretchingWallIndex] = { ...custom[stretchingWallIndex], x: nextCenterX, z: nextCenterZ }
         const nextConfig = { ...wallConfig, walls: nextWalls, customTransforms: custom }
+        if (blocksWallMove(wallConfig, nextConfig, stretchingWallIndex)) return
         lastAppliedWallConfigRef.current = nextConfig
         onWallConfigChange(nextConfig)
         return

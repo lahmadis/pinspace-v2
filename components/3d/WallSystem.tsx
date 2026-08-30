@@ -8,6 +8,8 @@ import WallSurface from './WallSurface'
 import BoardThumbnail from './BoardThumbnail'
 import { getWallTransformResolved, getFloorRect, type WallTextItem } from '@/lib/wallLayout'
 import { ROOM_SKY, ROOM_GHOST, ROOM_FONT_3D, ROOM_GRID_LINE, ROOM_GRID_INCHES } from '@/lib/room/palette'
+import { wallFreeEnds, type WallConfigLike } from '@/lib/room/planGeometry'
+import { wallPanelShape, WALL_END_RADIUS_SEGMENTS } from '@/lib/room/wallPanelShape'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
 
 interface WallDimensions {
@@ -200,6 +202,30 @@ export const ROOM_SKY_COLOR = ROOM_SKY
  * room and you can see where the other walls are to click back onto them.
  */
 const WALL_DIM_AMOUNT = 0.74
+
+/**
+ * A wall panel: the shared silhouette (see lib/room/wallPanelShape) extruded
+ * through the wall's 6in thickness.
+ *
+ * Extrude rather than Box because a BoxGeometry cannot round one edge and leave
+ * the other square, and the whole point is that only the ends of a run soften.
+ * ExtrudeGeometry builds from z=0 forward, so it is translated back by half the
+ * depth to sit centred on the wall plane exactly where the box used to.
+ */
+function makeWallPanelGeometry(
+  width: number,
+  height: number,
+  roundPlusX: boolean,
+  roundMinusX: boolean,
+  depth = 6,
+): THREE.ExtrudeGeometry {
+  const geometry = new THREE.ExtrudeGeometry(
+    wallPanelShape(width, height, roundPlusX, roundMinusX),
+    { depth, bevelEnabled: false, curveSegments: WALL_END_RADIUS_SEGMENTS },
+  )
+  geometry.translate(0, 0, -depth / 2)
+  return geometry
+}
 /**
  * Slightly less for boards: artwork ghosts, but stays identifiable enough to
  * click. Underscored because nothing reads it yet — board dimming is still
@@ -345,6 +371,32 @@ const BAY_FRAME_PADDING_IN = 3
 export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWallHover, editingWall, editUIActive = false, othersEditingWalls, onBoardClick, highlightedBoardId, onBoardHover, wallColor = 'white', suppressCallouts = false, highlightedBoardIds, dimmedExceptWall = null, onFloorClick }: WallSystemProps) {
 
   const wallPalette = WALL_PALETTES[wallColor] ?? WALL_PALETTES.grey
+
+  /**
+   * One panel geometry per wall, built together rather than per-wall with
+   * useDisposableGeometry: the walls are rendered inside a .map(), and a hook
+   * cannot be called in a loop. Disposal is handled by the effect below, which
+   * frees the previous batch whenever the layout changes and on unmount —
+   * ExtrudeGeometry allocates GPU buffers that R3F will not reclaim for us.
+   */
+  const wallFreeEndFlags = useMemo(
+    () => wallFreeEnds(wallConfig as WallConfigLike),
+    [wallConfig],
+  )
+
+  const wallPanelGeometries = useMemo(() => {
+    return wallConfig.walls.map((_wall, index) => {
+      const t = getWallTransformResolved(wallConfig, index)
+      const ends = wallFreeEndFlags[index] ?? { plus: true, minus: true }
+      return makeWallPanelGeometry(t.width, t.height, ends.plus, ends.minus)
+    })
+  }, [wallConfig, wallFreeEndFlags])
+
+  useEffect(() => {
+    return () => {
+      for (const geometry of wallPanelGeometries) geometry.dispose()
+    }
+  }, [wallPanelGeometries])
   // Ghosted variants for wall focus. Memoized on the palette rather than
   // recomputed inside the wall loop: this is four THREE.Color blends that are
   // identical for every dimmed wall in the room.
@@ -457,6 +509,9 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
         // together — dimming the slab alone would leave the artwork floating at
         // full contrast, which is the opposite of focus.
         const isDimmed = dimmedExceptWall != null && wallIndex !== dimmedExceptWall
+        // Same flags the slab geometry was built from, so the pick planes share
+        // its silhouette instead of hanging a square corner past a round one.
+        const ends = wallFreeEndFlags[wallIndex] ?? { plus: false, minus: false }
         const palette = isDimmed ? dimmedWallPalette : wallPalette
         const inkColor = isDimmed ? dimmedInk : ROOM_PALETTE.ink
 
@@ -521,6 +576,8 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             <WallSurface
               wallDimensions={wall}
               side="front"
+              roundPlusX={ends.plus}
+              roundMinusX={ends.minus}
               onSurfaceDoubleClick={({ side }) => {
                 const position = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
                 const rotation = transform.rotationY
@@ -531,6 +588,8 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
             <WallSurface
               wallDimensions={wall}
               side="back"
+              roundPlusX={ends.plus}
+              roundMinusX={ends.minus}
               onSurfaceDoubleClick={({ side }) => {
                 const position = new THREE.Vector3(transform.x, transform.height / 2, transform.z)
                 const rotation = transform.rotationY
@@ -539,11 +598,11 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
               onSurfaceHover={({ side }) => onWallHover?.(wallIndex, side)}
             />
 
-            {/* Modern off-white wall with depth and shadows. Square corners:
-                a room joins its walls, and a radius at a junction opens a notch
-                at eye level. */}
-            <mesh renderOrder={0}>
-              <boxGeometry args={[transform.width, transform.height, 6]} />
+            {/* Modern off-white wall with depth and shadows. Corners are square
+                where walls MEET — a radius at a junction opens a notch at eye
+                level — and softened by WALL_END_RADIUS at the free ends of a
+                run, which no joint has to close. */}
+            <mesh renderOrder={0} geometry={wallPanelGeometries[wallIndex]}>
               <meshStandardMaterial
                 color={palette.main} // room wall color (grey default / paper white), ghosted when unfocused
                 // White mode matches the board material's roughness (0.7) so a
@@ -560,54 +619,20 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
               />
             </mesh>
 
-            {/* Subtle edge shadows for depth - creates modern panel effect */}
-            {/* Left edge shadow */}
-            <mesh
-              position={[-transform.width / 2 + 0.1, 0, 2.1]}
-            >
-              <boxGeometry args={[0.2, transform.height, 0.2]} />
-              <meshStandardMaterial
-                color={palette.sideEdge} // side edge shadow (per wall color)
-                roughness={0.9}
-                metalness={0.0}
-              />
-            </mesh>
+            {/* The four "edge shadow" strips that used to sit here are gone.
+                They were 0.2in slivers at z = 2.1 — INSIDE a slab that spans
+                z −3..+3 — so the opaque wall occluded them from every angle and
+                they had never contributed the panel depth they were named for.
+                (Almost certainly orphaned when the wall thickness went from 4
+                to 6: at half-depth 2, z = 2.1 would have sat just proud of the
+                surface, which is where a strip like this belongs.)
 
-            {/* Right edge shadow */}
-            <mesh
-              position={[transform.width / 2 - 0.1, 0, 2.1]}
-            >
-              <boxGeometry args={[0.2, transform.height, 0.2]} />
-              <meshStandardMaterial
-                color={palette.sideEdge} // side edge shadow (per wall color)
-                roughness={0.9}
-                metalness={0.0}
-              />
-            </mesh>
-
-            {/* Top edge shadow */}
-            <mesh
-              position={[0, transform.height / 2 - 0.1, 2.1]}
-            >
-              <boxGeometry args={[transform.width, 0.2, 0.2]} />
-              <meshStandardMaterial
-                color={palette.topEdge} // top edge shadow (per wall color)
-                roughness={0.9}
-                metalness={0.0}
-              />
-            </mesh>
-
-            {/* Bottom edge shadow */}
-            <mesh
-              position={[0, -transform.height / 2 + 0.1, 2.1]}
-            >
-              <boxGeometry args={[transform.width, 0.2, 0.2]} />
-              <meshStandardMaterial
-                color={palette.bottomEdge} // bottom edge shadow (per wall color)
-                roughness={0.9}
-                metalness={0.0}
-              />
-            </mesh>
+                Harmless while the panel was a rectangle. Once its free corners
+                were rounded the slab pulled in by the radius while the strips
+                still ran the full width and height, so they poked out through
+                the notch and drew a hard grey square corner beside every round
+                one. Restoring the depth cue, if it is ever wanted, means
+                z = 3.1 AND following the silhouette — not this. */}
 
             {boardsOnWall.map((board) => {
               if (!board.position) return null
@@ -708,12 +733,18 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                     font={ROOM_FONT_3D}
                     fontSize={t.fontSize}
                     color={inkColor}
-                    letterSpacing={0.08}
                     anchorX="center"
                     anchorY="middle"
                     maxWidth={transform.width}
                   >
-                    {(t.text || ' ').toUpperCase()}
+                    {/* Rendered EXACTLY as DraggableText renders it while you
+                        are editing — same font, same case, same tracking. This
+                        used to .toUpperCase() with letterSpacing 0.08, so a
+                        label you typed as "Nathan Tavares" became "NATHAN
+                        TAVARES" the moment you left edit mode. What you type is
+                        what gets pinned to the wall; any styling that only one
+                        of the two renderers applies is a lie about the label. */}
+                    {t.text || ' '}
                   </Text>
                 )
               })}

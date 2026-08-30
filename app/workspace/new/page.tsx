@@ -11,7 +11,11 @@ import { useAuthSession } from '@/hooks/useAuthSession'
 function NewWorkspaceForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const typeParam = searchParams?.get('type') === 'shared' ? 'shared' : null
+  // ?type=shared is retired: a space is not declared shared at creation any
+  // more, it becomes shared when someone joins it. The param is still READ so
+  // an old bookmark or link does not 404 — it just creates an ordinary space.
+  const typeParam: 'shared' | null = null
+  void searchParams
   const { status: authStatus, user } = useAuthSession()
   const isLoaded = authStatus !== 'loading'
   const [loading, setLoading] = useState(false)

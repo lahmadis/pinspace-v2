@@ -14,7 +14,6 @@ interface JoinClassModalProps {
 // the dashboard.
 export default function JoinClassModal({ onClose }: JoinClassModalProps) {
   const noun = 'Project'
-  const helperText = 'Whoever set it up should have shared an invite link or code with you.'
   const router = useRouter()
   const [inviteCode, setInviteCode] = useState('')
   const [loading, setLoading] = useState(false)
@@ -118,19 +117,6 @@ export default function JoinClassModal({ onClose }: JoinClassModalProps) {
               <p className="mt-2 text-sm text-[#8A8FA0]">
                 Enter the 8-character code or paste the full invite link
               </p>
-            </div>
-
-            {/* Info Box */}
-            <div className="bg-[#3B6EF6]/6 border border-[#3B6EF6]/20 rounded-xl p-4">
-              <div className="flex gap-2">
-                <span className="text-xl">💡</span>
-                <div className="text-sm text-[#16181D]">
-                  <p className="font-bold mb-1">Where to find the code?</p>
-                  <p className="text-[#5A5E6B]">
-                    {helperText}
-                  </p>
-                </div>
-              </div>
             </div>
 
             {/* Buttons */}

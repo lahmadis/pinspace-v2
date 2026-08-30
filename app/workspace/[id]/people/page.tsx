@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import type { Session, AuthChangeEvent, User as AuthUser } from '@supabase/supabase-js'
 import { Workspace } from '@/types'
-import { ArrowLeft, GraduationCap, User, Copy, Check } from 'lucide-react'
+import { ArrowLeft, GraduationCap, User } from 'lucide-react'
 
 const AVATAR_GRADIENTS = [
   'linear-gradient(140deg, #FFB08A, #E86A92)',
@@ -31,7 +31,6 @@ export default function WorkspacePeoplePage() {
   const [isLoaded, setIsLoaded] = useState(false)
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [loading, setLoading] = useState(true)
-  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
@@ -64,15 +63,6 @@ export default function WorkspacePeoplePage() {
       .catch(() => router.push('/dashboard'))
   }, [isLoaded, user, workspaceId, router])
 
-  const isInstructor = workspace?.members.find((m) => m.userId === user?.id)?.role === 'instructor'
-
-  const handleCopy = () => {
-    if (!workspace) return
-    navigator.clipboard.writeText(workspace.inviteCode)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
   if (loading || !workspace) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(160deg, #F2F5FB 0%, #EDF1F9 55%, #F6F3EC 100%)' }}>
@@ -98,19 +88,11 @@ export default function WorkspacePeoplePage() {
       </div>
 
       <div className="max-w-4xl mx-auto px-6 py-10">
-        {isInstructor && (
-          <div className="flex items-center gap-3 bg-white/80 border border-[#16181D]/8 rounded-full px-5 py-2.5 mb-8 w-fit">
-            <span className="font-mono text-sm tracking-[0.12em] text-[#16181D]">{workspace.inviteCode}</span>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#3B6EF6] text-white rounded-full text-xs font-bold hover:bg-[#16181D] transition-colors"
-            >
-              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied ? 'Copied' : 'Copy invite code'}
-            </button>
-          </div>
-        )}
+        {/* The invite code that used to sit here is gone. This page answers
+            "who is in this section"; handing out access is a different job and
+            it now lives in one place — Settings on the section page, which
+            carries the invite LINK as well as the bare code. Two copies of a
+            join secret in two places is one more than can be revoked at once. */}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {workspace.members.map((member) => (

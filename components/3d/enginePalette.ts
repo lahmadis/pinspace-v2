@@ -18,20 +18,24 @@ export const ENGINE_PALETTE = {
   lockedHover: '#999999',
   modelWire: '#888888',
   /**
-   * The full-screen model viewer: a white object on a white ground.
+   * The full-screen model viewer: a white object on a faintly blue ground.
    *
-   * Both are pure white, and that is the whole point — this is a product-shot
-   * setup, where the object is read entirely from SHADING and its contact
-   * shadow rather than from any colour difference against the backdrop. A tint
-   * on either one turns it back into a coloured shape on a coloured field.
+   * The MODEL stays pure white, and that is still the point — this is a
+   * product-shot setup, where the object is read from SHADING and its contact
+   * shadow rather than from any colour difference against the backdrop. With
+   * soft high-key light the top face lands near white, the sides fall to ~0.8,
+   * and the shadow anchors it; that is more legible than contrast.
    *
-   * Two earlier attempts here tried to separate model from backdrop by value
-   * (a grey model on a lavender field, then on a blue one). That is the wrong
-   * axis: with soft high-key light the top face lands near white, the sides
-   * fall to ~0.8, and the shadow anchors it — which is more legible than any
-   * amount of contrast, and is what the reference does.
+   * The BACKDROP now carries a slight blue, by request. It is deliberately a
+   * step lighter than the room's own sky (ROOM_SKY, #EDF1FB) so the viewer
+   * still reads as a lit studio rather than as the room with the walls taken
+   * out — and light enough that the white model is still separated by shading,
+   * not by the field behind it. Two earlier attempts tried to separate model
+   * from backdrop by VALUE (a grey model on a lavender field, then on a blue
+   * one); that failed, and this is not that — the tint is on the ground only.
+   * ROOM_SKY is the next step if this reads too faint.
    */
-  viewerBackdrop: '#FFFFFF',
+  viewerBackdrop: '#F2F5FC',
   viewerSurface: '#FFFFFF',
   /**
    * The contact shadow under the model. Cool and very light, so it reads as a

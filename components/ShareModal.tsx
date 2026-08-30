@@ -274,14 +274,14 @@ export default function ShareModal({ studioId, onClose }: ShareModalProps) {
 
             <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg">
               <p className="text-sm text-blue-900">
-                <strong>Anyone with this link</strong> can view your studio in 3D.
+                <strong>Anyone with this link</strong> can view your section.
               </p>
             </div>
 
             {/* Guest critics — owner-only named, expiring links that can comment + trace */}
             {guestVisible && (
               <div className="mt-5 pt-5 border-t border-gray-200">
-                <h3 className="text-sm font-bold text-gray-900 mb-1">Guest critics</h3>
+                <h3 className="text-sm font-bold text-gray-900 mb-1">Guest Critics</h3>
                 <p className="text-xs text-gray-500 mb-3">
                   Named, no-account links that can comment and trace on this space. Revoke anytime.
                 </p>

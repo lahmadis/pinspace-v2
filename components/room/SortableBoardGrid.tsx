@@ -272,8 +272,15 @@ function SortableBoardCard({
         >
           {sheetLabel(board, index)}
         </p>
+        {/* A person's NAME, so it is set like one: sans, sentence case, the
+            same family as the title above it. Uppercased 10px mono turned
+            "Nathan Tavares" into a system identifier — and any name long
+            enough to matter was tracked out until it truncated. */}
         {labelOwner && (
-          <p className="text-[10px] uppercase tracking-[0.12em] truncate" style={headerStyle}>
+          <p
+            className="text-[11px] font-medium tracking-[-0.01em] truncate"
+            style={{ color: ROOM.ink2, fontFamily: SANS_STACK }}
+          >
             {boardAuthorName(board) || 'Unattributed'}
           </p>
         )}

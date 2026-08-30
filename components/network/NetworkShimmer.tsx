@@ -5,7 +5,7 @@ import DemoBanner from '@/components/DemoBanner'
 
 export function NetworkShimmerCanvas({
   title = 'Loading Studio Network...',
-  description = 'Mapping published studios, academic years, and connections.',
+  description = 'Mapping published classes, academic years, and connections.',
 }: {
   title?: string
   description?: string

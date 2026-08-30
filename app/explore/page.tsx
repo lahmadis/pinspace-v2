@@ -29,7 +29,10 @@ const MAX_NAMED_PEOPLE = 3
  * plausible studio name — it must never collide with a real value from
  * lib/constants/studios, since the two are compared as plain strings here.
  */
-const UNFILED_STUDIO = 'Not in a studio'
+const UNFILED_STUDIO = 'Not in a class'
+
+/** Same idea as UNFILED_STUDIO, for rows published before terms were recorded. */
+const UNFILED_ACADEMIC_YEAR = 'No academic year'
 
 
 function ExplorePageInner() {
@@ -47,7 +50,15 @@ function ExplorePageInner() {
   const [networkLabel, setNetworkLabel] = useState<string | null>(null)
 
   /**
-   * The drill-down, one entry per level: department → year → studio → section.
+   * The drill-down, one entry per level:
+   * Department → Academic Year → Grade Level → Class → Section.
+   *
+   * ACADEMIC YEAR IS A LEVEL, not a filter. It used to be a row of chips above
+   * the canvas — All Years / 2026-2027 / 2025-2026 — which is a different
+   * mechanism for the same question and a worse one: a chip row is a mode you
+   * can leave switched on by accident, it competes with the drill-down for the
+   * same click, and it has to be sized and offset around the header on every
+   * viewport. As a level it is just the second bubble you click.
    *
    * Department leads. It is the stable, self-contained thing — a visitor knows
    * which one they are looking for before they know anything else, and the
@@ -67,21 +78,81 @@ function ExplorePageInner() {
    * department, indistinguishable from the eight other studios' sections. The
    * extra level is what makes "show me Studio 01" a thing you can click.
    */
-  type HierarchyLevel = 'years' | 'departments' | 'studios' | 'sections'
+  type HierarchyLevel = 'departments' | 'academicYears' | 'years' | 'studios' | 'sections'
 
-  const [hierarchyLevel, setHierarchyLevel] = useState<HierarchyLevel>('departments')
-  const [selectedYear, setSelectedYear] = useState<string | number | null>(null)
-  const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
-  const [selectedStudio, setSelectedStudio] = useState<string | null>(null)
+  /**
+   * The drill-down lives in the URL, and that is what makes it survivable.
+   *
+   * Entering a space and pressing back used to dump you at the top of the map,
+   * four clicks from where you were, because the levels were React state that
+   * died with the page. As query params they are a place: the space carries the
+   * explore URL it was opened from and returns you to it, a link to a class
+   * opens on that class, and the browser's own back button walks the levels.
+   *
+   * Seeded once from the URL rather than read live — the effect below is the
+   * writer, and a component that both reads and writes the same params every
+   * render is a loop waiting to happen.
+   */
+  const [hierarchyLevel, setHierarchyLevel] = useState<HierarchyLevel>(() => {
+    const raw = searchParams?.get('level')
+    return raw === 'academicYears' || raw === 'years' || raw === 'studios' || raw === 'sections'
+      ? raw
+      : 'departments'
+  })
+  const [selectedYear, setSelectedYear] = useState<string | number | null>(
+    () => searchParams?.get('grade') ?? null
+  )
+  const [selectedDepartment, setSelectedDepartment] = useState<string | null>(
+    () => searchParams?.get('dept') ?? null
+  )
+  const [selectedStudio, setSelectedStudio] = useState<string | null>(
+    () => searchParams?.get('class') ?? null
+  )
   const [searchQuery, setSearchQuery] = useState('')
-  // Starts as All Years and is narrowed once we know which years actually have
-  // published rooms. It used to start at today's calendar year, which meant
-  // that whenever nothing was published in that year the page rendered empty —
-  // and because the year bar only renders when years exist, there was no tab to
-  // click to escape it. Defaulting wide and narrowing is the safe direction.
-  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('')
-  const [availableAcademicYears, setAvailableAcademicYears] = useState<{ year: string; count: number }[]>([])
+  /**
+   * The term drilled into, '' for none. Empty is not "All Years" any more —
+   * it just means the drill-down has not reached that level yet, the same way
+   * selectedDepartment is null above it.
+   *
+   * This no longer feeds the fetch. The page loads every term at once and the
+   * levels below slice it, so moving between terms is a click on the canvas
+   * rather than a refetch.
+   */
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(
+    () => searchParams?.get('ay') ?? ''
+  )
   const [roomDrillWorkspace, setRoomDrillWorkspace] = useState<BubbleNode | null>(null)
+
+  /**
+   * The explore URL for the CURRENT drill position — what a space is handed as
+   * its way back. Unknown params (demo, org, institution) are carried through
+   * rather than rebuilt, so nothing else on the page loses its query.
+   */
+  const drillHref = useMemo(() => {
+    const params = new URLSearchParams(searchParams?.toString() ?? '')
+    const set = (key: string, value: string | null) => {
+      if (value) params.set(key, value)
+      else params.delete(key)
+    }
+    set('level', hierarchyLevel === 'departments' ? null : hierarchyLevel)
+    set('dept', selectedDepartment)
+    set('ay', selectedAcademicYear || null)
+    set('grade', selectedYear === null ? null : String(selectedYear))
+    set('class', selectedStudio)
+    const qs = params.toString()
+    return qs ? `/explore?${qs}` : '/explore'
+  }, [searchParams, hierarchyLevel, selectedDepartment, selectedAcademicYear, selectedYear, selectedStudio])
+
+  // Keep the address bar on the drill position. replace, not push: the back
+  // pill and the trail are this page's own navigation, and pushing a history
+  // entry per level would make the browser's back button undo one bubble click
+  // at a time before it ever left the page.
+  useEffect(() => {
+    const current = typeof window !== 'undefined'
+      ? `${window.location.pathname}${window.location.search}`
+      : null
+    if (current !== null && current !== drillHref) router.replace(drillHref, { scroll: false })
+  }, [drillHref, router])
 
   const headerRef = useRef<HTMLElement>(null)
   const [measuredHeaderHeight, setMeasuredHeaderHeight] = useState(57)
@@ -108,8 +179,8 @@ function ExplorePageInner() {
     }
   }, [])
 
-  // Filter nodes by search (studio name, professor/instructor, or anyone with
-  // work pinned in the space).
+  // Filter nodes by search (space name, instructor, or anyone with work pinned
+  // in the space).
   const searchFilteredNodes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
     if (!q) return nodes
@@ -144,38 +215,12 @@ function ExplorePageInner() {
     return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b))
   }, [nodes, searchQuery])
 
-  // Load available academic years for the tab bar — scoped to user's own institution server-side
-  useEffect(() => {
-    if (isDemo) return
-    const loadAcademicYears = async () => {
-      try {
-        const ayUrl = orgParam
-          ? `/api/explore/academic-years?org=${encodeURIComponent(orgParam)}`
-          : '/api/explore/academic-years'
-        const res = await fetch(ayUrl, { cache: 'no-store' })
-        if (res.ok) {
-          const data = await res.json()
-          const years: { year: string; count: number }[] = data.academicYears || []
-          setAvailableAcademicYears(years)
-          // Default to the most recent year that actually HAS published rooms
-          // (the endpoint returns them sorted descending, and every entry has a
-          // non-zero count), never to today's calendar year. If nothing is
-          // published yet, stay on All Years rather than picking an empty one.
-          setSelectedAcademicYear(years.length > 0 ? years[0].year : '')
-        }
-      } catch (e) {
-        console.error(e)
-      }
-    }
-    loadAcademicYears()
-  }, [isDemo, orgParam])
 
   useEffect(() => {
     const load = async () => {
       try {
         const params = new URLSearchParams()
         if (isDemo) params.set('demo', 'true')
-        if (!isDemo && selectedAcademicYear) params.set('academic_year', selectedAcademicYear)
         if (orgParam) params.set('org', orgParam)
         const url = `/api/explore/studios${params.toString() ? `?${params.toString()}` : ''}`
         const res = await fetch(url, { cache: 'no-store' })
@@ -200,7 +245,7 @@ function ExplorePageInner() {
       }
     }
     load()
-  }, [isDemo, selectedAcademicYear, orgParam, router])
+  }, [isDemo, orgParam, router])
 
   const handleNodeHover = useCallback(
     (node: BubbleNode) => {
@@ -211,6 +256,10 @@ function ExplorePageInner() {
     },
     [isDemo, router]
   )
+
+  /** Tack the current drill position onto a space's URL as its way back. */
+  const withReturnTo = (url: string) =>
+    `${url}${url.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(drillHref)}`
 
   const handleClick = (node: BubbleNode) => {
     const demoParam = isDemo ? '?demo=true' : ''
@@ -223,7 +272,7 @@ function ExplorePageInner() {
       }
       if (n.url) {
         const url = n.url.includes('?') ? `${n.url}&demo=true` : `${n.url}${demoParam}`
-        router.push(url)
+        router.push(withReturnTo(url))
       }
     }
 
@@ -231,7 +280,7 @@ function ExplorePageInner() {
     if (roomDrillWorkspace) {
       if (node.url) {
         const url = node.url.includes('?') ? `${node.url}&demo=true` : `${node.url}${demoParam}`
-        router.push(url)
+        router.push(withReturnTo(url))
       }
       return
     }
@@ -246,6 +295,9 @@ function ExplorePageInner() {
 
     if (hierarchyLevel === 'departments') {
       setSelectedDepartment(node.department || node.label)
+      setHierarchyLevel('academicYears')
+    } else if (hierarchyLevel === 'academicYears') {
+      setSelectedAcademicYear(node.academicYear ?? node.label)
       setHierarchyLevel('years')
     } else if (hierarchyLevel === 'years') {
       setSelectedYear(node.year ?? node.label)
@@ -301,14 +353,44 @@ function ExplorePageInner() {
       })) as BubbleNode[]
     }
 
-    // Second level: the years that department actually runs. Scoped to the
-    // chosen department, so a department with no fifth year simply has no
-    // fifth-year bubble rather than an empty one.
+    // Second level: the terms that department has published work in. Newest
+    // first — a visitor is far more often after the current year than the one
+    // three years ago, and these sort correctly as plain strings because the
+    // format is always YYYY-YYYY. The unfiled bucket is pushed to the end for
+    // the same reason the unfiled class is.
+    if (hierarchyLevel === 'academicYears' && selectedDepartment !== null) {
+      const terms = Array.from(
+        new Set(
+          source
+            .filter(n => (n.department ?? '') === selectedDepartment)
+            .map(n => n.academicYear ?? UNFILED_ACADEMIC_YEAR)
+        )
+      ).sort((a, b) => {
+        if (a === UNFILED_ACADEMIC_YEAR) return 1
+        if (b === UNFILED_ACADEMIC_YEAR) return -1
+        return b.localeCompare(a)
+      })
+      return terms.map((t, idx) => ({
+        id: `acadyear-${t}-${idx}`,
+        label: t,
+        name: t,
+        academicYear: t,
+        department: selectedDepartment ?? undefined,
+        color: '#3B6EF6',
+        radius: 70,
+      })) as BubbleNode[]
+    }
+
+    // Third level: the grade levels that department runs in that term. Scoped
+    // to both, so a department with no fifth year simply has no fifth-year
+    // bubble rather than an empty one.
     if (hierarchyLevel === 'years' && selectedDepartment !== null) {
       const years = Array.from(
         new Set(
           source
             .filter(n => (n.department ?? '') === selectedDepartment)
+            .filter(n => selectedAcademicYear === ''
+              || (n.academicYear ?? UNFILED_ACADEMIC_YEAR) === selectedAcademicYear)
             .map(n => n.year ?? 'Unknown')
         )
       )
@@ -317,22 +399,27 @@ function ExplorePageInner() {
         label: y === 'Masters' ? 'Masters' : `Year ${y}`,
         name: String(y),
         year: y,
+        academicYear: selectedAcademicYear || undefined,
         department: selectedDepartment ?? undefined,
         color: '#3B6EF6',
         radius: 70,
       })) as BubbleNode[]
     }
 
-    // Department + year are the filter every level below them shares, so it is
-    // written once here rather than repeated in the two branches under it.
-    const inSelectedYearAndDept = (n: BubbleNode) => {
+    // Department + academic year + grade level are the filter every level below
+    // them shares, so it is written once here rather than repeated in the
+    // branches under it.
+    const inSelectedScope = (n: BubbleNode) => {
       const matchYear = selectedYear === null ? true : (n.year ?? '').toString() === selectedYear.toString()
       const matchDept = selectedDepartment === null ? true : (n.department ?? '') === selectedDepartment
-      return matchYear && matchDept
+      const matchTerm = selectedAcademicYear === ''
+        ? true
+        : (n.academicYear ?? UNFILED_ACADEMIC_YEAR) === selectedAcademicYear
+      return matchYear && matchDept && matchTerm
     }
 
     if (hierarchyLevel === 'studios') {
-      const scoped = source.filter(inSelectedYearAndDept)
+      const scoped = source.filter(inSelectedScope)
       // Counted, not just listed: a studio bucket with two sections and one
       // with eleven are the same bubble otherwise, and `count` is what sizes
       // them. Sections carry `count` = board total, so summing keeps the
@@ -364,6 +451,7 @@ function ExplorePageInner() {
           name: studio,
           studio,
           year: selectedYear ?? undefined,
+          academicYear: selectedAcademicYear || undefined,
           department: selectedDepartment ?? undefined,
           count: boards,
           sectionCount: sections,
@@ -374,14 +462,56 @@ function ExplorePageInner() {
 
     if (hierarchyLevel === 'sections') {
       return source.filter(n => {
-        if (!inSelectedYearAndDept(n)) return false
+        if (!inSelectedScope(n)) return false
         if (selectedStudio === null) return true
         return (n.studio ?? UNFILED_STUDIO) === selectedStudio
       })
     }
 
     return source
-  }, [roomDrillWorkspace, hierarchyLevel, searchQuery, searchFilteredNodes, selectedYear, selectedDepartment, selectedStudio])
+  }, [roomDrillWorkspace, hierarchyLevel, searchQuery, searchFilteredNodes, selectedYear, selectedDepartment, selectedStudio, selectedAcademicYear])
+
+  /**
+   * The levels reached so far, in order — what the header pill prints.
+   *
+   * Title case throughout, matching every other level label in the product.
+   */
+  const trail = useMemo(() => {
+    const levels: { label: string; level: HierarchyLevel }[] = [
+      { label: 'Department', level: 'departments' },
+      { label: 'Academic Year', level: 'academicYears' },
+      { label: 'Grade Level', level: 'years' },
+      { label: 'Class', level: 'studios' },
+      { label: 'Section', level: 'sections' },
+    ]
+    const depth: Record<HierarchyLevel, number> = {
+      departments: 1,
+      academicYears: 2,
+      years: 3,
+      studios: 4,
+      sections: 5,
+    }
+    return levels.slice(0, depth[hierarchyLevel])
+  }, [hierarchyLevel])
+
+  /**
+   * Jump straight to a level in the trail, the way a path bar works.
+   *
+   * Going UP clears every selection below the target — staying on 'Class' while
+   * jumping back to 'Department' would leave the page filtered by a class you
+   * are no longer looking at, which is the bug that makes breadcrumbs feel
+   * haunted. Nothing here can go DOWN: the trail only ever shows levels already
+   * reached, so the target is always at or above the current one.
+   */
+  const goToLevel = (level: HierarchyLevel) => {
+    setRoomDrillWorkspace(null)
+    setSearchQuery('')
+    if (level === 'departments') setSelectedDepartment(null)
+    if (level === 'departments' || level === 'academicYears') setSelectedAcademicYear('')
+    if (level === 'departments' || level === 'academicYears' || level === 'years') setSelectedYear(null)
+    if (level !== 'sections') setSelectedStudio(null)
+    setHierarchyLevel(level)
+  }
 
   return (
     <div className="min-h-screen bg-[#E6ECFC]">
@@ -439,11 +569,11 @@ function ExplorePageInner() {
             <div className="w-full sm:w-80 sm:min-w-[18rem]">
               <input
                 type="search"
-                placeholder="Search by space, professor, or student…"
+                placeholder="Search by space, instructor, or student…"
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); setRoomDrillWorkspace(null) }}
                 className="w-full px-3 py-2 rounded-lg bg-white/80 border border-[#16181D]/[0.12] text-[#16181D] placeholder-[#8A8FA0] text-sm focus:outline-none focus:ring-2 focus:ring-[#3B6EF6] focus:border-transparent"
-                aria-label="Search spaces by name, professor, or student"
+                aria-label="Search spaces by name, instructor, or student"
               />
               {/* Says WHY these spaces matched. A student's name isn't written
                   on any bubble, so without this a name search looks like an
@@ -466,25 +596,53 @@ function ExplorePageInner() {
               filled blue an active toggle wore.
 
               It also keeps the path visible, which is the other half of what
-              the pair did: it is the only place the four levels are named in
-              order, and from three levels deep that is worth reading.
+              the pair did.
+
+              The path is now the levels you have ACTUALLY REACHED, not the
+              whole map. Printing all five up front named four places you had
+              not been and could not click, which reads as broken navigation
+              rather than as an itinerary; at the top of the drill-down it
+              simply says "Department", and each level you open appends itself.
             */}
+            {/* A path bar, not a label. Every level named in it is somewhere
+                you have been, so every level in it is somewhere you can click
+                back to — the same contract a file explorer's path has. The
+                LAST crumb is where you already are and is rendered inert
+                rather than as a button that does nothing. */}
             <div className="flex items-center gap-2 sm:gap-3">
-              <button
-                onClick={() => {
-                  setHierarchyLevel('departments')
-                  setSelectedYear(null)
-                  setSelectedDepartment(null)
-                  setSelectedStudio(null)
-                  setRoomDrillWorkspace(null)
-                  setSearchQuery('')
-                }}
-                title="Back to all departments"
-                className="px-4 py-2 text-sm rounded-full bg-white text-[#16181D] font-medium border border-[#16181D]/[0.12] hover:bg-[#F4F6FB] transition-colors"
+              <nav
+                aria-label="Drill-down path"
+                className="flex items-center rounded-full bg-white border border-[#16181D]/[0.12] px-2 py-1 text-sm"
               >
-                <span className="sm:hidden">Departments</span>
-                <span className="hidden sm:inline">Department → Year → Studio → Section</span>
-              </button>
+                <button
+                  onClick={() => goToLevel('departments')}
+                  title="Back to all departments"
+                  className="sm:hidden px-2 py-1 rounded-full text-[#16181D] font-medium hover:bg-[#F4F6FB] transition-colors"
+                >
+                  Departments
+                </button>
+                {trail.map((crumb, i) => {
+                  const isCurrent = i === trail.length - 1
+                  return (
+                    <span key={crumb.level} className="hidden sm:flex items-center">
+                      {i > 0 && <span aria-hidden className="px-1 text-[#A8ADBA]">→</span>}
+                      {isCurrent ? (
+                        <span aria-current="page" className="px-2 py-1 font-semibold text-[#16181D]">
+                          {crumb.label}
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => goToLevel(crumb.level)}
+                          title={`Back to ${crumb.label}`}
+                          className="px-2 py-1 rounded-full text-[#5A5E6B] font-medium hover:bg-[#F4F6FB] hover:text-[#16181D] transition-colors"
+                        >
+                          {crumb.label}
+                        </button>
+                      )}
+                    </span>
+                  )
+                })}
+              </nav>
             </div>
           </div>
 
@@ -500,42 +658,9 @@ function ExplorePageInner() {
         </div>
       </header>
 
-      {/* Academic Year Tab Bar */}
-      {!isDemo && availableAcademicYears.length > 0 && (
-        <div className="fixed top-[57px] left-0 right-0 z-30 px-6 py-2 flex items-center gap-2 overflow-x-auto pointer-events-none [&_button]:pointer-events-auto">
-          <button
-            onClick={() => { setSelectedAcademicYear(''); setRoomDrillWorkspace(null) }}
-            className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-              selectedAcademicYear === ''
-                ? 'bg-[#3B6EF6] text-white'
-                : 'bg-white/80 text-[#5A5E6B] hover:bg-white border border-[#16181D]/[0.12]'
-            }`}
-          >
-            All Years
-          </button>
-          {availableAcademicYears.map(({ year, count }) => (
-            <button
-              key={year}
-              onClick={() => { setSelectedAcademicYear(year); setRoomDrillWorkspace(null) }}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                selectedAcademicYear === year
-                  ? 'bg-[#3B6EF6] text-white'
-                  : 'bg-white/80 text-[#5A5E6B] hover:bg-white border border-[#16181D]/[0.12]'
-              }`}
-            >
-              {year}
-              <span className={`ml-1.5 text-xs ${selectedAcademicYear === year ? 'text-white/70' : 'text-[#8A8FA0]'}`}>
-                {count}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* Full Canvas Bubble Network or empty state */}
       {(() => {
-        const hasYearBar = !isDemo && availableAcademicYears.length > 0
-        const headerHeight = measuredHeaderHeight + (hasYearBar ? 44 : 0)
+        const headerHeight = measuredHeaderHeight
         return displayedNodes.length === 0 ? (
           <div
             className="flex items-center justify-center"
@@ -546,9 +671,7 @@ function ExplorePageInner() {
               <p className="text-[#8A8FA0] text-sm mt-2">
                 {!isDemo && !hasOrg
                   ? "We couldn't find spaces for your institution. Contact support if this seems wrong."
-                  : !isDemo && selectedAcademicYear
-                    ? `No published spaces for ${selectedAcademicYear}`
-                    : 'No published spaces found for your institution'}
+                  : 'No published spaces found for your institution'}
               </p>
             </div>
           </div>
@@ -572,10 +695,11 @@ function ExplorePageInner() {
 
       {/* Floating back pill.
           It used to exist ONLY for the room drill, which meant the hierarchy
-          had no way back at all — you got to the studios list and your only
-          exit was the mode button, which resets to years. That was survivable
-          at three levels and is not at four, so the pill now walks the whole
-          stack: rooms → sections → studios → departments → years.
+          had no way back at all — you got to the class list and your only
+          exit was the mode button, which resets to the top. That was survivable
+          at three levels and is not at five, so the pill now walks the whole
+          stack: rooms → sections → classes → grade levels → academic years →
+          departments.
 
           It names where you ARE, not where it takes you — the same thing the
           room-drill version did with the workspace name — because on a canvas
@@ -587,7 +711,7 @@ function ExplorePageInner() {
             ? { label: roomDrillWorkspace.name, go: () => setRoomDrillWorkspace(null) }
             : hierarchyLevel === 'sections'
                 ? {
-                    label: selectedStudio ?? 'Studio',
+                    label: selectedStudio ?? 'Class',
                     go: () => { setSelectedStudio(null); setHierarchyLevel('studios') },
                   }
                 : hierarchyLevel === 'studios'
@@ -595,15 +719,20 @@ function ExplorePageInner() {
                       label:
                         selectedYear === 'Masters'
                           ? 'Masters'
-                          : selectedYear !== null ? `Year ${selectedYear}` : 'Year',
+                          : selectedYear !== null ? `Year ${selectedYear}` : 'Grade Level',
                       go: () => { setSelectedYear(null); setHierarchyLevel('years') },
                     }
                   : hierarchyLevel === 'years'
                     ? {
-                        label: selectedDepartment ?? 'Department',
-                        go: () => { setSelectedDepartment(null); setHierarchyLevel('departments') },
+                        label: selectedAcademicYear || 'Academic Year',
+                        go: () => { setSelectedAcademicYear(''); setHierarchyLevel('academicYears') },
                       }
-                    : null
+                    : hierarchyLevel === 'academicYears'
+                      ? {
+                          label: selectedDepartment ?? 'Department',
+                          go: () => { setSelectedDepartment(null); setHierarchyLevel('departments') },
+                        }
+                      : null
         if (!back) return null
         return (
           <button
@@ -611,7 +740,7 @@ function ExplorePageInner() {
             onClick={back.go}
             aria-label="Back one level"
             className="fixed left-4 z-30 flex items-center gap-2 max-w-[70vw] px-4 py-2 rounded-full bg-white/85 hover:bg-white text-[#16181D] text-sm font-medium border border-[#16181D]/10 backdrop-blur-sm shadow-lg transition-colors"
-            style={{ top: measuredHeaderHeight + (!isDemo && availableAcademicYears.length > 0 ? 44 : 0) + 12 }}
+            style={{ top: measuredHeaderHeight + 12 }}
           >
             <span aria-hidden className="text-base leading-none">←</span>
             <span className="truncate">{back.label}</span>

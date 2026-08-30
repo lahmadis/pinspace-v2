@@ -5,10 +5,12 @@ import { ROOM, MONO_STACK } from '@/lib/room/palette'
 /**
  * The canvas is deliberately NOT here.
  *
- * An infinite canvas belongs to a desk crit, not to a space: the other four are
- * readings of the same room and its boards, and a working surface with its own
- * contents sitting alongside them made the strip mean two different things. It
- * lives at /desk-crits/[id] instead.
+ * An infinite canvas belonged to a desk crit rather than to a space: the other
+ * four are readings of the same room and its boards, and a working surface with
+ * its own contents sitting alongside them made the strip mean two different
+ * things. The canvas is gone entirely now — a desk crit lays its sheets out on
+ * the card and opens one in the lightbox — so there is nothing left to add
+ * here either way.
  */
 export type RoomView = 'room' | 'plan' | '2d' | 'presentation'
 

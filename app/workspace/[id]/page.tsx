@@ -63,6 +63,12 @@ export default function WorkspaceRoomsPage() {
   // Publish modal: null = closed; room = waiting to flip is_published after metadata; 'settings' = editing existing metadata only
   const [publishModalRoom, setPublishModalRoom] = useState<Room | null>(null)
   const [networkSettingsOpen, setNetworkSettingsOpen] = useState(false)
+  /**
+   * The Settings sheet: invite link, export, archive, and the way through to
+   * the network filing form. What used to be the "Manage" card sitting open at
+   * the bottom of this page.
+   */
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [bannerDismissed, setBannerDismissed] = useState(false)
 
   // Enroll-students-by-email (class owner only)
@@ -153,7 +159,10 @@ export default function WorkspaceRoomsPage() {
   // (see /api/workspaces/[id]/join), so an instructor-only gate hides the
   // affordance from people who are explicitly invited to collaborate. Class
   // workspaces keep the instructor-only behavior.
-  const isSharedProject = workspace?.type === 'shared'
+  // Derived from membership, not from the retired type column: a personal
+  // space with somebody else in it IS shared, and one created as 'shared' that
+  // nobody joined is not. > 1 because creating a space writes an owner row.
+  const isSharedProject = (workspace?.members?.length ?? 0) > 1
   const isAnyMember = !!workspace && workspace.members.some(m => m.userId === user?.id)
   const canAddRoom = isInstructor || (isSharedProject && isAnyMember)
   // Phase 10: any workspace member (owner or invited collaborator, any role)
@@ -604,19 +613,23 @@ export default function WorkspaceRoomsPage() {
               <Contact className="h-4 w-4 text-[#8A8FA0]" />
               People
             </Link>
-            {isInstructor && (
-              <>
-                {orgModeAllowsPublish && canPublish && (
-                  <button
-                    onClick={() => setNetworkSettingsOpen(true)}
-                    className="flex items-center gap-2 rounded-full border border-[#16181D]/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6]"
-                    title="Studio, department, year and term for this section"
-                  >
-                    <Settings className="h-4 w-4 text-[#8A8FA0]" />
-                    Settings
-                  </button>
-                )}
-              </>
+            {/* ownerOrInstructor, NOT isInstructor — same reasoning as the
+                sheet's own gate below: isInstructor is derived purely from
+                workspace.members, and one malformed members payload would hide
+                a section's own settings from the person who owns it. The button
+                is also no longer gated on publish rights, because most of what
+                is behind it (invite link, export, archive) has nothing to do
+                with publishing; the network form inside is what carries that
+                gate now. */}
+            {ownerOrInstructor && (
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="flex items-center gap-2 rounded-full border border-[#16181D]/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6]"
+                title="Invite link, export, archive, and this section's network filing"
+              >
+                <Settings className="h-4 w-4 text-[#8A8FA0]" />
+                Settings
+              </button>
             )}
           </div>
         </div>
@@ -785,7 +798,7 @@ export default function WorkspaceRoomsPage() {
                   <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#3B6EF6]/10">
                     <UserPlus className="h-4 w-4 text-[#3B6EF6]" />
                   </span>
-                  Add students
+                  Add Students
                 </h2>
                 <p className="mt-2 max-w-xl text-sm leading-relaxed text-[#5A5E6B]">
                   Enroll students by email. They must already have a pinspace account —
@@ -798,7 +811,7 @@ export default function WorkspaceRoomsPage() {
                   className="flex shrink-0 items-center gap-2 rounded-full bg-[#3B6EF6] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#16181D]"
                 >
                   <UserPlus className="h-4 w-4" />
-                  Add students
+                  Add Students
                 </button>
               )}
             </div>
@@ -819,7 +832,7 @@ export default function WorkspaceRoomsPage() {
                     disabled={enrollBusy || !enrollText.trim()}
                     className="rounded-full bg-[#3B6EF6] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#16181D] disabled:opacity-50"
                   >
-                    {enrollBusy ? 'Adding…' : 'Add students'}
+                    {enrollBusy ? 'Adding…' : 'Add Students'}
                   </button>
                   <button
                     onClick={() => { setEnrollOpen(false); setEnrollText('') }}
@@ -858,30 +871,76 @@ export default function WorkspaceRoomsPage() {
           </div>
         )}
 
-        {/*
-          Manage. What is left of the workspace settings page.
+        {/* The Manage card that used to sit here is inside the Settings
+            sheet now (below). It was a permanently open panel of controls you
+            touch once a term — an invite link, an export, an archive switch —
+            taking up the bottom third of the screen that shows the spaces
+            those controls act on. Behind a button it is the same three things,
+            one click further away, and the page is about the work again. */}
+      </div>
 
-          That page held eleven sections to reach these three, behind a
-          navigation away from the only screen that shows what they act ON. The
-          rest of it either duplicated something already editable in place (the
-          section name, the room list, network metadata — all on this page) or
-          configured behaviour nobody had changed. So the page is gone and its
-          three survivors sit under the spaces they belong to.
+      {/* Publish confirm modal — shown when publishing first room in workspace */}
+      {publishModalRoom && workspace && (
+        <PublishConfirmModal
+          workspaceName={workspace.name}
+          isCurrentlyPublic={false}
+          currentMetadata={
+            workspace.networkMetadata
+              ? {
+                  department: workspace.networkMetadata.department,
+                  year: workspace.networkMetadata.year,
+                  // Was omitted, so the Studio select opened blank on a section
+                  // that already had one and the instructor had to re-pick it.
+                  studio: workspace.networkMetadata.studio,
+                  instructor: workspace.instructor || '',
+                  academicYear: workspace.academicYear || '',
+                }
+              : undefined
+          }
+          onConfirm={handlePublishModalConfirm}
+          onCancel={() => setPublishModalRoom(null)}
+        />
+      )}
 
-          Gated on ownerOrInstructor, NOT isInstructor: `isInstructor` is
-          derived purely from workspace.members, and the note on that constant
-          above exists because one malformed members payload strips the real
-          owner of their own powers. Using it here would have hidden a section's
-          invite link, export and archive from the person who owns it. Export
-          and archive are narrowed to the owner inside, matching what their
-          routes enforce.
-        */}
-        {ownerOrInstructor && (
-          <div className="mt-10 rounded-3xl border border-[#16181D]/[0.08] bg-white p-6 shadow-[0_8px_24px_rgba(22,24,29,0.04)]">
-            <h2 className="text-[17px] font-extrabold tracking-[-0.02em] text-[#16181D]">Manage</h2>
+      {/*
+        Settings sheet.
+
+        Gated on ownerOrInstructor, NOT isInstructor: `isInstructor` is derived
+        purely from workspace.members, and the note on that constant above
+        exists because one malformed members payload strips the real owner of
+        their own powers. Using it here would have hidden a section's invite
+        link, export and archive from the person who owns it. Export and archive
+        are narrowed to the owner inside, matching what their routes enforce.
+      */}
+      {settingsOpen && workspace && ownerOrInstructor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#16181D]/30 p-4"
+          onClick={() => setSettingsOpen(false)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-7 shadow-[0_30px_90px_rgba(22,24,29,0.3)]"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Section settings"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-[19px] font-extrabold tracking-[-0.02em] text-[#16181D]">Settings</h2>
+                <p className="mt-1 text-sm text-[#5A5E6B]">{workspace.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(false)}
+                className="rounded-full p-1.5 text-[#8A8FA0] transition-colors hover:bg-[#16181D]/6 hover:text-[#16181D]"
+                aria-label="Close settings"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
 
             {workspace.inviteCode && (
-              <div className="mt-5">
+              <div className="mt-6">
                 <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#A8ADBA]">
                   Invite students
                 </p>
@@ -907,6 +966,24 @@ export default function WorkspaceRoomsPage() {
                     {workspace.inviteCode}
                   </span>
                 </p>
+              </div>
+            )}
+
+            {/* The network filing keeps the publish gate the header button used
+                to carry: it is only meaningful for an org that publishes. */}
+            {orgModeAllowsPublish && canPublish && (
+              <div className="mt-6 border-t border-[#16181D]/[0.06] pt-5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#A8ADBA]">
+                  Edit your network credentials
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { setSettingsOpen(false); setNetworkSettingsOpen(true) }}
+                  className="mt-2 flex items-center gap-2 rounded-full border border-[#16181D]/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6]"
+                >
+                  <Settings className="h-4 w-4 text-[#8A8FA0]" />
+                  Class, department, year and term
+                </button>
               </div>
             )}
 
@@ -941,30 +1018,7 @@ export default function WorkspaceRoomsPage() {
               </div>
             )}
           </div>
-        )}
-      </div>
-
-      {/* Publish confirm modal — shown when publishing first room in workspace */}
-      {publishModalRoom && workspace && (
-        <PublishConfirmModal
-          workspaceName={workspace.name}
-          isCurrentlyPublic={false}
-          currentMetadata={
-            workspace.networkMetadata
-              ? {
-                  department: workspace.networkMetadata.department,
-                  year: workspace.networkMetadata.year,
-                  // Was omitted, so the Studio select opened blank on a section
-                  // that already had one and the instructor had to re-pick it.
-                  studio: workspace.networkMetadata.studio,
-                  instructor: workspace.instructor || '',
-                  academicYear: workspace.academicYear || '',
-                }
-              : undefined
-          }
-          onConfirm={handlePublishModalConfirm}
-          onCancel={() => setPublishModalRoom(null)}
-        />
+        </div>
       )}
 
       {/* Section settings — the same form the create-section dialog uses,

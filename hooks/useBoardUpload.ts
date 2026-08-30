@@ -36,6 +36,32 @@ const uploaderDisplayName = (user: unknown): string => {
 }
 
 /**
+ * The name to PERSIST as student_name — the same sources MINUS the email
+ * handle.
+ *
+ * The handle is fine as a stand-in on an optimistic card that lives for one
+ * round-trip, but student_name is the curated label and outranks every other
+ * source for the life of the board (see lib/displayName.ts). Sending
+ * `tavaresn3` here beat the uploader's own profile name on the server and then
+ * beat it again on every read, so a student who filled in their profile after
+ * their first upload stayed listed under their WIT username.
+ *
+ * Returning '' sends no studentName at all, and POST /api/boards falls through
+ * to the live user_profiles.full_name — which is the name that should have been
+ * used in the first place.
+ */
+const uploaderCuratedName = (user: unknown): string => {
+  const u = (user ?? {}) as {
+    user_metadata?: { full_name?: unknown; first_name?: unknown; name?: unknown }
+  }
+  return (
+    cleanDisplayName(u.user_metadata?.full_name) ||
+    cleanDisplayName(u.user_metadata?.name) ||
+    cleanDisplayName(u.user_metadata?.first_name)
+  )
+}
+
+/**
  * iPhones deliver camera-roll photos as HEIC/HEIF by default. Browsers
  * report them as `image/heic` (or `image/heif`, or — on a few old/odd
  * mobile browsers — empty string with a `.heic`/`.heif` filename). Treat
@@ -399,7 +425,7 @@ const uploadFile = async (
   try {
     const { storagePath, thumbnailPath } = await directUpload(file)
 
-    const clerkName = uploaderDisplayName(options.user)
+    const clerkName = uploaderCuratedName(options.user)
     const boardPayload = {
       workspaceId: options.workspaceId,
       roomId: options.roomId,
@@ -656,7 +682,7 @@ const uploadPDF = async (
     try {
       const { storagePath, thumbnailPath } = await directUpload(page.imageFile, { skipMainCompression: true })
 
-      const clerkName = uploaderDisplayName(options.user)
+      const clerkName = uploaderCuratedName(options.user)
       const boardPayload = {
         workspaceId: options.workspaceId,
         roomId: options.roomId,

@@ -14,7 +14,7 @@ import ModelViewer from '@/components/3d/ModelViewer'
 import LightboxModal from '@/components/LightboxModal'
 import { DEFAULT_WALL_CONFIG } from '@/lib/wallLayout'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
-import { ROOM_DEFAULT_FOV } from '@/lib/room/cameraViews'
+import { ROOM_DEFAULT_FOV, getInitialRoomPose, ROOM_MIN_ZOOM_DISTANCE_INCHES } from '@/lib/room/cameraViews'
 
 interface WallDimensions {
   height: number
@@ -83,10 +83,8 @@ function CrispOrbitRestore({ orbitControlsRef }: { orbitControlsRef: React.RefOb
 function ShareViewCameraControls({ wallConfig }: { wallConfig: WallConfig | null }) {
   const orbitControlsRef = useRef<OrbitControlsType | null>(null)
   const maxWallWidth = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.width)) : 8
-  const maxWallHeight = wallConfig?.walls ? Math.max(...wallConfig.walls.map(w => w.height)) : 8
 
   const maxWallWidthInches = maxWallWidth * 12
-  const maxWallHeightInches = maxWallHeight * 12
   const baseWidthInches = 8 * 12
 
   const wallCount = wallConfig?.walls?.length ?? 1
@@ -98,18 +96,25 @@ function ShareViewCameraControls({ wallConfig }: { wallConfig: WallConfig | null
 
   const distanceScale = ((maxWallWidthInches * layoutFactor) / baseWidthInches) || 1
 
-  const minDistance = 80 * distanceScale
+  // Zoom-IN floor: see ROOM_MIN_ZOOM_DISTANCE_INCHES. The zoom-out cap below
+  // still scales with the room; only the near end was a wall.
+  const minDistance = ROOM_MIN_ZOOM_DISTANCE_INCHES
   const maxDistance = 1200 * distanceScale
-  const targetHeight = Math.max(60, Math.min(maxWallHeightInches * 0.65, maxWallHeightInches)) || 60
-
-  const baseDistance = 110 * distanceScale
-  const elevationAngle = 35 * (Math.PI / 180)
-  const azimuthAngle = 45 * (Math.PI / 180)
-
-  const horizontalDistance = baseDistance * Math.cos(elevationAngle)
-  const cameraHeight = targetHeight + baseDistance * Math.sin(elevationAngle)
-  const cameraX = horizontalDistance * Math.sin(azimuthAngle)
-  const cameraZ = horizontalDistance * Math.cos(azimuthAngle)
+  /*
+   * Load-time pose from lib/room/cameraViews, not a fourth copy of the math.
+   *
+   * This file, its sibling guest page, and StudioRoom each carried the same
+   * 35 degrees of elevation and 45 of azimuth written out by hand — so a guest
+   * opening a shared link got a bird's-eye view of the room long after the
+   * shared helper had been lowered to eye level. `as never` bridges this page's
+   * own local WallConfig shape to the helper's; they describe the same walls,
+   * and the helper reads only `walls` and `layoutType`.
+   */
+  const initialPose = getInitialRoomPose(wallConfig as never)
+  const targetHeight = initialPose.target.y
+  const cameraX = initialPose.position.x
+  const cameraHeight = initialPose.position.y
+  const cameraZ = initialPose.position.z
 
   return (
     <>

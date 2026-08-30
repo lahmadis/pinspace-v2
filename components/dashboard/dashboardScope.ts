@@ -14,7 +14,14 @@ import type { Workspace } from '@/types'
  * untouched by the move.
  */
 
-export type Scope = 'wentworth' | 'shared' | 'personal'
+/**
+ * 'shared' is gone as a scope. It was never a different kind of place from
+ * 'personal' — it was a personal space with someone else in it, declared at
+ * creation time and then unable to change its mind. Sharing is now something
+ * you DO to a personal space (see isSharedWorkspace), so it needs a badge, not
+ * a tab.
+ */
+export type Scope = 'wentworth' | 'personal'
 
 /**
  * A workspace as the dashboard actually receives it.
@@ -43,6 +50,24 @@ export type DashboardWorkspace = Workspace & {
   network_metadata?: { department?: string; year?: string; studio?: string } | null
   invite_code?: string
   instructor?: string
+  /** From GET /api/workspaces — every row in workspace_members, owner included. */
+  member_count?: number
+}
+
+/**
+ * Is this space shared with anyone?
+ *
+ * TWO, not one: POST /api/workspaces writes a members row for the owner at
+ * creation, so every space has at least one member and `> 0` would call every
+ * personal space shared.
+ *
+ * Reads the derived fact rather than the old `type === 'shared'` column, so it
+ * is right for a space shared after the fact and for one created as shared that
+ * nobody ever joined — the two cases the stored type got wrong. It also keeps
+ * working before migration 041 is applied, since it never looks at `type`.
+ */
+export function isSharedWorkspace(w: Pick<DashboardWorkspace, 'member_count'>): boolean {
+  return (w.member_count ?? 0) > 1
 }
 
 export function withInstitution(path: string, slug: string | null): string {
@@ -130,18 +155,6 @@ export function scopeConfig(
         // have no term at all, so they get the plain noun.
         listLabel: 'This semester',
       }
-    case 'shared':
-      return {
-        title: 'Shared Studios',
-        newLabel: 'New Shared Studio',
-        itemNoun: 'Studio',
-        newMode: 'link',
-        newHref: '/workspace/new?type=shared',
-        emptyTitle: 'Nothing here yet',
-        emptySubtext: 'Anything you collaborate on with others will appear here.',
-        showJoin: true,
-        listLabel: 'Studios',
-      }
     case 'personal':
       return {
         title: 'Personal Studios',
@@ -151,7 +164,10 @@ export function scopeConfig(
         newHref: withInstitution('/studio/new', institutionHome),
         emptyTitle: 'Nothing here yet',
         emptySubtext: 'Create one to get started.',
-        showJoin: false,
+        // True now: a personal studio can be shared, so someone can be holding
+        // an invite code to one. This was false while "shared" was its own tab
+        // and joining anything landed you there instead.
+        showJoin: true,
         listLabel: 'Studios',
       }
   }

@@ -82,10 +82,12 @@ describe('DashboardMain', () => {
     render(
       <DashboardMain
         {...baseProps}
-        scope="shared"
+        scope="personal"
         rooms={[
-          workspace({ id: 'member-project', name: 'Shared Lab', type: 'shared', owner_id: 'someone-else' }),
-          workspace({ id: 'archived-project', name: 'Archive', type: 'shared', is_archived: true }),
+          // type 'personal' with someone else as owner: a space shared WITH
+          // this user. 'shared' is not a type any more (migration 041).
+          workspace({ id: 'member-project', name: 'Shared Lab', type: 'personal', owner_id: 'someone-else' }),
+          workspace({ id: 'archived-project', name: 'Archive', type: 'personal', is_archived: true }),
         ]}
         onLeave={onLeave}
       />
@@ -108,7 +110,7 @@ describe('DashboardMain', () => {
     rerender(
       <DashboardMain
         {...baseProps}
-        scope="shared"
+        scope="personal"
         rooms={[]}
       />
     )

@@ -1,23 +1,29 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
   ImageIcon,
   ListChecks,
   Loader2,
   Maximize2,
+  Minimize2,
   Mic,
   Pin,
   Sparkles,
   StickyNote,
   Trash2,
+  X,
 } from 'lucide-react'
 import { useCanvasNodes } from '@/hooks/useCanvasNodes'
+import { useCritBoards } from '@/hooks/useCritBoards'
+import LightboxModal from '@/components/LightboxModal'
+import type { Board } from '@/types'
 import { useCritTranscript } from '@/hooks/useCritTranscript'
 import { useCritSummary } from '@/hooks/useCritSummary'
 import { summariseLocally } from '@/lib/summary/localSummary'
-import { critStage, stageLabel, zoneOf } from '@/lib/desk/zones'
+import { critStage, stageLabel } from '@/lib/desk/zones'
+import { CRIT_PHASES } from '@/lib/constants/critPhases'
 import type { DeskCrit } from '@/hooks/useDeskCrits'
 import type { NodeProps } from '@/components/canvas/CanvasNodeView'
 
@@ -31,6 +37,123 @@ import type { NodeProps } from '@/components/canvas/CanvasNodeView'
  * means a column re-renders on its own changes rather than the whole desk
  * re-rendering whenever anybody's checkbox moves.
  */
+/**
+ * One sheet on a crit card.
+ *
+ * Click opens it in the lightbox; the pin is a separate press. Pinning is the
+ * gesture the whole card is built around — "we talked about this one" — set
+ * while somebody is still speaking and read back afterwards against the
+ * recording, so it has to be one tap and it has to be visible at a glance
+ * without opening anything.
+ */
+function CritSheet({
+  name,
+  src,
+  pinned,
+  expanded,
+  onOpen,
+  onTogglePin,
+  onRemove,
+}: {
+  name?: string
+  src?: string
+  pinned: boolean
+  expanded: boolean
+  onOpen: () => void
+  onTogglePin: () => void
+  onRemove: () => void
+}) {
+  /**
+   * Two presses to delete, not one.
+   *
+   * Removing a sheet deletes the BOARD, and a board delete takes its image
+   * bytes out of storage with it — there is no undo after the request, only
+   * before. This button is small, hover-revealed and sits a few pixels from
+   * the one that opens the sheet, which is the wrong cost for something
+   * permanent. Arming turns it red and names what it is about to do.
+   */
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!armed) return
+    // Disarms itself, so a stray first click does not leave a live delete
+    // sitting under the cursor indefinitely.
+    const t = setTimeout(() => setArmed(false), 3000)
+    return () => clearTimeout(t)
+  }, [armed])
+
+  return (
+    <div
+      // Narrower than the 132px it was: a card is now a grid cell rather than a
+      // 420px column, so at five across the old tile showed barely one sheet.
+      className={`relative group rounded-lg overflow-hidden border bg-white ${
+        expanded ? 'w-full' : 'w-[104px] shrink-0'
+      } ${pinned ? 'border-[#3B6EF6] ring-1 ring-[#3B6EF6]/30' : 'border-[#16181D]/[0.10]'}`}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onOpen()
+        }}
+        title={`Open ${name || 'this sheet'} to trace and add callouts`}
+        className={`block w-full ${expanded ? 'aspect-[4/3]' : 'h-[84px]'} bg-[#F0F3F9]`}
+      >
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={src} alt={name || 'Sheet'} className="w-full h-full object-cover" />
+        ) : null}
+      </button>
+
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onTogglePin()
+        }}
+        aria-pressed={pinned}
+        title={pinned ? 'Talked about — unpin' : 'Pin: we talked about this'}
+        className={`absolute top-1 left-1 flex items-center justify-center w-6 h-6 rounded-full transition-colors ${
+          pinned
+            ? 'bg-[#3B6EF6] text-white'
+            : 'bg-white/90 text-[#8A8FA0] opacity-0 group-hover:opacity-100 focus:opacity-100'
+        }`}
+      >
+        <Pin className="w-3 h-3" />
+      </button>
+
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          if (!armed) {
+            setArmed(true)
+            return
+          }
+          onRemove()
+        }}
+        title={
+          armed
+            ? 'Click again to delete this sheet and its image for good'
+            : `Remove ${name || 'this sheet'}`
+        }
+        className={`absolute top-1 right-1 flex items-center justify-center h-6 rounded-full transition-opacity ${
+          armed
+            ? 'px-2 bg-[#C2452D] text-white text-[10px] font-bold opacity-100'
+            : 'w-6 bg-white/90 text-[#8A8FA0] hover:text-[#C2452D] opacity-0 group-hover:opacity-100 focus:opacity-100'
+        }`}
+      >
+        {armed ? 'Delete?' : <X className="w-3 h-3" />}
+      </button>
+
+      {name && (
+        <p className="px-2 py-1 text-[10px] text-[#5A5E6B] truncate" title={name}>
+          {name}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function CritColumn({
   crit,
   isActive,
@@ -40,9 +163,13 @@ export default function CritColumn({
   composer,
   onComposerSubmit,
   onComposerCancel,
-  onOpen,
+  expanded = false,
+  onToggleExpand,
+  onPhaseChange,
+  projects = [],
+  onProjectChange,
   onPin,
-  onPhoto,
+  onReference,
   onNote,
   onStep,
   onToggleRecording,
@@ -72,9 +199,22 @@ export default function CritColumn({
   composer?: 'note' | 'step' | null
   onComposerSubmit?: (text: string) => void
   onComposerCancel?: () => void
-  /** Open this crit at working size. The card is the overview; that is where
-   *  boards get laid out, drawn over and annotated. */
-  onOpen?: () => void
+  /**
+   * Is this crit blown up to fill the page?
+   *
+   * The card is the same component either way — expanding is a layout state,
+   * not a second screen. It used to be a route (/desk-crits/[id]) onto a
+   * pan-and-zoom canvas; that canvas is gone, and with it the reason to
+   * navigate away from the crit you are already looking at.
+   */
+  expanded?: boolean
+  onToggleExpand?: () => void
+  /** Re-file this crit under a different phase. Omit to render it read-only. */
+  onPhaseChange?: (phase: string) => void
+  /** Projects already used, for the in-place picker. */
+  projects?: string[]
+  /** Re-file this crit under a different project. Omit to render it read-only. */
+  onProjectChange?: (project: string) => void
   /**
    * Per-card actions.
    *
@@ -84,7 +224,12 @@ export default function CritColumn({
    * hope the right one was armed. On the card the target is unambiguous.
    */
   onPin?: () => void
-  onPhoto?: () => void
+  /**
+   * Add a REFERENCE — a photo, a precedent image, something you brought to
+   * look at rather than something you made. Distinct from a sheet: sheets are
+   * boards you pin and mark up in the lightbox, references are just there.
+   */
+  onReference?: () => void
   onNote?: () => void
   onStep?: () => void
   onToggleRecording?: () => void
@@ -95,7 +240,7 @@ export default function CritColumn({
 }) {
   // realtime off: see the option's note. A personal crit has one viewer, and
   // the board reloads this column through refreshKey after its own writes.
-  const { nodes, deleteNode, reload: reloadNodes, loading: nodesLoading } = useCanvasNodes(
+  const { nodes, deleteNode, reload: reloadNodes } = useCanvasNodes(
     crit.id,
     null,
     { realtime: false }
@@ -118,28 +263,6 @@ export default function CritColumn({
     }
   }, [refreshKey, reloadNodes, reloadTranscript, reloadSummary])
 
-  /**
-   * Delete a pinned sheet AND every mark made on it.
-   *
-   * There is no FK cascade for this — a mark points at its sheet through
-   * `props.onNodeId`, which is JSON, not a reference the database enforces. So
-   * the sweep has to happen here. Without it the marks survive their picture:
-   * nothing renders them (the workspace keys them to a sheet that is gone) and
-   * nothing can delete them, but the counter below still promises they are
-   * there to see.
-   */
-  const removeSheet = useCallback(
-    async (sheetId: string) => {
-      const marks = nodes.filter(
-        (n) => (n.props as { onNodeId?: unknown })?.onNodeId === sheetId
-      )
-      // Marks first. If the sheet went and this failed halfway, the leftovers
-      // would be exactly the orphans this exists to prevent.
-      for (const mark of marks) await deleteNode(mark.id)
-      await deleteNode(sheetId)
-    },
-    [nodes, deleteNode]
-  )
 
   const [titleDraft, setTitleDraft] = useState(crit.title)
   // Follow the crit if it is renamed somewhere else; a local draft that never
@@ -172,8 +295,7 @@ export default function CritColumn({
     onRename?.(next)
   }, [titleDraft, crit.title, onRename])
 
-  const { shared, notes } = useMemo(() => {
-    const sharedNodes: Array<{ node: (typeof nodes)[number]; props: NodeProps }> = []
+  const { notes } = useMemo(() => {
     const privateNotes: Array<{ node: (typeof nodes)[number]; props: NodeProps }> = []
     let drawingCount = 0
     for (const node of nodes) {
@@ -196,14 +318,27 @@ export default function CritColumn({
         drawingCount += 1
         continue
       }
-      // Only images render as pinned work. A sticky that somehow carried
-      // zone:'shared' would otherwise come out as a broken tile; unreachable
-      // today, since only uploads write that zone.
-      if (zoneOf(node.props) === 'shared' && node.type === 'image') sharedNodes.push({ node, props })
-      else privateNotes.push({ node, props })
+      // Sheets are BOARDS now (migration 042) and arrive from useCritBoards
+      // below, so nothing here becomes pinned work any more. What is left in
+      // canvas_nodes for a crit is its notes and next steps — crit metadata,
+      // not images — and those still render from here.
+      privateNotes.push({ node, props })
     }
-    return { shared: sharedNodes, notes: privateNotes, drawings: drawingCount }
+    return { notes: privateNotes, drawings: drawingCount }
   }, [nodes])
+
+  /**
+   * The crit's sheets. Real boards, which is what lets a click open the
+   * LIGHTBOX — the same one the 3D and 2D spaces use, with its trace layer and
+   * its callouts. Both are keyed by boards.id, so the canvas-node sheets this
+   * replaced could not be marked up at all.
+   */
+  const { boards: sheets, loading: sheetsLoading, setPinned, removeBoard } = useCritBoards(
+    crit.id,
+    refreshKey,
+  )
+  const [openBoardId, setOpenBoardId] = useState<string | null>(null)
+  const openBoard = sheets.find((b) => b.id === openBoardId) ?? null
 
   const stage = critStage(crit.createdAt)
   const { saveParsed } = summary
@@ -223,8 +358,10 @@ export default function CritColumn({
   return (
     <section
       onClick={onFocus}
-      onDoubleClick={() => onOpen?.()}
-      className={`w-[420px] shrink-0 rounded-2xl border transition-colors ${
+      onDoubleClick={() => onToggleExpand?.()}
+      // Always w-full: the grid cell decides how wide a card is now, and a
+      // fixed 420px column would overflow its cell at five across.
+      className={`w-full rounded-2xl border transition-colors ${
         isActive
           ? 'border-[#3B6EF6]/50 bg-white shadow-[0_8px_30px_rgba(59,110,246,0.10)]'
           : 'border-[#16181D]/[0.08] bg-white/70'
@@ -273,6 +410,66 @@ export default function CritColumn({
                 day: 'numeric',
               })}
             </p>
+
+            {/* The project, editable in place. Same datalist pattern the create
+                dialog uses: pick one you already have, or type a new one. */}
+            {onProjectChange ? (
+              <input
+                list={`crit-projects-${crit.id}`}
+                defaultValue={crit.project ?? ''}
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  const next = e.target.value.trim()
+                  if (next !== (crit.project ?? '')) onProjectChange(next)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur()
+                }}
+                placeholder="No project"
+                maxLength={120}
+                aria-label="Project"
+                className="mt-1.5 w-full rounded-lg border border-transparent hover:border-[#16181D]/[0.12] focus:border-[#3B6EF6] bg-transparent px-2 py-1 text-[12px] font-bold text-[#16181D] focus:outline-none"
+              />
+            ) : (
+              crit.project && (
+                <p className="mt-1.5 text-[12px] font-bold text-[#16181D]">{crit.project}</p>
+              )
+            )}
+            <datalist id={`crit-projects-${crit.id}`}>
+              {projects.map((project) => (
+                <option key={project} value={project} />
+              ))}
+            </datalist>
+
+            {/* The phase, editable in place.
+                A <select> rather than a chip that opens something: re-filing a
+                crit is a correction — you picked Concept and it turned out to
+                be massing — and a correction should cost one press. Crits made
+                before phases existed carry null and read "No phase" until set,
+                which is honest: nobody was ever asked. */}
+            {onPhaseChange ? (
+              <select
+                value={crit.phase ?? ''}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  e.stopPropagation()
+                  if (e.target.value) onPhaseChange(e.target.value)
+                }}
+                aria-label="Project phase"
+                className="mt-1.5 max-w-full rounded-lg border border-[#16181D]/[0.12] bg-white px-2 py-1 text-[11px] font-semibold text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
+              >
+                {!crit.phase && <option value="">No phase</option>}
+                {CRIT_PHASES.map((phase) => (
+                  <option key={phase} value={phase}>
+                    {phase}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              crit.phase && (
+                <p className="mt-1.5 text-[11px] font-semibold text-[#3B6EF6]">{crit.phase}</p>
+              )
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span
@@ -284,20 +481,20 @@ export default function CritColumn({
             >
               {stageLabel(stage)}
             </span>
-            {/* Separate from the card's own click, which only focuses it for
-                the tool rail. Opening is a navigation and should take a
-                deliberate press, not every stray click on the card. */}
+            {/* Separate from the card's own click, which only focuses it.
+                Expanding hides every other crit, so it takes a deliberate
+                press rather than every stray click on the card. */}
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation()
-                onOpen?.()
+                onToggleExpand?.()
               }}
-              title="Open this crit to lay out and mark up the work"
+              title={expanded ? 'Show every crit again' : 'Work in this crit on its own'}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#16181D]/[0.12] text-[11px] font-semibold text-[#5A5E6B] hover:bg-[#16181D]/5"
             >
-              Open
-              <Maximize2 className="w-3 h-3" />
+              {expanded ? 'Show all' : 'Expand'}
+              {expanded ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
             </button>
             {/* Deleting takes the transcript, the summary, the next steps and
                 every pinned sheet with it, so the confirm lives on the board
@@ -331,30 +528,73 @@ export default function CritColumn({
             </CardAction>
           )}
         </div>
-        <div className="rounded-xl border border-[#16181D]/[0.08] bg-[#F7F9FC] p-3 min-h-[132px]">
-          {nodesLoading && shared.length === 0 ? (
-            <div className="flex items-center gap-2 text-xs text-[#8A8FA0] h-[108px]">
+        <div className="rounded-xl border border-[#16181D]/[0.08] bg-[#F7F9FC] p-3 min-h-[112px]">
+          {sheetsLoading && sheets.length === 0 ? (
+            <div className="flex items-center gap-2 text-xs text-[#8A8FA0] h-[88px]">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
               Loading…
             </div>
-          ) : shared.length === 0 ? (
-            <p className="text-xs text-[#8A8FA0] leading-relaxed h-[108px] flex items-center">
-              Pin the work you&rsquo;ll put in front of them.
+          ) : sheets.length === 0 ? (
+            <p className="text-xs text-[#8A8FA0] leading-relaxed h-[88px] flex items-center">
+              Add the work you&rsquo;ll put in front of them.
             </p>
           ) : (
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {shared.map(({ node, props }) => (
-                <PinnedWork
-                  key={node.id}
-                  name={props.name}
-                  src={props.thumbUrl || props.url}
-                  onRemove={() => void removeSheet(node.id)}
+            /* A grid when expanded, a scrolling strip when not: the whole
+               reason to expand a crit is to stop reading its sheets through a
+               132px letterbox. */
+            <div
+              className={
+                expanded
+                  ? 'grid gap-3 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]'
+                  : 'flex gap-3 overflow-x-auto pb-1'
+              }
+            >
+              {sheets.map((sheet) => (
+                <CritSheet
+                  key={sheet.id}
+                  name={sheet.title}
+                  src={sheet.thumbnailUrl || sheet.fullImageUrl}
+                  pinned={sheet.pinned}
+                  expanded={expanded}
+                  onOpen={() => setOpenBoardId(sheet.id)}
+                  onTogglePin={() => void setPinned(sheet.id, !sheet.pinned)}
+                  onRemove={() => void removeBoard(sheet.id)}
                 />
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {/* The same lightbox the 3D and 2D spaces open, with nothing switched
+          off: isEditMode so the author line is editable, and hideCallouts left
+          alone so the trace tools and callout pins are both live. A desk crit
+          is the surface where marking up work matters most, and it was the one
+          surface that could not. */}
+      {/* Suspense around the lightbox, not around the page that hosts it.
+          LightboxModal calls useSearchParams, which Next requires a boundary
+          above — and that requirement fails only at Vercel BUILD, never at
+          tsc, so it is invisible locally. Every other host wraps it (share,
+          crit, studio, view, gallery); putting the boundary here instead means
+          the next host does not have to know, which is exactly what went wrong
+          when the desk crit became a host. */}
+      {openBoard && (
+        <Suspense fallback={null}>
+        <LightboxModal
+          board={openBoard as Board}
+          allBoards={sheets as Board[]}
+          isEditMode
+          onClose={() => setOpenBoardId(null)}
+          onNavigate={(direction) => {
+            const i = sheets.findIndex((b) => b.id === openBoard.id)
+            if (i < 0) return
+            const next = direction === 'next' ? i + 1 : i - 1
+            const target = sheets[(next + sheets.length) % sheets.length]
+            if (target) setOpenBoardId(target.id)
+          }}
+        />
+        </Suspense>
+      )}
 
       {/* ---------------- only you ---------------- */}
       <div className="px-5 pt-4 pb-5 space-y-3">
@@ -370,9 +610,9 @@ export default function CritColumn({
                 Step
               </CardAction>
             )}
-            {onPhoto && (
-              <CardAction onClick={onPhoto} disabled={busy} icon={<ImageIcon className="w-3 h-3" />}>
-                Ref
+            {onReference && (
+              <CardAction onClick={onReference} disabled={busy} icon={<ImageIcon className="w-3 h-3" />}>
+                References
               </CardAction>
             )}
           </div>
@@ -383,7 +623,7 @@ export default function CritColumn({
             <div key={node.id} className="rounded-xl border border-[#16181D]/[0.08] bg-white p-3">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0]">
-                  Photo / ref
+                  Reference
                 </span>
                 <RemoveButton onClick={() => void deleteNode(node.id)} label={props.name || 'photo'} />
               </div>
@@ -593,35 +833,6 @@ function RemoveButton({ onClick, label }: { onClick: () => void; label: string }
     >
       <Trash2 className="w-3.5 h-3.5" />
     </button>
-  )
-}
-
-function PinnedWork({
-  name,
-  src,
-  onRemove,
-}: {
-  name?: string
-  src?: string
-  onRemove: () => void
-}) {
-  return (
-    <figure className="group relative w-[120px] shrink-0">
-      <div className="w-[120px] h-[108px] rounded-lg overflow-hidden bg-[#C8D6FC] border border-[#16181D]/[0.08]">
-        {src ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={src} alt={name || 'Pinned work'} className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full grid place-items-center text-[10px] text-[#8A8FA0]">
-            missing
-          </div>
-        )}
-      </div>
-      <figcaption className="mt-1 text-[10px] text-[#5A5E6B] truncate">{name || 'Untitled'}</figcaption>
-      <span className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <RemoveButton onClick={onRemove} label={name || 'pinned work'} />
-      </span>
-    </figure>
   )
 }
 

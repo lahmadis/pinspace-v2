@@ -343,7 +343,14 @@ export function CameraController({
       // Same head-on framing the read-only focus state uses, so a wall sits in
       // frame identically whether you're editing it or just looking at it.
       // wallRotation already carries the back-face half-turn from WallSystem.
-      const pose = getHeadOnPose(wallPosition, wallRotation, (wallDimensions?.width ?? 8) * 12)
+      // Fallbacks match DEFAULT_WALL_CONFIG (10ft tall x 8ft wide), not each
+      // other — a square default would misframe the wall it stands in for.
+      const pose = getHeadOnPose(
+        wallPosition,
+        wallRotation,
+        (wallDimensions?.width ?? 8) * 12,
+        (wallDimensions?.height ?? 10) * 12,
+      )
       targetTarget.current.copy(pose.target)
       editBaseDistance.current = pose.position.distanceTo(pose.target)
 

@@ -31,7 +31,7 @@ interface CreateSectionModalProps {
  *
  *  1. The NAME is generated, never typed — "Section 03 - Lahmadi". The
  *     instructor supplies a number and their own name; lib/sections builds the
- *     rest, and the preview below shows exactly what will be stored.
+ *     rest, and the success toast reports the name that was stored.
  *
  *  2. The network filing is collected HERE, not at publish time. Department,
  *     year, studio, term and instructor were four questions in the publish
@@ -80,9 +80,9 @@ export default function CreateSectionModal({
     error: `${formId}-error`,
   }
 
-  // Null until both halves are usable — which is exactly when the preview
-  // should read as a placeholder rather than as a half-built name.
-  const previewName = formatSectionName(sectionNumber, instructorName)
+  // Null until both halves are usable, which is also what gates submit — the
+  // name is generated, never typed, so there is nothing to create without it.
+  const generatedName = formatSectionName(sectionNumber, instructorName)
 
   const reset = () => {
     setSectionNumber('')
@@ -110,10 +110,10 @@ export default function CreateSectionModal({
       return
     }
     if (!instructorName.trim()) {
-      setError('Enter your full name.')
+      setError('Enter the instructor name.')
       return
     }
-    const name = previewName
+    const name = generatedName
     if (!name) {
       setError('Could not build a section name from that number and name.')
       return
@@ -174,19 +174,18 @@ export default function CreateSectionModal({
       closeOnOutsideClick={!loading}
       hideCloseButton={loading}
       title="New Section"
-      description="Set up your section of a studio. These details file it in the network, so you won't be asked again when you publish."
+      description="Set up your section of a class. These details file it in the network, so you won't be asked again when you publish."
       className="max-w-lg pb-[max(1.5rem,env(safe-area-inset-bottom))]"
     >
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-        {/* Studio first, then the number. The studio is the thing being
+        {/* Class first, then the number. The class is the thing being
             taught and the one an instructor thinks of first; the section
             number only says which run of it this is, and reading "Section 03"
-            before knowing 03 of WHAT is backwards. It also matches the order
-            of the generated path in the preview below. */}
+            before knowing 03 of WHAT is backwards. */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor={ids.studio} className="mb-1 block text-sm font-semibold text-text-primary">
-              Studio
+              Class
             </label>
             <Select
               id={ids.studio}
@@ -199,7 +198,7 @@ export default function CreateSectionModal({
           </div>
           <div>
             <label htmlFor={ids.number} className="mb-1 block text-sm font-semibold text-text-primary">
-              Section number
+              Section #
             </label>
             <Input
               id={ids.number}
@@ -210,10 +209,19 @@ export default function CreateSectionModal({
               value={sectionNumber}
               onChange={(event) => {
                 // Digits only at the source. Stripping here rather than
-                // validating on submit means the preview can never show a name
-                // the server would reject.
+                // validating on submit means the generated name can never be
+                // one the server would reject.
                 setSectionNumber(event.target.value.replace(/\D/g, ''))
                 setError('')
+              }}
+              onBlur={() => {
+                // Pad to two digits on the way out of the field, not on every
+                // keystroke: padding "1" to "01" mid-typing turns the next
+                // digit into "012", which maxLength truncates back to "01" —
+                // Section 12 would be impossible to type. Leaving the field is
+                // the first moment the number is finished.
+                const padded = normalizeSectionNumber(sectionNumber)
+                if (padded) setSectionNumber(padded)
               }}
               placeholder="03"
               disabled={loading}
@@ -223,7 +231,7 @@ export default function CreateSectionModal({
 
         <div>
           <label htmlFor={ids.instructor} className="mb-1 block text-sm font-semibold text-text-primary">
-            Your full name
+            Instructor
           </label>
           <Input
             id={ids.instructor}
@@ -271,7 +279,7 @@ export default function CreateSectionModal({
 
         <div>
           <label htmlFor={ids.academicYear} className="mb-1 block text-sm font-semibold text-text-primary">
-            Academic year
+            Academic Year
           </label>
           <Select
             id={ids.academicYear}
@@ -281,18 +289,6 @@ export default function CreateSectionModal({
           >
             {years.map((item) => <option key={item} value={item}>{item}</option>)}
           </Select>
-        </div>
-
-        {/* The generated name and the path it will sit at, shown before the
-            instructor commits. The name is not editable, so this is the only
-            place they can check the convention produced what they meant. */}
-        <div className="rounded-pinspace border border-border bg-background-lighter p-4 text-sm text-text-secondary">
-          <p className="font-semibold text-text-primary">
-            {previewName ?? 'Section — name'}
-          </p>
-          <p className="mt-1 break-words">
-            {department} → {yearLabel(yearLevel)} → {studio} → {previewName ?? 'this section'}
-          </p>
         </div>
 
         {error && <StatusState id={ids.error} role="alert" status="error" title={error} />}

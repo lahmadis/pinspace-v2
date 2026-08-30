@@ -22,6 +22,13 @@ export interface StudioData {
    */
   studio?: string
   /**
+   * The term this ran in — '2025-2026'. Returned per node by
+   * /api/explore/studios, which has always sent it; it was simply never in this
+   * interface, because /explore treated the academic year as a filter chip
+   * rather than as something you could drill into.
+   */
+  academicYear?: string
+  /**
    * How many sections a STUDIO BUCKET holds. Set only on the bucket bubbles
    * /explore synthesises at the studio level, never on a real workspace.
    *
@@ -305,7 +312,7 @@ function Tooltip({ data, containerRect }: { data: TooltipData | null; containerR
           </div>
           {node.studio && (
             <div className="flex justify-between gap-3 text-[#16181D]">
-              <span className="text-[#8A8FA0]">Studio</span>
+              <span className="text-[#8A8FA0]">Class</span>
               <span className="font-medium">{node.studio}</span>
             </div>
           )}
@@ -325,19 +332,19 @@ function Tooltip({ data, containerRect }: { data: TooltipData | null; containerR
               {connections.sameInstructor.length > 0 && node.instructor && (
                 <div className="flex items-center gap-2 text-primary">
                   <span className="h-0.5 w-3 rounded" style={{ background: RELATIONSHIP_STYLES.instructor.color }} />
-                  <span>{connections.sameInstructor.length} studios ({node.instructor})</span>
+                  <span>{connections.sameInstructor.length} classes ({node.instructor})</span>
                 </div>
               )}
               {connections.sameYear.length > 0 && node.year && (
                 <div className="flex items-center gap-2 text-[#16181D]">
                   <span className="w-3 border-t-2 border-dashed" style={{ borderColor: RELATIONSHIP_STYLES.year.color }} />
-                  <span>{connections.sameYear.length} studios ({node.year === 'Masters' ? 'Masters' : `Year ${node.year}`})</span>
+                  <span>{connections.sameYear.length} classes ({node.year === 'Masters' ? 'Masters' : `Year ${node.year}`})</span>
                 </div>
               )}
               {connections.sameDepartment.length > 0 && node.department && (
                 <div className="flex items-center gap-2 text-[#5A5E6B]">
                   <span className="w-3 border-t-2 border-dotted" style={{ borderColor: RELATIONSHIP_STYLES.department.color }} />
-                  <span>{connections.sameDepartment.length} studios ({node.department})</span>
+                  <span>{connections.sameDepartment.length} classes ({node.department})</span>
                 </div>
               )}
             </div>
@@ -877,7 +884,7 @@ export default function BubbleNetwork({
         className="absolute inset-0"
         style={{ cursor: interactive ? (isDragging ? 'grabbing' : 'grab') : 'pointer' }}
         role="img"
-        aria-label={`Network map with ${nodes.length} ${nodes.length === 1 ? 'studio' : 'studios'}. Use the network directory to select an item with the keyboard.`}
+        aria-label={`Network map with ${nodes.length} ${nodes.length === 1 ? 'class' : 'classes'}. Use the network directory to select an item with the keyboard.`}
       >
         <defs>
           {/* Animated dash pattern for instructor connections */}

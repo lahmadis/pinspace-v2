@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { DESK_CRIT_WORKSPACE_TYPE } from '@/lib/deskCrits/workspace'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { validateName } from '@/lib/validation/safeName'
 import { createWorkspace } from '@/lib/workspaces/createWorkspace'
@@ -136,7 +137,11 @@ export async function GET() {
       new Map(
         [...(owned ?? []), ...memberWorkspaces].map((w) => [w.id, w])
       ).values()
-    )
+    // The desk-crit workspace is not a space. It exists only to satisfy
+    // boards.workspace_id for crit sheets, and listing it would put an
+    // untitled container in everyone's dashboard the first time they pin
+    // anything at a desk crit. See lib/deskCrits/workspace.
+    ).filter((w) => w.type !== DESK_CRIT_WORKSPACE_TYPE)
 
     // Fetch board counts for all workspaces in one query
     const wsIds = allWorkspaces.map((w) => w.id)
@@ -169,10 +174,28 @@ export async function GET() {
       }
     }
 
+    // Member counts, same one-query shape as the two above. This is what makes
+    // "shared" a derived state rather than a stored type: a personal space with
+    // somebody in it besides its owner IS a shared space, and nothing has to
+    // declare it at creation time or be kept in sync afterwards.
+    const memberCountMap: Record<string, number> = {}
+    if (wsIds.length > 0) {
+      const { data: allMemberRows } = await admin
+        .from('workspace_members')
+        .select('workspace_id')
+        .in('workspace_id', wsIds)
+      if (allMemberRows) {
+        for (const row of allMemberRows) {
+          memberCountMap[row.workspace_id] = (memberCountMap[row.workspace_id] || 0) + 1
+        }
+      }
+    }
+
     const result = allWorkspaces.map((w) => ({
       ...w,
       board_count: boardCountMap[w.id] ?? 0,
       room_count: roomCountMap[w.id] ?? 0,
+      member_count: memberCountMap[w.id] ?? 0,
     }))
 
     /**

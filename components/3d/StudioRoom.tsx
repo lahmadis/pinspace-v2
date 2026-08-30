@@ -13,6 +13,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { CameraController, ROOM_DEFAULT_FOV, type FollowPose, type LaserState, type LbViewport, type LbCursorState, type CritDirtySignal, type TraceStreamEntry, type FocusedWall } from './CameraController'
 import PlanView, { PLAN_VIEW, PLAN_MARGIN } from '@/components/room/PlanView'
+import { getInitialRoomPose, ROOM_MIN_ZOOM_DISTANCE_INCHES } from '@/lib/room/cameraViews'
 import PresentationView from '@/components/room/PresentationView'
 import TwoDView from '@/components/room/TwoDView'
 import { consumeDoubleClick } from '@/lib/room/consumeDoubleClick'
@@ -265,6 +266,10 @@ function SceneContent({
   selectedTextId,
   onTextSelect,
   onTextDragEnd,
+  onTextContentChange,
+  onTextFontSizeChange,
+  onTextRemove,
+  canEditText,
   onFloorClick,
   dimmedExceptWall,
   onTableModelClick,
@@ -311,6 +316,11 @@ function SceneContent({
   selectedTextId: string | null
   onTextSelect: (id: string | null) => void
   onTextDragEnd: (id: string, x: number, y: number) => void
+  onTextContentChange: (id: string, text: string) => void
+  onTextFontSizeChange: (id: string, fontSize: number) => void
+  onTextRemove: (id: string) => void
+  /** Mirrors canEditWalls — text lives in the wall-config blob, so it is owner-only. */
+  canEditText: boolean
   onFloorClick?: () => void
   /** Wall index to keep at full strength while every other wall ghosts back; null = no dimming. */
   dimmedExceptWall?: number | null
@@ -537,6 +547,10 @@ function SceneContent({
                 isSelected={selectedTextId === t.id}
                 onSelect={onTextSelect}
                 onDragEnd={onTextDragEnd}
+                canEdit={canEditText}
+                onTextChange={onTextContentChange}
+                onFontSizeChange={onTextFontSizeChange}
+                onRemove={onTextRemove}
               />
             ))}
         </>
@@ -566,7 +580,9 @@ function SceneContent({
 
         // Wider rooms (or more connected walls) push the camera back more.
         const distanceScale = ((maxWallWidthInches * layoutFactor) / baseWidthInches) || 1
-        const minDistance = 80 * distanceScale       // Pull camera back a bit more by default
+        // Zoom-IN floor: see ROOM_MIN_ZOOM_DISTANCE_INCHES. The zoom-out cap below
+        // still scales with the room; only the near end was a wall.
+        const minDistance = ROOM_MIN_ZOOM_DISTANCE_INCHES
         // Zoom-out cap, scaled to room size like minDistance so a board's
         // on-screen size at full zoom-out stays ~constant across rooms. ~5.5x
         // the initial framing distance (110 * distanceScale): far enough for a
@@ -585,20 +601,27 @@ function SceneContent({
         // zoom intensity are unchanged; this only widens the frustum's far end.
         const cameraFar = maxDistance + maxWallWidthInches * layoutFactor + 1000
 
-        // Aim slightly above mid-wall (where boards typically sit) so zoom goes toward the walls, not the floor.
-        const targetHeight = Math.max(60, Math.min(maxWallHeightInches * 0.65, maxWallHeightInches)) || 60
-        // Axonometric view: position camera at diagonal angle with moderate elevation
-        // For axonometric/isometric view: 30-35 degree elevation, positioned diagonally
-        // Base distance scaled so that all walls fit comfortably on first load.
-        const baseDistance = 110 * distanceScale
-        const elevationAngle = 35 * (Math.PI / 180) // 35 degrees elevation
-        const azimuthAngle = 45 * (Math.PI / 180)   // 45 degrees around (diagonal view)
-        
-        // Calculate axonometric camera position
-        const horizontalDistance = baseDistance * Math.cos(elevationAngle)
-        const cameraHeight = targetHeight + (baseDistance * Math.sin(elevationAngle))
-        const cameraX = horizontalDistance * Math.sin(azimuthAngle)
-        const cameraZ = horizontalDistance * Math.cos(azimuthAngle)
+        /*
+         * Load-time pose comes from lib/room/cameraViews, NOT from a copy of
+         * the math written out here.
+         *
+         * There was a second copy at this spot — its own baseDistance, its own
+         * 35 degrees of elevation and 45 of azimuth — and it is precisely the
+         * hazard that module's own header warns about ("the axonometric framing
+         * was written out three times and two of the copies disagreed"). It
+         * silently outranked the shared helper for the editor, so lowering the
+         * opening view to eye level moved the read-only view page and left edit
+         * mode still looking down at the room from above.
+         *
+         * targetHeight comes off the same pose for the same reason: it feeds
+         * OrbitControls' target, and a target that disagreed with the position
+         * would tilt the framing the pose just set.
+         */
+        const initialPose = getInitialRoomPose(wallConfig)
+        const targetHeight = initialPose.target.y
+        const cameraX = initialPose.position.x
+        const cameraHeight = initialPose.position.y
+        const cameraZ = initialPose.position.z
         
         maxWallHeightRef.current = maxWallHeightInches
 
@@ -621,8 +644,11 @@ function SceneContent({
               // absurd separations to stop flickering, and would still have
               // flickered on a large room. Raising near is the actual fix, and
               // it's free here: nothing is ever within 5 inches of the camera.
-              // OrbitControls' own minDistance is 40+ inches even for the
-              // smallest room, and edit mode clamps to 140-240.
+              // That is now the ONLY thing standing between the viewer and the
+              // work — the zoom-in floor is 6in (ROOM_MIN_ZOOM_DISTANCE_INCHES),
+              // deliberately just outside this plane. Lower `near` to let the
+              // camera closer and the floor/grid/ground planes start z-fighting
+              // at the far end of the range instead.
               near={5}
               far={cameraFar}
             />
@@ -2553,10 +2579,11 @@ export default function StudioRoom(props: StudioRoomProps) {
         onBoardDragStart={handleBoardDragStart}
       />
 
-      {/* Wall text controls — additive overlay (does NOT modify
-          EditModeOverlay). Sits under the "Add Your Board" button while a wall
-          is being edited. "Add text" drops a label at wall center; selecting a
-          label reveals its content field, font-size stepper, and Remove. */}
+      {/* "Add Text" drops a label at wall centre. Everything else about a
+          label — its content, size and removal — now lives ON the label, in
+          DraggableText's <Html> editor: a panel pinned to the left edge of the
+          screen meant editing text while looking away from it, and the note on
+          this screen was exactly that ("not off to the left"). */}
       {/* canEditWalls, not just showEditUI: wall text lives in the wall-config
           blob, so it is owner-only like the rest of it. Entering wall-edit mode
           is NOT owner-gated (anyone may open a wall to place boards), so without
@@ -2569,64 +2596,8 @@ export default function StudioRoom(props: StudioRoomProps) {
             className="flex min-h-11 items-center justify-center gap-2 rounded-full border border-[#16181D]/[0.12] bg-white px-5 py-2.5 text-sm font-semibold text-[#16181D] shadow-[0_8px_24px_rgba(22,24,29,0.10)] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6]"
           >
             <span className="text-lg leading-none text-indigo-600">＋</span>
-            Add text
+            Add Text
           </button>
-
-          {(() => {
-            const sel = textItems.find((t) => t.id === selectedTextId && t.wallIndex === editingWall)
-            if (!sel) return null
-            return (
-              <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-3 flex flex-col gap-2">
-                <label className="text-xs font-medium text-gray-500">Text</label>
-                <input
-                  value={sel.text}
-                  onChange={(e) => handleTextContentChange(sel.id, e.target.value)}
-                  placeholder="Label text"
-                  maxLength={200}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <label className="text-xs font-medium text-gray-500 mt-1">Font size (in)</label>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => handleTextFontSizeChange(sel.id, Math.max(2, Math.round(sel.fontSize) - 2))}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50"
-                    aria-label="Decrease font size"
-                  >
-                    −
-                  </button>
-                  <span className="w-9 text-center text-sm tabular-nums">{Math.round(sel.fontSize)}</span>
-                  <button
-                    onClick={() => handleTextFontSizeChange(sel.id, Math.min(96, Math.round(sel.fontSize) + 2))}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50"
-                    aria-label="Increase font size"
-                  >
-                    ＋
-                  </button>
-                  <div className="flex gap-1 ml-1">
-                    {[6, 12, 24, 48].map((sz) => (
-                      <button
-                        key={sz}
-                        onClick={() => handleTextFontSizeChange(sel.id, sz)}
-                        className={`px-1.5 py-1 rounded text-xs border ${
-                          Math.round(sel.fontSize) === sz
-                            ? 'bg-indigo-600 text-white border-indigo-600'
-                            : 'border-gray-300 text-gray-600 hover:bg-gray-50'
-                        }`}
-                      >
-                        {sz}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleRemoveText(sel.id)}
-                  className="mt-1 px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded text-sm hover:bg-red-100 transition-colors"
-                >
-                  Remove text
-                </button>
-              </div>
-            )
-          })()}
         </div>
       )}
 
@@ -2821,6 +2792,10 @@ export default function StudioRoom(props: StudioRoomProps) {
             selectedTextId={selectedTextId}
             onTextSelect={setSelectedTextId}
             onTextDragEnd={handleTextPositionChange}
+            onTextContentChange={handleTextContentChange}
+            onTextFontSizeChange={handleTextFontSizeChange}
+            onTextRemove={handleRemoveText}
+            canEditText={props.canEditWalls ?? false}
             // Only bind a floor click while focused, so an ordinary click on the
             // floor stays inert (and can't swallow an orbit) the rest of the time.
             onFloorClick={focusedWall !== null ? handleExitFocus : undefined}

@@ -38,7 +38,7 @@ describe('DashboardSidebar', () => {
     signOut.mockResolvedValue(undefined)
   })
 
-  it('preserves organization, shared, personal, settings, admin, my boards, and gated network destinations', () => {
+  it('preserves organization, personal, settings, admin, my boards, and gated network destinations', () => {
     render(
       <DashboardSidebar
         currentScope="personal"
@@ -53,7 +53,10 @@ describe('DashboardSidebar', () => {
     )
 
     expect(screen.getByRole('button', { name: 'Wentworth' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Shared' })).toBeInTheDocument()
+    // Shared is no longer a scope — it is a state a personal space enters when
+    // someone else joins it. Asserted absent so re-adding the tab has to be a
+    // deliberate change to this test rather than a silent regression.
+    expect(screen.queryByRole('button', { name: 'Shared' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Personal' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'My boards' })).toHaveAttribute('href', '/my-boards')
     expect(screen.getByRole('link', { name: 'Organization network' })).toBeInTheDocument()
@@ -65,7 +68,7 @@ describe('DashboardSidebar', () => {
   it('hides authorization-controlled destinations when access is absent while retaining My boards', () => {
     render(
       <DashboardSidebar
-        currentScope="shared"
+        currentScope="personal"
         onScopeChange={vi.fn()}
         hasOrganization={false}
         userEmail="ada@example.com"
@@ -77,7 +80,7 @@ describe('DashboardSidebar', () => {
 
     expect(screen.queryByRole('button', { name: 'Network' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Shared' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'Personal' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'My boards' })).toHaveAttribute('href', '/my-boards')
   })
 
@@ -97,8 +100,8 @@ describe('DashboardSidebar', () => {
     )
 
     const sheet = screen.getByRole('dialog', { name: 'Dashboard navigation' })
-    await user.click(within(sheet).getByRole('button', { name: 'Shared' }))
-    expect(onScopeChange).toHaveBeenCalledWith('shared')
+    await user.click(within(sheet).getByRole('button', { name: 'Personal' }))
+    expect(onScopeChange).toHaveBeenCalledWith('personal')
     expect(onToggle).toHaveBeenCalledOnce()
 
     await user.click(within(sheet).getByRole('button', { name: 'Sign out' }))
@@ -143,7 +146,7 @@ describe('DashboardSidebar', () => {
     await user.click(trigger)
     sheet = screen.getByRole('dialog', { name: 'Dashboard navigation' })
     expect(within(sheet).getByRole('button', { name: 'Wentworth' })).toBeInTheDocument()
-    expect(within(sheet).getByRole('button', { name: 'Shared' })).toBeInTheDocument()
+    expect(within(sheet).queryByRole('button', { name: 'Shared' })).not.toBeInTheDocument()
     expect(within(sheet).getByRole('button', { name: 'Personal' })).toBeInTheDocument()
     expect(within(sheet).getByRole('link', { name: 'Organization network' })).toBeInTheDocument()
     expect(within(sheet).getByRole('link', { name: 'Admin' })).toBeInTheDocument()

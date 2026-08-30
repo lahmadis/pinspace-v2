@@ -33,7 +33,7 @@ const YEAR_COLORS: Record<string, string> = {
 }
 
 export default function YearPage({ params }: { params: Promise<{ department: string; year: string }> }) {
-  // See the note in app/desk-crits/[id]/page.tsx.
+  // params is a Promise in this Next version; unwrap with React.use().
   const { department, year } = use(params)
   const deptMeta = DEPT_MAP[department]
   const yearInfo = YEAR_MAP[year]

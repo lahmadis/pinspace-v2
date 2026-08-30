@@ -216,7 +216,7 @@ function EditableStudentName({
           }
         }}
         onBlur={commit}
-        aria-label="Name of the person who uploaded these sheets"
+        aria-label="Name of the person who uploaded these boards"
         className="text-[25px] font-semibold tracking-[-0.035em] w-full max-w-sm rounded-lg px-2 py-0.5 -ml-2 focus:outline-none"
         style={{
           color: ROOM.ink,
@@ -238,7 +238,7 @@ function EditableStudentName({
           setValue(displayed)
           setEditing(true)
         }}
-        title="Rename the person who uploaded these sheets"
+        title="Rename the person who uploaded these boards"
         className="group/name flex items-center gap-2 max-w-full text-left rounded-lg px-2 py-0.5 -ml-2 transition-colors hover:bg-white/70"
       >
         <span
@@ -391,7 +391,7 @@ export default function TwoDView({
                   </h2>
                 )}
                 <p className="mt-1 text-[13px] font-medium tracking-[-0.01em]" style={mutedStyle}>
-                  {selected.boardCount} sheet{selected.boardCount === 1 ? '' : 's'}, laid flat
+                  {selected.boardCount} board{selected.boardCount === 1 ? '' : 's'}
                   {selected.calloutCount > 0 &&
                     ` · ${selected.calloutCount} callout${selected.calloutCount === 1 ? '' : 's'}`}
                 </p>
@@ -420,7 +420,7 @@ export default function TwoDView({
         ) : (
           <>
             <p className="text-[13px] font-medium tracking-[-0.01em]" style={mutedStyle}>
-              {students.length} {students.length === 1 ? 'person' : 'people'} · click a stack to read their sheets
+              {students.length} {students.length === 1 ? 'person' : 'people'} · click a stack to view their boards
             </p>
 
             {students.length === 0 ? (
@@ -445,7 +445,7 @@ export default function TwoDView({
                       onClick={() => onSelectStudent(student)}
                       // Without this the card announces as its thumbnail alt +
                       // "See boards" + the name + both counts, in that order.
-                      aria-label={`${student.name}, ${student.boardCount} sheet${student.boardCount === 1 ? '' : 's'}`}
+                      aria-label={`${student.name}, ${student.boardCount} board${student.boardCount === 1 ? '' : 's'}`}
                       className="group text-left transition-[transform,filter] duration-[450ms] ease-[cubic-bezier(.16,1,.3,1)] hover:-translate-y-1.5 hover:[filter:drop-shadow(0_22px_34px_rgba(36,46,84,0.13))]"
                     >
                       <div
@@ -465,7 +465,7 @@ export default function TwoDView({
                               className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-[0.14em]"
                               style={{ fontFamily: MONO_STACK, color: ROOM.ink2 }}
                             >
-                              No sheets yet
+                              No boards yet
                             </span>
                           ) : (
                             <>
@@ -500,7 +500,7 @@ export default function TwoDView({
                               {student.name}
                             </span>
                             <span className="block text-[12px] font-medium" style={mutedStyle}>
-                              {student.boardCount} sheet{student.boardCount === 1 ? '' : 's'}
+                              {student.boardCount} board{student.boardCount === 1 ? '' : 's'}
                             </span>
                           </span>
 
@@ -514,16 +514,6 @@ export default function TwoDView({
                                 {student.calloutCount}
                               </span>
                             )}
-                            {/* Accent pin, haloed. Decorative — the count beside
-                                it carries the information. */}
-                            <span
-                              aria-hidden
-                              className="w-[9px] h-[9px] rounded-full mr-[7px]"
-                              style={{
-                                background: ROOM.accent,
-                                boxShadow: '0 0 0 7px rgba(59,110,246,0.12)',
-                              }}
-                            />
                           </span>
                         </div>
                       </div>

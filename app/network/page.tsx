@@ -12,14 +12,28 @@ interface PersonalWorkspace {
   name: string
   subRoomCount: number
   createdAt: string
+  /** Derived server-side: the space has a member besides its owner. */
+  shared: boolean
 }
+
+/**
+ * Which slice of your spaces the map is showing.
+ *
+ * A filter over one set, not three separate networks: a shared space IS a
+ * personal space that someone else is in, so 'all' is the honest default and
+ * the other two are ways to narrow it. This is the tab that replaced the
+ * dashboard's Shared scope — the distinction was worth keeping, the separate
+ * place to keep it was not.
+ */
+type NetworkFilter = 'all' | 'personal' | 'shared'
 
 function PersonalNetworkInner() {
   const router = useRouter()
   const { status: authStatus } = useAuthSession()
-  const [nodes, setNodes] = useState<BubbleNode[]>([])
+  const [workspaces, setWorkspaces] = useState<PersonalWorkspace[]>([])
   const [hasWorkspaces, setHasWorkspaces] = useState(true)
   const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState<NetworkFilter>('all')
 
   const headerRef = useRef<HTMLElement>(null)
   const [headerHeight, setHeaderHeight] = useState(57)
@@ -45,18 +59,9 @@ function PersonalNetworkInner() {
         const res = await fetch('/api/network/personal', { cache: 'no-store' })
         if (!res.ok) return
         const data = await res.json()
-        const workspaces: PersonalWorkspace[] = data.workspaces ?? []
-        setHasWorkspaces(workspaces.length > 0)
-        setNodes(
-          workspaces.map((w) => ({
-            id: w.id,
-            name: w.name,
-            label: w.name,
-            count: w.subRoomCount,
-            url: `/network/${w.id}`,
-            color: '#6366f1',
-          }))
-        )
+        const rows: PersonalWorkspace[] = data.workspaces ?? []
+        setHasWorkspaces(rows.length > 0)
+        setWorkspaces(rows)
       } catch (e) {
         console.error(e)
       } finally {
@@ -65,6 +70,26 @@ function PersonalNetworkInner() {
     }
     load()
   }, [authStatus])
+
+  const counts = {
+    all: workspaces.length,
+    personal: workspaces.filter((w) => !w.shared).length,
+    shared: workspaces.filter((w) => w.shared).length,
+  }
+
+  const nodes: BubbleNode[] = workspaces
+    .filter((w) => filter === 'all' || (filter === 'shared' ? w.shared : !w.shared))
+    .map((w) => ({
+      id: w.id,
+      name: w.name,
+      label: w.name,
+      count: w.subRoomCount,
+      url: `/network/${w.id}`,
+      // Shared spaces read in the accent blue the rest of the app uses for
+      // "someone else is here"; solo spaces keep the neutral indigo. The tab
+      // narrows the set, this tells them apart inside 'all'.
+      color: w.shared ? '#3B6EF6' : '#6366f1',
+    }))
 
   const handleNodeClick = (node: BubbleNode) => {
     router.push(`/network/${node.id}`)
@@ -99,6 +124,36 @@ function PersonalNetworkInner() {
               {nodes.length} {nodes.length === 1 ? 'space' : 'spaces'}
             </p>
           </div>
+
+          {/* Personal / Shared. Only rendered once something IS shared —
+              before that it is three tabs over one set, which teaches a
+              distinction the account has not met yet. */}
+          {counts.shared > 0 && (
+            <nav aria-label="Filter spaces" className="ml-auto flex items-center gap-1 shrink-0">
+              {([
+                ['all', 'All'],
+                ['personal', 'Personal'],
+                ['shared', 'Shared'],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setFilter(key)}
+                  aria-current={filter === key ? 'page' : undefined}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                    filter === key
+                      ? 'bg-[#3B6EF6] text-white'
+                      : 'text-slate-300 hover:bg-slate-700/60'
+                  }`}
+                >
+                  {label}
+                  <span className={`ml-1.5 ${filter === key ? 'text-white/70' : 'text-slate-500'}`}>
+                    {counts[key]}
+                  </span>
+                </button>
+              ))}
+            </nav>
+          )}
         </div>
       </header>
 

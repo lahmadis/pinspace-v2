@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { DESK_CRIT_WORKSPACE_TYPE } from '@/lib/deskCrits/workspace'
 import { supabaseServer } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -24,7 +25,7 @@ export async function GET() {
     // Fetch all boards owned by the user with room and workspace details
     const { data: boards, error } = await supabase
       .from('boards')
-      .select('*, rooms(id, name), workspaces:workspace_id(id, name)')
+      .select('*, rooms(id, name), workspaces:workspace_id(id, name, type)')
       .eq('owner_id', userId)
       .order('uploaded_at', { ascending: false })
 
@@ -33,8 +34,16 @@ export async function GET() {
       return NextResponse.json({ error: 'Failed to fetch boards' }, { status: 500 })
     }
 
+    // Desk-crit sheets are real boards, but they belong to a crit rather than
+    // to a space — "my boards" is a list of work in spaces, and a photo of your
+    // desk taken mid-crit is not that. Filtered here rather than in the query
+    // because the type arrives through the joined workspace.
+    const spaceBoards = (boards || []).filter(
+      (b) => (b.workspaces as { type?: string } | null)?.type !== DESK_CRIT_WORKSPACE_TYPE
+    )
+
     // Transform to frontend format
-    const transformedBoards = (boards || []).map((board) => {
+    const transformedBoards = spaceBoards.map((board) => {
       const room = board.rooms as { id?: string; name?: string } | null
       const workspace = board.workspaces as { id?: string; name?: string } | null
       return {

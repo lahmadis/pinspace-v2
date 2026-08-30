@@ -1,15 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Plus } from 'lucide-react'
-import { useDeskCrits, type DeskCrit } from '@/hooks/useDeskCrits'
+import { useDeskCrits } from '@/hooks/useDeskCrits'
 import { useDirectUpload } from '@/lib/useDirectUpload'
 import { useSpeechTranscription } from '@/hooks/useSpeechTranscription'
 import { isPermanentFailure, unavailableMessage } from '@/lib/transcription/types'
-import { fitPlacedSize, isCanvasImage, readImageSize, rejectionReason } from '@/lib/canvas/imageNode'
-import { critChipDate } from '@/lib/desk/zones'
-import type { DeskZone } from '@/lib/desk/zones'
+import { isCanvasImage, readImageSize, rejectionReason } from '@/lib/canvas/imageNode'
+import { CRIT_PHASES } from '@/lib/constants/critPhases'
 import CritColumn from '@/components/desk/CritColumn'
 
 /**
@@ -24,18 +23,36 @@ import CritColumn from '@/components/desk/CritColumn'
  * inside the column component and there is no legal way to reach into one from
  * here. The column is told to reload by a per-crit nonce instead.
  */
-/** Gap between pinned sheets on the crit canvas, in canvas units. */
-const PIN_GAP = 40
-/** Private references sit on their own row, clear of the pinned work. */
-const PRIVATE_ROW_Y = 720
 
 export default function DeskPage() {
   const router = useRouter()
-  const { crits, loading, error, clearError, createCrit, deleteCrit, renameCrit } = useDeskCrits()
+  const {
+    crits, loading, error, clearError, createCrit, deleteCrit, renameCrit,
+    setCritPhase, setCritProject,
+  } = useDeskCrits()
   const { upload } = useDirectUpload()
   const speech = useSpeechTranscription()
 
   const [activeCritId, setActiveCritId] = useState<string | null>(null)
+  /**
+   * The crit blown up to fill the page, if any.
+   *
+   * Side-by-side cards are the right shape for "which crit was that?" and the
+   * wrong one for working in one: four crits share the width, every sheet is a
+   * thumbnail, and the one you are actually in is no bigger than the three you
+   * are not. Expanding hides the others outright rather than widening this one
+   * — a wide card in a scroller is still a card in a scroller.
+   */
+  const [expandedCritId, setExpandedCritId] = useState<string | null>(null)
+  /** The "which phase?" step of creating a crit. */
+  const [phasePickerOpen, setPhasePickerOpen] = useState(false)
+  /** Filters over the crit list: phase, and a date range. */
+  const [phaseFilter, setPhaseFilter] = useState('')
+  const [projectFilter, setProjectFilter] = useState('')
+  /** What the create dialog's project field is holding. */
+  const [newProject, setNewProject] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
   const [creating, setCreating] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
@@ -57,8 +74,16 @@ export default function DeskPage() {
   const [deleting, setDeleting] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  /** Which zone the pending file picker is filling. */
-  const pickZoneRef = useRef<DeskZone>('shared')
+  /**
+   * Which of the two the pending file picker is filling.
+   *
+   * Sheets and references take different paths now: a SHEET becomes a real
+   * board (so the lightbox can open it, and a trace or callout can stick to
+   * it), while a REFERENCE stays a canvas_node image — something you brought
+   * to look at, not work to be marked up. One <input> serves both, so it has
+   * to be told which before it opens.
+   */
+  const pickKindRef = useRef<'sheet' | 'reference'>('sheet')
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const columnRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
@@ -146,59 +171,75 @@ export default function DeskPage() {
    * does not own the node list (each column does), and a stale count would
    * stack a new upload on an existing sheet.
    */
-  const nextFreeX = useCallback(async (critId: string, zone: DeskZone): Promise<number> => {
-    try {
-      const res = await fetch(`/api/canvases/${critId}/nodes`, { cache: 'no-store' })
-      if (!res.ok) return 0
-      const { nodes } = await res.json()
-      const inZone = ((nodes || []) as Array<{ x: number; w: number; props?: Record<string, unknown> }>)
-        .filter((n) => (n.props?.zone === 'shared' ? 'shared' : 'private') === zone)
-      if (inZone.length === 0) return 0
-      return Math.max(...inZone.map((n) => (n.x ?? 0) + (n.w ?? 0))) + PIN_GAP
-    } catch {
-      // A failed read must not block the upload; landing at the origin is
-      // recoverable by dragging, losing the upload is not.
-      return 0
-    }
-  }, [])
-
   const uploadInto = useCallback(
-    async (critId: string, zone: DeskZone, files: File[]) => {
+    async (critId: string, files: File[]) => {
       const images = files.filter(isCanvasImage)
       const refused = files.filter((f) => !isCanvasImage(f))
       if (refused.length > 0) setProblem(rejectionReason(refused[0]))
       if (images.length === 0) return
 
-      setBusy(zone === 'shared' ? 'pin' : 'photo')
+      setBusy('pin')
       try {
-        // Laid out in a row rather than all at the origin.
-        //
-        // These nodes carry real canvas coordinates — the crit workspace view
-        // draws them on the canvas — so creating every one at 0,0 stacked a
-        // whole crit's work in one spot with only the top sheet visible. The
-        // existing layout is read first so a second upload continues the row
-        // rather than landing on the first.
-        let cursorX = await nextFreeX(critId, zone)
         for (const file of images) {
+          // Bytes go straight to storage, same as every other upload path; the
+          // API call after it writes the BOARD row and links it to this crit.
+          // A crit sheet is a real board now (migration 042) — that is what
+          // lets the lightbox open it and lets a trace or a callout stick to
+          // it, neither of which a canvas node could carry.
           const size = await readImageSize(file)
-          const box = size ? fitPlacedSize(size.width, size.height) : { w: 320, h: 320 }
+          const result = await upload(file)
+          const res = await fetch(`/api/canvases/${critId}/boards`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fullImageUrl: result.fullUrl,
+              thumbnailUrl: result.thumbnailUrl,
+              title: file.name,
+              width: size?.width,
+              height: size?.height,
+            }),
+          })
+          if (!res.ok) throw new Error('Could not add that sheet to the crit')
+        }
+        bump(critId)
+      } catch (err) {
+        setProblem((err as Error).message || 'Upload failed')
+      } finally {
+        setBusy(null)
+      }
+    },
+    [upload, bump]
+  )
+
+  /** A reference image: stored as a canvas node, the way notes are. */
+  const addReference = useCallback(
+    async (critId: string, files: File[]) => {
+      const images = files.filter(isCanvasImage)
+      const refused = files.filter((f) => !isCanvasImage(f))
+      if (refused.length > 0) setProblem(rejectionReason(refused[0]))
+      if (images.length === 0) return
+
+      setBusy('reference')
+      try {
+        for (const file of images) {
           const result = await upload(file)
           await addNode(critId, {
             type: 'image',
-            x: cursorX,
-            y: zone === 'shared' ? 0 : PRIVATE_ROW_Y,
-            w: box.w,
-            h: box.h,
+            // x/y/w/h are vestigial — they positioned a node on the canvas that
+            // no longer exists. Sent because the column is NOT NULL, not
+            // because anything reads them.
+            x: 0,
+            y: 0,
+            w: 320,
+            h: 320,
             props: {
               url: result.fullUrl,
               thumbUrl: result.thumbnailUrl,
               storagePath: result.storagePath,
               thumbPath: result.thumbnailPath,
               name: file.name,
-              zone,
             },
           })
-          cursorX += box.w + PIN_GAP
         }
       } catch (err) {
         setProblem((err as Error).message || 'Upload failed')
@@ -206,7 +247,7 @@ export default function DeskPage() {
         setBusy(null)
       }
     },
-    [addNode, nextFreeX, upload]
+    [addNode, upload]
   )
 
   // ---------------------------------------------------------------------------
@@ -351,23 +392,82 @@ export default function DeskPage() {
     [addNote, addStep, composer]
   )
 
-  const handleCreate = async () => {
+  /**
+   * Create the crit the phase picker is holding.
+   *
+   * The phase is asked BEFORE the crit exists rather than set on the card
+   * afterwards, because "what stage is this?" is the one thing you reliably
+   * know at the moment you make one — you are about to have the crit — and it
+   * is the thing nobody goes back to fill in later.
+   */
+  const handleCreate = async (phase: string) => {
     setCreating(true)
     const today = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-    const crit = await createCrit(`Desk crit — ${today}`)
+    const project = newProject.trim()
+    // The project leads the title when there is one: a term of crits all
+    // called "Concept — Sep 9" is the problem the project field exists to fix.
+    const title = project ? `${project} — ${phase}` : `${phase} — ${today}`
+    const crit = await createCrit(title, phase, project)
     setCreating(false)
+    setPhasePickerOpen(false)
+    setNewProject('')
     if (crit) {
       setActiveCritId(crit.id)
       // Scroll it into view; a new column appended off-screen looks like
       // nothing happened.
-      requestAnimationFrame(() => columnRefs.current[crit.id]?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }))
+      requestAnimationFrame(() => columnRefs.current[crit.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
     }
   }
 
-  const jumpTo = (crit: DeskCrit) => {
-    setActiveCritId(crit.id)
-    columnRefs.current[crit.id]?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
-  }
+
+  const filtersActive = Boolean(phaseFilter || projectFilter || fromDate || toDate)
+
+  /**
+   * Every project this person has used, for the filter and the create dialog.
+   *
+   * Derived from the crits already loaded rather than fetched: there is no
+   * projects table (see migration 044), and the list of projects you have used
+   * IS the set of names on your crits. Deduped case-insensitively so "Quincy
+   * center" and "Quincy Center" collapse, keeping the first spelling seen.
+   */
+  const projects = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const c of crits) {
+      const name = c.project?.trim()
+      if (!name) continue
+      const key = name.toLowerCase()
+      if (!seen.has(key)) seen.set(key, name)
+    }
+    return Array.from(seen.values()).sort((a, b) => a.localeCompare(b))
+  }, [crits])
+
+  /**
+   * The crits actually on screen.
+   *
+   * Dates are compared as YYYY-MM-DD strings in LOCAL time, not as Date
+   * objects: createdAt is a UTC timestamp, and `new Date(createdAt) >= new
+   * Date(fromDate)` reads the picker's value as UTC midnight, so a crit made at
+   * 8pm on the 28th falls outside a range starting the 28th for anyone west of
+   * Greenwich. Formatting both sides down to the local calendar day compares
+   * the thing the user actually picked.
+   */
+  const visibleCrits = useMemo(() => {
+    if (!filtersActive) return crits
+    const localDay = (iso: string) => {
+      const d = new Date(iso)
+      if (Number.isNaN(d.getTime())) return ''
+      const pad = (n: number) => String(n).padStart(2, '0')
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    }
+    return crits.filter((c) => {
+      if (phaseFilter && c.phase !== phaseFilter) return false
+      if (projectFilter && (c.project ?? '') !== projectFilter) return false
+      const day = localDay(c.createdAt)
+      if (fromDate && (!day || day < fromDate)) return false
+      if (toDate && (!day || day > toDate)) return false
+      return true
+    })
+  }, [crits, filtersActive, phaseFilter, projectFilter, fromDate, toDate])
 
   const speechBlocked = speech.unavailable !== null && isPermanentFailure(speech.unavailable)
 
@@ -391,27 +491,79 @@ export default function DeskPage() {
           </p>
         </div>
 
-        {/* Date chips — jump to a crit without dragging the scroller. */}
-        <div className="ml-auto flex items-center gap-2 overflow-x-auto max-w-[46vw]">
-          {crits.map((crit) => (
-            <button
-              key={crit.id}
-              type="button"
-              onClick={() => jumpTo(crit)}
-              className={`shrink-0 px-3.5 py-2 rounded-full text-sm font-semibold border transition-colors ${
-                crit.id === activeCritId
-                  ? 'border-[#3B6EF6] text-[#3B6EF6] bg-[#3B6EF6]/6'
-                  : 'border-[#16181D]/12 text-[#5A5E6B] hover:bg-[#16181D]/4'
-              }`}
+        {/* Filters, where a row of dates used to be.
+            Those chips scrolled to a crit and did nothing else — they were a
+            table of contents for a list that already fits on screen, and they
+            named crits by a date two of which were the same day. Filtering is
+            what the space was actually worth. */}
+        <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+          {projects.length > 0 && (
+            <select
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+              aria-label="Filter by project"
+              className="rounded-xl border border-[#16181D]/12 bg-white px-3 py-2 text-sm font-semibold text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
             >
-              {critChipDate(crit.createdAt)}
+              <option value="">All projects</option>
+              {projects.map((project) => (
+                <option key={project} value={project}>
+                  {project}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <select
+            value={phaseFilter}
+            onChange={(e) => setPhaseFilter(e.target.value)}
+            aria-label="Filter by phase"
+            className="rounded-xl border border-[#16181D]/12 bg-white px-3 py-2 text-sm font-semibold text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
+          >
+            <option value="">All phases</option>
+            {CRIT_PHASES.map((phase) => (
+              <option key={phase} value={phase}>
+                {phase}
+              </option>
+            ))}
+          </select>
+
+          <input
+            type="date"
+            value={fromDate}
+            max={toDate || undefined}
+            onChange={(e) => setFromDate(e.target.value)}
+            aria-label="Crits from this date"
+            className="rounded-xl border border-[#16181D]/12 bg-white px-3 py-2 text-sm font-semibold text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
+          />
+          <span className="text-sm text-[#8A8FA0]">to</span>
+          <input
+            type="date"
+            value={toDate}
+            min={fromDate || undefined}
+            onChange={(e) => setToDate(e.target.value)}
+            aria-label="Crits up to this date"
+            className="rounded-xl border border-[#16181D]/12 bg-white px-3 py-2 text-sm font-semibold text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
+          />
+
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={() => {
+                setPhaseFilter('')
+                setProjectFilter('')
+                setFromDate('')
+                setToDate('')
+              }}
+              className="px-3 py-2 rounded-xl border border-[#16181D]/12 text-sm font-semibold text-[#5A5E6B] hover:bg-[#16181D]/4"
+            >
+              Clear
             </button>
-          ))}
+          )}
         </div>
 
         <button
           type="button"
-          onClick={handleCreate}
+          onClick={() => setPhasePickerOpen(true)}
           disabled={creating}
           className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#3B6EF6] text-white text-sm font-semibold hover:bg-[#2F5BD4] disabled:opacity-60 transition-colors"
         >
@@ -437,12 +589,31 @@ export default function DeskPage() {
 
       <div className="flex-1 flex min-h-0">
         {/* ---------------- the crits ---------------- */}
-        <div ref={scrollerRef} className="flex-1 overflow-x-auto overflow-y-auto p-6">
+        <div ref={scrollerRef} className="flex-1 overflow-y-auto p-6">
           {loading && crits.length === 0 ? (
             <div className="flex gap-5">
               {[0, 1, 2].map((i) => (
                 <div key={i} className="w-[420px] h-[420px] rounded-2xl bg-white/60 animate-pulse" />
               ))}
+            </div>
+          ) : visibleCrits.length === 0 && filtersActive ? (
+            <div className="h-full flex flex-col items-center justify-center text-center">
+              <h2 className="text-lg font-bold text-[#16181D] mb-2">No crits match</h2>
+              <p className="text-sm text-[#5A5E6B] max-w-sm mb-5">
+                {crits.length} desk crit{crits.length === 1 ? '' : 's'} here, none matching those filters.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setPhaseFilter('')
+                  setProjectFilter('')
+                  setFromDate('')
+                  setToDate('')
+                }}
+                className="px-4 py-2.5 rounded-xl border border-[#16181D]/12 text-sm font-semibold text-[#5A5E6B] hover:bg-[#16181D]/4"
+              >
+                Clear filters
+              </button>
             </div>
           ) : crits.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center">
@@ -453,7 +624,7 @@ export default function DeskPage() {
               </p>
               <button
                 type="button"
-                onClick={handleCreate}
+                onClick={() => setPhasePickerOpen(true)}
                 disabled={creating}
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#3B6EF6] text-white text-sm font-semibold hover:bg-[#2F5BD4] disabled:opacity-60"
               >
@@ -462,10 +633,31 @@ export default function DeskPage() {
               </button>
             </div>
           ) : (
-            <div className="flex gap-5 items-start">
-              {crits.map((crit) => (
+            /*
+             * A wrapping grid, capped at five across — not a row that scrolls
+             * sideways.
+             *
+             * The old layout put every crit on one line, so a term's worth of
+             * them ran off the right of the screen and the only way to reach an
+             * older one was to scroll past everything newer. Wrapping trades
+             * that for downward scrolling, which is the direction a page is
+             * already read in, and the cap is what stops the cards shrinking to
+             * nothing on a wide monitor: past five across, a crit card is
+             * narrower than the sheets inside it.
+             *
+             * Expanded is a single full-width card, so it drops the grid.
+             */
+            <div
+              className={
+                expandedCritId
+                  ? 'flex'
+                  : 'grid gap-5 items-start grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
+              }
+            >
+              {(expandedCritId ? visibleCrits.filter((c) => c.id === expandedCritId) : visibleCrits).map((crit) => (
                 <div
                   key={crit.id}
+                  className={expandedCritId === crit.id ? 'w-full max-w-5xl mx-auto' : undefined}
                   ref={(el) => {
                     columnRefs.current[crit.id] = el
                   }}
@@ -480,21 +672,28 @@ export default function DeskPage() {
                         ? [speech.committed, speech.interim].filter(Boolean).join(' ')
                         : null
                     }
-                    onOpen={() => router.push(`/desk-crits/${crit.id}`)}
+                    expanded={expandedCritId === crit.id}
+                    onToggleExpand={() => {
+                      setActiveCritId(crit.id)
+                      setExpandedCritId((prev) => (prev === crit.id ? null : crit.id))
+                    }}
                     onPin={() => {
                       setActiveCritId(crit.id)
-                      pickZoneRef.current = 'shared'
+                      pickKindRef.current = 'sheet'
                       fileInputRef.current?.click()
                     }}
-                    onPhoto={() => {
+                    onReference={() => {
                       setActiveCritId(crit.id)
-                      pickZoneRef.current = 'private'
+                      pickKindRef.current = 'reference'
                       fileInputRef.current?.click()
                     }}
                     onNote={() => setComposer({ critId: crit.id, kind: 'note' })}
                     onStep={() => setComposer({ critId: crit.id, kind: 'step' })}
                     onToggleRecording={() => toggleRecording(crit.id)}
                     onRename={(title) => void renameCrit(crit.id, title)}
+                    onPhaseChange={(phase) => void setCritPhase(crit.id, phase)}
+                    projects={projects}
+                    onProjectChange={(project) => void setCritProject(crit.id, project)}
                     onDelete={() => setPendingDelete({ id: crit.id, title: crit.title })}
                     recording={listening && recordingCritId === crit.id}
                     busy={busy !== null && activeCritId === crit.id}
@@ -521,10 +720,89 @@ export default function DeskPage() {
           // event otherwise, so the second attempt looks like nothing happened.
           e.target.value = ''
           if (files.length > 0 && activeCrit) {
-            void uploadInto(activeCrit.id, pickZoneRef.current, files)
+            if (pickKindRef.current === 'reference') void addReference(activeCrit.id, files)
+            else void uploadInto(activeCrit.id, files)
           }
         }}
       />
+
+      {/* Which phase? The one question asked before a crit exists.
+          A list of buttons rather than a <select> + Create: picking IS the
+          create, so a second confirming press would be asking twice. */}
+      {phasePickerOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#16181D]/30 p-4"
+          onClick={() => setPhasePickerOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-[0_30px_90px_rgba(22,24,29,0.3)]"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="New desk crit"
+          >
+            <h2 className="text-[17px] font-extrabold tracking-[-0.02em] text-[#16181D]">
+              What phase is this crit?
+            </h2>
+            <p className="mt-1 text-sm text-[#5A5E6B]">
+              {new Date().toLocaleDateString(undefined, {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+              })}
+            </p>
+
+            {/* Which project. A text input backed by a datalist, so picking an
+                existing one is a click and starting a new one is typing —
+                without a second "create a project" step for something that is
+                one string. See migration 044. */}
+            <label className="mt-4 block text-[11px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0]">
+              Project
+            </label>
+            <input
+              list="desk-crit-projects"
+              value={newProject}
+              onChange={(e) => setNewProject(e.target.value)}
+              placeholder={projects[0] ? `e.g. ${projects[0]}` : 'e.g. Quincy Center Mixed-Use'}
+              maxLength={120}
+              className="mt-1.5 w-full rounded-xl border border-[#16181D]/[0.12] px-3 py-2.5 text-sm text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
+            />
+            <datalist id="desk-crit-projects">
+              {projects.map((project) => (
+                <option key={project} value={project} />
+              ))}
+            </datalist>
+
+            <p className="mt-4 text-[11px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0]">
+              Phase
+            </p>
+            <div className="mt-1.5 grid grid-cols-2 gap-2">
+              {CRIT_PHASES.map((phase) => (
+                <button
+                  key={phase}
+                  type="button"
+                  disabled={creating}
+                  onClick={() => void handleCreate(phase)}
+                  className="px-3 py-2.5 rounded-xl border border-[#16181D]/[0.12] text-sm font-semibold text-[#16181D] text-left transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6] disabled:opacity-60"
+                >
+                  {phase}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPhasePickerOpen(false)
+                setNewProject('')
+              }}
+              className="mt-4 w-full px-4 py-2.5 rounded-xl border border-[#16181D]/[0.12] text-sm font-semibold text-[#5A5E6B] hover:bg-[#16181D]/5"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Delete confirmation. A modal rather than an inline two-step because
           this is not recoverable: the canvas row cascades to its nodes, so the

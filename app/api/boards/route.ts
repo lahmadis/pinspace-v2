@@ -312,12 +312,44 @@ export async function GET(request: NextRequest) {
       return live || cleanDisplayName(board.owner_name) || cleanDisplayName(board.student_name) || undefined
     }
 
+    /**
+     * The curated author label — with auto-filled EMAIL HANDLES demoted.
+     *
+     * student_name is the curated column and it deliberately outranks the
+     * account snapshot everywhere (see lib/displayName.ts). But the upload
+     * paths used to fall back to `email.split('@')[0]` when the uploader's
+     * profile had no full_name yet, so rows exist whose "curated label" is
+     * `tavaresn3`. Nothing about that value was chosen, and because it wins on
+     * priority it beat the person's real name in the 2D roster, the 3D plates
+     * and the presentation grid — permanently, even after they filled in their
+     * profile.
+     *
+     * An identifier is not a label: when the stored name is exactly the local
+     * part of the board's own student_email, the live owner name wins instead.
+     * A real relabel ("Nathan T.") never matches that test and still wins.
+     *
+     * Resolved HERE rather than in boardAuthorName because student_email is
+     * withheld from public-workspace responses two lines below — the client
+     * cannot run this test on the boards that need it most.
+     */
+    const resolveStudentName = (board: Record<string, unknown>): string => {
+      const raw = typeof board.student_name === 'string' ? board.student_name : ''
+      const stored = cleanDisplayName(raw)
+      if (!stored) return raw
+      const email = typeof board.student_email === 'string' ? board.student_email : ''
+      const localPart = email.split('@')[0].trim().toLowerCase()
+      if (localPart && stored.toLowerCase() === localPart) {
+        return resolveOwnerName(board) ?? raw
+      }
+      return raw
+    }
+
     // Transform database format to frontend format
     const transformedBoards = (boards || []).map((board) => ({
       id: board.id,
       studioId: board.workspace_id, // Keep for backward compatibility
       workspaceId: board.workspace_id,
-      studentName: board.student_name,
+      studentName: resolveStudentName(board),
       studentEmail: isPublicWorkspace ? undefined : board.student_email,
       title: board.title,
       description: board.description,
@@ -993,7 +1025,13 @@ export async function POST(request: NextRequest) {
     const profileName = userProfile?.full_name?.trim() || null
 
     const ownerName   = profileName || session.user.user_metadata?.email?.split('@')[0] || 'User'
-    const studentName = studentNameRaw || profileName || session.user.email?.split('@')[0] || 'Anonymous'
+    // No email-handle fallback here, unlike owner_name. student_name is the
+    // CURATED label and outranks every other source, so writing `tavaresn3`
+    // into it does not degrade gracefully — it pins the handle to the board
+    // forever. 'Anonymous' is a known placeholder that cleanDisplayName strips,
+    // which lets the owner name carry the label until a real one exists.
+    // (student_name is NOT NULL, so the placeholder stays rather than null.)
+    const studentName = studentNameRaw || profileName || 'Anonymous'
     const studentEmail = session.user.email || null
 
     // 6. Public URLs — storage already settled, just resolve paths.

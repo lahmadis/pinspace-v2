@@ -17,7 +17,7 @@ export async function GET() {
     const { data: owned, error: ownedErr } = await admin
       .from('workspaces')
       .select('id, name, created_at')
-      .eq('type', 'shared')
+      .not('type', 'in', '(class,deskcrit)')
       .eq('owner_id', user.id)
       .order('created_at', { ascending: false })
 
@@ -38,7 +38,7 @@ export async function GET() {
       const { data: mws, error: mwsErr } = await admin
         .from('workspaces')
         .select('id, name, created_at')
-        .eq('type', 'shared')
+        .not('type', 'in', '(class,deskcrit)')
         .in('id', memberIds)
 
       if (mwsErr) {

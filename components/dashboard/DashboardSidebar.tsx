@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import {
-  Network, Users, User, Settings, LogOut, Menu, X, PencilRuler, ChevronDown,
+  Network, User, Settings, LogOut, Menu, X, PencilRuler, ChevronDown,
 } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
@@ -284,7 +284,6 @@ export function DashboardSidebar({
                 : <Network className="w-4 h-4" />,
               brand,
             )}
-            {navBtn('shared', 'Shared', <Users className="w-4 h-4" />)}
             {navBtn('personal', 'Personal', <User className="w-4 h-4" />)}
 
             {/* Superadmin-only: read-only org network switcher. Self-gates — renders
