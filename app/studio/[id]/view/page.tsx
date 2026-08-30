@@ -12,6 +12,7 @@ import RoomLighting from '@/components/3d/RoomLighting'
 import { CameraController, type FocusedWall } from '@/components/3d/CameraController'
 import { getInitialRoomPose, ROOM_MIN_ZOOM_DISTANCE_INCHES } from '@/lib/room/cameraViews'
 import TwoDView from '@/components/room/TwoDView'
+import StudentsMenu from '@/components/room/StudentsMenu'
 import { deriveRoomStudents } from '@/lib/room/students'
 import { ROOM } from '@/lib/room/palette'
 import TableWithModel from '@/components/3d/TableWithModel'
@@ -21,7 +22,7 @@ import DemoBanner from '@/components/DemoBanner'
 import { getCachedStudioData } from '@/lib/studioViewCache'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import { useAuthSession } from '@/hooks/useAuthSession'
-import { ArrowLeft, LayoutGrid, Box, ChevronDown } from 'lucide-react'
+import { ArrowLeft, LayoutGrid, Box } from 'lucide-react'
 
 interface WallDimensions {
   height: number
@@ -196,7 +197,6 @@ function StudioViewPageInner() {
    * safe default (see the button).
    */
   const [workspaceType, setWorkspaceType] = useState<string | null>(null)
-  const [rosterOpen, setRosterOpen] = useState(false)
   // Room-level wall color (migration 031), surfaced by /api/boards. Drives the
   // 3D wall material for viewers; defaults to 'grey' (the current look).
   const [wallColor, setWallColor] = useState<'grey' | 'white'>('white')
@@ -494,11 +494,18 @@ function StudioViewPageInner() {
    */
   const roomStudents = useMemo(() => deriveRoomStudents(roomOrderedBoards), [roomOrderedBoards])
 
+  /**
+   * The selected person's sheets. NOT gated on which surface you are looking
+   * at: picking a name from the roster is what draws their bay outline in the
+   * 3D room, and it used to resolve to null unless the 2D archive happened to
+   * be open — so the only selection the room could ever see was one made on a
+   * screen covering the room.
+   */
   const selectedStudentBoardIds = useMemo(() => {
-    if (!show2D || !selectedStudentId) return null
+    if (!selectedStudentId) return null
     const student = roomStudents.find((s) => s.id === selectedStudentId)
     return student ? new Set(student.boardIds) : null
-  }, [show2D, selectedStudentId, roomStudents])
+  }, [selectedStudentId, roomStudents])
 
   /**
    * Opening a sheet from one person's contact sheet scopes the lightbox arrows
@@ -506,13 +513,18 @@ function StudioViewPageInner() {
    * student's sheets used to walk the whole room and land you on a classmate's
    * work. Filtering an already-sorted array keeps its order, so there is no
    * second sort here and no way for the two to disagree.
+   *
+   * Still 2D-ONLY, which is what show2D is doing here now that the selection
+   * itself is not gated: in the 3D room a selection is a highlight over a room
+   * you are still browsing whole, so a board opened from a wall should walk the
+   * whole room. The editor draws the same line (see lightboxScopedToStudent).
    */
   const lightboxBoards = useMemo(
     () =>
-      selectedStudentBoardIds
+      show2D && selectedStudentBoardIds
         ? roomOrderedBoards.filter((b) => selectedStudentBoardIds.has(b.id))
         : roomOrderedBoards,
-    [roomOrderedBoards, selectedStudentBoardIds]
+    [roomOrderedBoards, show2D, selectedStudentBoardIds]
   )
 
   const handleNavigate = (direction: 'prev' | 'next') => {
@@ -744,55 +756,17 @@ function StudioViewPageInner() {
         {/* The roster, behind a disclosure rather than always on screen. A
             visitor's first question about a crit space is whose work is in it;
             a permanent list of names is a sidebar this page does not have room
-            for. Counts come from the boards already loaded — no extra fetch. */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setRosterOpen((v) => !v)}
-            aria-expanded={rosterOpen}
-            aria-haspopup="true"
-            className="flex items-center gap-2 rounded-xl bg-[#3B6EF6] px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-colors hover:bg-[#2F5CD6]"
-          >
-            Students
-            <span className="opacity-75">{roomStudents.length}</span>
-            <ChevronDown
-              className={`h-4 w-4 opacity-70 transition-transform ${rosterOpen ? 'rotate-180' : ''}`}
-            />
-          </button>
+            for. Counts come from the boards already loaded — no extra fetch.
 
-          {rosterOpen && (
-            <>
-              {/* Click-away behind the panel, not over it. */}
-              <div className="fixed inset-0 z-40" onClick={() => setRosterOpen(false)} aria-hidden />
-              <div className="absolute right-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-[#16181D]/10 bg-white shadow-2xl">
-                {/* Was "ROSTER · 3". This panel hangs off a button that already
-                    says Students, so the label restated it in a word nobody
-                    outside a studio uses. The count was the informative half. */}
-                <p className="border-b border-[#16181D]/[0.06] bg-[#F4F6FB] px-3 py-2 text-[11px] font-semibold text-[#8A8FA0]">
-                  {roomStudents.length} {roomStudents.length === 1 ? 'student' : 'students'}
-                </p>
-                {roomStudents.length === 0 ? (
-                  <p className="px-3 py-3 text-sm text-[#8A8FA0]">Nobody has work pinned here yet.</p>
-                ) : (
-                  <ul className="max-h-72 overflow-y-auto py-1">
-                    {roomStudents.map((student) => (
-                      <li key={student.id}>
-                        <div className="flex items-center justify-between gap-3 px-3 py-2">
-                          <span className="truncate text-[13px] font-semibold text-[#16181D]">
-                            {student.name}
-                          </span>
-                          <span className="shrink-0 text-[11px] text-[#8A8FA0]">
-                            {student.boardIds.length} board{student.boardIds.length === 1 ? '' : 's'}
-                          </span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </>
-          )}
-        </div>
+            The same component the editor mounts, so a name click means the same
+            thing on both surfaces: highlight that person's boards in the room.
+            The rows here used to be plain <div>s — the list answered "who is
+            here" and then refused the obvious follow-up. */}
+        <StudentsMenu
+          students={roomStudents}
+          selectedStudentId={selectedStudentId}
+          onChange={setSelectedStudentId}
+        />
       </div>
 
       {/* The 2D archive. Sits at z-30: over the canvas, under the fixed chrome
@@ -949,6 +923,9 @@ function StudioViewPageInner() {
             onFloorClick={focusedWall !== null ? () => setFocusedWall(null) : undefined}
             dimmedExceptWall={focusedWall?.wallIndex ?? null}
             editingWall={null}
+            // Pick someone in the roster and their sheets get a bay outline on
+            // every wall face they're on — the same treatment the editor draws.
+            highlightedBoardIds={selectedStudentBoardIds ?? undefined}
             onBoardClick={handleBoardClick}
             wallColor={wallColor}
             // Callout badges never show in read-only view mode; they live in the editor and the 2D lightbox pins.

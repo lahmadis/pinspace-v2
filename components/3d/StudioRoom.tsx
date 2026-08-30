@@ -129,6 +129,15 @@ interface StudioRoomProps {
    */
   roomView?: RoomView
   onRoomViewChange?: (view: RoomView) => void
+  /**
+   * Whose work is highlighted in the room. Controlled/uncontrolled the same way
+   * roomView is, and lifted for the same reason: the Students menu that sets it
+   * lives in the page's top-right chrome, beside Presentation and Share, while
+   * the highlight it drives is drawn from in here. Omit both and the 2D tab's
+   * people grid still drives it on its own, exactly as before.
+   */
+  selectedStudentId?: string | null
+  onSelectedStudentChange?: (studentId: string | null) => void
   /** 'tables' = place tables/models, 'walls' = move/rotate walls. */
   floorEditorMode?: 'tables' | 'walls'
   /**
@@ -766,7 +775,20 @@ export default function StudioRoom(props: StudioRoomProps) {
   }, [user, props.workspaceId])
 
   // Phase 4 roster. Derived from the boards already in state — no extra fetch.
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
+  // Controlled/uncontrolled like roomView above: the page's Students menu owns
+  // it when it passes one down, and the 2D tab's people grid drives it either
+  // way. Both write through the same setter, so the highlight cannot end up
+  // showing one person while the menu names another.
+  const [selectedStudentInternal, setSelectedStudentInternal] = useState<string | null>(null)
+  const selectedStudentId =
+    props.selectedStudentId !== undefined ? props.selectedStudentId : selectedStudentInternal
+  const setSelectedStudentId = useCallback(
+    (next: string | null) => {
+      props.onSelectedStudentChange?.(next)
+      if (props.selectedStudentId === undefined) setSelectedStudentInternal(next)
+    },
+    [props.onSelectedStudentChange, props.selectedStudentId]
+  )
 
   // Which of the the flat room views is showing. Room is the orbit-capable 3D
   // Canvas; 2D and Plan are pure DOM/CSS, so switching to either from
@@ -1654,7 +1676,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         // Follow the key across.
         if (student.id.startsWith('name:')) {
           const nextId = studentKeyFor(null, name)
-          setSelectedStudentId((prev) => (prev === student.id ? nextId : prev))
+          if (selectedStudentId === student.id) setSelectedStudentId(nextId)
         }
         await props.onBoardUpdate()
         return { ok: true }
@@ -1662,7 +1684,7 @@ export default function StudioRoom(props: StudioRoomProps) {
         return { ok: false }
       }
     },
-    [props.onBoardUpdate]
+    [props.onBoardUpdate, selectedStudentId, setSelectedStudentId]
   )
 
   const handleReorderBoard = useCallback(async (boardId: string, targetPosition: number) => {

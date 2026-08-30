@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isCritPhase, DEFAULT_CRIT_PHASE } from '@/lib/constants/critPhases'
+import { normaliseCritPhase, DEFAULT_CRIT_PHASE } from '@/lib/constants/critPhases'
 import { supabaseServiceRole } from '@/lib/supabase/server'
 import { resolveRoomCanvasAccess, resolveViewer, readCappedJson } from '@/lib/canvas/access'
 
@@ -184,11 +184,11 @@ export async function POST(request: NextRequest) {
           owner_id: viewer.userId,
           title: name,
           created_by: viewer.userId,
-          // Validated against the shared list, never taken as free text: a
-          // typo'd phase would file the crit under a bucket the explore-style
-          // groupings could never find. Anything unrecognised falls back to
-          // the default rather than 400-ing a create over a label.
-          phase: isCritPhase(phase) ? phase : DEFAULT_CRIT_PHASE,
+          // Cleaned rather than checked against the list: the list is the
+          // suggestions, and a crit can be filed under a phase a studio names
+          // itself. Blank or non-text falls back to the default rather than
+          // 400-ing a create over a label.
+          phase: normaliseCritPhase(phase) ?? DEFAULT_CRIT_PHASE,
           // Free text, so the only guards are trim and a length cap — see
           // migration 044 for why this is not a foreign key. Blank becomes
           // NULL rather than '': one representation of "no project", so a

@@ -28,7 +28,7 @@ export default function DeskPage() {
   const router = useRouter()
   const {
     crits, loading, error, clearError, createCrit, deleteCrit, renameCrit,
-    setCritPhase, setCritProject,
+    setCritPhase,
   } = useDeskCrits()
   const { upload } = useDirectUpload()
   const speech = useSpeechTranscription()
@@ -442,6 +442,32 @@ export default function DeskPage() {
   }, [crits])
 
   /**
+   * Every phase the filter can offer: the suggested list, plus any label
+   * someone typed into a card's "Other…" box.
+   *
+   * Without the second half a crit filed under its own phase name is
+   * unreachable from up here — the filter would list ten phases that between
+   * them do not cover the crits on screen. Deduped case-insensitively for the
+   * same reason projects are, though normaliseCritPhase already folds a typed
+   * "final review" back onto the listed spelling before it is stored.
+   */
+  const phaseOptions = useMemo(() => {
+    const known = new Set<string>(CRIT_PHASES.map((p) => p.toLowerCase()))
+    const extra = new Map<string, string>()
+    for (const c of crits) {
+      const name = c.phase?.trim()
+      if (!name) continue
+      const key = name.toLowerCase()
+      if (known.has(key) || extra.has(key)) continue
+      extra.set(key, name)
+    }
+    return [
+      ...CRIT_PHASES,
+      ...Array.from(extra.values()).sort((a, b) => a.localeCompare(b)),
+    ]
+  }, [crits])
+
+  /**
    * The crits actually on screen.
    *
    * Dates are compared as YYYY-MM-DD strings in LOCAL time, not as Date
@@ -520,7 +546,7 @@ export default function DeskPage() {
             className="rounded-xl border border-[#16181D]/12 bg-white px-3 py-2 text-sm font-semibold text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
           >
             <option value="">All phases</option>
-            {CRIT_PHASES.map((phase) => (
+            {phaseOptions.map((phase) => (
               <option key={phase} value={phase}>
                 {phase}
               </option>
@@ -692,8 +718,6 @@ export default function DeskPage() {
                     onToggleRecording={() => toggleRecording(crit.id)}
                     onRename={(title) => void renameCrit(crit.id, title)}
                     onPhaseChange={(phase) => void setCritPhase(crit.id, phase)}
-                    projects={projects}
-                    onProjectChange={(project) => void setCritProject(crit.id, project)}
                     onDelete={() => setPendingDelete({ id: crit.id, title: crit.title })}
                     recording={listening && recordingCritId === crit.id}
                     busy={busy !== null && activeCritId === crit.id}

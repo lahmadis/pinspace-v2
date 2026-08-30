@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
+  ChevronDown,
   ImageIcon,
   ListChecks,
   Loader2,
@@ -23,7 +24,7 @@ import { useCritTranscript } from '@/hooks/useCritTranscript'
 import { useCritSummary } from '@/hooks/useCritSummary'
 import { summariseLocally } from '@/lib/summary/localSummary'
 import { critStage, stageLabel } from '@/lib/desk/zones'
-import { CRIT_PHASES } from '@/lib/constants/critPhases'
+import { CRIT_PHASES, MAX_CRIT_PHASE_LENGTH, isCritPhase } from '@/lib/constants/critPhases'
 import type { DeskCrit } from '@/hooks/useDeskCrits'
 import type { NodeProps } from '@/components/canvas/CanvasNodeView'
 
@@ -154,6 +155,118 @@ function CritSheet({
   )
 }
 
+/**
+ * The value of the dropdown row that opens the free-text box.
+ *
+ * A sentinel no phase can collide with, rather than the empty string: '' is
+ * already "No phase" on an unfiled crit, and a studio is perfectly entitled to
+ * name a phase "Other".
+ */
+const OTHER_PHASE = ' other'
+
+/**
+ * The crit's phase, as the card's heading.
+ *
+ * A <select> rather than a chip that opens something: re-filing a crit is a
+ * correction — you picked Concept and it turned out to be massing — and a
+ * correction should cost one press. Crits made before phases existed carry null
+ * and read "No phase" until set, which is honest: nobody was ever asked.
+ *
+ * "Other…" is the last row, and it turns the heading into a text box. The list
+ * in critPhases.ts is a set of suggestions, not the vocabulary of every studio,
+ * and the alternative to typing your own was filing the crit under a phase it
+ * wasn't. A phase already typed that way shows as its own row at the top, so
+ * the current value is always visible in the closed select — and picking
+ * "Other…" again re-opens it for editing rather than starting from blank, which
+ * is what makes the label editable rather than write-once.
+ */
+function PhaseHeading({
+  phase,
+  onChange,
+}: {
+  phase: string | null
+  onChange: (phase: string) => void
+}) {
+  const [typing, setTyping] = useState(false)
+  const [draft, setDraft] = useState('')
+  /** Same Escape-before-blur problem the title has; see abandonedRef there. */
+  const abandonedRef = useRef(false)
+
+  const custom = phase !== null && !isCritPhase(phase)
+
+  const commit = () => {
+    setTyping(false)
+    if (abandonedRef.current) {
+      abandonedRef.current = false
+      return
+    }
+    const next = draft.replace(/\s+/g, ' ').trim()
+    if (!next || next === phase) return
+    onChange(next)
+  }
+
+  if (typing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          e.stopPropagation()
+          if (e.nativeEvent.isComposing) return
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            e.currentTarget.blur()
+          }
+          if (e.key === 'Escape') {
+            abandonedRef.current = true
+            e.currentTarget.blur()
+          }
+        }}
+        placeholder="Name this phase"
+        maxLength={MAX_CRIT_PHASE_LENGTH}
+        aria-label="Phase name"
+        className="w-full -mx-1 px-1 py-0.5 rounded-md bg-white text-lg font-bold text-[#16181D] outline-none ring-2 ring-[#3B6EF6]/40"
+      />
+    )
+  }
+
+  return (
+    <div className="relative -mx-1 flex items-center max-w-full">
+      <select
+        value={phase ?? ''}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          e.stopPropagation()
+          const next = e.target.value
+          if (next === OTHER_PHASE) {
+            // Pre-filled with the label already there, so "Other…" edits a
+            // phase you typed instead of making you retype it.
+            setDraft(custom ? (phase as string) : '')
+            setTyping(true)
+            return
+          }
+          if (next) onChange(next)
+        }}
+        aria-label="Project phase"
+        className="w-full appearance-none cursor-pointer truncate rounded-md bg-transparent pl-1 pr-6 py-0.5 text-lg font-bold text-[#16181D] outline-none hover:bg-[#16181D]/[0.04] focus:bg-white focus:ring-2 focus:ring-[#3B6EF6]/40"
+      >
+        {!phase && <option value="">No phase</option>}
+        {custom && <option value={phase as string}>{phase}</option>}
+        {CRIT_PHASES.map((p) => (
+          <option key={p} value={p}>
+            {p}
+          </option>
+        ))}
+        <option value={OTHER_PHASE}>{custom ? 'Other… (rename)' : 'Other…'}</option>
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-1 w-4 h-4 text-[#8A8FA0]" />
+    </div>
+  )
+}
+
 export default function CritColumn({
   crit,
   isActive,
@@ -166,8 +279,6 @@ export default function CritColumn({
   expanded = false,
   onToggleExpand,
   onPhaseChange,
-  projects = [],
-  onProjectChange,
   onPin,
   onReference,
   onNote,
@@ -211,10 +322,6 @@ export default function CritColumn({
   onToggleExpand?: () => void
   /** Re-file this crit under a different phase. Omit to render it read-only. */
   onPhaseChange?: (phase: string) => void
-  /** Projects already used, for the in-place picker. */
-  projects?: string[]
-  /** Re-file this crit under a different project. Omit to render it read-only. */
-  onProjectChange?: (project: string) => void
   /**
    * Per-card actions.
    *
@@ -371,12 +478,42 @@ export default function CritColumn({
       <div className="px-5 pt-4 pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
+            {/* The PHASE is the heading.
+                It is what you are looking for when you scan a term of these —
+                "where was I at?" — and it was buried under the name and the
+                project as a small grey select, three rows down from the one
+                place the eye actually lands. The name is still yours to change;
+                it just isn't the thing the card is about. */}
+            {onPhaseChange ? (
+              <PhaseHeading phase={crit.phase} onChange={onPhaseChange} />
+            ) : (
+              <h2 className="text-lg font-bold text-[#16181D] truncate">
+                {crit.phase ?? 'No phase'}
+              </h2>
+            )}
+            {/* Date, and the project it belongs to.
+                One caption line rather than two rows: the project used to be a
+                combobox of its own under the name, which made four stacked
+                controls out of a card whose whole content is one phase, one
+                date and one name. It is a label here, not a field — a crit is
+                filed under its project when it is made. */}
+            <p className="text-[10px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0] mt-0.5 truncate">
+              {new Date(crit.createdAt).toLocaleDateString(undefined, {
+                weekday: 'long',
+                month: 'short',
+                day: 'numeric',
+              })}
+              {crit.project && ` · ${crit.project}`}
+            </p>
+
             {onRename ? (
-              /* Edits in place rather than behind a pencil: the title is the
+              /* Edits in place rather than behind a pencil: the name is the
                  one thing on the card that is plainly yours to change, and a
                  dedicated control for one field is more chrome than it earns.
                  Committing on blur and on Enter means there is no Save to
-                 forget. */
+                 forget. Sized down from the heading it used to be — most crits
+                 keep the name they were given, and the ones that don't are
+                 usually being told apart by project and phase anyway. */
               <input
                 value={titleDraft}
                 onChange={(e) => setTitleDraft(e.target.value)}
@@ -398,78 +535,15 @@ export default function CritColumn({
                   }
                 }}
                 aria-label="Crit name"
-                className="w-full bg-transparent text-lg font-bold text-[#16181D] truncate rounded-md -mx-1 px-1 py-0.5 outline-none hover:bg-[#16181D]/[0.04] focus:bg-white focus:ring-2 focus:ring-[#3B6EF6]/40"
+                maxLength={200}
+                className="mt-1.5 w-full rounded-lg border border-transparent hover:border-[#16181D]/[0.12] focus:border-[#3B6EF6] bg-transparent px-2 py-1 text-[13px] font-semibold text-[#16181D] truncate focus:outline-none"
               />
             ) : (
-              <h2 className="text-lg font-bold text-[#16181D] truncate">{crit.title}</h2>
+              <p className="mt-1.5 px-2 text-[13px] font-semibold text-[#16181D] truncate">
+                {crit.title}
+              </p>
             )}
-            <p className="text-[10px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0] mt-0.5">
-              {new Date(crit.createdAt).toLocaleDateString(undefined, {
-                weekday: 'long',
-                month: 'short',
-                day: 'numeric',
-              })}
-            </p>
 
-            {/* The project, editable in place. Same datalist pattern the create
-                dialog uses: pick one you already have, or type a new one. */}
-            {onProjectChange ? (
-              <input
-                list={`crit-projects-${crit.id}`}
-                defaultValue={crit.project ?? ''}
-                onClick={(e) => e.stopPropagation()}
-                onBlur={(e) => {
-                  const next = e.target.value.trim()
-                  if (next !== (crit.project ?? '')) onProjectChange(next)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') e.currentTarget.blur()
-                }}
-                placeholder="No project"
-                maxLength={120}
-                aria-label="Project"
-                className="mt-1.5 w-full rounded-lg border border-transparent hover:border-[#16181D]/[0.12] focus:border-[#3B6EF6] bg-transparent px-2 py-1 text-[12px] font-bold text-[#16181D] focus:outline-none"
-              />
-            ) : (
-              crit.project && (
-                <p className="mt-1.5 text-[12px] font-bold text-[#16181D]">{crit.project}</p>
-              )
-            )}
-            <datalist id={`crit-projects-${crit.id}`}>
-              {projects.map((project) => (
-                <option key={project} value={project} />
-              ))}
-            </datalist>
-
-            {/* The phase, editable in place.
-                A <select> rather than a chip that opens something: re-filing a
-                crit is a correction — you picked Concept and it turned out to
-                be massing — and a correction should cost one press. Crits made
-                before phases existed carry null and read "No phase" until set,
-                which is honest: nobody was ever asked. */}
-            {onPhaseChange ? (
-              <select
-                value={crit.phase ?? ''}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => {
-                  e.stopPropagation()
-                  if (e.target.value) onPhaseChange(e.target.value)
-                }}
-                aria-label="Project phase"
-                className="mt-1.5 max-w-full rounded-lg border border-[#16181D]/[0.12] bg-white px-2 py-1 text-[11px] font-semibold text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
-              >
-                {!crit.phase && <option value="">No phase</option>}
-                {CRIT_PHASES.map((phase) => (
-                  <option key={phase} value={phase}>
-                    {phase}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              crit.phase && (
-                <p className="mt-1.5 text-[11px] font-semibold text-[#3B6EF6]">{crit.phase}</p>
-              )
-            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span

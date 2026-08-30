@@ -16,6 +16,8 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { toast } from '@/lib/toast'
 import { DEFAULT_WALL_CONFIG, type WallConfig } from '@/lib/wallLayout'
 import type { RoomView } from '@/components/room/RevisionStrip'
+import StudentsMenu from '@/components/room/StudentsMenu'
+import { deriveRoomStudents } from '@/lib/room/students'
 import { useWallConfigWriter } from '@/lib/wallConfigWriter'
 
 type RealtimeBoardPayload = {
@@ -77,6 +79,14 @@ function StudioPageInner() {
    * same setter, so the two controls can never disagree about which view is up.
    */
   const [roomView, setRoomView] = useState<RoomView>('room')
+  /**
+   * Whose work is highlighted in the room, if anyone. Lifted for the same
+   * reason roomView is: the Students menu sits in this row of chrome, and the
+   * bay outline it draws is rendered inside StudioRoom. The 2D tab's people
+   * grid writes back through the same prop, so picking someone there and
+   * switching to the space keeps them lit — and the menu's label agrees.
+   */
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
   const [wallConfig, setWallConfig] = useState<WallConfig | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [boardsError, setBoardsError] = useState(false)
@@ -869,6 +879,13 @@ function StudioPageInner() {
     ch.track({ ...meta, joinedAt: Date.now(), currentWallIndex })
   }, [currentWallIndex, isDemo])
 
+  /**
+   * Who has work in this room, for the Students menu. Derived from the boards
+   * this page already holds — the same helper the room, the roster and the 2D
+   * archive use, so "everyone" means one set of people on every surface.
+   */
+  const roomStudents = useMemo(() => deriveRoomStudents(boards), [boards])
+
   // Walls currently occupied by OTHER users (exclude self) — drives the 3D highlight.
   const othersEditingWalls = useMemo(() => {
     const s = new Set<number>()
@@ -1208,6 +1225,17 @@ function StudioPageInner() {
               and it is on screen the whole time. */}
           {roomView === 'room' && !isEditMode && !floorEditorOpen && (
             <div className="hidden sm:flex fixed top-4 right-4 z-40 flex-nowrap justify-end items-center gap-2.5">
+              {/* Who is in the room, and whose work you're looking at. Same
+                  component and same behaviour as the read-only view route:
+                  clicking a name outlines that person's boards on the walls.
+                  Leftmost, because it is the one control here that changes what
+                  you SEE rather than where you go or who you let in. */}
+              <StudentsMenu
+                students={roomStudents}
+                selectedStudentId={selectedStudentId}
+                onChange={setSelectedStudentId}
+              />
+
               {/* Not a toggle any more — it only ever renders from the room, so
                   it only ever goes one way. It carried an active/pressed state
                   for the case where you pressed it while already presenting,
@@ -1272,6 +1300,10 @@ function StudioPageInner() {
             // strip drive one piece of state instead of two.
             roomView={roomView}
             onRoomViewChange={setRoomView}
+            // Same controlled pattern: the menu above sets it, the 2D tab's
+            // people grid sets it, the room draws the highlight from it.
+            selectedStudentId={selectedStudentId}
+            onSelectedStudentChange={setSelectedStudentId}
             canDeleteWalls={canDeleteWalls}
             wallColor={wallColor}
             wallConfigWriter={wallConfigWriter}

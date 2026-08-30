@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isCritPhase } from '@/lib/constants/critPhases'
+import { normaliseCritPhase } from '@/lib/constants/critPhases'
 import { supabaseServiceRole } from '@/lib/supabase/server'
 import { resolveCanvasAccess, readCappedJson } from '@/lib/canvas/access'
 
@@ -108,10 +108,15 @@ export async function PATCH(
       patch.title = title.trim().slice(0, 200)
     }
     if (phase !== undefined) {
-      if (!isCritPhase(phase)) {
-        return NextResponse.json({ error: 'Unknown phase' }, { status: 400 })
+      // Any usable label, not just one off the list: the dropdown's "Other…"
+      // entry exists so a studio can file a crit under the phase it actually
+      // ran. normaliseCritPhase trims it, caps it and folds a typed "final
+      // review" back onto the listed spelling — see its note.
+      const cleaned = normaliseCritPhase(phase)
+      if (!cleaned) {
+        return NextResponse.json({ error: 'phase must not be empty' }, { status: 400 })
       }
-      patch.phase = phase
+      patch.phase = cleaned
     }
     if (project !== undefined) {
       if (typeof project !== 'string') {
