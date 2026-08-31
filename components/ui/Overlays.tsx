@@ -121,6 +121,16 @@ type OverlayProps = Omit<HTMLAttributes<HTMLDivElement>, 'title'> & {
   closeOnOutsideClick?: boolean
   initialFocusRef?: RefObject<HTMLElement | null>
   hideCloseButton?: boolean
+  /**
+   * Keep the title as the dialog's accessible name, but don't draw it.
+   *
+   * For a dialog opened from a control that already says what it is — a button
+   * labelled with the very fields the form contains, inside a sheet already
+   * headed "Section Settings" — where a visible heading is the third time the
+   * user is told. The h2 still renders (aria-labelledby points at it); it is
+   * only taken out of the visual flow.
+   */
+  hideTitle?: boolean
 }
 
 function Overlay({
@@ -134,6 +144,7 @@ function Overlay({
   closeOnOutsideClick = true,
   initialFocusRef,
   hideCloseButton = false,
+  hideTitle = false,
   className,
   ...props
 }: OverlayProps & { kind: 'dialog' | 'sheet'; side?: 'left' | 'right' }) {
@@ -178,9 +189,9 @@ function Overlay({
           className
         )}
       >
-        <h2 id={titleId} className="pr-10 text-xl font-bold">{title}</h2>
+        <h2 id={titleId} className={cn('pr-10 text-xl font-bold', hideTitle && 'sr-only')}>{title}</h2>
         {description && <div id={descriptionId} className="mt-1 text-sm text-text-secondary">{description}</div>}
-        <div className="mt-5">{children}</div>
+        <div className={hideTitle && !description ? 'pr-10' : 'mt-5'}>{children}</div>
         {!hideCloseButton && (
           <button
             type="button"

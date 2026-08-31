@@ -14,7 +14,8 @@ import {
 import { useImageViewport } from '@/components/useImageViewport'
 import type { TraceStreamEntry } from '@/components/3d/CameraController'
 import { toast } from '@/lib/toast'
-import { Download, ExternalLink } from 'lucide-react'
+import Link from 'next/link'
+import { Box, Download, ExternalLink, Pin } from 'lucide-react'
 
 // Trace ink palette + brush widths (width = fraction of image width). A
 // deliberate multi-option picker (like a real 4-marker set), not an
@@ -114,6 +115,22 @@ interface LightboxModalProps {
   // ---- Lightbox follow (Phase B.3.1) — member studio page only ----
   /** Live broadcast channel (shared studio-live). Presenter broadcasts "lbv". */
   liveChannelRef?: React.MutableRefObject<ReturnType<typeof supabase.channel> | null>
+  /**
+   * Pinspaces. Pass both to offer "keep this sheet" — the archive does, so a
+   * board you find while browsing can be kept from the surface you found it on
+   * rather than from a separate manage-your-pins screen.
+   */
+  isPinned?: boolean
+  onTogglePin?: () => void
+  /**
+   * Where the board actually lives, as a link.
+   *
+   * Set by the dashboard's Pinspaces shelf, which opens a pinned sheet with no
+   * room around it — the tile is the only thing on screen that knows which
+   * studio it came from, so the way back has to travel with it. Absent
+   * everywhere else, where you are already standing in that space.
+   */
+  openSpaceHref?: string
   /** When true, this client is the presenter — broadcast its lightbox viewport. */
   isPresenter?: boolean
   /** When true, this client is a follower whose viewport is driven by the presenter (local zoom/pan disabled). */
@@ -229,7 +246,7 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length]
 }
 
-export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, hideCallouts = false, currentUserRole = null, canRenameBoard = true, canReorder = false, onReorder, onLinkSaved, onBoardSizeSaved, onTitleSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
+export default function LightboxModal({ board, allBoards, compareBoards = [], autoEnterPresentCompare = false, onClose, onNavigate, isEditMode = false, isPinned = false, onTogglePin, openSpaceHref, hideCallouts = false, currentUserRole = null, canRenameBoard = true, canReorder = false, onReorder, onLinkSaved, onBoardSizeSaved, onTitleSaved, guestToken = null, guestName = null, guestTokenId = null, guestCanComment = false, guestCanTrace = false, liveChannelRef, isPresenter = false, viewportDriven = false, viewportTargetRef, lbCursorRef, cursorColor = '#22d3ee', critDirty, traceStreamRef }: LightboxModalProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -2104,6 +2121,41 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
             </button>
           )}
 
+          {/* Open 3D space — the way back to where this sheet is pinned up.
+              Only rendered when the caller had to supply it (see openSpaceHref):
+              from inside a studio it would be a button to the room you are
+              already in. */}
+          {openSpaceHref && (
+            <Link
+              href={openSpaceHref}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold bg-[#16181D] text-white hover:bg-[#3B6EF6] border border-[#16181D] shadow-sm transition-colors"
+              title="Open the 3D space this board is pinned up in"
+            >
+              <Box className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Open 3D space</span>
+            </Link>
+          )}
+
+          {/* Keep this sheet. Filled once it is kept, so the same press that
+              pins is the one that unpins — a pin with no visible state is one
+              you press twice to find out what it did. */}
+          {onTogglePin && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onTogglePin() }}
+              aria-pressed={isPinned}
+              className={`flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold border shadow-sm transition-colors ${
+                isPinned
+                  ? 'bg-[#F5A81C] text-[#16181D] border-[#F5A81C] hover:bg-[#E09A14]'
+                  : 'bg-white/70 text-[#5A5E6B] border-[#16181D]/10 hover:bg-white'
+              }`}
+              title={isPinned ? 'Remove from your Pinspaces' : 'Keep this in your Pinspaces'}
+            >
+              <Pin className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{isPinned ? 'Pinned' : 'Pin'}</span>
+            </button>
+          )}
+
           {/* Open link — viewer-facing icon button when a link is attached */}
           {resolvedLinkUrl && (
             <button
@@ -2393,8 +2445,17 @@ export default function LightboxModal({ board, allBoards, compareBoards = [], au
           cannot, because a fit-height board grows to whatever room it is given. */}
       <div className={`h-full flex ${isPresentMode ? 'pt-0' : 'pt-32'}`}>
         {/* Left Side - Image/PDF Display (full area in present mode) */}
+        {/* No padding around the image area.
+            It used to be p-8 / lg:p-12, which is a 32-48px frame the zoom/pan
+            container sits INSIDE — so zooming in grew the image against a box
+            that was already inset from the window, and the sheet was cut off
+            with an empty margin left, right and below it. The whole point of
+            zooming is to get closer to the drawing; the frame was spending the
+            screen it needed. The clearance ABOVE stays, on the parent's pt-32,
+            because the control strip is really there and the image would run
+            under it. */}
         <div 
-          className={`flex-1 flex items-center justify-center ${isPresentMode ? 'absolute inset-0 p-4' : 'p-8 lg:p-12'}`}
+          className={`flex-1 flex items-center justify-center ${isPresentMode ? 'absolute inset-0 p-4' : ''}`}
           onClick={handleBackdropClick}
         >
           {isComparePresentMode ? (

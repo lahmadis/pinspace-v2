@@ -157,7 +157,7 @@ export default function CreateStudioForm({
           </div>
 
           <div>
-            <label htmlFor={ids.academicYear} className="mb-1 block text-sm font-semibold text-text-primary">Academic year</label>
+            <label htmlFor={ids.academicYear} className="mb-1 block text-sm font-semibold text-text-primary">Academic Year</label>
             <Select id={ids.academicYear} value={academicYear} disabled={loading} onChange={(event) => setAcademicYear(event.target.value)}>
               {years.map((item) => <option key={item} value={item}>{item}</option>)}
             </Select>

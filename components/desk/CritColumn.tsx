@@ -23,8 +23,7 @@ import type { Board } from '@/types'
 import { useCritTranscript } from '@/hooks/useCritTranscript'
 import { useCritSummary } from '@/hooks/useCritSummary'
 import { summariseLocally } from '@/lib/summary/localSummary'
-import { critStage, stageLabel } from '@/lib/desk/zones'
-import { CRIT_PHASES, MAX_CRIT_PHASE_LENGTH, isCritPhase } from '@/lib/constants/critPhases'
+import { CRIT_PHASES, MAX_CRIT_PHASE_LENGTH } from '@/lib/constants/critPhases'
 import type { DeskCrit } from '@/hooks/useDeskCrits'
 import type { NodeProps } from '@/components/canvas/CanvasNodeView'
 
@@ -158,41 +157,62 @@ function CritSheet({
 /**
  * The value of the dropdown row that opens the free-text box.
  *
- * A sentinel no phase can collide with, rather than the empty string: '' is
- * already "No phase" on an unfiled crit, and a studio is perfectly entitled to
- * name a phase "Other".
+ * A sentinel no value can collide with, rather than the empty string: '' is
+ * already "none" on an unfiled crit, and somebody is perfectly entitled to name
+ * a phase — or a project — "Other".
  */
-const OTHER_PHASE = ' other'
+const ADD_NEW = ' add-new'
 
 /**
- * The crit's phase, as the card's heading.
+ * A crit's project or its phase: pick one you have, or name a new one.
  *
- * A <select> rather than a chip that opens something: re-filing a crit is a
- * correction — you picked Concept and it turned out to be massing — and a
- * correction should cost one press. Crits made before phases existed carry null
- * and read "No phase" until set, which is honest: nobody was ever asked.
+ * ONE component for both rows because they are the same question twice. Neither
+ * is a fixed vocabulary — the phase list in critPhases.ts is a set of
+ * suggestions, and projects are only ever whatever this person has typed — so a
+ * plain select can offer only what exists and a plain text field makes you spell
+ * "Quincy Center Mixed-Use" the same way every week. A select of what you have,
+ * with a last row that turns into a text box, is both.
  *
- * "Other…" is the last row, and it turns the heading into a text box. The list
- * in critPhases.ts is a set of suggestions, not the vocabulary of every studio,
- * and the alternative to typing your own was filing the crit under a phase it
- * wasn't. A phase already typed that way shows as its own row at the top, so
- * the current value is always visible in the closed select — and picking
- * "Other…" again re-opens it for editing rather than starting from blank, which
- * is what makes the label editable rather than write-once.
+ * Both lists are DERIVED from the crits that exist, so anything typed here is a
+ * pick next time by itself. A value already typed shows as its own row at the
+ * top, so the closed select always says what the crit is filed under, and
+ * choosing the add row again re-opens it for editing rather than starting blank
+ * — which is what makes a typed label correctable rather than write-once.
+ *
+ * A <select> rather than a chip that opens something: re-filing is a correction
+ * — you picked Concept and it turned out to be massing — and a correction
+ * should cost one press.
  */
-function PhaseHeading({
-  phase,
+function CritPicker({
+  value,
+  options,
   onChange,
+  addLabel,
+  emptyLabel,
+  placeholder,
+  maxLength,
+  ariaLabel,
+  textClass,
 }: {
-  phase: string | null
-  onChange: (phase: string) => void
+  value: string | null
+  /** Everything already used, for the list. */
+  options: readonly string[]
+  onChange: (value: string) => void
+  addLabel: string
+  /** Offered when the field is optional. Omit to require a value. */
+  emptyLabel?: string
+  placeholder: string
+  maxLength: number
+  ariaLabel: string
+  /** The row's place in the hierarchy — see the header's note. */
+  textClass: string
 }) {
   const [typing, setTyping] = useState(false)
   const [draft, setDraft] = useState('')
-  /** Same Escape-before-blur problem the title has; see abandonedRef there. */
+  /** Same Escape-before-blur problem the title had; a ref lands immediately. */
   const abandonedRef = useRef(false)
 
-  const custom = phase !== null && !isCritPhase(phase)
+  const custom = Boolean(value) && !options.includes(value as string)
 
   const commit = () => {
     setTyping(false)
@@ -201,7 +221,7 @@ function PhaseHeading({
       return
     }
     const next = draft.replace(/\s+/g, ' ').trim()
-    if (!next || next === phase) return
+    if (!next || next === value) return
     onChange(next)
   }
 
@@ -225,10 +245,10 @@ function PhaseHeading({
             e.currentTarget.blur()
           }
         }}
-        placeholder="Name this phase"
-        maxLength={MAX_CRIT_PHASE_LENGTH}
-        aria-label="Phase name"
-        className="w-full -mx-1 px-1 py-0.5 rounded-md bg-white text-lg font-bold text-[#16181D] outline-none ring-2 ring-[#3B6EF6]/40"
+        placeholder={placeholder}
+        maxLength={maxLength}
+        aria-label={ariaLabel}
+        className={`w-full -mx-1 px-1 py-0.5 rounded-md bg-white outline-none ring-2 ring-[#3B6EF6]/40 ${textClass}`}
       />
     )
   }
@@ -236,36 +256,35 @@ function PhaseHeading({
   return (
     <div className="relative -mx-1 flex items-center max-w-full">
       <select
-        value={phase ?? ''}
+        value={value ?? ''}
         onClick={(e) => e.stopPropagation()}
         onChange={(e) => {
           e.stopPropagation()
           const next = e.target.value
-          if (next === OTHER_PHASE) {
-            // Pre-filled with the label already there, so "Other…" edits a
-            // phase you typed instead of making you retype it.
-            setDraft(custom ? (phase as string) : '')
+          if (next === ADD_NEW) {
+            // Pre-filled with the label already there, so the add row edits a
+            // value you typed instead of making you retype it.
+            setDraft(custom ? (value as string) : '')
             setTyping(true)
             return
           }
-          if (next) onChange(next)
+          onChange(next)
         }}
-        aria-label="Project phase"
-        className="w-full appearance-none cursor-pointer truncate rounded-md bg-transparent pl-1 pr-6 py-0.5 text-lg font-bold text-[#16181D] outline-none hover:bg-[#16181D]/[0.04] focus:bg-white focus:ring-2 focus:ring-[#3B6EF6]/40"
+        aria-label={ariaLabel}
+        className={`w-full appearance-none cursor-pointer truncate rounded-md bg-transparent pl-1 pr-6 py-0.5 outline-none hover:bg-[#16181D]/[0.04] focus:bg-white focus:ring-2 focus:ring-[#3B6EF6]/40 ${textClass}`}
       >
-        {!phase && <option value="">No phase</option>}
-        {custom && <option value={phase as string}>{phase}</option>}
-        {CRIT_PHASES.map((p) => (
-          <option key={p} value={p}>
-            {p}
-          </option>
+        {emptyLabel && <option value="">{emptyLabel}</option>}
+        {custom && <option value={value as string}>{value}</option>}
+        {options.map((option) => (
+          <option key={option} value={option}>{option}</option>
         ))}
-        <option value={OTHER_PHASE}>{custom ? 'Other… (rename)' : 'Other…'}</option>
+        <option value={ADD_NEW}>{custom ? `${addLabel} (rename)` : addLabel}</option>
       </select>
-      <ChevronDown className="pointer-events-none absolute right-1 w-4 h-4 text-[#8A8FA0]" />
+      <ChevronDown className="pointer-events-none absolute right-1 h-4 w-4 shrink-0 text-[#8A8FA0]" />
     </div>
   )
 }
+
 
 export default function CritColumn({
   crit,
@@ -279,12 +298,14 @@ export default function CritColumn({
   expanded = false,
   onToggleExpand,
   onPhaseChange,
+  phases = CRIT_PHASES,
+  projects = [],
+  onProjectChange,
   onPin,
   onReference,
   onNote,
   onStep,
   onToggleRecording,
-  onRename,
   onDelete,
   recording = false,
   busy = false,
@@ -297,10 +318,6 @@ export default function CritColumn({
   refreshKey: number
   /** Words being spoken into THIS crit right now, if any. */
   liveTranscript?: string | null
-  /**
-   * Rename this crit. Omit to leave the title read-only.
-   */
-  onRename?: (title: string) => void
   /**
    * Delete this whole crit. Omit to hide the control — only the person who
    * owns the crit may delete it, and the API refuses anyone else.
@@ -322,6 +339,16 @@ export default function CritColumn({
   onToggleExpand?: () => void
   /** Re-file this crit under a different phase. Omit to render it read-only. */
   onPhaseChange?: (phase: string) => void
+  /**
+   * Every phase already used, for the middle row's list — the suggested ten
+   * plus anything anyone has typed. Defaults to the suggestions alone so a
+   * caller that has not derived the wider set still gets a usable dropdown.
+   */
+  phases?: readonly string[]
+  /** Every project already used, for the top row's list. */
+  projects?: string[]
+  /** Re-file this crit under a different project. Omit to render it read-only. */
+  onProjectChange?: (project: string) => void
   /**
    * Per-card actions.
    *
@@ -371,37 +398,10 @@ export default function CritColumn({
   }, [refreshKey, reloadNodes, reloadTranscript, reloadSummary])
 
 
-  const [titleDraft, setTitleDraft] = useState(crit.title)
-  // Follow the crit if it is renamed somewhere else; a local draft that never
-  // resyncs would quietly re-save the old name on the next blur.
-  useEffect(() => {
-    setTitleDraft(crit.title)
-  }, [crit.title])
-
-  /**
-   * Set for exactly the blur that Escape causes.
-   *
-   * blur() dispatches focusout SYNCHRONOUSLY, so the setTitleDraft(crit.title)
-   * beside it has not been flushed by the time onBlur runs — commitTitle read
-   * the abandoned draft and renamed the crit to it, which is the opposite of
-   * what Escape means. A ref lands immediately; state does not.
-   */
-  const abandonedRef = useRef(false)
-
-  const commitTitle = useCallback(() => {
-    if (abandonedRef.current) {
-      abandonedRef.current = false
-      setTitleDraft(crit.title)
-      return
-    }
-    const next = titleDraft.trim()
-    if (!next || next === crit.title) {
-      setTitleDraft(crit.title)
-      return
-    }
-    onRename?.(next)
-  }, [titleDraft, crit.title, onRename])
-
+  /* The title-draft state, its resync effect and commitTitle are gone with the
+     name field they served. A crit's name is generated from its project and its
+     phase, and both of those are editable on the card now — so the name has
+     nothing left to say that the two lines above it do not. */
   const { notes } = useMemo(() => {
     const privateNotes: Array<{ node: (typeof nodes)[number]; props: NodeProps }> = []
     let drawingCount = 0
@@ -447,7 +447,6 @@ export default function CritColumn({
   const [openBoardId, setOpenBoardId] = useState<string | null>(null)
   const openBoard = sheets.find((b) => b.id === openBoardId) ?? null
 
-  const stage = critStage(crit.createdAt)
   const { saveParsed } = summary
   const { fullText } = transcript
 
@@ -478,83 +477,66 @@ export default function CritColumn({
       <div className="px-5 pt-4 pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            {/* The PHASE is the heading.
-                It is what you are looking for when you scan a term of these —
-                "where was I at?" — and it was buried under the name and the
-                project as a small grey select, three rows down from the one
-                place the eye actually lands. The name is still yours to change;
-                it just isn't the thing the card is about. */}
-            {onPhaseChange ? (
-              <PhaseHeading phase={crit.phase} onChange={onPhaseChange} />
+            {/* Project, phase, date — largest to smallest, top to bottom.
+                The card is read at a glance across a term of them, and that is
+                the order the eye wants: WHICH project, then where in it, then
+                when. The type shrinks down the stack so the hierarchy is
+                visible without reading a word of it.
+
+                The crit's own NAME is gone from here. It was auto-generated as
+                "<project> — <phase>", so a card led with a heading and then
+                repeated both halves of it one line down; the two fields it was
+                built from are the two controls above, and either can now be
+                corrected in place. */}
+            {onProjectChange ? (
+              <CritPicker
+                value={crit.project}
+                options={projects}
+                onChange={onProjectChange}
+                addLabel="+ New project…"
+                emptyLabel="No project"
+                placeholder="Name this project"
+                maxLength={120}
+                ariaLabel="Project"
+                textClass="text-lg font-bold text-[#16181D]"
+              />
             ) : (
               <h2 className="text-lg font-bold text-[#16181D] truncate">
-                {crit.phase ?? 'No phase'}
+                {crit.project ?? 'No project'}
               </h2>
             )}
-            {/* Date, and the project it belongs to.
-                One caption line rather than two rows: the project used to be a
-                combobox of its own under the name, which made four stacked
-                controls out of a card whose whole content is one phase, one
-                date and one name. It is a label here, not a field — a crit is
-                filed under its project when it is made. */}
-            <p className="text-[10px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0] mt-0.5 truncate">
+
+            {onPhaseChange ? (
+              <CritPicker
+                value={crit.phase}
+                options={phases}
+                onChange={onPhaseChange}
+                addLabel="+ New phase…"
+                emptyLabel={crit.phase ? undefined : 'No phase'}
+                placeholder="Name this phase"
+                maxLength={MAX_CRIT_PHASE_LENGTH}
+                ariaLabel="Project phase"
+                textClass="text-[13px] font-semibold text-[#5A5E6B]"
+              />
+            ) : (
+              <p className="text-[13px] font-semibold text-[#5A5E6B] truncate">
+                {crit.phase ?? 'No phase'}
+              </p>
+            )}
+
+            <p className="mt-0.5 truncate px-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#8A8FA0]">
               {new Date(crit.createdAt).toLocaleDateString(undefined, {
                 weekday: 'long',
                 month: 'short',
                 day: 'numeric',
               })}
-              {crit.project && ` · ${crit.project}`}
             </p>
-
-            {onRename ? (
-              /* Edits in place rather than behind a pencil: the name is the
-                 one thing on the card that is plainly yours to change, and a
-                 dedicated control for one field is more chrome than it earns.
-                 Committing on blur and on Enter means there is no Save to
-                 forget. Sized down from the heading it used to be — most crits
-                 keep the name they were given, and the ones that don't are
-                 usually being told apart by project and phase anyway. */
-              <input
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                onFocus={(e) => e.currentTarget.select()}
-                onBlur={commitTitle}
-                onKeyDown={(e) => {
-                  e.stopPropagation()
-                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                    e.preventDefault()
-                    e.currentTarget.blur()
-                  }
-                  // Escape abandons the edit rather than saving a half-typed
-                  // name, which is what blur-to-commit would otherwise do.
-                  if (e.key === 'Escape') {
-                    abandonedRef.current = true
-                    setTitleDraft(crit.title)
-                    e.currentTarget.blur()
-                  }
-                }}
-                aria-label="Crit name"
-                maxLength={200}
-                className="mt-1.5 w-full rounded-lg border border-transparent hover:border-[#16181D]/[0.12] focus:border-[#3B6EF6] bg-transparent px-2 py-1 text-[13px] font-semibold text-[#16181D] truncate focus:outline-none"
-              />
-            ) : (
-              <p className="mt-1.5 px-2 text-[13px] font-semibold text-[#16181D] truncate">
-                {crit.title}
-              </p>
-            )}
-
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <span
-              className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                stage === 'today'
-                  ? 'bg-[#3B6EF6] text-white'
-                  : 'bg-[#16181D]/[0.06] text-[#5A5E6B]'
-              }`}
-            >
-              {stageLabel(stage)}
-            </span>
+            {/* The "Today" / "Reviewed" pill is gone. It restated, as a
+                coloured chip, what the date line under the phase already says
+                in full — and said it less precisely, since every crit older
+                than today collapsed into one word. */}
             {/* Separate from the card's own click, which only focuses it.
                 Expanding hides every other crit, so it takes a deliberate
                 press rather than every stray click on the card. */}
@@ -565,10 +547,13 @@ export default function CritColumn({
                 onToggleExpand?.()
               }}
               title={expanded ? 'Show every crit again' : 'Work in this crit on its own'}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#16181D]/[0.12] text-[11px] font-semibold text-[#5A5E6B] hover:bg-[#16181D]/5"
+              aria-label={expanded ? 'Show every crit again' : 'Work in this crit on its own'}
+              className="flex items-center justify-center p-1.5 rounded-lg border border-[#16181D]/[0.12] text-[#5A5E6B] hover:bg-[#16181D]/5"
             >
-              {expanded ? 'Show all' : 'Expand'}
-              {expanded ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+              {/* Icon only. The arrows say it, and the word beside them was the
+                  widest thing in a row of icon buttons. The title and
+                  aria-label still carry the sentence. */}
+              {expanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
             </button>
             {/* Deleting takes the transcript, the summary, the next steps and
                 every pinned sheet with it, so the confirm lives on the board
@@ -610,7 +595,7 @@ export default function CritColumn({
             </div>
           ) : sheets.length === 0 ? (
             <p className="text-xs text-[#8A8FA0] leading-relaxed h-[88px] flex items-center">
-              Add the work you&rsquo;ll put in front of them.
+              Put any work relevant to your conversation.
             </p>
           ) : (
             /* A grid when expanded, a scrolling strip when not: the whole

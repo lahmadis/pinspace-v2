@@ -4,6 +4,8 @@ import { validateName } from '@/lib/validation/safeName'
 import { isSuperadmin, isNetworkPublished } from '@/lib/auth/superadmin'
 import { collectBoardStoragePaths } from '@/lib/storage/boardObjects'
 import { generateInviteCode } from '@/lib/workspaceUtils'
+import { isUuid } from '@/lib/validation/uuid'
+import { cleanDisplayName } from '@/lib/displayName'
 import {
   listStorageObjectPaths,
   loadBoardObjectRows,
@@ -182,6 +184,39 @@ export async function GET(
       }
     }
 
+    /**
+     * Live display names for the roster.
+     *
+     * workspace_members.name is a SNAPSHOT written at join time, and the join
+     * route falls back to the email handle when it cannot resolve anything
+     * better — so the People page was introducing an instructor as "tavaresn3".
+     * user_profiles.full_name is the name that person actually set, and it is
+     * the same source the 3D room's board labels and the dashboard roster read,
+     * so all three now agree.
+     *
+     * Non-UUID member ids are filtered out before the query: pre-Supabase rows
+     * can hold ids that are not UUIDs, and passing one to .in() raises 22P02 and
+     * fails the whole request. A failed lookup is non-fatal — the snapshot is
+     * still there to fall back to.
+     */
+    const liveNameById = new Map<string, string>()
+    const memberProfileIds = Array.from(
+      new Set(membersList.map((m) => String(m.user_id)).filter(Boolean))
+    ).filter(isUuid)
+    if (memberProfileIds.length > 0) {
+      const { data: memberProfiles, error: memberProfileError } = await admin
+        .from('user_profiles')
+        .select('user_id, full_name')
+        .in('user_id', memberProfileIds)
+      if (memberProfileError) {
+        console.error('Failed to resolve member display names:', memberProfileError)
+      }
+      for (const row of memberProfiles ?? []) {
+        const clean = cleanDisplayName(row.full_name)
+        if (clean) liveNameById.set(String(row.user_id), clean)
+      }
+    }
+
     let inviteCode = workspace.invite_code
     if (isOwner && (!inviteCode || typeof inviteCode !== 'string' || inviteCode.trim() === '' || inviteCode === 'undefined')) {
       inviteCode = generateInviteCode()
@@ -200,7 +235,8 @@ export async function GET(
       studioId: workspace.id, // For backward compatibility
       members: membersList.map((m) => ({
         userId: m.user_id,
-        name: m.name || 'Unknown',
+        // Live profile name first, then the join-time snapshot. See above.
+        name: liveNameById.get(String(m.user_id)) || cleanDisplayName(m.name) || 'Unknown',
         role: m.role || 'student',
         joinedAt: m.created_at || new Date(),
       })),

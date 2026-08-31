@@ -93,7 +93,7 @@ interface NetworkBandPreviewProps {
    * (white on dark). A single grey that "works on both" works on neither: it
    * is the same lightness as one of the two grounds.
    */
-  tone?: 'dark' | 'light'
+  tone?: 'dark' | 'light' | 'accent'
 }
 
 export default function NetworkBandPreview({ height, tone = 'dark' }: NetworkBandPreviewProps) {
@@ -234,7 +234,11 @@ export default function NetworkBandPreview({ height, tone = 'dark' }: NetworkBan
     return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
   }, [width])
 
-  const fill = tone === 'light' ? '#FFFFFF' : '#8A8FA0'
+  // 'accent' is for the dashboard's network panel, where the bubbles sit on a
+  // ruled paper ground rather than inside a coloured band. Grey on white reads
+  // as a smudge at that size, so they take the app's blue and more of it — the
+  // panel has no title of its own competing for the eye.
+  const fill = tone === 'light' ? '#FFFFFF' : tone === 'accent' ? '#3B6EF6' : '#8A8FA0'
 
   return (
     <div
@@ -244,7 +248,10 @@ export default function NetworkBandPreview({ height, tone = 'dark' }: NetworkBan
       // unaffected: this sits inside the band's <Link>, so anything landing
       // here still bubbles up and opens the network.
       className="absolute inset-0 overflow-hidden transition-opacity duration-[1200ms] ease-out motion-reduce:transition-none"
-      style={{ opacity: shown ? PREVIEW_OPACITY : 0 }}
+      // The accent tone carries more of itself: it is the only content of the
+      // panel it lives in, whereas the band tones sit behind a title and a
+      // button that have to stay the loudest things on the surface.
+      style={{ opacity: shown ? (tone === 'accent' ? 0.85 : PREVIEW_OPACITY) : 0 }}
     >
       <svg width="100%" height="100%" className="block">
         {/* Lines first, so each bubble sits ON TOP of the ends that meet it

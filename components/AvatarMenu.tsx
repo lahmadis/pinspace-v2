@@ -1,6 +1,6 @@
 'use client'
 
-import { LayoutDashboard, LogOut, Settings } from 'lucide-react'
+import { LayoutDashboard, LogOut, Settings, ShieldCheck } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui'
@@ -8,9 +8,17 @@ import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui'
 interface AvatarMenuProps {
   email: string | null | undefined
   onSignOut: () => void
+  /**
+   * Show the Admin link. Off by default, so every existing caller is unchanged.
+   *
+   * Added for the dashboard, whose sidebar used to carry Admin and no longer
+   * exists — an account menu is where it belonged anyway. Presentational only:
+   * /admin verifies server-side, so hiding it is tidiness, not a gate.
+   */
+  isAdmin?: boolean
 }
 
-export default function AvatarMenu({ email, onSignOut }: AvatarMenuProps) {
+export default function AvatarMenu({ email, onSignOut, isAdmin = false }: AvatarMenuProps) {
   const router = useRouter()
 
   const initial = email?.charAt(0).toUpperCase() || 'U'
@@ -41,6 +49,12 @@ export default function AvatarMenu({ email, onSignOut }: AvatarMenuProps) {
           <Settings className="mr-2 h-4 w-4 text-text-muted" aria-hidden="true" />
           Settings
         </MenuItem>
+        {isAdmin && (
+          <MenuItem onSelect={() => router.push('/admin')}>
+            <ShieldCheck className="mr-2 h-4 w-4 text-text-muted" aria-hidden="true" />
+            Admin
+          </MenuItem>
+        )}
         <div className="my-1 border-t border-border-light" role="separator" />
         <MenuItem onSelect={onSignOut}>
           <LogOut className="mr-2 h-4 w-4 text-text-muted" aria-hidden="true" />

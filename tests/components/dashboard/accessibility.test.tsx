@@ -29,14 +29,10 @@ describe('dashboard accessibility', () => {
       <DashboardMain
         scope="personal"
         rooms={[]}
-        userId="user-1"
         institutionHome={null}
         loading={false}
         organization={null}
-        onDelete={vi.fn()}
-        onRename={vi.fn()}
-        onLeave={vi.fn()}
-        onShowJoinModal={vi.fn()}
+        currentWorkspaceId={null}
       />
     )
 

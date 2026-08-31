@@ -8,8 +8,113 @@ import { useDirectUpload } from '@/lib/useDirectUpload'
 import { useSpeechTranscription } from '@/hooks/useSpeechTranscription'
 import { isPermanentFailure, unavailableMessage } from '@/lib/transcription/types'
 import { isCanvasImage, readImageSize, rejectionReason } from '@/lib/canvas/imageNode'
-import { CRIT_PHASES } from '@/lib/constants/critPhases'
+import {
+  CRIT_PHASES,
+  DEFAULT_CRIT_PHASE,
+  MAX_CRIT_PHASE_LENGTH,
+} from '@/lib/constants/critPhases'
 import CritColumn from '@/components/desk/CritColumn'
+
+/** The row that swaps the select for a text box. See NewCritPicker. */
+const ADD_NEW = ' add-new'
+
+/**
+ * Pick one you already have, or name a new one.
+ *
+ * Both questions the new-crit dialog asks are the same shape: a short list that
+ * GROWS BY USE. Projects and phases are not fixed vocabularies — they are
+ * whatever this person has typed so far — so neither a plain select (which can
+ * only offer what exists) nor a plain text field (which makes you retype
+ * "Quincy Center Mixed-Use" every week, and spell it the same way each time)
+ * is right on its own.
+ *
+ * A select of what you have, with one row at the bottom that turns into a text
+ * box. Whatever you type there is stored on the crit, and because both lists
+ * are DERIVED from the crits you already have, it is in the dropdown the next
+ * time by itself — nothing has to be registered anywhere.
+ */
+function NewCritPicker({
+  label,
+  options,
+  value,
+  onChange,
+  addLabel,
+  placeholder,
+  emptyLabel,
+  maxLength,
+  disabled,
+}: {
+  label: string
+  /** What has been used before. May be empty on a first crit. */
+  options: string[]
+  value: string
+  onChange: (value: string) => void
+  addLabel: string
+  placeholder: string
+  /** Offered as a real choice when the field is optional. Omit to require one. */
+  emptyLabel?: string
+  maxLength: number
+  disabled?: boolean
+}) {
+  // Starts in the text box when there is nothing to pick from yet: a dropdown
+  // whose only row is "add a new one" is a button wearing a select's clothes.
+  const [typing, setTyping] = useState(options.length === 0)
+
+  if (typing) {
+    return (
+      <div>
+        <label className="block text-[11px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0]">
+          {label}
+        </label>
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          maxLength={maxLength}
+          disabled={disabled}
+          className="mt-1.5 w-full rounded-xl border border-[#16181D]/[0.12] px-3 py-2.5 text-sm text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
+        />
+        {options.length > 0 && (
+          <button
+            type="button"
+            onClick={() => { onChange(options[0]); setTyping(false) }}
+            className="mt-1.5 text-[11px] font-semibold text-[#3B6EF6] hover:underline"
+          >
+            Pick an existing one instead
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <label className="block text-[11px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0]">
+        {label}
+      </label>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(e) => {
+          if (e.target.value === ADD_NEW) {
+            onChange('')
+            setTyping(true)
+            return
+          }
+          onChange(e.target.value)
+        }}
+        className="mt-1.5 w-full rounded-xl border border-[#16181D]/[0.12] bg-white px-3 py-2.5 text-sm text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
+      >
+        {emptyLabel && <option value="">{emptyLabel}</option>}
+        {options.map((option) => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+        <option value={ADD_NEW}>{addLabel}</option>
+      </select>
+    </div>
+  )
+}
 
 /**
  * Your desk: every desk crit you have, side by side.
@@ -27,8 +132,8 @@ import CritColumn from '@/components/desk/CritColumn'
 export default function DeskPage() {
   const router = useRouter()
   const {
-    crits, loading, error, clearError, createCrit, deleteCrit, renameCrit,
-    setCritPhase,
+    crits, loading, error, clearError, createCrit, deleteCrit,
+    setCritPhase, setCritProject,
   } = useDeskCrits()
   const { upload } = useDirectUpload()
   const speech = useSpeechTranscription()
@@ -51,8 +156,8 @@ export default function DeskPage() {
   const [projectFilter, setProjectFilter] = useState('')
   /** What the create dialog's project field is holding. */
   const [newProject, setNewProject] = useState('')
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
+  /** And its phase. Both are picked before the crit exists — see handleCreate. */
+  const [newPhase, setNewPhase] = useState<string>(DEFAULT_CRIT_PHASE)
   const [creating, setCreating] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
@@ -400,7 +505,8 @@ export default function DeskPage() {
    * know at the moment you make one — you are about to have the crit — and it
    * is the thing nobody goes back to fill in later.
    */
-  const handleCreate = async (phase: string) => {
+  const handleCreate = async () => {
+    const phase = newPhase.trim() || DEFAULT_CRIT_PHASE
     setCreating(true)
     const today = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     const project = newProject.trim()
@@ -411,6 +517,7 @@ export default function DeskPage() {
     setCreating(false)
     setPhasePickerOpen(false)
     setNewProject('')
+    setNewPhase(DEFAULT_CRIT_PHASE)
     if (crit) {
       setActiveCritId(crit.id)
       // Scroll it into view; a new column appended off-screen looks like
@@ -420,7 +527,7 @@ export default function DeskPage() {
   }
 
 
-  const filtersActive = Boolean(phaseFilter || projectFilter || fromDate || toDate)
+  const filtersActive = Boolean(phaseFilter || projectFilter)
 
   /**
    * Every project this person has used, for the filter and the create dialog.
@@ -470,30 +577,21 @@ export default function DeskPage() {
   /**
    * The crits actually on screen.
    *
-   * Dates are compared as YYYY-MM-DD strings in LOCAL time, not as Date
-   * objects: createdAt is a UTC timestamp, and `new Date(createdAt) >= new
-   * Date(fromDate)` reads the picker's value as UTC midnight, so a crit made at
-   * 8pm on the 28th falls outside a range starting the 28th for anyone west of
-   * Greenwich. Formatting both sides down to the local calendar day compares
-   * the thing the user actually picked.
+   * Project and phase only. The date-range pair that used to sit beside them is
+   * gone: between them these two already say which work and how far along, and
+   * a crit is found by what it was about rather than by the fortnight it fell
+   * in. (Its local-day comparison is gone with it — a real trap, since
+   * createdAt is UTC and a date picker's value is not, but not one worth
+   * keeping a control for.)
    */
   const visibleCrits = useMemo(() => {
     if (!filtersActive) return crits
-    const localDay = (iso: string) => {
-      const d = new Date(iso)
-      if (Number.isNaN(d.getTime())) return ''
-      const pad = (n: number) => String(n).padStart(2, '0')
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-    }
     return crits.filter((c) => {
       if (phaseFilter && c.phase !== phaseFilter) return false
       if (projectFilter && (c.project ?? '') !== projectFilter) return false
-      const day = localDay(c.createdAt)
-      if (fromDate && (!day || day < fromDate)) return false
-      if (toDate && (!day || day > toDate)) return false
       return true
     })
-  }, [crits, filtersActive, phaseFilter, projectFilter, fromDate, toDate])
+  }, [crits, filtersActive, phaseFilter, projectFilter])
 
   const speechBlocked = speech.unavailable !== null && isPermanentFailure(speech.unavailable)
 
@@ -511,7 +609,7 @@ export default function DeskPage() {
         </button>
 
         <div className="min-w-0">
-          <h1 className="text-lg font-extrabold text-[#16181D] leading-tight">Your desk</h1>
+          <h1 className="text-lg font-extrabold text-[#16181D] leading-tight">Your Desk</h1>
           <p className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#8A8FA0]">
             Private to you · {crits.length} desk crit{crits.length === 1 ? '' : 's'}
           </p>
@@ -553,32 +651,12 @@ export default function DeskPage() {
             ))}
           </select>
 
-          <input
-            type="date"
-            value={fromDate}
-            max={toDate || undefined}
-            onChange={(e) => setFromDate(e.target.value)}
-            aria-label="Crits from this date"
-            className="rounded-xl border border-[#16181D]/12 bg-white px-3 py-2 text-sm font-semibold text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
-          />
-          <span className="text-sm text-[#8A8FA0]">to</span>
-          <input
-            type="date"
-            value={toDate}
-            min={fromDate || undefined}
-            onChange={(e) => setToDate(e.target.value)}
-            aria-label="Crits up to this date"
-            className="rounded-xl border border-[#16181D]/12 bg-white px-3 py-2 text-sm font-semibold text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
-          />
-
           {filtersActive && (
             <button
               type="button"
               onClick={() => {
                 setPhaseFilter('')
                 setProjectFilter('')
-                setFromDate('')
-                setToDate('')
               }}
               className="px-3 py-2 rounded-xl border border-[#16181D]/12 text-sm font-semibold text-[#5A5E6B] hover:bg-[#16181D]/4"
             >
@@ -633,8 +711,6 @@ export default function DeskPage() {
                 onClick={() => {
                   setPhaseFilter('')
                   setProjectFilter('')
-                  setFromDate('')
-                  setToDate('')
                 }}
                 className="px-4 py-2.5 rounded-xl border border-[#16181D]/12 text-sm font-semibold text-[#5A5E6B] hover:bg-[#16181D]/4"
               >
@@ -716,8 +792,10 @@ export default function DeskPage() {
                     onNote={() => setComposer({ critId: crit.id, kind: 'note' })}
                     onStep={() => setComposer({ critId: crit.id, kind: 'step' })}
                     onToggleRecording={() => toggleRecording(crit.id)}
-                    onRename={(title) => void renameCrit(crit.id, title)}
                     onPhaseChange={(phase) => void setCritPhase(crit.id, phase)}
+                    phases={phaseOptions}
+                    projects={projects}
+                    onProjectChange={(project) => void setCritProject(crit.id, project)}
                     onDelete={() => setPendingDelete({ id: crit.id, title: crit.title })}
                     recording={listening && recordingCritId === crit.id}
                     busy={busy !== null && activeCritId === crit.id}
@@ -765,10 +843,14 @@ export default function DeskPage() {
             aria-modal="true"
             aria-label="New desk crit"
           >
-            <h2 className="text-[17px] font-extrabold tracking-[-0.02em] text-[#16181D]">
-              What phase is this crit?
-            </h2>
-            <p className="mt-1 text-sm text-[#5A5E6B]">
+            {/* The date, and nothing else, at the top.
+                It used to be a heading — "What phase is this crit?" — with the
+                date as its subtitle, which asked one of the dialog's two
+                questions in the title and left the other unannounced. Both are
+                labelled fields below now, so the top of the dialog is free to
+                say the one thing that is not a question: which day this crit
+                is. */}
+            <p className="text-[17px] font-extrabold tracking-[-0.02em] text-[#16181D]">
               {new Date().toLocaleDateString(undefined, {
                 weekday: 'long',
                 month: 'long',
@@ -776,54 +858,62 @@ export default function DeskPage() {
               })}
             </p>
 
-            {/* Which project. A text input backed by a datalist, so picking an
-                existing one is a click and starting a new one is typing —
-                without a second "create a project" step for something that is
-                one string. See migration 044. */}
-            <label className="mt-4 block text-[11px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0]">
-              Project
-            </label>
-            <input
-              list="desk-crit-projects"
-              value={newProject}
-              onChange={(e) => setNewProject(e.target.value)}
-              placeholder={projects[0] ? `e.g. ${projects[0]}` : 'e.g. Quincy Center Mixed-Use'}
-              maxLength={120}
-              className="mt-1.5 w-full rounded-xl border border-[#16181D]/[0.12] px-3 py-2.5 text-sm text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
-            />
-            <datalist id="desk-crit-projects">
-              {projects.map((project) => (
-                <option key={project} value={project} />
-              ))}
-            </datalist>
+            <div className="mt-4 space-y-4">
+              <NewCritPicker
+                label="Project"
+                options={projects}
+                value={newProject}
+                onChange={setNewProject}
+                addLabel="+ New project…"
+                placeholder="e.g. Quincy Center Mixed-Use"
+                // A crit does not have to belong to a project, so "No project"
+                // is a real choice rather than an empty field you leave alone.
+                emptyLabel="No project"
+                maxLength={120}
+                disabled={creating}
+              />
 
-            <p className="mt-4 text-[11px] font-bold tracking-[0.12em] uppercase text-[#8A8FA0]">
-              Phase
-            </p>
-            <div className="mt-1.5 grid grid-cols-2 gap-2">
-              {CRIT_PHASES.map((phase) => (
-                <button
-                  key={phase}
-                  type="button"
-                  disabled={creating}
-                  onClick={() => void handleCreate(phase)}
-                  className="px-3 py-2.5 rounded-xl border border-[#16181D]/[0.12] text-sm font-semibold text-[#16181D] text-left transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6] disabled:opacity-60"
-                >
-                  {phase}
-                </button>
-              ))}
+              <NewCritPicker
+                label="Phase"
+                // The suggested list plus anything already typed, so a studio's
+                // own phase is a pick the second time it is used. Same set the
+                // header's filter offers.
+                options={phaseOptions}
+                value={newPhase}
+                onChange={setNewPhase}
+                addLabel="+ New phase…"
+                placeholder="e.g. Interim pin-up"
+                maxLength={MAX_CRIT_PHASE_LENGTH}
+                disabled={creating}
+              />
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setPhasePickerOpen(false)
-                setNewProject('')
-              }}
-              className="mt-4 w-full px-4 py-2.5 rounded-xl border border-[#16181D]/[0.12] text-sm font-semibold text-[#5A5E6B] hover:bg-[#16181D]/5"
-            >
-              Cancel
-            </button>
+            {/* Creating is its own press now. Picking a phase used to BE the
+                create, which is why the phases were ten buttons; with the phase
+                a field like the project, there has to be something to say
+                "done" with. */}
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPhasePickerOpen(false)
+                  setNewProject('')
+                  setNewPhase(DEFAULT_CRIT_PHASE)
+                }}
+                disabled={creating}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-[#16181D]/[0.12] text-sm font-semibold text-[#5A5E6B] hover:bg-[#16181D]/5 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleCreate()}
+                disabled={creating || !newPhase.trim()}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-[#3B6EF6] text-sm font-bold text-white transition-colors hover:bg-[#2F5BD4] disabled:opacity-50"
+              >
+                {creating ? 'Adding…' : 'Create crit'}
+              </button>
+            </div>
           </div>
         </div>
       )}

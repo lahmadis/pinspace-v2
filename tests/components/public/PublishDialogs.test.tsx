@@ -21,10 +21,10 @@ describe('PinSpace publish dialogs', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'Publish to network' })
     expect(within(dialog).getByLabelText('Department')).toHaveAttribute('id', 'publish-category-department')
-    expect(within(dialog).getByLabelText('Year')).toHaveAttribute('id', 'publish-category-year')
+    expect(within(dialog).getByLabelText('Grade Level')).toHaveAttribute('id', 'publish-category-year')
 
     await user.click(within(dialog).getByRole('button', { name: 'Publish to network' }))
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('Select a department and year')
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Select a department and grade level')
     expect(within(dialog).getByLabelText('Department')).toHaveAttribute('aria-invalid', 'true')
     expect(onConfirm).not.toHaveBeenCalled()
 
@@ -61,15 +61,20 @@ describe('PinSpace publish dialogs', () => {
     )
 
     const dialog = screen.getByRole('dialog', { name: 'Publish to network' })
-    await user.selectOptions(within(dialog).getByLabelText('Academic year'), '')
+    await user.selectOptions(within(dialog).getByLabelText('Academic Year'), '')
     await user.click(within(dialog).getByRole('button', { name: 'Publish to network' }))
 
-    for (const name of ['Department', 'Year', 'Academic year', 'Instructor']) {
+    // FIVE required fields, not four. Class (the studio bucket) became
+    // required after this test was written — "a published workspace with no
+    // studio has no bucket to appear in" — and the list here was never
+    // updated, so the count assertion has been failing ever since while the
+    // one field it forgot went unchecked.
+    for (const name of ['Department', 'Academic Year', 'Grade Level', 'Class', 'Instructor']) {
       const field = within(dialog).getByLabelText(name)
       expect(field).toHaveAttribute('aria-invalid', 'true')
       expect(field).toHaveAttribute('aria-describedby')
     }
-    expect(within(dialog).getAllByRole('alert')).toHaveLength(4)
+    expect(within(dialog).getAllByRole('alert')).toHaveLength(5)
   })
 
   it('uses an explicit destructive dialog and guards duplicate unpublish', () => {

@@ -97,6 +97,34 @@
     overflow-x: hidden;
   }
 
+  /*
+   * Every <select>'s open list looks the same, whatever its closed control does.
+   *
+   * Two separate problems, one rule.
+   *
+   * 1. Tailwind's preflight sets `font-family: inherit` on button/input/select/
+   *    textarea but NOT on `option`, so the closed control was the app's font
+   *    and the dropdown it opened was the browser's.
+   *
+   * 2. `inherit` alone is not enough, because a native select's popup takes its
+   *    SIZE and WEIGHT from the control too. The desk crit card styles its two
+   *    pickers as a hierarchy — 18px bold for the project, 13px semibold for
+   *    the phase — and that is a statement about the closed rows on the card,
+   *    not about the menus they open. Inherited, it made two lists of the same
+   *    kind of thing render at two sizes in two weights, and on Windows the
+   *    bold one dropped out of Onest into a fallback face entirely.
+   *
+   * So the family is stated outright (matching fontFamily.sans in
+   * tailwind.config.js) and the size and weight are pinned to one readable
+   * value. A menu is a menu at any size of trigger.
+   */
+  option,
+  optgroup {
+    font-family: 'Onest', 'Inter', system-ui, sans-serif;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
   /* Screen entrance for the 2D archive's two levels. A short rise rather than
      a fade alone, so stepping into a person's sheets and back out reads as
      movement between two places instead of a redraw. Runs once per level

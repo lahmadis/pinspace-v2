@@ -914,7 +914,7 @@ export default function WorkspaceRoomsPage() {
       */}
       {settingsOpen && workspace && ownerOrInstructor && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#16181D]/30 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#16181D]/30 backdrop-blur-md p-4"
           onClick={() => setSettingsOpen(false)}
         >
           <div
@@ -926,7 +926,12 @@ export default function WorkspaceRoomsPage() {
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-[19px] font-extrabold tracking-[-0.02em] text-[#16181D]">Settings</h2>
+                {/* "Section Settings", not "Settings". A section is one of
+                    several things this account owns settings for, and the line
+                    under this heading is the section's NAME — so a bare
+                    "Settings" left the name reading as a subtitle to nothing in
+                    particular. */}
+                <h2 className="text-[19px] font-extrabold tracking-[-0.02em] text-[#16181D]">Section Settings</h2>
                 <p className="mt-1 text-sm text-[#5A5E6B]">{workspace.name}</p>
               </div>
               <button
@@ -982,7 +987,12 @@ export default function WorkspaceRoomsPage() {
                   className="mt-2 flex items-center gap-2 rounded-full border border-[#16181D]/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:border-[#3B6EF6] hover:text-[#3B6EF6]"
                 >
                   <Settings className="h-4 w-4 text-[#8A8FA0]" />
-                  Class, department, year and term
+                  {/* Names all five fields behind it, in the order the form
+                      asks them. The old label listed four and named two of
+                      them wrongly: "year" is the grade level, "term" is the
+                      academic year, and the instructor was not mentioned at
+                      all even though the form requires it. */}
+                  Department, Academic Year, Grade Level, Class, Instructor
                 </button>
               </div>
             )}
@@ -1050,7 +1060,7 @@ export default function WorkspaceRoomsPage() {
           boards.room_id FK. Spell that out so an instructor doesn't lose work
           by accident. */}
       {roomToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#16181D]/30 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#16181D]/30 backdrop-blur-md p-4">
           <div className="w-full max-w-md rounded-3xl bg-white p-7 shadow-[0_30px_90px_rgba(22,24,29,0.3)]">
             <h3 className="mb-2 text-lg font-extrabold text-[#16181D]">Delete space?</h3>
             <p className="mb-3 text-sm text-[#5A5E6B]">

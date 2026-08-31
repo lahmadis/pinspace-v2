@@ -178,11 +178,60 @@ export default function CreateSectionModal({
       className="max-w-lg pb-[max(1.5rem,env(safe-area-inset-bottom))]"
     >
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-        {/* Class first, then the number. The class is the thing being
-            taught and the one an instructor thinks of first; the section
-            number only says which run of it this is, and reading "Section 03"
-            before knowing 03 of WHAT is backwards. */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* Same order, same labels and the same one-per-row layout as Section
+            Settings, which asks for these five about a section that already
+            exists. Two forms writing one filing had two orders and two
+            groupings, so an instructor learned the shape twice — and the pair
+            that had to agree, Grade Level and Academic Year, sat in different
+            columns in one and different rows in the other.
+
+            Section # is the only field here that settings has no counterpart
+            for, and it stays beside Class: together they are the name being
+            generated below. */}
+        <div>
+          <label htmlFor={ids.department} className="mb-1 block text-sm font-semibold text-text-primary">
+            Department
+          </label>
+          <Select
+            id={ids.department}
+            value={department}
+            disabled={loading}
+            onChange={(event) => setDepartment(event.target.value)}
+          >
+            {DEPARTMENTS.map((item) => <option key={item} value={item}>{item}</option>)}
+          </Select>
+        </div>
+
+        <div>
+          <label htmlFor={ids.academicYear} className="mb-1 block text-sm font-semibold text-text-primary">
+            Academic Year
+          </label>
+          <Select
+            id={ids.academicYear}
+            value={academicYear}
+            disabled={loading}
+            onChange={(event) => setAcademicYear(event.target.value)}
+          >
+            {years.map((item) => <option key={item} value={item}>{item}</option>)}
+          </Select>
+        </div>
+
+        <div>
+          {/* Grade Level, matching the settings form — see the note there. */}
+          <label htmlFor={ids.year} className="mb-1 block text-sm font-semibold text-text-primary">
+            Grade Level
+          </label>
+          <Select
+            id={ids.year}
+            value={yearLevel}
+            disabled={loading}
+            onChange={(event) => setYearLevel(event.target.value)}
+          >
+            {YEAR_LEVELS.map((item) => <option key={item} value={item}>{yearLabel(item)}</option>)}
+          </Select>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_7rem]">
           <div>
             <label htmlFor={ids.studio} className="mb-1 block text-sm font-semibold text-text-primary">
               Class
@@ -246,49 +295,6 @@ export default function CreateSectionModal({
             placeholder="e.g. Sarah Lahmadi"
             disabled={loading}
           />
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor={ids.department} className="mb-1 block text-sm font-semibold text-text-primary">
-              Department
-            </label>
-            <Select
-              id={ids.department}
-              value={department}
-              disabled={loading}
-              onChange={(event) => setDepartment(event.target.value)}
-            >
-              {DEPARTMENTS.map((item) => <option key={item} value={item}>{item}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label htmlFor={ids.year} className="mb-1 block text-sm font-semibold text-text-primary">
-              Year
-            </label>
-            <Select
-              id={ids.year}
-              value={yearLevel}
-              disabled={loading}
-              onChange={(event) => setYearLevel(event.target.value)}
-            >
-              {YEAR_LEVELS.map((item) => <option key={item} value={item}>{yearLabel(item)}</option>)}
-            </Select>
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor={ids.academicYear} className="mb-1 block text-sm font-semibold text-text-primary">
-            Academic Year
-          </label>
-          <Select
-            id={ids.academicYear}
-            value={academicYear}
-            disabled={loading}
-            onChange={(event) => setAcademicYear(event.target.value)}
-          >
-            {years.map((item) => <option key={item} value={item}>{item}</option>)}
-          </Select>
         </div>
 
         {error && <StatusState id={ids.error} role="alert" status="error" title={error} />}

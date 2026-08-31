@@ -1882,7 +1882,12 @@ export default function FloorEditorOverlay({
                     }`}
                   />
                 </span>
-                Snap {snapEnabled ? 'on' : 'off'}
+                {/* Just "Snap". The switch beside it already says on or off —
+                    saying it again in words means the pill changes width as you
+                    toggle it, and the one control that must not move under the
+                    cursor mid-drag is this one. `role="switch"` +
+                    `aria-checked` still announce the state. */}
+                Snap
               </button>
             </div>
           )}
@@ -1926,19 +1931,19 @@ export default function FloorEditorOverlay({
                         Transform
                       </span>
                       <div className="mt-2 space-y-2">
-                        {/* Width is the wall THICKNESS and is the same for every
-                            wall in the room, so it reads rather than edits.
-                            Shown anyway: without it the panel offers "length"
-                            and "height" and leaves you hunting for the third
-                            dimension. */}
-                        <div className="flex items-center justify-between rounded-xl border border-[#16181D]/[0.08] px-3 py-2.5">
-                          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#A8ADBA]">Width</span>
-                          <span className="text-sm font-semibold text-[#8A8FA0]">6&quot;</span>
-                        </div>
-                        {/* LENGTH is wall.width in the data model — the span
-                            along the floor. Renamed in the UI only: "width"
-                            beside a 6" width field would be two different things
-                            wearing one word. */}
+                        {/* The read-only 6" WIDTH row is gone.
+                            It showed the wall THICKNESS, which is the same for
+                            every wall in the room and cannot be changed from
+                            here — a field you can neither edit nor act on, taking
+                            the top slot of the one panel where the two numbers
+                            that DO matter live. It was kept on the argument that
+                            "length and height" leaves you hunting for a third
+                            dimension; nobody was hunting, and a wall's thickness
+                            is not a question this panel is asked.
+
+                            LENGTH is wall.width in the data model — the span
+                            along the floor. Renamed in the UI only, and now the
+                            only thing here wearing the word. */}
                         {([
                           { key: 'width' as const, label: 'Length', value: wallWidthInput, set: setWallWidthInput },
                           { key: 'height' as const, label: 'Height', value: wallHeightInput, set: setWallHeightInput },
@@ -2130,7 +2135,7 @@ export default function FloorEditorOverlay({
                     onClick={handleAddWall}
                     className="w-full rounded-xl border border-[#16181D]/[0.12] px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:bg-[#16181D]/5"
                   >
-                    Add wall
+                    Add Wall
                   </button>
                   {/* Delete-gated as before: removing a wall removes its boards,
                       so it is withheld rather than shown disabled. */}
@@ -2142,7 +2147,7 @@ export default function FloorEditorOverlay({
                       className="w-full rounded-xl border border-[#C2452D]/30 px-4 py-2.5 text-sm font-semibold text-[#C2452D] transition-colors hover:bg-[#C2452D]/[0.06] disabled:cursor-not-allowed disabled:opacity-40"
                       title={selectedWallIndex == null ? 'Click a wall to select it first' : `Remove wall ${selectedWallIndex + 1}`}
                     >
-                      Remove wall
+                      Remove Wall
                     </button>
                   )}
                 </>
@@ -2153,7 +2158,7 @@ export default function FloorEditorOverlay({
                     onClick={handleAddTable}
                     className="w-full rounded-xl border border-[#16181D]/[0.12] px-4 py-2.5 text-sm font-semibold text-[#16181D] transition-colors hover:bg-[#16181D]/5"
                   >
-                    Add table
+                    Add Table
                   </button>
                   {selectedTable && (
                     <button
@@ -2164,7 +2169,7 @@ export default function FloorEditorOverlay({
                       }}
                       className="w-full rounded-xl border border-[#C2452D]/30 px-4 py-2.5 text-sm font-semibold text-[#C2452D] transition-colors hover:bg-[#C2452D]/[0.06]"
                     >
-                      Remove table
+                      Remove Table
                     </button>
                   )}
                 </>

@@ -8,11 +8,15 @@ import FeedbackButton from '@/components/FeedbackButton'
 import { useAccountMode } from '@/lib/useAccountMode'
 import { useAuthSession } from '@/hooks/useAuthSession'
 import { useProfile } from '@/lib/ProfileContext'
-import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
+import DashboardTopBar from '@/components/dashboard/DashboardTopBar'
 import { DashboardMain } from '@/components/dashboard/DashboardMain'
 import { scopeConfig } from '@/components/dashboard/dashboardScope'
+import CreateSectionModal from '@/components/dashboard/CreateSectionModal'
 import type { DashboardWorkspace } from '@/components/dashboard/DashboardMain'
-import type { Scope } from '@/components/dashboard/DashboardSidebar'
+import type { Scope } from '@/components/dashboard/dashboardScope'
+import { getOrgBrand } from '@/lib/constants/orgBranding'
+import { supabase } from '@/lib/supabase/client'
+import { resetAccountModeCache } from '@/lib/useAccountMode'
 
 const INSTITUTION_STORAGE_KEY = 'pinspace_institution'
 const SCOPE_STORAGE_KEY = 'pinspace-dashboard-scope'
@@ -44,13 +48,21 @@ function DashboardContent() {
   // `organization` is null both while loading and when the user genuinely has
   // none, and the scope-init effect must be able to tell those apart.
   const [orgResolved, setOrgResolved] = useState(false)
-  const [firstName, setFirstName] = useState<string | null>(null)
   const { mode: accountMode, loading: accountModeLoading, resolved: accountModeResolved } =
     useAccountMode(user?.id, user?.email)
 
   // UI
-  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showJoinModal, setShowJoinModal] = useState(false)
+  /**
+   * The new-section dialog.
+   *
+   * Lifted out of DashboardMain along with the button that opens it: the
+   * trigger is in the sidebar now, and a dialog owned by the pane beside it
+   * would be a dialog the trigger cannot reach.
+   */
+  const [showCreateSection, setShowCreateSection] = useState(false)
+  /** Which studio the top bar's switcher points at. See currentWorkspace. */
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renamingValue, setRenamingValue] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
@@ -72,7 +84,6 @@ function DashboardContent() {
   const handleScopeChange = (scope: Scope) => {
     setCurrentScope(scope)
     if (typeof window !== 'undefined') localStorage.setItem(SCOPE_STORAGE_KEY, scope)
-    setSidebarOpen(false)
   }
 
   // Init scope from localStorage once account mode AND the profile fetch have
@@ -164,7 +175,8 @@ function DashboardContent() {
         ? { id: org.id, name: org.name, slug: org.slug, type: org.type ?? null }
         : null)
       const fullName = typeof profile?.full_name === 'string' ? profile.full_name : null
-      setFirstName(fullName ? (fullName.trim().split(/\s+/)[0] || null) : null)
+      // firstName went with the sidebar's profile row; the avatar menu shows the
+      // email, and ProfileContext still carries the full name for everyone else.
       setProfile({ avatarUrl: profile?.avatar_url ?? null, fullName })
       setOrgResolved(true)
     }).catch(() => {
@@ -276,6 +288,43 @@ function DashboardContent() {
   const canCreate = currentScope !== 'wentworth' || profile.accountRole === 'instructor'
   const sidebarCfg = scopeConfig(currentScope, organization, institutionHome, canCreate)
 
+  /**
+   * The studio the main pane's Current card is showing — the most recent live
+   * one. Resolved HERE rather than in either component because both need it:
+   * the card renders it, and the sidebar marks its row with the filled dot. Two
+   * copies of "the first non-archived room" would be one refactor away from
+   * pointing at different studios.
+   */
+  /**
+   * The studio the page is about — picked in the top bar, not inferred.
+   *
+   * Held here because both halves need it: the switcher shows which one is
+   * chosen and the Current studio card renders it. Null until a choice is made
+   * or the list arrives, and the effect below settles it on the newest live
+   * studio so the card is never empty on a first load.
+   */
+  const liveRooms = scopedRooms.filter((w) => !w.is_archived)
+  const currentWorkspace =
+    liveRooms.find((w) => w.id === selectedWorkspaceId) ?? liveRooms[0] ?? null
+
+  const handleSignOut = async () => {
+    resetAccountModeCache()
+    await supabase.auth.signOut()
+    router.push('/sign-in')
+  }
+
+  /**
+   * "New" is a dialog on the class tab and a page everywhere else — the class
+   * tab asks for a studio, department, year and term at creation (see
+   * CreateSectionModal), and the other scopes ask for a name. One button in the
+   * sidebar, branching here on the scope's own config rather than the sidebar
+   * having to know which scopes have dialogs.
+   */
+  const handleCreate = () => {
+    if (sidebarCfg.newMode === 'section-dialog') setShowCreateSection(true)
+    else router.push(sidebarCfg.newHref)
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (!isLoaded) {
@@ -307,34 +356,47 @@ function DashboardContent() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white">
-      <DashboardSidebar
-        currentScope={currentScope}
-        onScopeChange={handleScopeChange}
-        hasOrganization={hasOrganization}
-        orgName={organization?.name}
-        orgSlug={organization?.slug}
-        firstName={firstName}
-        userEmail={user?.email}
-        isAdmin={isAdmin}
-        isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen((v) => !v)}
-        workspaces={scopedRooms}
-        scopeCfg={sidebarCfg}
-        institutionSlug={institutionHome}
-      />
+    <div className="flex h-screen flex-col overflow-hidden bg-[#F4F6FA]">
+      {/* Full width, with a gutter rather than a cap.
+          The bar was centred inside a 1010px column, so on any real monitor it
+          sat in the middle third with the scope pills, the switcher, Join and
+          New Section fighting for a strip narrower than the browser chrome
+          above them — the switcher row was wrapping onto its own line. Given
+          the whole width they stop competing. */}
+      <div className="shrink-0 px-5 pt-4">
+        <div className="w-full">
+          <DashboardTopBar
+            currentScope={currentScope}
+            onScopeChange={handleScopeChange}
+            hasOrganization={hasOrganization}
+            orgLabel={organization?.name?.split(' ')[0] || 'Network'}
+            brand={currentScope === 'wentworth' ? getOrgBrand(organization?.slug) : null}
+            sections={liveRooms}
+            currentWorkspaceId={currentWorkspace?.id ?? null}
+            onSelectWorkspace={setSelectedWorkspaceId}
+            canCreate={canCreate}
+            onCreate={handleCreate}
+            createLabel={sidebarCfg.newLabel}
+            showJoin={sidebarCfg.showJoin}
+            onShowJoinModal={() => setShowJoinModal(true)}
+            userEmail={user?.email}
+            isAdmin={isAdmin}
+            onSignOut={handleSignOut}
+            userId={user?.id}
+            onRename={handleRename}
+            onDelete={handleDelete}
+            onLeave={handleLeave}
+          />
+        </div>
+      </div>
 
       <DashboardMain
         scope={currentScope}
         rooms={scopedRooms}
-        userId={user?.id}
         institutionHome={institutionHome}
         loading={loading}
         organization={organization}
-        onDelete={handleDelete}
-        onRename={handleRename}
-        onLeave={handleLeave}
-        onShowJoinModal={() => setShowJoinModal(true)}
+        currentWorkspaceId={currentWorkspace?.id ?? null}
       />
 
       {/* Persistent feedback button — fixed bottom-right, opens its own modal. */}
@@ -344,6 +406,18 @@ function DashboardContent() {
 
       {showJoinModal && (
         <JoinClassModal onClose={() => setShowJoinModal(false)} />
+      )}
+
+      {/* Mounted unconditionally under canCreate rather than beside the sidebar
+          button: it renders nothing while closed, and hanging it off the button
+          would unmount the open dialog the moment creating a section changed
+          the list the button sits under. */}
+      {canCreate && sidebarCfg.newMode === 'section-dialog' && (
+        <CreateSectionModal
+          open={showCreateSection}
+          onOpenChange={setShowCreateSection}
+          defaultInstructorName={profile.fullName}
+        />
       )}
 
       {renamingId && (

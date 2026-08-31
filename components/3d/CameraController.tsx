@@ -253,6 +253,14 @@ export function CameraController({
    * be most of a 4ft wall's usable travel and almost none of a 40ft wall's.
    */
   const editBaseDistance = useRef(0)
+  /**
+   * How far back the wall-focus pose put the camera.
+   *
+   * The ceiling for zooming out while focus holds: a double-click frames the
+   * whole wall, and pulling back past that is leaving the wall without saying
+   * so. Set when the focus pose is computed, read by the wheel handler.
+   */
+  const focusBaseDistance = useRef(0)
 
   // Uniform swoosh animation state (same model for every wall).
   const isAnimating = useRef(false)
@@ -481,6 +489,7 @@ export function CameraController({
     }
 
     const pose = getWallFocusPose(wallConfig, focusedWall.wallIndex, focusedWall.side)
+    if (pose) focusBaseDistance.current = pose.position.distanceTo(pose.target)
     if (!pose) {
       // Wall deleted out from under a stale focus. Leave the camera alone
       // rather than holding it on a wall that isn't there.
@@ -642,12 +651,17 @@ export function CameraController({
    * per event makes the trackpad fly.
    */
   useEffect(() => {
-    if (editingWall === null) return
+    const inEdit = editingWall !== null
+    const inFocus = !inEdit && Boolean(focusedWall)
+    if (!inEdit && !inFocus) return
     const el = gl.domElement
     const axis = new THREE.Vector3()
 
     const onWheel = (e: WheelEvent) => {
-      // The canvas fills the viewport in edit mode; without this the page
+      // Not while the swoosh is flying: the animation writes camera.position
+      // every frame and would eat the scroll, which reads as a dead wheel.
+      if (isAnimating.current) return
+      // The canvas fills the viewport in both modes; without this the page
       // scrolls behind it.
       e.preventDefault()
       axis.subVectors(camera.position, targetTarget.current)
@@ -655,11 +669,24 @@ export function CameraController({
       if (dist < 1e-3) return
       axis.divideScalar(dist)
 
-      const base = editBaseDistance.current || dist
+      /**
+       * Focus zooms IN freely and OUT only as far as the framing it started
+       * from.
+       *
+       * OrbitControls is switched off while focus holds (see holdingFocus), so
+       * without this there was no zoom at all in a mode whose entire purpose is
+       * reading a wall — you could fly square-on to a sheet of 8pt text and not
+       * get closer to it. The out-stop is the double-click pose itself: focus
+       * means "this wall", and a wheel that keeps going until the room reappears
+       * has quietly ended the mode without touching Exit focus.
+       */
+      const base = inFocus
+        ? focusBaseDistance.current || dist
+        : editBaseDistance.current || dist
       const next = THREE.MathUtils.clamp(
         dist * Math.exp(e.deltaY * 0.0015),
         Math.max(base * EDIT_ZOOM_MIN_FACTOR, EDIT_ZOOM_MIN_INCHES),
-        base * EDIT_ZOOM_MAX_FACTOR,
+        inFocus ? base : base * EDIT_ZOOM_MAX_FACTOR,
       )
       camera.position.copy(targetTarget.current).addScaledVector(axis, next)
     }
@@ -667,7 +694,7 @@ export function CameraController({
     // passive:false because the handler calls preventDefault.
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [editingWall, gl, camera])
+  }, [editingWall, focusedWall, gl, camera])
 
   return null
 }

@@ -40,7 +40,7 @@ export default function PublishCategoryModal({
     event.preventDefault()
     if (confirmingRef.current) return
     if (!department || !year) {
-      setError('Select a department and year to publish this studio.')
+      setError('Select a department and grade level to publish this studio.')
       return
     }
 
@@ -80,7 +80,7 @@ export default function PublishCategoryModal({
 
         <div>
           <label htmlFor="publish-category-year" className="mb-1.5 block text-sm font-semibold text-text-primary">
-            Year
+            Grade Level
           </label>
           <Select
             id="publish-category-year"

@@ -78,7 +78,7 @@ export default function PublishConfirmModal({
 
     const newErrors: FieldErrors = {}
     if (!department) newErrors.department = 'Select a department.'
-    if (!year) newErrors.year = 'Select a year.'
+    if (!year) newErrors.year = 'Select a grade level.'
     if (!studio) newErrors.studio = 'Select a class.'
     if (!academicYear) newErrors.academicYear = 'Select an academic year.'
     if (!instructor.trim()) newErrors.instructor = 'Enter the instructor name.'
@@ -123,9 +123,15 @@ export default function PublishConfirmModal({
       open
       onOpenChange={(open) => { if (!open) onCancel() }}
       title={variant === 'settings' ? 'Section settings' : 'Publish to network'}
+      // Named but not drawn in the settings variant: it opens from a button
+      // inside a sheet already headed "Section Settings", listing the very
+      // fields below — so a heading and a subtitle repeating both is the third
+      // and fourth time. Publish still shows its own, since that one is reached
+      // cold from a room and has to say what it is about to do.
+      hideTitle={variant === 'settings'}
       description={
         variant === 'settings'
-          ? <>Where <strong>{workspaceName}</strong> sits in the network.</>
+          ? undefined
           : <>Add public discovery details for <strong>{workspaceName}</strong>.</>
       }
       className="max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-2rem)] max-w-lg pb-[max(1.5rem,env(safe-area-inset-bottom))] [&>button.absolute]:h-11 [&>button.absolute]:w-11"
@@ -147,7 +153,32 @@ export default function PublishConfirmModal({
           </Select>
         </Field>
 
-        <Field label="Year" id="publish-year" error={errors.year}>
+        {/* Department, Academic Year, Grade Level, Class, Instructor — the
+            order the section is actually filed in, widest bucket first. It used
+            to run Department, Grade Level, Class, Academic Year, which put the
+            two "year" fields on either side of Class and asked for the term
+            last, after the two things the term scopes. */}
+        <Field label="Academic Year" id="publish-academic-year" error={errors.academicYear}>
+          <Select
+            id="publish-academic-year"
+            value={academicYear}
+            onChange={(event) => {
+              setAcademicYear(event.target.value)
+              setErrors((previous) => ({ ...previous, academicYear: undefined }))
+            }}
+            aria-invalid={Boolean(errors.academicYear)}
+            aria-describedby={errors.academicYear ? 'publish-academic-year-error' : undefined}
+          >
+            <option value="">Select academic year</option>
+            {academicYearOptions().map((item) => <option key={item} value={item}>{item}</option>)}
+          </Select>
+        </Field>
+
+        {/* GRADE LEVEL, not "Year" — the options are Freshman…Masters, and
+            this form has an "Academic year" (2026-2027) field below it. Two
+            fields called some form of "year", one of them holding neither.
+            The stored values are untouched; only the label changes. */}
+        <Field label="Grade Level" id="publish-year" error={errors.year}>
           <Select
             id="publish-year"
             value={year}
@@ -158,7 +189,7 @@ export default function PublishConfirmModal({
             aria-invalid={Boolean(errors.year)}
             aria-describedby={errors.year ? 'publish-year-error' : undefined}
           >
-            <option value="">Select year</option>
+            <option value="">Select grade level</option>
             {/* value stays the stored 'Year N'; only the text changes. */}
             {YEAR_LEVELS.map((item) => (
               <option key={item} value={item}>{yearLabel(item)}</option>
@@ -183,22 +214,6 @@ export default function PublishConfirmModal({
           >
             <option value="">Select class</option>
             {STUDIOS.map((item) => <option key={item} value={item}>{item}</option>)}
-          </Select>
-        </Field>
-
-        <Field label="Academic year" id="publish-academic-year" error={errors.academicYear}>
-          <Select
-            id="publish-academic-year"
-            value={academicYear}
-            onChange={(event) => {
-              setAcademicYear(event.target.value)
-              setErrors((previous) => ({ ...previous, academicYear: undefined }))
-            }}
-            aria-invalid={Boolean(errors.academicYear)}
-            aria-describedby={errors.academicYear ? 'publish-academic-year-error' : undefined}
-          >
-            <option value="">Select academic year</option>
-            {academicYearOptions().map((item) => <option key={item} value={item}>{item}</option>)}
           </Select>
         </Field>
 

@@ -22,6 +22,7 @@ import DemoBanner from '@/components/DemoBanner'
 import { getCachedStudioData } from '@/lib/studioViewCache'
 import { orderBoardsForLightbox } from '@/lib/boardOrder'
 import { useAuthSession } from '@/hooks/useAuthSession'
+import { toast } from '@/lib/toast'
 import { ArrowLeft, LayoutGrid, Box } from 'lucide-react'
 
 interface WallDimensions {
@@ -221,6 +222,15 @@ function StudioViewPageInner() {
    */
   const [show2D, setShow2D] = useState(false)
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
+  /**
+   * The boards this viewer has pinned, by id.
+   *
+   * Loaded once for the whole account rather than asked per board: the shelf is
+   * capped well below the size of a room, and one request answers the pin
+   * button for every sheet in it. A guest or signed-out visitor gets a 401 and
+   * an empty set, which is what hides the control for them.
+   */
+  const [pinnedBoardIds, setPinnedBoardIds] = useState<Set<string> | null>(null)
   const [compareBoardIds, setCompareBoardIds] = useState<string[]>([])
   const shiftPressedRef = useRef(false)
   const compareBoardIdsRef = useRef<string[]>([])
@@ -526,6 +536,65 @@ function StudioViewPageInner() {
         : roomOrderedBoards,
     [roomOrderedBoards, show2D, selectedStudentBoardIds]
   )
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/pinspaces', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        setPinnedBoardIds(
+          new Set((data.pins ?? []).map((p: { boardId: string }) => p.boardId))
+        )
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  /**
+   * Keep this sheet, or stop keeping it.
+   *
+   * Optimistic on the local set so the button flips under the press, then
+   * reconciled from the response — a pin is one row and the failure mode worth
+   * covering is the write being refused, not a slow success.
+   */
+  const togglePin = async (boardId: string) => {
+    const wasPinned = pinnedBoardIds?.has(boardId) ?? false
+    setPinnedBoardIds((prev) => {
+      const next = new Set(prev ?? [])
+      if (wasPinned) next.delete(boardId)
+      else next.add(boardId)
+      return next
+    })
+    try {
+      const res = wasPinned
+        ? await fetch(`/api/pinspaces?boardId=${encodeURIComponent(boardId)}`, { method: 'DELETE' })
+        : await fetch('/api/pinspaces', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ boardId }),
+          })
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null)
+        throw new Error(typeof detail?.error === 'string' ? detail.error : 'Could not save that pin')
+      }
+    } catch (err) {
+      // Put it back the way it was; the server is the source of truth.
+      setPinnedBoardIds((prev) => {
+        const next = new Set(prev ?? [])
+        if (wasPinned) next.add(boardId)
+        else next.delete(boardId)
+        return next
+      })
+      // SAY SO. Reverting silently is what made the first version of this look
+      // like a button that flashed and did nothing — the pin was being refused
+      // for a real reason and the UI threw the reason away.
+      toast.error(err instanceof Error ? err.message : 'Could not save that pin')
+    }
+  }
+
+  /** Captured so the pin callbacks below don't re-narrow `selectedBoard`. */
+  const selectedBoardId = selectedBoard?.id ?? null
 
   const handleNavigate = (direction: 'prev' | 'next') => {
     if (!selectedBoard) return
@@ -981,6 +1050,15 @@ function StudioViewPageInner() {
         // not where it is shown. Same reasoning as canRenameStudent={false} on
         // the 2D grid above — this route presents the room, it does not edit it.
         canRenameBoard={false}
+        // Pinspaces. Offered only once the pin list has resolved, which is also
+        // what withholds it from a signed-out visitor: they get a 401, the set
+        // stays null, and no button appears that could not work.
+        isPinned={selectedBoardId ? pinnedBoardIds?.has(selectedBoardId) ?? false : false}
+        onTogglePin={
+          pinnedBoardIds && selectedBoardId
+            ? () => void togglePin(selectedBoardId)
+            : undefined
+        }
         // Withheld while the arrows are scoped to one person. The reorder input
         // takes a position in the ROOM's running order but validates against
         // allBoards.length, so against a 3-sheet subset "2" would read as

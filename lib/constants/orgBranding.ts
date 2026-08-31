@@ -38,6 +38,18 @@ export interface OrgBrand {
    * organizations.network_label and titles the network page itself.
    */
   networkTitle: string
+  /**
+   * The org's name as the dashboard's identity card sets it: the short name on
+   * one line, this underneath.
+   *
+   * Separate from `networkTitle` because they answer different questions. That
+   * one names a PLACE you are about to enter ("The Wentworth archive"); this
+   * names the school whose dashboard you are on, so it reads as the second line
+   * of a lockup rather than as a destination. Per-org for the same reason
+   * everything else here is: the next school is not a school of architecture
+   * and design.
+   */
+  cardSubtitle: string
 }
 
 const ORG_BRANDS: Record<string, OrgBrand> = {
@@ -51,6 +63,7 @@ const ORG_BRANDS: Record<string, OrgBrand> = {
     accentSoft: '#FEF6E7',
     accentInk: '#8A5A05',
     networkTitle: 'The Wentworth archive',
+    cardSubtitle: 'Architecture & Design',
   },
 }
 

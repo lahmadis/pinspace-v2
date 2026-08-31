@@ -353,6 +353,25 @@ export function getRoomFogParams(wallConfig: WallConfig): { fogNear: number; fog
 const BAY_FRAME_PADDING_IN = 3
 
 /**
+ * The joint between two walls standing side by side.
+ *
+ * A run of walls is built as separate panels that abut exactly, so the surface
+ * read as one unbroken plane however many walls it was made of — you could not
+ * tell a four-wall run from one long wall, and the wall NUMBERS along it
+ * therefore looked arbitrary. Real partitions have a joint, and one hairline of
+ * shadow is enough to say so.
+ *
+ * Drawn only at ends that actually meet something: a free end is already
+ * rounded (WALL_END_RADIUS) and has no neighbour to make a seam with, so a line
+ * there would be an edge drawn on open air.
+ */
+const SEAM_WIDTH_IN = 0.35
+const SEAM_COLOR = '#16181D'
+const SEAM_OPACITY = 0.16
+/** Just proud of the wall face (±3.01) and well under the boards (±3.2). */
+const SEAM_Z = 3.02
+
+/**
  * Walls cast NOTHING onto the floor.
  *
  * There used to be a soft radial-gradient pool under each wall — a sprite, not
@@ -618,6 +637,34 @@ export default function WallSystem({ boards, wallConfig, onWallDoubleClick, onWa
                 emissiveIntensity={isOthersEditing ? 0.45 : 0}
               />
             </mesh>
+
+            {/* Seams. One per joined end, on both faces. */}
+            {(['minus', 'plus'] as const).flatMap((end) =>
+              ends[end]
+                ? []
+                : (['front', 'back'] as const).map((side) => (
+                    <mesh
+                      key={`seam-${wallIndex}-${end}-${side}`}
+                      renderOrder={1}
+                      position={[
+                        (end === 'plus' ? 0.5 : -0.5) * transform.width,
+                        0,
+                        side === 'front' ? SEAM_Z : -SEAM_Z,
+                      ]}
+                      rotation={[0, side === 'front' ? 0 : Math.PI, 0]}
+                    >
+                      <planeGeometry args={[SEAM_WIDTH_IN, transform.height]} />
+                      <meshBasicMaterial
+                        color={SEAM_COLOR}
+                        transparent
+                        // Fades with the wall it is on, or a ghosted run would
+                        // be crossed by hairlines darker than the wall itself.
+                        opacity={isDimmed ? SEAM_OPACITY * 0.35 : SEAM_OPACITY}
+                        depthWrite={false}
+                      />
+                    </mesh>
+                  ))
+            )}
 
             {/* The four "edge shadow" strips that used to sit here are gone.
                 They were 0.2in slivers at z = 2.1 — INSIDE a slab that spans
