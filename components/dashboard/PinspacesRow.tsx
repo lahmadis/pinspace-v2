@@ -16,8 +16,33 @@ import type { Board } from '@/types'
  */
 const SHELF_LIMIT = 5
 
-/** Empty outlines drawn beside the plus while the shelf is filling up. */
-const SLOT_TARGET = 3
+/**
+ * How many cells wide the shelf is, and therefore how many the plus and the
+ * pins have to add up to.
+ *
+ * FIVE, matching SHELF_LIMIT, so a full shelf is exactly one full row. It was
+ * seven — sized when the plus tile was permanent and took two of them — and
+ * once the plus started hiding itself after the first pin, a shelf of one pin
+ * and two outlines occupied three of seven columns and trailed off into empty
+ * grid for the rest of the width.
+ */
+const SHELF_COLUMNS = SHELF_LIMIT
+
+/** How many columns the onboarding plus tile spans, while it is shown. */
+const PLUS_SPAN = 2
+
+/**
+ * The shape of a pin tile, filled or empty.
+ *
+ * 3:4 portrait. Square and 4:3 were both tried: 4:3 shrank a sheet to a
+ * letterbox about 100px tall, and square lost the fact that what is on the
+ * shelf is overwhelmingly a portrait drawing. At five across in this column a
+ * tile lands near 156x208, which is a thumbnail you can actually read.
+ *
+ * The empty outlines below read from this too: they have to match exactly or
+ * the shelf ends in a step.
+ */
+const TILE_ASPECT = 'aspect-[3/4]'
 
 interface Pin {
   boardId: string
@@ -101,13 +126,31 @@ export default function PinspacesRow({ archiveHref }: { archiveHref: string }) {
 
   const shelf = pins.slice(0, SHELF_LIMIT)
   const overflow = pins.length - shelf.length
-  const emptySlots = Math.max(0, SLOT_TARGET - shelf.length)
+  /**
+   * Outlines enough to finish the row, counting the plus tile's two columns
+   * while it is there. Derived rather than fixed, so the shelf is always one
+   * complete row whether it is holding nothing, one pin, or five.
+   */
+  const emptySlots = Math.max(
+    0,
+    SHELF_COLUMNS - shelf.length - (pins.length === 0 ? PLUS_SPAN : 0)
+  )
 
-  /** One pin tile — the same card on the shelf and in the See-all grid. */
+  /**
+   * One pin tile — the same card on the shelf and in the See-all grid, at the
+   * same ratio in both.
+   *
+   * A tile is a thumbnail in a fixed-width column, so its height has to come
+   * from a ratio and nothing else. It was briefly stretched to whatever height
+   * the page had spare instead, which turned a shelf of sheets into a row of
+   * 95px-wide slivers. TILE_ASPECT is that ratio and it lives in one place,
+   * because the empty slots have to match it exactly or the shelf ends in a
+   * step.
+   */
   const tile = (pin: Pin) => (
     <div
       key={pin.boardId}
-      className="group relative aspect-[3/4] overflow-hidden rounded-2xl border border-[#16181D]/[0.10] bg-white"
+      className={`group relative ${TILE_ASPECT} overflow-hidden rounded-2xl border border-[#16181D]/[0.10] bg-white`}
     >
       <button
         type="button"
@@ -162,11 +205,11 @@ export default function PinspacesRow({ archiveHref }: { archiveHref: string }) {
         )}
       </div>
 
-      {/* Seven columns: the plus takes two, five pins take one each. Fixed at
-          seven rather than filling, so the row is the same shape whether you
-          have one pin or fifty, and the tiles hold a portrait aspect instead of
-          stretching into billboards on a wide monitor. */}
-      <div className="grid grid-cols-3 gap-3.5 sm:grid-cols-7">
+      {/* Five columns: one per pin, with the plus taking two of them while the
+          shelf is empty. Fixed rather than filling, so the row is the same
+          shape whether you have one pin or fifty, and the tiles hold a portrait
+          aspect instead of stretching into billboards on a wide monitor. */}
+      <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-5">
         {/* ONLY WHILE THE SHELF IS EMPTY. It is an onboarding tile, not a
             control: it is a plain link to the network, which the panel directly
             above it already is, and once there are pins it was spending two of
@@ -200,7 +243,7 @@ export default function PinspacesRow({ archiveHref }: { archiveHref: string }) {
           <div
             key={i}
             aria-hidden="true"
-            className="aspect-[3/4] rounded-2xl border border-[#16181D]/[0.10] bg-white/50"
+            className={`${TILE_ASPECT} rounded-2xl border border-[#16181D]/[0.10] bg-white/50`}
           />
         ))}
       </div>

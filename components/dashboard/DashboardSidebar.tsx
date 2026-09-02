@@ -431,7 +431,7 @@ export function DashboardSidebar({
                 reachable from the Past studios group below, in the scope you're
                 already looking at, rather than from a separate page. */}
             <div className="pt-2 mt-2 border-t border-[#16181D]/[0.08] space-y-0.5">
-              {navLink('/desk-crits', 'Desk crits', <PencilRuler className="w-4 h-4" />)}
+              {navLink('/desk-crits', 'Desk Crits', <PencilRuler className="w-4 h-4" />)}
             </div>
           </div>
 

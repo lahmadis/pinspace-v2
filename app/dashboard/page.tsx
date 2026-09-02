@@ -357,13 +357,12 @@ function DashboardContent() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#F4F6FA]">
-      {/* Full width, with a gutter rather than a cap.
-          The bar was centred inside a 1010px column, so on any real monitor it
-          sat in the middle third with the scope pills, the switcher, Join and
-          New Section fighting for a strip narrower than the browser chrome
-          above them — the switcher row was wrapping onto its own line. Given
-          the whole width they stop competing. */}
-      <div className="shrink-0 px-5 pt-4">
+      {/* The bar carries its own gutter (see ChromeBar), so this is only the
+          row it sits in. It was briefly bled to the page edges to get the tabs
+          over the content column; the column is offset to meet the tabs
+          instead, which buys the same alignment and keeps the bar an object on
+          the page rather than the page's top edge. */}
+      <div className="shrink-0">
         <div className="w-full">
           <DashboardTopBar
             currentScope={currentScope}

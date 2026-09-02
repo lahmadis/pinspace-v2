@@ -83,8 +83,9 @@ describe('DashboardMain', () => {
       '/workspace/workspace-1'
     )
 
-    // Personal is not an institution, so the destination is the open network.
-    expect(screen.getByRole('link', { name: /Enter the network/ })).toHaveAttribute(
+    // One label on both tabs now: the org scope said "Enter the archives"
+    // while pointing at /explore, which is the network, not /archive.
+    expect(screen.getByRole('link', { name: /Enter the Network/ })).toHaveAttribute(
       'href',
       '/network'
     )
@@ -125,7 +126,7 @@ describe('DashboardMain', () => {
 
     // Short name plus the brand's own second line — not the full page title.
     expect(screen.getByText('Wentworth')).toBeInTheDocument()
-    expect(screen.getByText('Architecture & Design')).toBeInTheDocument()
+    expect(screen.getByText('School of Architecture & Design')).toBeInTheDocument()
 
     // Studio AND surname: a department runs eight sections of Studio 01, so
     // the studio alone names the course rather than the one you are in. Built
@@ -138,7 +139,8 @@ describe('DashboardMain', () => {
     // heading, rather than being printed twice three lines apart.
     expect(screen.getByText('2 rooms · 3 boards')).toBeInTheDocument()
 
-    expect(screen.getByRole('link', { name: /Enter the archives/ })).toHaveAttribute(
+    // Same label as the personal tab; only the href is per-scope.
+    expect(screen.getByRole('link', { name: /Enter the Network/ })).toHaveAttribute(
       'href',
       '/explore?institution=wit'
     )
@@ -194,10 +196,10 @@ describe('DashboardMain', () => {
 
     expect(screen.getByRole('heading', { level: 2, name: 'Nothing here yet' })).toBeInTheDocument()
     expect(screen.queryByText('Current studio')).not.toBeInTheDocument()
-    // The archive is an entry point, not content — it renders whether or not
+    // The network is an entry point, not content — it renders whether or not
     // you have any studios. This is the regression that once deleted it for
     // every user with an empty dashboard.
-    expect(screen.getByRole('link', { name: /Enter the network/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Enter the Network/ })).toBeInTheDocument()
   })
 
   it('holds the current-studio slot while the workspaces load', () => {

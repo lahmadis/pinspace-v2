@@ -63,7 +63,7 @@ const ORG_BRANDS: Record<string, OrgBrand> = {
     accentSoft: '#FEF6E7',
     accentInk: '#8A5A05',
     networkTitle: 'The Wentworth archive',
-    cardSubtitle: 'Architecture & Design',
+    cardSubtitle: 'School of Architecture & Design',
   },
 }
 

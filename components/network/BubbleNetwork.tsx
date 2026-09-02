@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as d3 from 'd3'
 import { throttle, debounce } from '@/lib/throttleDebounce'
-import { gradeLabel } from '@/lib/constants/departments'
 
 // ============================================================================
 // TYPES
@@ -33,9 +32,11 @@ export interface StudioData {
    * How many sections a STUDIO BUCKET holds. Set only on the bucket bubbles
    * /explore synthesises at the studio level, never on a real workspace.
    *
-   * Its own field rather than reusing memberCount, which the tooltip labels
-   * "Members": a bucket has no members, and "Members 10" on Studio 01 would be
-   * a plausible-looking wrong number rather than an obviously missing one.
+   * Its own field rather than reusing memberCount: a bucket has no members, so
+   * a member count on Studio 01 would be a plausible-looking wrong number
+   * rather than an obviously missing one. It sizes the bucket bubbles in
+   * /explore and ranks the dashboard panel's preview; the hover card that used
+   * to print it is gone.
    */
   sectionCount?: number
   memberCount?: number
@@ -93,17 +94,6 @@ interface BubbleNetworkProps {
    * the band it is sitting in and the band would stop being itself.
    */
   transparent?: boolean
-}
-
-interface TooltipData {
-  node: BubbleNode
-  x: number
-  y: number
-  connections: {
-    sameInstructor: BubbleNode[]
-    sameYear: BubbleNode[]
-    sameDepartment: BubbleNode[]
-  }
 }
 
 interface ConnectionLine {
@@ -246,117 +236,6 @@ function generateBezierPath(
 }
 
 // ============================================================================
-// TOOLTIP COMPONENT
-// ============================================================================
-
-function Tooltip({ data, containerRect }: { data: TooltipData | null; containerRect: DOMRect | null }) {
-  if (!data || !containerRect) return null
-
-  const { node, x, y, connections } = data
-  const totalConnections = 
-    connections.sameInstructor.length + 
-    connections.sameYear.length + 
-    connections.sameDepartment.length
-
-  // Position tooltip to avoid going off screen
-  const tooltipWidth = 280
-  const tooltipHeight = 200
-  let tooltipX = x + 20
-  let tooltipY = y - tooltipHeight / 2
-
-  // Adjust if going off right edge
-  if (tooltipX + tooltipWidth > containerRect.width) {
-    tooltipX = x - tooltipWidth - 20
-  }
-  // Adjust if going off bottom
-  if (tooltipY + tooltipHeight > containerRect.height) {
-    tooltipY = containerRect.height - tooltipHeight - 10
-  }
-  // Adjust if going off top
-  if (tooltipY < 10) {
-    tooltipY = 10
-  }
-
-  return (
-    <div
-      className="absolute pointer-events-none z-50 animate-fade-in"
-      style={{
-        left: tooltipX,
-        top: tooltipY,
-        width: tooltipWidth,
-      }}
-    >
-      <div className="overflow-hidden rounded-pinspace-lg border border-[#16181D]/10 bg-white/95 shadow-[var(--shadow-raised)] backdrop-blur-md">
-        {/* Header */}
-        <div 
-          className="border-b border-[#16181D]/[0.08] bg-[#16181D]/[0.04] px-4 py-3"
-        >
-          <h3 className="truncate text-sm font-bold text-[#16181D]">{stripYearFromLabel(node.name || node.label)}</h3>
-          {node.instructor && (
-            <p className="mt-0.5 flex items-center gap-1 text-xs text-[#5A5E6B]">
-              <span aria-hidden="true">◦</span> {node.instructor}
-            </p>
-          )}
-        </div>
-        
-        {/* Details */}
-        <div className="px-4 py-3 space-y-2 text-xs">
-          <div className="flex justify-between gap-3 text-[#16181D]">
-            <span className="text-[#8A8FA0]">Department</span>
-            <span className="font-medium">{node.department || '—'}</span>
-          </div>
-          <div className="flex justify-between gap-3 text-[#16181D]">
-            <span className="text-[#8A8FA0]">Grade</span>
-            <span className="font-medium">
-              {node.year ? gradeLabel(node.year) : '—'}
-            </span>
-          </div>
-          {node.studio && (
-            <div className="flex justify-between gap-3 text-[#16181D]">
-              <span className="text-[#8A8FA0]">Class</span>
-              <span className="font-medium">{node.studio}</span>
-            </div>
-          )}
-          <div className="flex justify-between gap-3 text-[#16181D]">
-            <span className="text-[#8A8FA0]">{node.sectionCount === undefined ? 'Members' : 'Sections'}</span>
-            <span className="font-medium">{node.sectionCount ?? node.memberCount ?? node.count ?? 0}</span>
-          </div>
-        </div>
-
-        {/* Connections */}
-        {totalConnections > 0 && (
-          <div className="border-t border-[#16181D]/[0.08] bg-[#16181D]/[0.04] px-4 py-3">
-            <p className="mb-2 flex items-center gap-1 text-xs text-[#8A8FA0]">
-              Connected to:
-            </p>
-            <div className="space-y-1 text-xs">
-              {connections.sameInstructor.length > 0 && node.instructor && (
-                <div className="flex items-center gap-2 text-primary">
-                  <span className="h-0.5 w-3 rounded" style={{ background: RELATIONSHIP_STYLES.instructor.color }} />
-                  <span>{connections.sameInstructor.length} classes ({node.instructor})</span>
-                </div>
-              )}
-              {connections.sameYear.length > 0 && node.year && (
-                <div className="flex items-center gap-2 text-[#16181D]">
-                  <span className="w-3 border-t-2 border-dashed" style={{ borderColor: RELATIONSHIP_STYLES.year.color }} />
-                  <span>{connections.sameYear.length} classes ({gradeLabel(node.year)})</span>
-                </div>
-              )}
-              {connections.sameDepartment.length > 0 && node.department && (
-                <div className="flex items-center gap-2 text-[#5A5E6B]">
-                  <span className="w-3 border-t-2 border-dotted" style={{ borderColor: RELATIONSHIP_STYLES.department.color }} />
-                  <span>{connections.sameDepartment.length} classes ({node.department})</span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -375,10 +254,10 @@ export default function BubbleNetwork({
   const gRef = useRef<SVGGElement>(null)
   
   const [dimensions, setDimensions] = useState({ width: 900, height: 600 })
-  const [containerRect, setContainerRect] = useState<DOMRect | null>(null)
+
   const [positions, setPositions] = useState<BubbleNode[]>([])
   const [hoveredNode, setHoveredNode] = useState<BubbleNode | null>(null)
-  const [tooltipData, setTooltipData] = useState<TooltipData | null>(null)
+
   const [connectionLines, setConnectionLines] = useState<ConnectionLine[]>([])
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 })
   const [isDragging, setIsDragging] = useState(false)
@@ -437,10 +316,8 @@ export default function BubbleNetwork({
           // simulation below, see the center force.
           height: window.innerHeight,
         })
-        if (containerRef.current) setContainerRect(containerRef.current.getBoundingClientRect())
       } else if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect()
-        setContainerRect(rect)
         setDimensions({
           width: rect.width || 900,
           height: rect.height || 600,
@@ -651,39 +528,27 @@ export default function BubbleNetwork({
   // ============================================================================
 
   const debouncedHover = useMemo(
-    () => debounce((node: BubbleNode | null, screenX: number, screenY: number) => {
+    () => debounce((node: BubbleNode | null) => {
       if (!node) {
         setHoveredNode(null)
-        setTooltipData(null)
         setConnectionLines([])
         return
       }
 
       setHoveredNode(node)
-      const connections = getRelatedNodes(node)
-      const lines = findConnections(node)
-      
-      setConnectionLines(lines)
-      setTooltipData({
-        node,
-        x: screenX,
-        y: screenY,
-        connections,
-      })
+      setConnectionLines(findConnections(node))
     }, HOVER_DEBOUNCE_MS),
-    [getRelatedNodes, findConnections]
+    [findConnections]
   )
 
   const handleMouseEnter = useCallback((node: BubbleNode, _event: React.MouseEvent) => {
     if (isDragging) return
     onNodeHover?.(node)
-    const screenX = (node.x || 0) * transform.k + transform.x
-    const screenY = (node.y || 0) * transform.k + transform.y
-    debouncedHover(node, screenX, screenY)
-  }, [debouncedHover, isDragging, transform, onNodeHover])
+    debouncedHover(node)
+  }, [debouncedHover, isDragging, onNodeHover])
 
   const handleMouseLeave = useCallback(() => {
-    debouncedHover(null, 0, 0)
+    debouncedHover(null)
   }, [debouncedHover])
 
   // ============================================================================
@@ -863,8 +728,8 @@ export default function BubbleNetwork({
           means it tiles forever: no edge to pan off, at any zoom.
 
           The zoom-transform state driving it is already updated by the zoom
-          handler and already read during render (the hover callout positions
-          off it), so this costs no extra re-renders. */}
+          handler and already read during render by the node layout, so this
+          costs no extra re-renders. */}
       {!transparent && <div
         className="absolute inset-0 pointer-events-none"
         style={{
@@ -1076,10 +941,6 @@ export default function BubbleNetwork({
           </radialGradient>
         </defs>
       </svg>
-
-      {/* Tooltip */}
-      <Tooltip data={tooltipData} containerRect={containerRect} />
-
 
       {/* Zoom controls. Gated with the rest of the chrome — see the legend
           below for why `interactive` carries this too. */}

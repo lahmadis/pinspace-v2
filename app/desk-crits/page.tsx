@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import AvatarMenu from '@/components/AvatarMenu'
-import { ChromeNav } from '@/components/dashboard/ChromeNav'
+import { ChromeBar, SHELL_COLUMN } from '@/components/dashboard/ChromeNav'
 import { useDashboardChrome } from '@/hooks/useDashboardChrome'
 import { useDeskCrits } from '@/hooks/useDeskCrits'
 import { useDirectUpload } from '@/lib/useDirectUpload'
@@ -613,29 +613,27 @@ export default function DeskPage() {
 
           The title went with it. "Your Desk" restated the selected tab, and
           the crit count restated a screen full of crits. */}
-      <div className="shrink-0 px-5 pt-4">
-        <header className="flex flex-wrap items-center gap-2 rounded-2xl bg-white px-4 py-2.5">
-          <ChromeNav
-            // No scope is current here — this page is not one. Desk crits
-            // carries the selection instead; see ChromeNav.
-            currentScope={null}
-            onScopeChange={onScopeChange}
-            hasOrganization={Boolean(organization)}
-            orgLabel={organization?.name?.split(' ')[0] || 'Network'}
-            brand={null}
-          />
-
-          {/* Everything you can DO, in one right-hand group — the same
-              order and the same shapes as the dashboard's bar: the page's own
-              controls, then the primary action, then the account.
+      <ChromeBar
+        // No scope is current here — this page is not one. Desk Crits carries
+        // the selection instead; see ChromeNav.
+        currentScope={null}
+        onScopeChange={onScopeChange}
+        hasOrganization={Boolean(organization)}
+        orgLabel={organization?.name?.split(' ')[0] || 'Network'}
+        brand={null}
+      >
+        <>
+          {/* Everything you can DO. ChromeBar right-aligns whatever it is
+              handed, so this is just the contents, in the same order and the
+              same shapes as the dashboard's: the page's own controls, then the
+              primary action, then the account.
 
               Filters live here, where a row of dates used to be. Those chips
               scrolled to a crit and did nothing else — a table of contents for
               a list that already fits on screen, naming crits by a date two of
               which were the same day. Filtering is what the space was actually
               worth. */}
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            {projects.length > 0 && (
+          {projects.length > 0 && (
               <select
                 value={projectFilter}
                 onChange={(e) => setProjectFilter(e.target.value)}
@@ -690,10 +688,9 @@ export default function DeskPage() {
               {creating ? 'Adding…' : 'New Crit'}
             </button>
 
-            <AvatarMenu email={user?.email} isAdmin={isAdmin} onSignOut={onSignOut} />
-          </div>
-        </header>
-      </div>
+          <AvatarMenu email={user?.email} isAdmin={isAdmin} onSignOut={onSignOut} />
+        </>
+      </ChromeBar>
 
       {(problem || error || (speech.unavailable && speechBlocked)) && (
         <button
@@ -712,10 +709,10 @@ export default function DeskPage() {
 
       <div className="flex-1 flex min-h-0">
         {/* ---------------- the crits ---------------- */}
-        {/* px-5, matching the bar above it and DashboardMain — p-6 left the cards
-            sitting 4px inside the bar's left edge, which reads as a wobble
-            rather than a margin. */}
-        <div ref={scrollerRef} className="flex-1 overflow-y-auto px-5 pb-5 pt-4">
+        {/* The same centred column the dashboard uses, so the crit cards sit
+            under the tabs rather than running the full width of the monitor. */}
+        <div ref={scrollerRef} className="flex-1 overflow-y-auto pb-8 pt-5">
+          <div className={SHELL_COLUMN}>
           {loading && crits.length === 0 ? (
             <div className="flex gap-5">
               {[0, 1, 2].map((i) => (
@@ -829,6 +826,7 @@ export default function DeskPage() {
               ))}
             </div>
           )}
+        </div>
         </div>
       </div>
 

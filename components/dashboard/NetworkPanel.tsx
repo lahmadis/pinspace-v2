@@ -6,6 +6,7 @@ import { ArrowRight } from 'lucide-react'
 import GridPreview from '@/components/ui/GridPreview'
 import BubbleNetwork, { type BubbleNode } from '@/components/network/BubbleNetwork'
 import NetworkBandPreview from './NetworkBandPreview'
+import type { Scope } from './dashboardScope'
 
 /** Tall enough for the bubbles to have somewhere to be shoved to. */
 const PANEL_HEIGHT = 313
@@ -40,13 +41,31 @@ const PREVIEW_COUNT = 12
  * archive panel is blank because a fetch failed is worse than one showing a
  * drawing of a network, and the panel still opens the real thing either way.
  */
+/** One row of GET /api/network/personal — the shape /network already reads. */
+interface PersonalWorkspace {
+  id: string
+  name: string
+  subRoomCount: number
+  shared: boolean
+}
+
 export default function NetworkPanel({
   href,
   label,
+  scope,
 }: {
   href: string
-  /** "Enter the archives" for an org, "Enter the network" otherwise. */
   label: string
+  /**
+   * WHOSE network this is a window onto.
+   *
+   * The panel used to ask /api/explore/studios whatever tab you were on, so the
+   * personal tab drew the institution's published sections — other people's
+   * studios, under a heading about your own spaces, opening a link to /network
+   * that then showed something else entirely. The href already switched per
+   * scope; the picture did not.
+   */
+  scope: Scope
 }) {
   const [nodes, setNodes] = useState<BubbleNode[] | null>(null)
   /**
@@ -61,11 +80,17 @@ export default function NetworkPanel({
    */
   const [resolved, setResolved] = useState(false)
 
+  const isPersonal = scope === 'personal'
+
   useEffect(() => {
     const controller = new AbortController()
+    // Reset on a tab change, or the previous scope's bubbles stay on screen
+    // under the new scope's label until the second fetch lands.
+    setNodes(null)
+    setResolved(false)
 
     /**
-     * No `org` parameter, deliberately.
+     * No `org` parameter on the explore call, deliberately.
      *
      * /explore forwards one, but it is a SUPERADMIN OVERRIDE that takes an
      * organization ID and replaces the institution filter wholesale. Passing a
@@ -74,17 +99,40 @@ export default function NetworkPanel({
      * back to its decorative diagram. Left off, the endpoint scopes to the
      * caller's own organization, which is exactly what a dashboard wants.
      */
-    fetch('/api/explore/studios', { cache: 'no-store', signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('studios'))))
-      .then((data: { studios?: BubbleNode[] }) => {
-        const studios = data.studios ?? []
-        // Biggest first — see PREVIEW_COUNT. sectionCount is what a studio
-        // BUCKET carries; memberCount is what a real workspace carries, and the
-        // top level of the archive is buckets.
-        const ranked = [...studios].sort(
-          (a, b) =>
-            (b.sectionCount ?? b.memberCount ?? 0) - (a.sectionCount ?? a.memberCount ?? 0)
-        )
+    const endpoint = isPersonal ? '/api/network/personal' : '/api/explore/studios'
+
+    fetch(endpoint, { cache: 'no-store', signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('network'))))
+      .then((data: { studios?: BubbleNode[]; workspaces?: PersonalWorkspace[] }) => {
+        let ranked: BubbleNode[]
+
+        if (isPersonal) {
+          // Your own spaces, biggest first.
+          //
+          // NO `color`. /network sets one per node — accent blue for a shared
+          // space, indigo for a solo one — and it would be dead weight here:
+          // BubbleNetwork deliberately ignores an incoming colour and paints
+          // every node NETWORK_NODE_COLOR (see the note at its `color:` line).
+          // Passing one would read as a shared/solo distinction that never
+          // reaches the screen.
+          ranked = [...(data.workspaces ?? [])]
+            .sort((a, b) => (b.subRoomCount ?? 0) - (a.subRoomCount ?? 0))
+            .map((w) => ({
+              id: w.id,
+              name: w.name,
+              label: w.name,
+              count: w.subRoomCount,
+            }))
+        } else {
+          // Biggest first — see PREVIEW_COUNT. sectionCount is what a studio
+          // BUCKET carries; memberCount is what a real workspace carries, and
+          // the top level of the archive is buckets.
+          ranked = [...(data.studios ?? [])].sort(
+            (a, b) =>
+              (b.sectionCount ?? b.memberCount ?? 0) - (a.sectionCount ?? a.memberCount ?? 0)
+          )
+        }
+
         setNodes(ranked.slice(0, PREVIEW_COUNT))
         setResolved(true)
       })
@@ -97,7 +145,7 @@ export default function NetworkPanel({
       })
 
     return () => controller.abort()
-  }, [])
+  }, [isPersonal])
 
   const hasRealBubbles = nodes !== null && nodes.length > 0
 
@@ -119,16 +167,14 @@ export default function NetworkPanel({
          * At full strength the real graph is a page's worth of labelled,
          * saturated bubbles inside a 360px box — it competes with the card
          * beside it and buries the one button on it. Faded, it reads as what it
-         * is: a look through a window at the archive. Hovering is the moment
-         * you actually want to read a name off it, so that is when it comes up
-         * — which also means the graph's own tooltip is never faint.
+         * is: a look through a window at the network. Hovering is the moment
+         * you actually want to pick a bubble out of it, so that is when it
+         * comes up.
          */
         <div className="absolute inset-0 opacity-50 transition-opacity duration-300 ease-out group-hover:opacity-95 motion-reduce:transition-none">
           {/* No onNodeClick: a bubble that swallowed the click would eat the
-              gesture meant for the panel. Hover still names the studio, which
-              is the whole point of showing the real graph. interactive={false}
-              also drops the zoom buttons and the legend — chrome for a page,
-              not for a preview. */}
+              gesture meant for the panel. interactive={false} also drops the
+              zoom buttons and the legend — chrome for a page, not a preview. */}
           <BubbleNetwork
             nodes={nodes}
             interactive={false}

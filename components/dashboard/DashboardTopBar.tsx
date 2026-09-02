@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { ChevronDown, LogOut, MoreVertical, Pencil, Plus, Trash2, UserPlus } from 'lucide-react'
 import AvatarMenu from '@/components/AvatarMenu'
-import { ChromeNav } from './ChromeNav'
+import { ChromeBar } from './ChromeNav'
 import type { OrgBrand } from '@/lib/constants/orgBranding'
 import type { DashboardWorkspace, Scope } from './dashboardScope'
 
@@ -152,16 +152,14 @@ export default function DashboardTopBar({
   const current = sections.find((s) => s.id === currentWorkspaceId) ?? null
 
   return (
-    <header className="flex flex-wrap items-center gap-2 rounded-2xl bg-white px-4 py-2.5">
-      <ChromeNav
-        currentScope={currentScope}
-        onScopeChange={onScopeChange}
-        hasOrganization={hasOrganization}
-        orgLabel={orgLabel}
-        brand={brand}
-      />
-
-      <div className="ml-auto flex flex-wrap items-center gap-2">
+    <ChromeBar
+      currentScope={currentScope}
+      onScopeChange={onScopeChange}
+      hasOrganization={hasOrganization}
+      orgLabel={orgLabel}
+      brand={brand}
+    >
+      <>
         {/* Which section the page is about.
             This IS the old sidebar list: the list's only job was picking one to
             look at, and a permanent column of names to make one choice is a
@@ -242,7 +240,7 @@ export default function DashboardTopBar({
             className="flex items-center gap-1.5 rounded-xl border border-[#16181D]/[0.12] px-3.5 py-2 text-sm font-semibold text-[#5A5E6B] transition-colors hover:bg-[#16181D]/[0.04]"
           >
             <UserPlus className="h-4 w-4" />
-            Join with code
+            Join with Code
           </button>
         )}
 
@@ -258,7 +256,7 @@ export default function DashboardTopBar({
         )}
 
         <AvatarMenu email={userEmail} isAdmin={isAdmin} onSignOut={onSignOut} />
-      </div>
-    </header>
+      </>
+    </ChromeBar>
   )
 }

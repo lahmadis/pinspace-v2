@@ -6,6 +6,7 @@ import BrandCard from './BrandCard'
 import CurrentStudioCard from './CurrentStudioCard'
 import NetworkPanel from './NetworkPanel'
 import PinspacesRow from './PinspacesRow'
+import { SHELL_COLUMN } from './ChromeNav'
 import type { Scope, DashboardWorkspace } from './dashboardScope'
 
 // Re-exported so /dashboard and /archive keep importing this type from here.
@@ -65,7 +66,11 @@ export function DashboardMain({
       ? `/explore?institution=${encodeURIComponent(organization.slug)}`
       : '/explore'
     : '/network'
-  const archiveLabel = isOrgScope ? 'Enter the archives' : 'Enter the network'
+  // One label for both scopes. It read "Enter the archives" on the org tab
+  // while pointing at /explore — the NETWORK — and "the archive" is a different
+  // page (/archive) that this link has never gone to. The pin tile beside it
+  // had the same wrong word and was corrected already; this is the other half.
+  const archiveLabel = 'Enter the Network'
 
   /**
    * The current section — now something you PICK, in the top bar's switcher.
@@ -96,15 +101,35 @@ export function DashboardMain({
    * actually belonged.
    */
   return (
-    <div className="min-w-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
-      <div className="flex w-full flex-col gap-4 rounded-3xl bg-white p-5 lg:flex-row">
+    <div className="min-w-0 flex-1 overflow-y-auto pb-8 pt-5">
+      {/* The centred column, straight on the page's own background. The white
+          card that used to wrap all of this is gone: every pane inside already
+          carries its own surface, so the wrapper was a second white rectangle
+          behind four white rectangles, and it forced the row to run the full
+          width of the monitor. SHELL_COLUMN carries the offset that puts this
+          column's left edge under the Wentworth tab. */}
+      {/* Height comes from the CONTENT, not from the viewport. Stretching the
+          row to fill the window was tried and is worse: the pin tiles have one
+          fixed column width, so every pixel of leftover page height went into
+          their height and they came out as 95px-wide, 430px-tall slivers, with
+          the studio card grown to match and a still-larger hole inside it.
+
+          The two columns stay level with each other — that is flex's own
+          stretch, and it is what lets the studio card reach the bottom of the
+          pin shelf — but neither reaches for the bottom of the screen. */}
+      <div className={`${SHELL_COLUMN} flex flex-col gap-5 lg:flex-row`}>
       {/* Identity, then where you are.
-          Wider than the 265 it was drawn at: at that width the lockup and the
-          studio name were the two things on the dashboard with the least room
-          to say themselves, next to a graph with the most. The column stretches
-          to the row's height (flex default), which is what lets the studio card
-          below reach the bottom of the pin shelf. */}
-      <div className="flex w-full shrink-0 flex-col gap-4 lg:w-[340px]">
+          440, up from 265 and then 340. At 265 the lockup and the studio name
+          were the two things on the dashboard with the least room to say
+          themselves, next to a graph with the most; at 340 the brand card's
+          subtitle still broke across three lines. It is about 28% of the row,
+          which is the share it holds in the reference — a fixed width rather
+          than a percentage so the card's own type does not have to be re-reckoned
+          every time the window moves.
+
+          The column stretches to the row's height (flex default), which is what
+          lets the studio card below reach the bottom of the pin shelf. */}
+      <div className="flex w-full shrink-0 flex-col gap-5 lg:w-[440px]">
         <BrandCard
           brand={brand}
           title={brandTitle}
@@ -129,9 +154,11 @@ export function DashboardMain({
         )}
       </div>
 
-      {/* The archive, and what you kept from it. */}
-      <div className="flex min-w-0 flex-1 flex-col gap-4">
-        <NetworkPanel href={archiveHref} label={archiveLabel} />
+      {/* The network, and what you kept from it. The panel holds its own
+          height — the bubble simulation is laid out for it — so the shelf is
+          the pane that takes up the slack. */}
+      <div className="flex min-w-0 flex-1 flex-col gap-5">
+        <NetworkPanel href={archiveHref} label={archiveLabel} scope={scope} />
         <PinspacesRow archiveHref={archiveHref} />
       </div>
       </div>
