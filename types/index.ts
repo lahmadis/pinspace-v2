@@ -19,7 +19,7 @@ export interface Year {
   schoolId: string
   year: number // e.g., 1, 2, 3, 4, 5 (for grad)
   semester: 'Fall' | 'Spring'
-  academicYear: string // e.g., "2023-2024"
+  academicYear: string // e.g., "2023-2024" — the Year entity, not a workspace
 }
 
 export interface Studio {
@@ -239,6 +239,15 @@ export interface Workspace {
      */
     studio?: StudioName
   }
+  /**
+   * The SEMESTER this workspace ran in — 'Fall 2025'. Named for the column it
+   * mirrors (workspaces.academic_year), which kept its name when the value
+   * became a term; lib/term.ts is the definition.
+   *
+   * `semester` above is a separate, older field that was never added to the
+   * database — see the note in components/dashboard/dashboardScope.ts. This is
+   * the one that is actually populated.
+   */
   academicYear?: string
   isArchived: boolean
   archivedAt: string | null

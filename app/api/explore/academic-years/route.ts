@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { isSuperadmin } from '@/lib/auth/superadmin'
+import { compareTermsDesc } from '@/lib/term'
 
 export const dynamic = 'force-dynamic'
 
 // GET /api/explore/academic-years
-// Returns academic-year buckets (with counts) scoped to the signed-in user's
+// Returns SEMESTER buckets (with counts) scoped to the signed-in user's
 // own institution. Institution is derived from the verified user, never from query
 // params — EXCEPT a platform superadmin may pass `org` to scope to any org
 // (read-only), verified server-side. Mirrors /api/explore/studios.
@@ -71,17 +72,20 @@ export async function GET(request: NextRequest) {
       const ws: WorkspaceLite | null = Array.isArray(raw) ? raw[0] ?? null : raw ?? null
       if (!ws) continue
       if (ws.organization_id !== institutionFilterId) continue
-      // A NULL year can't be offered as a tab — there is nothing to filter on.
-      // After migration 032 there should be none; the explore query logs any
+      // A NULL term can't be offered as a tab — there is nothing to filter on.
+      // After migration 046 there should be none; the explore query logs any
       // that appear rather than dropping them silently.
       if (!ws.academic_year) continue
       if (!workspacesByYear[ws.academic_year]) workspacesByYear[ws.academic_year] = new Set()
       workspacesByYear[ws.academic_year].add(ws.id)
     }
 
+    // Newest term first. NOT localeCompare: the values are semesters now
+    // ('Fall 2025'), and 'Fall 2025' sorts after 'Spring 2026' alphabetically
+    // while falling before it in time. See lib/term.
     const academicYears = Object.entries(workspacesByYear)
       .map(([year, workspaceIds]) => ({ year, count: workspaceIds.size }))
-      .sort((a, b) => b.year.localeCompare(a.year))
+      .sort((a, b) => compareTermsDesc(a.year, b.year))
 
     return NextResponse.json({ academicYears })
   } catch (error) {

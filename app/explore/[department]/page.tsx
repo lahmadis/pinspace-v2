@@ -4,6 +4,14 @@ import { use, useEffect, useMemo, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { notFound, useSearchParams, useRouter } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
+import { gradeLabel } from '@/lib/constants/departments'
+
+/**
+ * The "no grade filter" row. A sentinel, not a grade — hoisted to a constant
+ * because it was written out four times and compared against by value, so a
+ * typo in any one of them silently turned the filter off.
+ */
+const ALL_YEARS = 'All Grade Levels'
 
 const DEPT_MAP: Record<string, { name: string; color: string; accent: string }> = {
   'aerospace-engineering': { name: 'Aerospace Engineering', color: '#0ea5e9', accent: 'text-sky-600' },
@@ -47,7 +55,7 @@ function DepartmentPageInner({ params }: { params: { department: string } }) {
   const [years, setYears] = useState<YearItem[]>([])
   const [studioNodes, setStudioNodes] = useState<BubbleNode[]>([])
   const [studios, setStudios] = useState<StudioItem[]>([])
-  const [yearFilter, setYearFilter] = useState<string>('All Years')
+  const [yearFilter, setYearFilter] = useState<string>(ALL_YEARS)
   // See app/explore/page.tsx: default wide (All Years), then narrow to a year
   // that actually has published rooms. Defaulting to the calendar year rendered
   // an empty page with no tab available to escape it.
@@ -140,7 +148,7 @@ function DepartmentPageInner({ params }: { params: { department: string } }) {
   useEffect(() => {
     if (!meta || viewMode !== 'all') return
     const filtered = studios.filter((s) => {
-      if (yearFilter === 'All Years') return true
+      if (yearFilter === ALL_YEARS) return true
       return s.networkMetadata?.year === yearFilter
     })
 
@@ -172,7 +180,7 @@ function DepartmentPageInner({ params }: { params: { department: string } }) {
     if (node.url) window.location.href = node.url
   }
 
-  const uniqueYears = useMemo(() => ['All Years', ...Array.from(new Set(studios.map(s => s.networkMetadata?.year).filter(Boolean)))], [studios])
+  const uniqueYears = useMemo(() => [ALL_YEARS, ...Array.from(new Set(studios.map(s => s.networkMetadata?.year).filter(Boolean)))], [studios])
 
   if (!meta) return notFound()
 
@@ -209,8 +217,10 @@ function DepartmentPageInner({ params }: { params: { department: string } }) {
                   onChange={(e) => setYearFilter(e.target.value)}
                   className="px-3 py-1.5 bg-slate-800 border border-slate-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
+                  {/* value stays the stored 'Year 2'; the text is the name
+                      the section was filed under. */}
                   {uniqueYears.map((y) => (
-                    <option key={y} value={y}>{y}</option>
+                    <option key={y} value={y}>{y === ALL_YEARS ? y : gradeLabel(y)}</option>
                   ))}
                 </select>
               </div>
@@ -235,7 +245,7 @@ function DepartmentPageInner({ params }: { params: { department: string } }) {
           </div>
         </header>
 
-        {/* Academic Year Tab Bar */}
+        {/* Semester Tab Bar */}
         {availableAcademicYears.length > 0 && (
           <div className="fixed top-[73px] left-0 right-0 z-30 bg-slate-900/95 border-b border-slate-700/50 px-6 py-2 flex items-center gap-2 overflow-x-auto">
             <button
@@ -246,7 +256,7 @@ function DepartmentPageInner({ params }: { params: { department: string } }) {
                   : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600'
               }`}
             >
-              All Years
+              All Semesters
             </button>
             {availableAcademicYears.map(({ year, count }) => (
               <button
@@ -273,7 +283,7 @@ function DepartmentPageInner({ params }: { params: { department: string } }) {
             <div className="text-center">
               <p className="text-slate-400 text-lg font-medium">No studios yet</p>
               <p className="text-slate-500 text-sm mt-1">
-                {selectedAcademicYear ? `No published studios for ${selectedAcademicYear}` : 'No published studios in this department'}
+                {selectedAcademicYear ? `No published studios in ${selectedAcademicYear}` : 'No published studios in this department'}
               </p>
             </div>
           </div>
@@ -335,7 +345,7 @@ function DepartmentPageInner({ params }: { params: { department: string } }) {
             })()}
           </div>
 
-          {/* Academic Year Tab Bar */}
+          {/* Semester Tab Bar */}
           {availableAcademicYears.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
               <button
@@ -346,7 +356,7 @@ function DepartmentPageInner({ params }: { params: { department: string } }) {
                     : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                 }`}
               >
-                All Years
+                All Semesters
               </button>
               {availableAcademicYears.map(({ year, count }) => (
                 <button
@@ -373,7 +383,7 @@ function DepartmentPageInner({ params }: { params: { department: string } }) {
                 <div className="text-center">
                   <p className="text-gray-500 text-lg font-medium">No studios yet</p>
                   <p className="text-gray-400 text-sm mt-1">
-                    {selectedAcademicYear ? `No published studios for ${selectedAcademicYear}` : 'No published studios in this department'}
+                    {selectedAcademicYear ? `No published studios in ${selectedAcademicYear}` : 'No published studios in this department'}
                   </p>
                 </div>
               </div>

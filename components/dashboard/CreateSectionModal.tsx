@@ -4,7 +4,7 @@ import { useId, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { Button, Dialog, Input, Select, StatusState } from '@/components/ui'
-import { academicYearOptions } from '@/lib/academicYear'
+import { currentTerm, termOptions } from '@/lib/term'
 import { DEPARTMENTS, YEAR_LEVELS, yearLabel } from '@/lib/constants/departments'
 import { STUDIOS } from '@/lib/constants/studios'
 import { formatSectionName, normalizeSectionNumber } from '@/lib/sections'
@@ -50,14 +50,18 @@ export default function CreateSectionModal({
 }: CreateSectionModalProps) {
   const router = useRouter()
   const formId = useId()
-  const years = useMemo(() => academicYearOptions(4), [])
+  // Two semesters ahead and four back — enough to file next Spring in
+  // November without scrolling through terms nobody is teaching. The default
+  // below is currentTerm(), NOT terms[0]: the list now leads with a future
+  // term (see lib/term).
+  const terms = useMemo(() => termOptions({ back: 4 }), [])
 
   const [sectionNumber, setSectionNumber] = useState('')
   const [studio, setStudio] = useState<string>(STUDIOS[0])
   const [instructorName, setInstructorName] = useState(defaultInstructorName ?? '')
   const [department, setDepartment] = useState<string>(DEPARTMENTS[0])
   const [yearLevel, setYearLevel] = useState<string>(YEAR_LEVELS[0])
-  const [academicYear, setAcademicYear] = useState<string>(years[0])
+  const [term, setTerm] = useState<string>(currentTerm())
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -76,7 +80,7 @@ export default function CreateSectionModal({
     instructor: `${formId}-instructor`,
     department: `${formId}-department`,
     year: `${formId}-year`,
-    academicYear: `${formId}-academic-year`,
+    semester: `${formId}-semester`,
     error: `${formId}-error`,
   }
 
@@ -90,7 +94,7 @@ export default function CreateSectionModal({
     setInstructorName(defaultInstructorName ?? '')
     setDepartment(DEPARTMENTS[0])
     setYearLevel(YEAR_LEVELS[0])
-    setAcademicYear(years[0])
+    setTerm(currentTerm())
     setError('')
   }
 
@@ -134,7 +138,8 @@ export default function CreateSectionModal({
         yearLevel,
         studio,
         instructor: instructorName.trim(),
-        academicYear,
+        // Wire name for workspaces.academic_year, which holds a term now.
+        academicYear: term,
       }
 
       const response = await fetch('/api/workspaces', {
@@ -182,7 +187,7 @@ export default function CreateSectionModal({
             Settings, which asks for these five about a section that already
             exists. Two forms writing one filing had two orders and two
             groupings, so an instructor learned the shape twice — and the pair
-            that had to agree, Grade Level and Academic Year, sat in different
+            that had to agree, Grade Level and Semester, sat in different
             columns in one and different rows in the other.
 
             Section # is the only field here that settings has no counterpart
@@ -203,16 +208,16 @@ export default function CreateSectionModal({
         </div>
 
         <div>
-          <label htmlFor={ids.academicYear} className="mb-1 block text-sm font-semibold text-text-primary">
-            Academic Year
+          <label htmlFor={ids.semester} className="mb-1 block text-sm font-semibold text-text-primary">
+            Semester
           </label>
           <Select
-            id={ids.academicYear}
-            value={academicYear}
+            id={ids.semester}
+            value={term}
             disabled={loading}
-            onChange={(event) => setAcademicYear(event.target.value)}
+            onChange={(event) => setTerm(event.target.value)}
           >
-            {years.map((item) => <option key={item} value={item}>{item}</option>)}
+            {terms.map((item) => <option key={item} value={item}>{item}</option>)}
           </Select>
         </div>
 

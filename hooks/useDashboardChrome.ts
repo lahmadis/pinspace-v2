@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthSession } from '@/hooks/useAuthSession'
+import { resetAccountModeCache } from '@/lib/useAccountMode'
+import { supabase } from '@/lib/supabase/client'
 import type { Scope } from '@/components/dashboard/DashboardSidebar'
 
 const SCOPE_KEY = 'pinspace-dashboard-scope'
@@ -56,9 +58,25 @@ export function useDashboardChrome() {
     router.push('/dashboard')
   }
 
+  /** Same three lines /dashboard runs, so the bar's avatar menu works here. */
+  const handleSignOut = async () => {
+    resetAccountModeCache()
+    await supabase.auth.signOut()
+    router.push('/sign-in')
+  }
+
   return {
     authStatus,
     user,
+    /**
+     * The pieces on their own, for a page that builds the top BAR rather than
+     * the old sidebar. sidebarProps below is the same data pre-bundled; both
+     * shapes exist because /archive and /settings still take the sidebar one.
+     */
+    isAdmin,
+    organization,
+    onScopeChange: handleScopeChange,
+    onSignOut: handleSignOut,
     sidebarProps: {
       currentScope: 'personal' as Scope,
       onScopeChange: handleScopeChange,

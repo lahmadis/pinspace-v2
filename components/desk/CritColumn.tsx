@@ -271,7 +271,12 @@ function CritPicker({
           onChange(next)
         }}
         aria-label={ariaLabel}
-        className={`w-full appearance-none cursor-pointer truncate rounded-md bg-transparent pl-1 pr-6 py-0.5 outline-none hover:bg-[#16181D]/[0.04] focus:bg-white focus:ring-2 focus:ring-[#3B6EF6]/40 ${textClass}`}
+        // The full value on hover. A long project name is truncated by the
+        // card's width no matter how small the type gets — 'Boat Building
+        // School' does not fit a three-across grid at any size worth reading —
+        // so there has to be a way to see the rest without opening the menu.
+        title={value ?? undefined}
+        className={`w-full appearance-none cursor-pointer truncate rounded-md bg-transparent pl-1 pr-5 py-0.5 outline-none hover:bg-[#16181D]/[0.04] focus:bg-white focus:ring-2 focus:ring-[#3B6EF6]/40 ${textClass}`}
       >
         {emptyLabel && <option value="">{emptyLabel}</option>}
         {custom && <option value={value as string}>{value}</option>}
@@ -493,16 +498,24 @@ export default function CritColumn({
                 value={crit.project}
                 options={projects}
                 onChange={onProjectChange}
-                addLabel="+ New project…"
-                emptyLabel="No project"
+                addLabel="+ New Project…"
+                emptyLabel="No Project"
                 placeholder="Name this project"
                 maxLength={120}
                 ariaLabel="Project"
-                textClass="text-lg font-bold text-[#16181D]"
+                // 16px, not 18px, and slightly tighter: the project name is
+                // the longest string on the card and the one most often cut
+                // off ("Boat Building Sch…"). It is still the largest line
+                // here — phase is 13px and the date 10px — so dropping a step
+                // buys a couple of words without flattening the stack.
+                textClass="text-base font-bold tracking-[-0.01em] text-[#16181D]"
               />
             ) : (
-              <h2 className="text-lg font-bold text-[#16181D] truncate">
-                {crit.project ?? 'No project'}
+              <h2
+                title={crit.project ?? undefined}
+                className="text-base font-bold tracking-[-0.01em] text-[#16181D] truncate"
+              >
+                {crit.project ?? 'No Project'}
               </h2>
             )}
 
@@ -511,8 +524,8 @@ export default function CritColumn({
                 value={crit.phase}
                 options={phases}
                 onChange={onPhaseChange}
-                addLabel="+ New phase…"
-                emptyLabel={crit.phase ? undefined : 'No phase'}
+                addLabel="+ New Phase…"
+                emptyLabel={crit.phase ? undefined : 'No Phase'}
                 placeholder="Name this phase"
                 maxLength={MAX_CRIT_PHASE_LENGTH}
                 ariaLabel="Project phase"
@@ -520,7 +533,7 @@ export default function CritColumn({
               />
             ) : (
               <p className="text-[13px] font-semibold text-[#5A5E6B] truncate">
-                {crit.phase ?? 'No phase'}
+                {crit.phase ?? 'No Phase'}
               </p>
             )}
 
@@ -583,7 +596,7 @@ export default function CritColumn({
         <div className="flex items-center justify-end gap-2">
           {onPin && (
             <CardAction onClick={onPin} disabled={busy} icon={<Pin className="w-3 h-3" />}>
-              Pin work
+              Pin Work
             </CardAction>
           )}
         </div>
@@ -664,9 +677,12 @@ export default function CritColumn({
                 Note
               </CardAction>
             )}
+            {/* STEPS, plural. The button adds to a list you keep adding to —
+                the singular read as "one step", which is what the row it opens
+                is for, not what the button does. */}
             {onStep && (
               <CardAction onClick={onStep} icon={<ListChecks className="w-3 h-3" />}>
-                Step
+                Steps
               </CardAction>
             )}
             {onReference && (

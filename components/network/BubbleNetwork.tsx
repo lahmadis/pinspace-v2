@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as d3 from 'd3'
 import { throttle, debounce } from '@/lib/throttleDebounce'
+import { gradeLabel } from '@/lib/constants/departments'
 
 // ============================================================================
 // TYPES
@@ -305,9 +306,9 @@ function Tooltip({ data, containerRect }: { data: TooltipData | null; containerR
             <span className="font-medium">{node.department || '—'}</span>
           </div>
           <div className="flex justify-between gap-3 text-[#16181D]">
-            <span className="text-[#8A8FA0]">Year</span>
+            <span className="text-[#8A8FA0]">Grade</span>
             <span className="font-medium">
-              {node.year ? (node.year === 'Masters' ? 'Masters' : `Year ${node.year}`) : '—'}
+              {node.year ? gradeLabel(node.year) : '—'}
             </span>
           </div>
           {node.studio && (
@@ -338,7 +339,7 @@ function Tooltip({ data, containerRect }: { data: TooltipData | null; containerR
               {connections.sameYear.length > 0 && node.year && (
                 <div className="flex items-center gap-2 text-[#16181D]">
                   <span className="w-3 border-t-2 border-dashed" style={{ borderColor: RELATIONSHIP_STYLES.year.color }} />
-                  <span>{connections.sameYear.length} classes ({node.year === 'Masters' ? 'Masters' : `Year ${node.year}`})</span>
+                  <span>{connections.sameYear.length} classes ({gradeLabel(node.year)})</span>
                 </div>
               )}
               {connections.sameDepartment.length > 0 && node.department && (
@@ -1148,7 +1149,7 @@ export default function BubbleNetwork({
           </div>
           <div className="flex items-center gap-3">
             <div className="w-8 border-t-2 border-dashed" style={{ borderColor: RELATIONSHIP_STYLES.year.color }} />
-            <span className="text-[#5A5E6B]">Same Year</span>
+            <span className="text-[#5A5E6B]">Same Grade Level</span>
           </div>
           <div className="flex items-center gap-3">
             <div className="w-8 border-t-2 border-dotted" style={{ borderColor: RELATIONSHIP_STYLES.department.color }} />

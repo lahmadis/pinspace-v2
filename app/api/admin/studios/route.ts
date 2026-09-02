@@ -6,7 +6,7 @@ import { isUuid } from '@/lib/validation/uuid'
 import { orgIdFromEmailDomain } from '@/lib/orgs/resolveOrg'
 import { createWorkspace } from '@/lib/workspaces/createWorkspace'
 import { isDepartment, isYearLevel } from '@/lib/constants/departments'
-import { academicYearOptions } from '@/lib/academicYear'
+import { termOptions } from '@/lib/term'
 
 export const dynamic = 'force-dynamic'
 
@@ -140,9 +140,12 @@ export async function POST(req: NextRequest) {
     if (!isYearLevel(body.yearLevel)) {
       return NextResponse.json({ error: 'A valid year level is required' }, { status: 400 })
     }
+    // Eight years' worth of semesters, matching the span the academic-year
+    // list allowed before terms replaced it. Membership of the offered list,
+    // not just isTerm(), so provisioning cannot file a studio in 2041.
     const academicYear = typeof body.academicYear === 'string' ? body.academicYear : ''
-    if (!academicYearOptions(8).includes(academicYear)) {
-      return NextResponse.json({ error: 'A valid academic year is required' }, { status: 400 })
+    if (!termOptions({ back: 23 }).includes(academicYear)) {
+      return NextResponse.json({ error: 'A valid semester is required' }, { status: 400 })
     }
 
     const admin = supabaseServiceRole()
@@ -216,12 +219,15 @@ export async function POST(req: NextRequest) {
 
     const workspaceId = result.workspace.id as string
 
-    // Network metadata + the chosen academic year. createWorkspace stamps the
-    // current academic year; this honours the admin's explicit pick instead,
-    // which matters when back-filling a studio for a term already underway.
-    // Note academicYearOptions returns the current year and past ones only, so
-    // a FUTURE term cannot be selected here — the July rollover means "next
-    // term" is already the current value from July onward.
+    // Network metadata + the chosen semester. createWorkspace stamps the
+    // current term; this honours the admin's explicit pick instead, which
+    // matters when back-filling a studio for a term already underway.
+    //
+    // Unlike the academic-year list this replaced, termOptions DOES offer the
+    // next two terms. It has to: the old list leaned on the July rollover to
+    // make "next year" current from July onward, and a semester has no such
+    // overlap — provisioning a Spring section happens in November, while Fall
+    // is current.
     const { error: metaError } = await admin
       .from('workspaces')
       .update({

@@ -1,11 +1,9 @@
 'use client'
 
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { ChevronDown, LogOut, MoreVertical, Pencil, Plus, Trash2, UserPlus } from 'lucide-react'
 import AvatarMenu from '@/components/AvatarMenu'
-import { SuperadminOrgSwitcher } from './SuperadminOrgSwitcher'
+import { ChromeNav } from './ChromeNav'
 import type { OrgBrand } from '@/lib/constants/orgBranding'
 import type { DashboardWorkspace, Scope } from './dashboardScope'
 
@@ -149,74 +147,19 @@ export default function DashboardTopBar({
   onDelete: (id: string, name: string) => void
   onLeave: (id: string, name: string) => void
 }) {
-  const pathname = usePathname()
   const [switcherOpen, setSwitcherOpen] = useState(false)
 
   const current = sections.find((s) => s.id === currentWorkspaceId) ?? null
 
-  const navPill = (active: boolean) =>
-    `flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
-      active ? 'text-[#16181D]' : 'text-[#5A5E6B] hover:bg-[#16181D]/[0.04]'
-    }`
-
   return (
     <header className="flex flex-wrap items-center gap-2 rounded-2xl bg-white px-4 py-2.5">
-      <Link href="/" className="mr-1 shrink-0 transition-opacity hover:opacity-80">
-        <span className="text-[17px] font-extrabold tracking-[-0.04em] text-[#16181D]">
-          pinspace
-          <span
-            aria-hidden="true"
-            className="ml-[0.06em] inline-block h-[0.2em] w-[0.2em] rounded-full bg-[#3B6EF6] align-baseline"
-          />
-        </span>
-      </Link>
-
-      {/* Where you are. The org tab wears its own colour when it has one —
-          the only tinted thing in the bar, because it is the only one that
-          belongs to somebody other than pinspace. */}
-      {hasOrganization && (
-        <button
-          type="button"
-          onClick={() => onScopeChange('wentworth')}
-          aria-current={currentScope === 'wentworth' ? 'page' : undefined}
-          className={navPill(currentScope === 'wentworth')}
-          style={
-            currentScope === 'wentworth' && brand
-              ? { background: brand.accentSoft }
-              : undefined
-          }
-        >
-          {brand && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={brand.mark} alt="" aria-hidden="true" className="h-5 w-5" />
-          )}
-          {orgLabel}
-        </button>
-      )}
-      <button
-        type="button"
-        onClick={() => onScopeChange('personal')}
-        aria-current={currentScope === 'personal' ? 'page' : undefined}
-        className={`${navPill(currentScope === 'personal')} ${
-          currentScope === 'personal' ? 'bg-[#16181D]/[0.06]' : ''
-        }`}
-      >
-        Personal
-      </button>
-      {/* Superadmin-only, and it self-gates — renders nothing for everyone
-          else, verified server-side by its own endpoint. Kept from the sidebar
-          rather than dropped with it: it is the only way a superadmin reaches
-          another institution's network, and it costs a normal account nothing
-          because it does not render. */}
-      <SuperadminOrgSwitcher />
-
-      <Link
-        href="/desk-crits"
-        aria-current={pathname === '/desk-crits' ? 'page' : undefined}
-        className={navPill(false)}
-      >
-        Desk crits
-      </Link>
+      <ChromeNav
+        currentScope={currentScope}
+        onScopeChange={onScopeChange}
+        hasOrganization={hasOrganization}
+        orgLabel={orgLabel}
+        brand={brand}
+      />
 
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {/* Which section the page is about.

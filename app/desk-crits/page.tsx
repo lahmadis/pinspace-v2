@@ -1,8 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
+import AvatarMenu from '@/components/AvatarMenu'
+import { ChromeNav } from '@/components/dashboard/ChromeNav'
+import { useDashboardChrome } from '@/hooks/useDashboardChrome'
 import { useDeskCrits } from '@/hooks/useDeskCrits'
 import { useDirectUpload } from '@/lib/useDirectUpload'
 import { useSpeechTranscription } from '@/hooks/useSpeechTranscription'
@@ -130,7 +132,10 @@ function NewCritPicker({
  */
 
 export default function DeskPage() {
-  const router = useRouter()
+  // The bar's own data — organisation, admin flag, scope navigation, sign out.
+  // The same hook /archive was written for; this page is the second thing
+  // sitting beside the dashboard and now wears the same chrome.
+  const { user, isAdmin, organization, onScopeChange, onSignOut } = useDashboardChrome()
   const {
     crits, loading, error, clearError, createCrit, deleteCrit,
     setCritPhase, setCritProject,
@@ -598,83 +603,97 @@ export default function DeskPage() {
   return (
     <div className="flex flex-col h-screen bg-[#F4F6FA]">
       {/* ---------------- top bar ---------------- */}
-      <header className="shrink-0 h-[72px] flex items-center gap-4 px-5 bg-white border-b border-[#16181D]/8">
-        <button
-          type="button"
-          onClick={() => router.push('/dashboard')}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#16181D]/12 text-sm font-semibold text-[#5A5E6B] hover:bg-[#16181D]/4"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Dashboard
-        </button>
+      {/* The dashboard's bar, not a header of this page's own.
+          It was a full-bleed white strip with a back arrow, "Your Desk" and a
+          "PRIVATE TO YOU · 2 DESK CRITS" subtitle — a different chrome one
+          click from the dashboard, reached by a tab that then vanished. The
+          lockup is shared now (components/dashboard/ChromeNav), so the Desk
+          crits tab is simply the selected one and the way back is the same set
+          of tabs that got you here.
 
-        <div className="min-w-0">
-          <h1 className="text-lg font-extrabold text-[#16181D] leading-tight">Your Desk</h1>
-          <p className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#8A8FA0]">
-            Private to you · {crits.length} desk crit{crits.length === 1 ? '' : 's'}
-          </p>
-        </div>
+          The title went with it. "Your Desk" restated the selected tab, and
+          the crit count restated a screen full of crits. */}
+      <div className="shrink-0 px-5 pt-4">
+        <header className="flex flex-wrap items-center gap-2 rounded-2xl bg-white px-4 py-2.5">
+          <ChromeNav
+            // No scope is current here — this page is not one. Desk crits
+            // carries the selection instead; see ChromeNav.
+            currentScope={null}
+            onScopeChange={onScopeChange}
+            hasOrganization={Boolean(organization)}
+            orgLabel={organization?.name?.split(' ')[0] || 'Network'}
+            brand={null}
+          />
 
-        {/* Filters, where a row of dates used to be.
-            Those chips scrolled to a crit and did nothing else — they were a
-            table of contents for a list that already fits on screen, and they
-            named crits by a date two of which were the same day. Filtering is
-            what the space was actually worth. */}
-        <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
-          {projects.length > 0 && (
+          {/* Everything you can DO, in one right-hand group — the same
+              order and the same shapes as the dashboard's bar: the page's own
+              controls, then the primary action, then the account.
+
+              Filters live here, where a row of dates used to be. Those chips
+              scrolled to a crit and did nothing else — a table of contents for
+              a list that already fits on screen, naming crits by a date two of
+              which were the same day. Filtering is what the space was actually
+              worth. */}
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            {projects.length > 0 && (
+              <select
+                value={projectFilter}
+                onChange={(e) => setProjectFilter(e.target.value)}
+                aria-label="Filter by project"
+                className="rounded-xl border border-[#16181D]/[0.12] bg-white px-3 py-2 text-sm font-semibold text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
+              >
+                <option value="">All Projects</option>
+                {projects.map((project) => (
+                  <option key={project} value={project}>
+                    {project}
+                  </option>
+                ))}
+              </select>
+            )}
+
             <select
-              value={projectFilter}
-              onChange={(e) => setProjectFilter(e.target.value)}
-              aria-label="Filter by project"
-              className="rounded-xl border border-[#16181D]/12 bg-white px-3 py-2 text-sm font-semibold text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
+              value={phaseFilter}
+              onChange={(e) => setPhaseFilter(e.target.value)}
+              aria-label="Filter by phase"
+              className="rounded-xl border border-[#16181D]/[0.12] bg-white px-3 py-2 text-sm font-semibold text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
             >
-              <option value="">All projects</option>
-              {projects.map((project) => (
-                <option key={project} value={project}>
-                  {project}
+              <option value="">All Phases</option>
+              {phaseOptions.map((phase) => (
+                <option key={phase} value={phase}>
+                  {phase}
                 </option>
               ))}
             </select>
-          )}
 
-          <select
-            value={phaseFilter}
-            onChange={(e) => setPhaseFilter(e.target.value)}
-            aria-label="Filter by phase"
-            className="rounded-xl border border-[#16181D]/12 bg-white px-3 py-2 text-sm font-semibold text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#3B6EF6]"
-          >
-            <option value="">All phases</option>
-            {phaseOptions.map((phase) => (
-              <option key={phase} value={phase}>
-                {phase}
-              </option>
-            ))}
-          </select>
+            {filtersActive && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPhaseFilter('')
+                  setProjectFilter('')
+                }}
+                className="rounded-xl border border-[#16181D]/[0.12] px-3 py-2 text-sm font-semibold text-[#5A5E6B] transition-colors hover:bg-[#16181D]/[0.04]"
+              >
+                Clear
+              </button>
+            )}
 
-          {filtersActive && (
             <button
               type="button"
-              onClick={() => {
-                setPhaseFilter('')
-                setProjectFilter('')
-              }}
-              className="px-3 py-2 rounded-xl border border-[#16181D]/12 text-sm font-semibold text-[#5A5E6B] hover:bg-[#16181D]/4"
+              onClick={() => setPhasePickerOpen(true)}
+              disabled={creating}
+              // Same black primary the dashboard's create button uses, so the
+              // two bars have one "the main action here" and not two colours.
+              className="flex shrink-0 items-center gap-1.5 rounded-xl bg-[#16181D] px-3.5 py-2 text-sm font-bold text-white transition-colors hover:bg-[#3B6EF6] disabled:opacity-60"
             >
-              Clear
+              <Plus className="h-4 w-4" />
+              {creating ? 'Adding…' : 'New Crit'}
             </button>
-          )}
-        </div>
 
-        <button
-          type="button"
-          onClick={() => setPhasePickerOpen(true)}
-          disabled={creating}
-          className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#3B6EF6] text-white text-sm font-semibold hover:bg-[#2F5BD4] disabled:opacity-60 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          {creating ? 'Adding…' : 'New crit'}
-        </button>
-      </header>
+            <AvatarMenu email={user?.email} isAdmin={isAdmin} onSignOut={onSignOut} />
+          </div>
+        </header>
+      </div>
 
       {(problem || error || (speech.unavailable && speechBlocked)) && (
         <button
@@ -693,7 +712,10 @@ export default function DeskPage() {
 
       <div className="flex-1 flex min-h-0">
         {/* ---------------- the crits ---------------- */}
-        <div ref={scrollerRef} className="flex-1 overflow-y-auto p-6">
+        {/* px-5, matching the bar above it and DashboardMain — p-6 left the cards
+            sitting 4px inside the bar's left edge, which reads as a wobble
+            rather than a margin. */}
+        <div ref={scrollerRef} className="flex-1 overflow-y-auto px-5 pb-5 pt-4">
           {loading && crits.length === 0 ? (
             <div className="flex gap-5">
               {[0, 1, 2].map((i) => (
@@ -731,7 +753,7 @@ export default function DeskPage() {
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#3B6EF6] text-white text-sm font-semibold hover:bg-[#2F5BD4] disabled:opacity-60"
               >
                 <Plus className="w-4 h-4" />
-                New crit
+                New Crit
               </button>
             </div>
           ) : (
@@ -864,11 +886,11 @@ export default function DeskPage() {
                 options={projects}
                 value={newProject}
                 onChange={setNewProject}
-                addLabel="+ New project…"
+                addLabel="+ New Project…"
                 placeholder="e.g. Quincy Center Mixed-Use"
-                // A crit does not have to belong to a project, so "No project"
+                // A crit does not have to belong to a project, so "No Project"
                 // is a real choice rather than an empty field you leave alone.
-                emptyLabel="No project"
+                emptyLabel="No Project"
                 maxLength={120}
                 disabled={creating}
               />
@@ -881,7 +903,7 @@ export default function DeskPage() {
                 options={phaseOptions}
                 value={newPhase}
                 onChange={setNewPhase}
-                addLabel="+ New phase…"
+                addLabel="+ New Phase…"
                 placeholder="e.g. Interim pin-up"
                 maxLength={MAX_CRIT_PHASE_LENGTH}
                 disabled={creating}

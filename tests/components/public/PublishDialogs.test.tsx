@@ -61,7 +61,7 @@ describe('PinSpace publish dialogs', () => {
     )
 
     const dialog = screen.getByRole('dialog', { name: 'Publish to network' })
-    await user.selectOptions(within(dialog).getByLabelText('Academic Year'), '')
+    await user.selectOptions(within(dialog).getByLabelText('Semester'), '')
     await user.click(within(dialog).getByRole('button', { name: 'Publish to network' }))
 
     // FIVE required fields, not four. Class (the studio bucket) became
@@ -69,7 +69,7 @@ describe('PinSpace publish dialogs', () => {
     // studio has no bucket to appear in" — and the list here was never
     // updated, so the count assertion has been failing ever since while the
     // one field it forgot went unchecked.
-    for (const name of ['Department', 'Academic Year', 'Grade Level', 'Class', 'Instructor']) {
+    for (const name of ['Department', 'Semester', 'Grade Level', 'Class', 'Instructor']) {
       const field = within(dialog).getByLabelText(name)
       expect(field).toHaveAttribute('aria-invalid', 'true')
       expect(field).toHaveAttribute('aria-describedby')

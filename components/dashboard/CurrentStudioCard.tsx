@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { ArrowRight } from 'lucide-react'
+import { instructorLastName } from '@/lib/sections'
 import { metaLine, withInstitution, type DashboardWorkspace } from './dashboardScope'
 
 /** How many roster rows are listed before the rest collapse into a count. */
@@ -69,18 +70,35 @@ export default function CurrentStudioCard({
   const href = withInstitution(`/workspace/${workspace.id}`, institutionSlug)
 
   /**
-   * The STUDIO this section is of, when we know it.
+   * The studio this section is of, WITH the instructor's surname — "Studio 04 -
+   * Tavares".
    *
-   * A section is named "Section 01 - Tavares", but the thing being taught is
-   * Studio 01, and that is what belongs at the top of a card whose job is to
-   * say where you are. The instructor's name moves down to the meta line, where
-   * it is one fact among the counts rather than half the title. Sections created
-   * before the new-section dialog have no network_metadata.studio, so those fall
-   * back to the section's own name rather than showing a card with no heading.
+   * The studio alone was ambiguous in exactly the case this card exists for: a
+   * department runs eight sections of Studio 04, and a heading reading "Studio
+   * 04" names the course, not the room you are standing in. The surname is what
+   * tells them apart, which is why a section's own generated name is built from
+   * the same two parts (lib/sections).
+   *
+   * The name is BUILT here rather than read off workspace.name, so the heading
+   * leads with the studio; the stored name leads with "Section 03". Same two
+   * facts, ordered for a card whose job is "which class is this".
+   *
+   * The fallback path is untouched and must stay that way: sections created
+   * before the new-section dialog have no network_metadata.studio, and their
+   * workspace.name ALREADY ends in the surname — appending it there would
+   * render "Section 03 - Lahmadi - Lahmadi".
    */
-  const studioLabel = workspace.network_metadata?.studio || workspace.name || 'Untitled'
+  const studioName = workspace.network_metadata?.studio
+  const surname = workspace.instructor ? instructorLastName(workspace.instructor) : ''
+  const studioLabel = studioName
+    ? surname
+      ? `${studioName} - ${surname}`
+      : studioName
+    : workspace.name || 'Untitled'
+
+  // The instructor is out of the meta line: it is in the heading now, and
+  // naming them twice, three lines apart, is what the heading change fixed.
   const meta = metaLine([
-    workspace.instructor,
     (workspace.room_count ?? 0) > 0
       ? `${workspace.room_count} room${workspace.room_count === 1 ? '' : 's'}`
       : null,
@@ -100,10 +118,13 @@ export default function CurrentStudioCard({
       <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#8A8FA0]">
         <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[#2FA96B]" />
         {/* "Current studio" on the class tab too, where a workspace is a
-            SECTION everywhere else in the product. What the card leads with is
-            the studio the section is of — Studio 01, not Section 01 - Tavares —
-            so naming the card after the section would label the heading beneath
-            it wrongly. The button below follows the same word. */}
+            SECTION everywhere else in the product.
+
+            The heading below now names the section in full — "Studio 04 -
+            Tavares" — so this eyebrow is the one place still calling it a
+            studio, and the button at the bottom says Section. Left as-is
+            deliberately: it labels the CARD, and "Current studio" is what a
+            person calls the class they are teaching this term. */}
         Current studio
       </p>
 
@@ -200,7 +221,7 @@ export default function CurrentStudioCard({
         href={href}
         className="flex items-center justify-center gap-2 rounded-full bg-[#16181D] px-4 py-2.5 text-[13px] font-bold text-white transition-colors hover:bg-[#3B6EF6]"
       >
-        Enter studio
+        Enter Your Section
         <ArrowRight className="h-4 w-4" />
       </Link>
       </div>

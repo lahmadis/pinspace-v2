@@ -7,12 +7,21 @@
  * not answer it: two crits a week apart can sit either side of a phase change.
  *
  * ORDERED BY WHEN THEY HAPPEN, not alphabetically, because the dropdown is read
- * as a sequence — someone picking "Massing studies" is looking for it after
- * Concept, not between "Final review" and "Model making".
+ * as a sequence — someone picking "Massing Studies" is looking for it after
+ * Concept, not between "Final Review" and "Model Making".
  *
- * These are STORED VALUES on canvases.phase. Renaming one orphans every crit
- * already filed under it, exactly as with STUDIOS and YEAR_LEVELS. Add to the
- * end of the list you want it to appear in; don't rewrite.
+ * TITLE CASE, every word — these are labels in a dropdown, and the six that
+ * were sentence case ('Site analysis', 'Massing studies', 'Schematic design',
+ * 'Model making', 'Design development', 'Final review') read as stray
+ * lowercase next to 'Precedent' and 'Concept'.
+ *
+ * These are STORED VALUES on canvases.phase, so that recapitalisation was a
+ * data change and not a copy change: a crit already filed under the old
+ * spelling stops matching this list, and the picker renders it as a one-off
+ * custom value sitting next to the real one — two entries that read almost
+ * identically. migrations/047 rewrites the stored values to match. If you
+ * change a spelling here again, it needs the same treatment; adding to the end
+ * of the list does not.
  *
  * Free text in the database rather than a CHECK constraint or an enum,
  * deliberately: this list will grow — the brief that produced it ended in
@@ -25,15 +34,15 @@
  */
 export const CRIT_PHASES = [
   'Precedent',
-  'Site analysis',
+  'Site Analysis',
   'Concept',
-  'Massing studies',
-  'Schematic design',
+  'Massing Studies',
+  'Schematic Design',
   'Sketching',
-  'Model making',
-  'Design development',
+  'Model Making',
+  'Design Development',
   'Detailing',
-  'Final review',
+  'Final Review',
 ] as const
 
 export type CritPhase = (typeof CRIT_PHASES)[number]
@@ -45,7 +54,7 @@ export function isCritPhase(value: unknown): value is CritPhase {
 /**
  * How long a phase someone typed themselves may be.
  *
- * Sized against the list above — "Design development" is 18 characters — with
+ * Sized against the list above — "Design Development" is 18 characters — with
  * room for a studio's own wording ("Interim pin-up with the consultants"), and
  * short enough that the label still reads as a heading on a card rather than a
  * sentence wrapping over three lines.
@@ -61,12 +70,14 @@ export const MAX_CRIT_PHASE_LENGTH = 60
  * review" — and refusing those meant the only honest answer was to file the
  * crit under a phase it wasn't. So free text is accepted, with two guards:
  *
- * - Whitespace collapsed and trimmed, so "Site  analysis " and "Site analysis"
+ * - Whitespace collapsed and trimmed, so "Site  Analysis " and "Site Analysis"
  *   are not two buckets.
  * - Matched case-insensitively against the known list FIRST, and stored in the
  *   list's spelling when it hits. Someone typing "final review" into the Other
  *   box means the phase that is already there; storing it verbatim would split
- *   the filter into two entries that read identically.
+ *   the filter into two entries that read identically. This is also what makes
+ *   the Title Case rename safe going forward: a crit re-saved with the old
+ *   'Schematic design' spelling is stored as 'Schematic Design'.
  *
  * Returns null for anything that isn't usable text — the caller decides whether
  * that is a 400 or a fallback to DEFAULT_CRIT_PHASE.

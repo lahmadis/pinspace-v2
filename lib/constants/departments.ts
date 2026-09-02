@@ -75,6 +75,26 @@ export function yearLabel(value: string): string {
   return (YEAR_LABELS as Record<string, string>)[value] ?? value
 }
 
+/**
+ * The same label, for a value that may not be the stored string.
+ *
+ * The explore API does not send 'Year 2' — it parses the digit out of the
+ * stored value and sends the NUMBER 2, with 'Masters' as the one string
+ * exception (see yearNum in app/api/explore/studios/route.ts). So the network
+ * was left rebuilding "Year 2" by hand and drawing that on the bubble, while
+ * every form that WROTE the value showed "Sophomore". One value, two names,
+ * depending on which screen you were standing on.
+ *
+ * Takes 2, '2', 'Year 2' or 'Masters' and returns what the section settings
+ * called it. Anything unrecognised falls through to yearLabel, which returns
+ * the value itself rather than a blank.
+ */
+export function gradeLabel(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return 'Unknown'
+  const raw = String(value).trim()
+  return yearLabel(/^\d+$/.test(raw) ? `Year ${raw}` : raw)
+}
+
 export function isDepartment(value: unknown): value is Department {
   return typeof value === 'string' && (DEPARTMENTS as readonly string[]).includes(value)
 }

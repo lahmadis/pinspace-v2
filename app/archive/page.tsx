@@ -7,7 +7,7 @@ import { useAuthSession } from '@/hooks/useAuthSession'
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
 import type { Scope } from '@/components/dashboard/DashboardSidebar'
 import type { DashboardWorkspace } from '@/components/dashboard/DashboardMain'
-import { currentAcademicYear } from '@/lib/academicYear'
+import { compareTermsDesc, currentTerm } from '@/lib/term'
 
 const SCOPE_KEY = 'pinspace-dashboard-scope'
 
@@ -68,21 +68,19 @@ export default function ArchivePage() {
     router.push('/dashboard')
   }
 
-  // Group by academic_year, newest first. Rows with no year (created before the
+  // Group by semester, newest first. The column is still academic_year and now
+  // holds 'Fall 2025' (see lib/term). Rows with no term (created before the
   // backfill, or never resolved) land in their own trailing "Undated" group
-  // rather than being silently dropped.
+  // rather than being silently dropped — compareTermsDesc keeps it there, since
+  // it sorts anything it cannot parse last in both directions.
   const groups = new Map<string, DashboardWorkspace[]>()
   for (const w of workspaces) {
     const key = w.academic_year && w.academic_year.trim() ? w.academic_year.trim() : 'Undated'
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(w)
   }
-  const thisYear = currentAcademicYear()
-  const orderedKeys = Array.from(groups.keys()).sort((a, b) => {
-    if (a === 'Undated') return 1
-    if (b === 'Undated') return -1
-    return b.localeCompare(a)
-  })
+  const thisTerm = currentTerm()
+  const orderedKeys = Array.from(groups.keys()).sort(compareTermsDesc)
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
@@ -125,7 +123,7 @@ export default function ArchivePage() {
               orderedKeys.map((key) => (
                 <div key={key} className="mb-7">
                   <div className="text-[11px] font-bold tracking-[0.08em] uppercase text-[#8A8FA0] mb-2.5">
-                    {key === thisYear ? `Current — ${key}` : key}
+                    {key === thisTerm ? `Current — ${key}` : key}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {groups.get(key)!.map((w) => (

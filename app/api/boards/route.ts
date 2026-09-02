@@ -56,6 +56,17 @@ export async function GET(request: NextRequest) {
      */
     let scopedWorkspaceName: string | null = null
 
+    /**
+     * The SEMESTER that section ran in, e.g. "Fall 2026" — workspaces
+     * .academic_year, which holds a term now (see lib/term).
+     *
+     * Rides along with the name for the same reason: the room lockup reads
+     * "Fall 2026 · Mid Review", and a room called "Mid Review" exists in every
+     * section in every term. Without it the subtitle names a room that could
+     * be any of four years old.
+     */
+    let scopedWorkspaceTerm: string | null = null
+
     // Inline helper for the fallback paths that previously called
     // resolveMainRoomId — we now need the name too, and one query is cheaper
     // than two (an id-only call followed by a name-only call).
@@ -119,10 +130,11 @@ export async function GET(request: NextRequest) {
     {
       const { data: wsMeta } = await adminDb
         .from('workspaces')
-        .select('name')
+        .select('name, academic_year')
         .eq('id', scopedWorkspaceId)
         .maybeSingle()
       scopedWorkspaceName = (wsMeta?.name as string) ?? null
+      scopedWorkspaceTerm = (wsMeta?.academic_year as string | null) || null
     }
 
     // Normal mode: use Supabase
@@ -411,6 +423,7 @@ export async function GET(request: NextRequest) {
             workspaceId: scopedWorkspaceId,
             name: scopedRoomName,
             workspaceName: scopedWorkspaceName,
+            workspaceTerm: scopedWorkspaceTerm,
             wallColor: scopedRoomWallColor,
           }
         : null,

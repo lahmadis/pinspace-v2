@@ -232,12 +232,12 @@ export async function GET(request: NextRequest) {
       filteredEntries = filteredEntries.filter(e => e.department === department)
     }
     if (academicYear) {
-      // Strict match, deliberately. After the migration-032 backfill no
-      // workspace should have a NULL academic_year, and workspace creation now
-      // stamps one — so a NULL here means the write path regressed, not that
-      // the row is legitimately year-less. Log it instead of letting a
-      // published room vanish from explore with no trace, which is exactly how
-      // 31 workspaces went missing unnoticed.
+      // Strict match, deliberately. After the migration-046 backfill no
+      // workspace should have a NULL academic_year (it holds a SEMESTER now —
+      // see lib/term), and workspace creation stamps one — so a NULL here means
+      // the write path regressed, not that the row is legitimately term-less.
+      // Log it instead of letting a published room vanish from explore with no
+      // trace, which is exactly how 31 workspaces went missing unnoticed.
       const nullYearEntries = filteredEntries.filter(e => e.academicYear === null)
       if (nullYearEntries.length > 0) {
         console.warn(

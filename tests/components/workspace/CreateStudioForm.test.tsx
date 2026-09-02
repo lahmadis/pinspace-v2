@@ -16,7 +16,7 @@ describe('CreateStudioForm', () => {
     expect(screen.getByLabelText('Instructor')).toBeInTheDocument()
     expect(screen.getByLabelText('Department')).toBeInTheDocument()
     expect(screen.getByLabelText('Year level')).toBeInTheDocument()
-    expect(screen.getByLabelText('Academic Year')).toBeInTheDocument()
+    expect(screen.getByLabelText('Semester')).toBeInTheDocument()
   })
 
   it('announces validation errors and keeps invalid controls connected to them', async () => {

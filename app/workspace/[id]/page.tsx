@@ -992,7 +992,7 @@ export default function WorkspaceRoomsPage() {
                       them wrongly: "year" is the grade level, "term" is the
                       academic year, and the instructor was not mentioned at
                       all even though the form requires it. */}
-                  Department, Academic Year, Grade Level, Class, Instructor
+                  Department, Semester, Grade Level, Class, Instructor
                 </button>
               </div>
             )}

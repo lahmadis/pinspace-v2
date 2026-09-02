@@ -6,7 +6,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import BubbleNetwork, { BubbleNode } from '@/components/network/BubbleNetwork'
 import DemoBanner from '@/components/DemoBanner'
 import { prefetchStudioView } from '@/lib/studioViewCache'
+import { gradeLabel } from '@/lib/constants/departments'
 import { STUDIOS } from '@/lib/constants/studios'
+import { compareTermsDesc } from '@/lib/term'
 
 type StudioResponse = {
   studios: BubbleNode[]
@@ -32,7 +34,7 @@ const MAX_NAMED_PEOPLE = 3
 const UNFILED_STUDIO = 'Not in a class'
 
 /** Same idea as UNFILED_STUDIO, for rows published before terms were recorded. */
-const UNFILED_ACADEMIC_YEAR = 'No academic year'
+const UNFILED_TERM = 'No semester'
 
 
 function ExplorePageInner() {
@@ -51,9 +53,9 @@ function ExplorePageInner() {
 
   /**
    * The drill-down, one entry per level:
-   * Department → Academic Year → Grade Level → Class → Section.
+   * Department → Semester → Grade Level → Class → Section.
    *
-   * ACADEMIC YEAR IS A LEVEL, not a filter. It used to be a row of chips above
+   * SEMESTER IS A LEVEL, not a filter. It used to be a row of chips above
    * the canvas — All Years / 2026-2027 / 2025-2026 — which is a different
    * mechanism for the same question and a worse one: a chip row is a mode you
    * can leave switched on by accident, it competes with the drill-down for the
@@ -78,7 +80,7 @@ function ExplorePageInner() {
    * department, indistinguishable from the eight other studios' sections. The
    * extra level is what makes "show me Studio 01" a thing you can click.
    */
-  type HierarchyLevel = 'departments' | 'academicYears' | 'years' | 'studios' | 'sections'
+  type HierarchyLevel = 'departments' | 'semesters' | 'years' | 'studios' | 'sections'
 
   /**
    * The drill-down lives in the URL, and that is what makes it survivable.
@@ -95,7 +97,7 @@ function ExplorePageInner() {
    */
   const [hierarchyLevel, setHierarchyLevel] = useState<HierarchyLevel>(() => {
     const raw = searchParams?.get('level')
-    return raw === 'academicYears' || raw === 'years' || raw === 'studios' || raw === 'sections'
+    return raw === 'semesters' || raw === 'years' || raw === 'studios' || raw === 'sections'
       ? raw
       : 'departments'
   })
@@ -118,8 +120,8 @@ function ExplorePageInner() {
    * levels below slice it, so moving between terms is a click on the canvas
    * rather than a refetch.
    */
-  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(
-    () => searchParams?.get('ay') ?? ''
+  const [selectedTerm, setSelectedTerm] = useState<string>(
+    () => searchParams?.get('term') ?? ''
   )
   const [roomDrillWorkspace, setRoomDrillWorkspace] = useState<BubbleNode | null>(null)
 
@@ -136,12 +138,12 @@ function ExplorePageInner() {
     }
     set('level', hierarchyLevel === 'departments' ? null : hierarchyLevel)
     set('dept', selectedDepartment)
-    set('ay', selectedAcademicYear || null)
+    set('term', selectedTerm || null)
     set('grade', selectedYear === null ? null : String(selectedYear))
     set('class', selectedStudio)
     const qs = params.toString()
     return qs ? `/explore?${qs}` : '/explore'
-  }, [searchParams, hierarchyLevel, selectedDepartment, selectedAcademicYear, selectedYear, selectedStudio])
+  }, [searchParams, hierarchyLevel, selectedDepartment, selectedTerm, selectedYear, selectedStudio])
 
   // Keep the address bar on the drill position. replace, not push: the back
   // pill and the trail are this page's own navigation, and pushing a history
@@ -295,9 +297,9 @@ function ExplorePageInner() {
 
     if (hierarchyLevel === 'departments') {
       setSelectedDepartment(node.department || node.label)
-      setHierarchyLevel('academicYears')
-    } else if (hierarchyLevel === 'academicYears') {
-      setSelectedAcademicYear(node.academicYear ?? node.label)
+      setHierarchyLevel('semesters')
+    } else if (hierarchyLevel === 'semesters') {
+      setSelectedTerm(node.academicYear ?? node.label)
       setHierarchyLevel('years')
     } else if (hierarchyLevel === 'years') {
       setSelectedYear(node.year ?? node.label)
@@ -353,25 +355,25 @@ function ExplorePageInner() {
       })) as BubbleNode[]
     }
 
-    // Second level: the terms that department has published work in. Newest
-    // first — a visitor is far more often after the current year than the one
-    // three years ago, and these sort correctly as plain strings because the
-    // format is always YYYY-YYYY. The unfiled bucket is pushed to the end for
-    // the same reason the unfiled class is.
-    if (hierarchyLevel === 'academicYears' && selectedDepartment !== null) {
+    // Second level: the SEMESTERS that department has published work in.
+    // Newest first — a visitor is far more often after the current term than
+    // one three years ago.
+    //
+    // These used to be academic years ('2025-2026'), which sorted correctly as
+    // plain strings; semesters do not — 'Fall 2025' sorts after 'Spring 2026'
+    // alphabetically and before it in time — so the ordering is delegated to
+    // lib/term. compareTermsDesc also keeps the unfiled bucket last, which is
+    // what the two hand-written guards here used to do.
+    if (hierarchyLevel === 'semesters' && selectedDepartment !== null) {
       const terms = Array.from(
         new Set(
           source
             .filter(n => (n.department ?? '') === selectedDepartment)
-            .map(n => n.academicYear ?? UNFILED_ACADEMIC_YEAR)
+            .map(n => n.academicYear ?? UNFILED_TERM)
         )
-      ).sort((a, b) => {
-        if (a === UNFILED_ACADEMIC_YEAR) return 1
-        if (b === UNFILED_ACADEMIC_YEAR) return -1
-        return b.localeCompare(a)
-      })
+      ).sort(compareTermsDesc)
       return terms.map((t, idx) => ({
-        id: `acadyear-${t}-${idx}`,
+        id: `term-${t}-${idx}`,
         label: t,
         name: t,
         academicYear: t,
@@ -381,40 +383,43 @@ function ExplorePageInner() {
       })) as BubbleNode[]
     }
 
-    // Third level: the grade levels that department runs in that term. Scoped
-    // to both, so a department with no fifth year simply has no fifth-year
-    // bubble rather than an empty one.
+    // Third level: the grade levels that department runs in that semester.
+    // Scoped to both, so a department with no fifth year simply has no
+    // fifth-year bubble rather than an empty one.
     if (hierarchyLevel === 'years' && selectedDepartment !== null) {
       const years = Array.from(
         new Set(
           source
             .filter(n => (n.department ?? '') === selectedDepartment)
-            .filter(n => selectedAcademicYear === ''
-              || (n.academicYear ?? UNFILED_ACADEMIC_YEAR) === selectedAcademicYear)
+            .filter(n => selectedTerm === ''
+              || (n.academicYear ?? UNFILED_TERM) === selectedTerm)
             .map(n => n.year ?? 'Unknown')
         )
       )
       return years.map((y, idx) => ({
         id: `year-${y}-${idx}`,
-        label: y === 'Masters' ? 'Masters' : `Year ${y}`,
+        // "Sophomore", not "Year 2" — the name the section was filed under in
+        // its settings. gradeLabel takes the bare number the explore API
+        // sends; see lib/constants/departments.
+        label: gradeLabel(y),
         name: String(y),
         year: y,
-        academicYear: selectedAcademicYear || undefined,
+        academicYear: selectedTerm || undefined,
         department: selectedDepartment ?? undefined,
         color: '#3B6EF6',
         radius: 70,
       })) as BubbleNode[]
     }
 
-    // Department + academic year + grade level are the filter every level below
+    // Department + semester + grade level are the filter every level below
     // them shares, so it is written once here rather than repeated in the
     // branches under it.
     const inSelectedScope = (n: BubbleNode) => {
       const matchYear = selectedYear === null ? true : (n.year ?? '').toString() === selectedYear.toString()
       const matchDept = selectedDepartment === null ? true : (n.department ?? '') === selectedDepartment
-      const matchTerm = selectedAcademicYear === ''
+      const matchTerm = selectedTerm === ''
         ? true
-        : (n.academicYear ?? UNFILED_ACADEMIC_YEAR) === selectedAcademicYear
+        : (n.academicYear ?? UNFILED_TERM) === selectedTerm
       return matchYear && matchDept && matchTerm
     }
 
@@ -451,7 +456,7 @@ function ExplorePageInner() {
           name: studio,
           studio,
           year: selectedYear ?? undefined,
-          academicYear: selectedAcademicYear || undefined,
+          academicYear: selectedTerm || undefined,
           department: selectedDepartment ?? undefined,
           count: boards,
           sectionCount: sections,
@@ -469,7 +474,7 @@ function ExplorePageInner() {
     }
 
     return source
-  }, [roomDrillWorkspace, hierarchyLevel, searchQuery, searchFilteredNodes, selectedYear, selectedDepartment, selectedStudio, selectedAcademicYear])
+  }, [roomDrillWorkspace, hierarchyLevel, searchQuery, searchFilteredNodes, selectedYear, selectedDepartment, selectedStudio, selectedTerm])
 
   /**
    * The levels reached so far, in order — what the header pill prints.
@@ -479,14 +484,14 @@ function ExplorePageInner() {
   const trail = useMemo(() => {
     const levels: { label: string; level: HierarchyLevel }[] = [
       { label: 'Department', level: 'departments' },
-      { label: 'Academic Year', level: 'academicYears' },
+      { label: 'Semester', level: 'semesters' },
       { label: 'Grade Level', level: 'years' },
       { label: 'Class', level: 'studios' },
       { label: 'Section', level: 'sections' },
     ]
     const depth: Record<HierarchyLevel, number> = {
       departments: 1,
-      academicYears: 2,
+      semesters: 2,
       years: 3,
       studios: 4,
       sections: 5,
@@ -507,8 +512,8 @@ function ExplorePageInner() {
     setRoomDrillWorkspace(null)
     setSearchQuery('')
     if (level === 'departments') setSelectedDepartment(null)
-    if (level === 'departments' || level === 'academicYears') setSelectedAcademicYear('')
-    if (level === 'departments' || level === 'academicYears' || level === 'years') setSelectedYear(null)
+    if (level === 'departments' || level === 'semesters') setSelectedTerm('')
+    if (level === 'departments' || level === 'semesters' || level === 'years') setSelectedYear(null)
     if (level !== 'sections') setSelectedStudio(null)
     setHierarchyLevel(level)
   }
@@ -698,7 +703,7 @@ function ExplorePageInner() {
           had no way back at all — you got to the class list and your only
           exit was the mode button, which resets to the top. That was survivable
           at three levels and is not at five, so the pill now walks the whole
-          stack: rooms → sections → classes → grade levels → academic years →
+          stack: rooms → sections → classes → grade levels → semesters →
           departments.
 
           It names where you ARE, not where it takes you — the same thing the
@@ -716,18 +721,15 @@ function ExplorePageInner() {
                   }
                 : hierarchyLevel === 'studios'
                   ? {
-                      label:
-                        selectedYear === 'Masters'
-                          ? 'Masters'
-                          : selectedYear !== null ? `Year ${selectedYear}` : 'Grade Level',
+                      label: selectedYear !== null ? gradeLabel(selectedYear) : 'Grade Level',
                       go: () => { setSelectedYear(null); setHierarchyLevel('years') },
                     }
                   : hierarchyLevel === 'years'
                     ? {
-                        label: selectedAcademicYear || 'Academic Year',
-                        go: () => { setSelectedAcademicYear(''); setHierarchyLevel('academicYears') },
+                        label: selectedTerm || 'Semester',
+                        go: () => { setSelectedTerm(''); setHierarchyLevel('semesters') },
                       }
-                    : hierarchyLevel === 'academicYears'
+                    : hierarchyLevel === 'semesters'
                       ? {
                           label: selectedDepartment ?? 'Department',
                           go: () => { setSelectedDepartment(null); setHierarchyLevel('departments') },

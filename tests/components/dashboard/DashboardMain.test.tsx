@@ -78,18 +78,20 @@ describe('DashboardMain', () => {
     expect(screen.getByText('Current studio')).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'North Studio' })).toBeInTheDocument()
     expect(screen.getByText('2 rooms · 3 boards')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Enter studio/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Enter Your Section/ })).toHaveAttribute(
       'href',
       '/workspace/workspace-1'
     )
 
-    // Personal is not an institution, so the archive is the open network.
+    // Personal is not an institution, so the destination is the open network.
     expect(screen.getByRole('link', { name: /Enter the network/ })).toHaveAttribute(
       'href',
       '/network'
     )
-    // The empty shelf still says where a pin comes from, and goes there.
-    expect(screen.getByRole('link', { name: /Pin from the archive/ })).toHaveAttribute(
+    // The EMPTY shelf still says where a pin comes from, and goes there. It is
+    // an onboarding tile: once anything is pinned it stops rendering, which is
+    // what the next case covers.
+    expect(screen.getByRole('link', { name: /Pin from the Network/ })).toHaveAttribute(
       'href',
       '/network'
     )
@@ -102,7 +104,7 @@ describe('DashboardMain', () => {
     expect(screen.getByText('1 of 2 pinned')).toBeInTheDocument()
   })
 
-  it('brands the institution tab and names the section by its studio', () => {
+  it('brands the institution tab and names the section studio-then-surname', () => {
     stubRoster()
 
     render(
@@ -125,14 +127,64 @@ describe('DashboardMain', () => {
     expect(screen.getByText('Wentworth')).toBeInTheDocument()
     expect(screen.getByText('Architecture & Design')).toBeInTheDocument()
 
-    // The card leads with the STUDIO, not the section it is a section of.
-    expect(screen.getByRole('heading', { level: 2, name: 'Studio 01' })).toBeInTheDocument()
-    expect(screen.getByText('Tavares · 2 rooms · 3 boards')).toBeInTheDocument()
+    // Studio AND surname: a department runs eight sections of Studio 01, so
+    // the studio alone names the course rather than the one you are in. Built
+    // here from the two parts — not read off the stored 'Section 01 - Tavares',
+    // which leads with the wrong half for this card.
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Studio 01 - Tavares' })
+    ).toBeInTheDocument()
+    // And exactly once: the instructor left the meta line when it reached the
+    // heading, rather than being printed twice three lines apart.
+    expect(screen.getByText('2 rooms · 3 boards')).toBeInTheDocument()
 
     expect(screen.getByRole('link', { name: /Enter the archives/ })).toHaveAttribute(
       'href',
       '/explore?institution=wit'
     )
+  })
+
+  it('leaves a pre-studio section on its stored name, without doubling the surname', () => {
+    stubRoster()
+
+    render(
+      <DashboardMain
+        {...baseProps}
+        rooms={[workspace({ type: 'class', name: 'Section 03 - Lahmadi', instructor: 'Sarah Lahmadi' })]}
+      />
+    )
+
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Section 03 - Lahmadi' })
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Lahmadi - Lahmadi/)).not.toBeInTheDocument()
+  })
+
+  it('drops the onboarding pin tile once the shelf has something on it', async () => {
+    // Two endpoints, two bodies: the roster card and the pin shelf both fetch
+    // on mount, and stubRoster answers every call with the same object — which
+    // would leave the shelf empty and pass this test for the wrong reason.
+    vi.stubGlobal('fetch', vi.fn((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: async () =>
+          String(url).includes('/api/pinspaces')
+            ? { pins: [{ boardId: 'b1', title: 'Site model', thumbnailUrl: null, fullImageUrl: null, roomId: 'r1', workspaceId: 'workspace-1', author: 'Amara Osei' }] }
+            : { students: [], total: 0, pinned: 0 },
+      })
+    ))
+
+    render(<DashboardMain {...baseProps} rooms={[workspace()]} />)
+
+    // The pinned tile arrives...
+    // By its unpin control, which carries an explicit aria-label. The tile
+    // button itself is named by its contents, which differ with whether a
+    // thumbnail resolved.
+    expect(await screen.findByRole('button', { name: 'Unpin Site model' })).toBeInTheDocument()
+    // ...and the tile that told you how to get one is gone with it.
+    expect(screen.queryByRole('link', { name: /Pin from the Network/ })).not.toBeInTheDocument()
+    // The line under the shelf switches with it.
+    expect(screen.getByText(/Open a pin to look at it/)).toBeInTheDocument()
   })
 
   it('points at the sidebar when there is nothing to be current in', () => {

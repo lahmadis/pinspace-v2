@@ -4,7 +4,7 @@ import { useId, useState } from 'react'
 import { Plus } from 'lucide-react'
 
 import { Button, Dialog, Input, Select, StatusState } from '@/components/ui'
-import { academicYearOptions } from '@/lib/academicYear'
+import { currentTerm, termOptions } from '@/lib/term'
 import { DEPARTMENTS, YEAR_LEVELS } from '@/lib/constants/departments'
 import { toast } from '@/lib/toast'
 import { createStudioSchema } from '@/lib/validations/admin'
@@ -29,8 +29,9 @@ export default function CreateStudioForm({
   const [instructor, setInstructor] = useState<UserSearchResult | null>(null)
   const [department, setDepartment] = useState<string>(DEPARTMENTS[0])
   const [yearLevel, setYearLevel] = useState<string>(YEAR_LEVELS[0])
-  const years = academicYearOptions(4)
-  const [academicYear, setAcademicYear] = useState<string>(years[0])
+  const terms = termOptions({ back: 4 })
+  // currentTerm(), not terms[0] — the list leads with a future term (lib/term).
+  const [term, setTerm] = useState<string>(currentTerm())
   const effectiveInstructor = lockedInstructor ?? instructor
 
   const ids = {
@@ -38,7 +39,7 @@ export default function CreateStudioForm({
     instructor: `${formId}-instructor`,
     department: `${formId}-department`,
     year: `${formId}-year`,
-    academicYear: `${formId}-academic-year`,
+    semester: `${formId}-semester`,
     error: `${formId}-error`,
   }
 
@@ -47,7 +48,7 @@ export default function CreateStudioForm({
     setInstructor(null)
     setDepartment(DEPARTMENTS[0])
     setYearLevel(YEAR_LEVELS[0])
-    setAcademicYear(years[0])
+    setTerm(currentTerm())
     setError('')
   }
 
@@ -67,7 +68,8 @@ export default function CreateStudioForm({
       instructorUserId: effectiveInstructor?.userId,
       department,
       yearLevel,
-      academicYear,
+      // Wire name for workspaces.academic_year, which holds a term now.
+      academicYear: term,
     })
 
     if (!parseResult.success) {
@@ -157,9 +159,9 @@ export default function CreateStudioForm({
           </div>
 
           <div>
-            <label htmlFor={ids.academicYear} className="mb-1 block text-sm font-semibold text-text-primary">Academic Year</label>
-            <Select id={ids.academicYear} value={academicYear} disabled={loading} onChange={(event) => setAcademicYear(event.target.value)}>
-              {years.map((item) => <option key={item} value={item}>{item}</option>)}
+            <label htmlFor={ids.semester} className="mb-1 block text-sm font-semibold text-text-primary">Semester</label>
+            <Select id={ids.semester} value={term} disabled={loading} onChange={(event) => setTerm(event.target.value)}>
+              {terms.map((item) => <option key={item} value={item}>{item}</option>)}
             </Select>
           </div>
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseServiceRole } from '@/lib/supabase/server'
 import { validateName } from '@/lib/validation/safeName'
 import { isStudio } from '@/lib/constants/studios'
+import { isTerm } from '@/lib/term'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,6 +10,9 @@ export const dynamic = 'force-dynamic'
  * PATCH /api/workspaces/[id]/network-metadata
  * Writes department/yearLevel/studio/instructor/academicYear onto the workspace
  * so the explore network can filter and label it correctly. Owner only.
+ *
+ * academicYear carries a SEMESTER — 'Fall 2025'. It keeps its name because it
+ * is the wire name for workspaces.academic_year; see lib/term.
  *
  * Sections created through the new-section dialog arrive here already filed —
  * this route is now the EDIT path for them and the first-filing path for
@@ -39,6 +43,14 @@ export async function PATCH(
         { error: 'department, yearLevel, instructor, and academicYear are all required' },
         { status: 400 }
       )
+    }
+    // Checked for SHAPE, not just presence. This route was only testing that a
+    // value was truthy, which was survivable while it stored a free-ish string
+    // and is not now: explore groups its bubbles on this exact value, so an
+    // unrecognised one opens a semester bucket no other section can be filed
+    // into. Same reason isStudio is enforced below.
+    if (!isTerm(academicYear)) {
+      return NextResponse.json({ error: 'Invalid semester' }, { status: 400 })
     }
     const instructorResult = validateName(instructor, { maxLength: 80, fieldLabel: 'Instructor name' })
     if (!instructorResult.ok) {

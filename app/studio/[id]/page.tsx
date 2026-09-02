@@ -108,6 +108,8 @@ function StudioPageInner() {
   // 3D wall material; defaults to 'grey' (the current look).
   const [wallColor, setWallColor] = useState<'grey' | 'white'>('white')
   const [currentRoomName, setCurrentRoomName] = useState<string | null>(null)
+  /** The semester the section ran in, shown before the room name. */
+  const [workspaceTerm, setWorkspaceTerm] = useState<string | null>(null)
   const [allRooms, setAllRooms] = useState<Array<{ id: string; name: string }>>([])
   const [showRoomSwitcher, setShowRoomSwitcher] = useState(false)
   const [currentUserRole, setCurrentUserRole] = useState<'instructor' | 'student' | null>(null)
@@ -423,6 +425,9 @@ function StudioPageInner() {
               const ws = wsData.workspace
               setIsArchived(Boolean(ws?.isArchived))
               setWorkspaceName(ws?.name ?? null)
+              // GET /api/workspaces/[id] already returned this; it was simply
+              // never read. No extra round-trip.
+              setWorkspaceTerm(ws?.academicYear ?? null)
               const rooms: Array<{ id: string; name: string }> = (ws?.rooms ?? []).map(
                 (r: { id: string; name: string }) => ({ id: r.id, name: r.name })
               )
@@ -1118,7 +1123,16 @@ function StudioPageInner() {
                         aria-label="Switch space"
                         aria-expanded={showRoomSwitcher}
                       >
-                        <span className="truncate">{currentRoomName ?? '…'}</span>
+                        {/* "Fall 2026 · Mid Review", matching the read-only
+                            view route. Same reason: the room name alone never
+                            said which term it belonged to. */}
+                        <span className="truncate">
+                          {currentRoomName
+                            ? workspaceTerm
+                              ? `${workspaceTerm} · ${currentRoomName}`
+                              : currentRoomName
+                            : '…'}
+                        </span>
                         {allRooms.length > 1 && (
                           <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${showRoomSwitcher ? 'rotate-180' : ''}`} />
                         )}

@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 
 import { Button, Dialog, Input, Select } from '@/components/ui'
-import { academicYearOptions, currentAcademicYear } from '@/lib/academicYear'
+import { currentTerm, termOptions } from '@/lib/term'
 import { DEPARTMENTS, YEAR_LEVELS, yearLabel } from '@/lib/constants/departments'
 import { STUDIOS } from '@/lib/constants/studios'
 
@@ -20,6 +20,11 @@ export interface NetworkMetadata {
    */
   studio?: string
   instructor: string
+  /**
+   * The SEMESTER this section runs in — 'Fall 2025'. Still named academicYear:
+   * it is the wire name for `workspaces.academic_year`, which now carries a
+   * term. See lib/term.
+   */
   academicYear: string
 }
 
@@ -48,7 +53,7 @@ interface PublishConfirmModalProps {
 // Both lists now come from lib/constants/departments, which is what CLAUDE.md
 // asks for and what keeps this modal's options in step with the rest of the app.
 
-type FieldErrors = Partial<Record<'department' | 'year' | 'studio' | 'academicYear' | 'instructor', string>>
+type FieldErrors = Partial<Record<'department' | 'year' | 'studio' | 'term' | 'instructor', string>>
 
 export default function PublishConfirmModal({
   workspaceName,
@@ -61,7 +66,7 @@ export default function PublishConfirmModal({
   const [department, setDepartment] = useState(currentMetadata?.department || '')
   const [year, setYear] = useState(currentMetadata?.year || '')
   const [studio, setStudio] = useState(currentMetadata?.studio || '')
-  const [academicYear, setAcademicYear] = useState(currentMetadata?.academicYear || currentAcademicYear())
+  const [term, setTerm] = useState(currentMetadata?.academicYear || currentTerm())
   const [instructor, setInstructor] = useState(currentMetadata?.instructor || '')
   const [errors, setErrors] = useState<FieldErrors>({})
   const confirmingRef = useRef(false)
@@ -80,7 +85,7 @@ export default function PublishConfirmModal({
     if (!department) newErrors.department = 'Select a department.'
     if (!year) newErrors.year = 'Select a grade level.'
     if (!studio) newErrors.studio = 'Select a class.'
-    if (!academicYear) newErrors.academicYear = 'Select an academic year.'
+    if (!term) newErrors.term = 'Select a semester.'
     if (!instructor.trim()) newErrors.instructor = 'Enter the instructor name.'
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
@@ -88,7 +93,7 @@ export default function PublishConfirmModal({
     }
 
     confirmingRef.current = true
-    onConfirm({ department, year, studio, academicYear, instructor: instructor.trim() })
+    onConfirm({ department, year, studio, academicYear: term, instructor: instructor.trim() })
   }
 
   if (isCurrentlyPublic) {
@@ -153,31 +158,31 @@ export default function PublishConfirmModal({
           </Select>
         </Field>
 
-        {/* Department, Academic Year, Grade Level, Class, Instructor — the
+        {/* Department, Semester, Grade Level, Class, Instructor — the
             order the section is actually filed in, widest bucket first. It used
-            to run Department, Grade Level, Class, Academic Year, which put the
-            two "year" fields on either side of Class and asked for the term
-            last, after the two things the term scopes. */}
-        <Field label="Academic Year" id="publish-academic-year" error={errors.academicYear}>
+            to run Department, Grade Level, Class, Semester, which put the grade
+            level on one side of Class and asked for the term last, after the
+            two things the term scopes. */}
+        <Field label="Semester" id="publish-semester" error={errors.term}>
           <Select
-            id="publish-academic-year"
-            value={academicYear}
+            id="publish-semester"
+            value={term}
             onChange={(event) => {
-              setAcademicYear(event.target.value)
-              setErrors((previous) => ({ ...previous, academicYear: undefined }))
+              setTerm(event.target.value)
+              setErrors((previous) => ({ ...previous, term: undefined }))
             }}
-            aria-invalid={Boolean(errors.academicYear)}
-            aria-describedby={errors.academicYear ? 'publish-academic-year-error' : undefined}
+            aria-invalid={Boolean(errors.term)}
+            aria-describedby={errors.term ? 'publish-semester-error' : undefined}
           >
-            <option value="">Select academic year</option>
-            {academicYearOptions().map((item) => <option key={item} value={item}>{item}</option>)}
+            <option value="">Select semester</option>
+            {termOptions().map((item) => <option key={item} value={item}>{item}</option>)}
           </Select>
         </Field>
 
         {/* GRADE LEVEL, not "Year" — the options are Freshman…Masters, and
-            this form has an "Academic year" (2026-2027) field below it. Two
-            fields called some form of "year", one of them holding neither.
-            The stored values are untouched; only the label changes. */}
+            calling them "Year" next to a term field read as two fields about
+            the same thing. The stored values are untouched; only the label
+            changes. */}
         <Field label="Grade Level" id="publish-year" error={errors.year}>
           <Select
             id="publish-year"

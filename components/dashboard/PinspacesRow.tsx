@@ -32,10 +32,10 @@ interface Pin {
 /**
  * Pinspaces — the sheets you kept.
  *
- * A favourites shelf, in the sense Pinterest means it. The archive is organised
- * by department and year, which is the right way to FIND something and a bad
- * way to return to it: a week later the only route back to the drawing you
- * liked is remembering whose it was. Pinning keeps it here.
+ * A favourites shelf, in the sense Pinterest means it. The network is
+ * organised by department, semester and year, which is the right way to FIND
+ * something and a bad way to return to it: a week later the only route back to
+ * the drawing you liked is remembering whose it was. Pinning keeps it here.
  *
  * A pinned tile opens the SAME lightbox the 3D room and the 2D grid open — not
  * a dashboard-local preview — so a kept sheet is looked at the way every other
@@ -167,18 +167,31 @@ export default function PinspacesRow({ archiveHref }: { archiveHref: string }) {
           have one pin or fifty, and the tiles hold a portrait aspect instead of
           stretching into billboards on a wide monitor. */}
       <div className="grid grid-cols-3 gap-3.5 sm:grid-cols-7">
-        <Link
-          href={archiveHref}
-          className="group col-span-2 flex flex-col items-center justify-center gap-2 rounded-2xl border border-[#3B6EF6]/50 bg-white transition-colors hover:border-[#3B6EF6] hover:bg-[#3B6EF6]/[0.04]"
-        >
-          <span
-            aria-hidden="true"
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F5A81C] text-[#16181D] transition-transform duration-200 group-hover:scale-105"
+        {/* ONLY WHILE THE SHELF IS EMPTY. It is an onboarding tile, not a
+            control: it is a plain link to the network, which the panel directly
+            above it already is, and once there are pins it was spending two of
+            seven columns restating that link beside the thing it produced.
+            After the first pin the way to add another is the same way you added
+            the first — the network panel above, or the pin control on any
+            board's lightbox. */}
+        {pins.length === 0 && (
+          <Link
+            href={archiveHref}
+            className="group col-span-2 flex flex-col items-center justify-center gap-2 rounded-2xl border border-[#3B6EF6]/50 bg-white transition-colors hover:border-[#3B6EF6] hover:bg-[#3B6EF6]/[0.04]"
           >
-            <Plus className="h-4 w-4" strokeWidth={3} />
-          </span>
-          <span className="text-[13px] font-bold text-[#16181D]">Pin from the archive</span>
-        </Link>
+            <span
+              aria-hidden="true"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F5A81C] text-[#16181D] transition-transform duration-200 group-hover:scale-105"
+            >
+              <Plus className="h-4 w-4" strokeWidth={3} />
+            </span>
+            {/* THE NETWORK, not the archive. archiveHref resolves to /explore
+                on the org tab and /network on the personal one — both of them
+                the network. "Archive" named a different page (/archive) that
+                this link has never pointed at. */}
+            <span className="text-[13px] font-bold text-[#16181D]">Pin from the Network</span>
+          </Link>
+        )}
 
         {shelf.map(tile)}
 
@@ -194,7 +207,7 @@ export default function PinspacesRow({ archiveHref }: { archiveHref: string }) {
 
       <p className="mt-2 text-[12px] text-[#3B6EF6]">
         {pins.length === 0
-          ? 'Pin work from the archive and it will show up here.'
+          ? 'Pin work from the network and it will show up here.'
           : 'Open a pin to look at it, or to jump to the space it lives in.'}
       </p>
 

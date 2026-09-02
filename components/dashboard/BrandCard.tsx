@@ -1,6 +1,6 @@
 'use client'
 
-import { withAlpha, type OrgBrand } from '@/lib/constants/orgBranding'
+import { type OrgBrand } from '@/lib/constants/orgBranding'
 
 /**
  * Whose dashboard this is, as a card.
@@ -40,31 +40,57 @@ export default function BrandCard({
 
   return (
     <div
-      className="flex min-h-[152px] flex-col justify-end rounded-2xl border px-6 py-5"
+      className="flex min-h-[152px] items-center gap-4 rounded-2xl px-6 py-5"
       style={{
-        // Every stop derives from the brand, so a second branded org gets its
-        // own colours rather than Wentworth's golds with its name on them.
-        background: `linear-gradient(150deg, ${brand.accentSoft} 0%, ${withAlpha(brand.accent, 0.55)} 100%)`,
-        borderColor: withAlpha(brand.accentInk, 0.16),
+        // FLAT, and the accent at full strength. It was a two-stop gradient
+        // from accentSoft to a 55% accent, which put the name on near-white at
+        // the top-left corner it actually occupied — the card read as a pale
+        // wash rather than as the school's colour. One value, still taken from
+        // the brand, so a second branded org gets its own field rather than
+        // Wentworth's golds with its name on them.
+        background: brand.accent,
       }}
     >
-      {/* The seal sits above the name rather than beside it: at this width a
-          side-by-side lockup leaves the name two words per line. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={brand.mark}
-        alt=""
-        aria-hidden="true"
-        className="mb-2 h-8 w-8 shrink-0"
-      />
-      <p className="text-[36px] font-extrabold leading-[1.02] tracking-[-0.04em] text-[#16181D]">
-        {title}
-      </p>
-      {subtitle && (
-        <p className="text-[21px] font-bold leading-tight tracking-[-0.025em] text-[#16181D]">
-          {subtitle}
+      {/* Name left, mark right, both centred on the same line — the lockup the
+          school's own banner uses. The seal used to sit ABOVE the name because
+          a side-by-side version was tried at 265px and left the name two words
+          per line; the column is 340 now, which is what makes this fit.
+
+          min-w-0 so the subtitle wraps inside this block rather than pushing
+          the mark off the card: "Architecture & Design" is wider at 21px than
+          the space left beside a 76px disc, and text-balance splits it across
+          two even lines instead of stranding the ampersand. */}
+      <div className="min-w-0 flex-1">
+        <p className="text-[36px] font-extrabold leading-[1.02] tracking-[-0.04em] text-[#16181D]">
+          {title}
         </p>
-      )}
+        {subtitle && (
+          <p className="text-[21px] font-bold leading-tight tracking-[-0.025em] text-[#16181D] [text-wrap:balance]">
+            {subtitle}
+          </p>
+        )}
+      </div>
+
+      {/* A white disc UNDER the mark, sized so the mark very nearly fills it.
+          Wentworth's is a round seal on a transparent square — a gold leopard
+          inside a black ring — so on the accent at full strength the leopard
+          would sink into the field it sits on. The disc is what it reads
+          against, and because the artwork is already a circle the two land as
+          one object rather than as a logo in a badge.
+
+          The 6px of white left around it is deliberate: with none, the ring
+          type touches the gold and the seal looks cropped.
+
+          Sized for an org whose mark is round. One that ships a square mark
+          gets a white circle with its logo inscribed — still legible, which is
+          why this is not gated on artwork shape. */}
+      <span
+        aria-hidden="true"
+        className="flex h-[76px] w-[76px] shrink-0 items-center justify-center rounded-full bg-white"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={brand.mark} alt="" className="h-16 w-16" />
+      </span>
     </div>
   )
 }

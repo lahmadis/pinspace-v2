@@ -191,6 +191,8 @@ function StudioViewPageInner() {
   const [roomName, setRoomName] = useState<string | null>(null)
   /** The section this room belongs to, e.g. "Studio 01 - Lahmadi". */
   const [workspaceName, setWorkspaceName] = useState<string | null>(null)
+  /** The semester the section ran in, shown before the room name. */
+  const [workspaceTerm, setWorkspaceTerm] = useState<string | null>(null)
   /**
    * The type of the workspace this room belongs to — what the back button
    * routes on. Null until the role fetch below resolves, and for guests, who
@@ -409,6 +411,7 @@ function StudioViewPageInner() {
       setResolvedWorkspaceId(wsId)
       setRoomName(resolvedRoomName)
       setWorkspaceName(data.room?.workspaceName ?? null)
+      setWorkspaceTerm(data.room?.workspaceTerm ?? null)
       setWallColor(data.room?.wallColor === 'grey' ? 'grey' : 'white')
 
       if (!isDemo && resolvedRoomId && resolvedRoomId !== studioId) {
@@ -726,8 +729,15 @@ function StudioViewPageInner() {
                   {workspaceName ?? 'Space'}
                 </p>
                 {roomName && (
-                  <p className="truncate text-xs text-[#5A5E6B]" title={roomName}>
-                    {roomName}
+                  // "Fall 2026 · Mid Review". The room name alone said which
+                  // room but never WHEN — and a section runs the same room
+                  // names every term. Middle dot, not a hyphen: the section
+                  // title above already carries one.
+                  <p
+                    className="truncate text-xs text-[#5A5E6B]"
+                    title={workspaceTerm ? `${workspaceTerm} · ${roomName}` : roomName}
+                  >
+                    {workspaceTerm ? `${workspaceTerm} · ${roomName}` : roomName}
                   </p>
                 )}
               </div>

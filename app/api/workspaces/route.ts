@@ -5,9 +5,7 @@ import { validateName } from '@/lib/validation/safeName'
 import { createWorkspace } from '@/lib/workspaces/createWorkspace'
 import { isDepartment, isYearLevel } from '@/lib/constants/departments'
 import { isStudio } from '@/lib/constants/studios'
-
-/** Academic year as academicYearOptions emits it: "2025-2026". */
-const ACADEMIC_YEAR_PATTERN = /^\d{4}-\d{4}$/
+import { isTerm } from '@/lib/term'
 
 /**
  * created_at as a sortable number. `unknown` in, because the workspace rows
@@ -53,8 +51,10 @@ function parseSectionNetwork(
   if (!isDepartment(department)) return { ok: false, error: 'Unknown department' }
   if (!isYearLevel(yearLevel)) return { ok: false, error: 'Unknown year level' }
   if (!isStudio(studio)) return { ok: false, error: 'Unknown studio' }
-  if (typeof academicYear !== 'string' || !ACADEMIC_YEAR_PATTERN.test(academicYear)) {
-    return { ok: false, error: 'Invalid academic year' }
+  // academicYear carries a SEMESTER now — 'Fall 2025'. The field keeps its name
+  // because it is the wire name for workspaces.academic_year; see lib/term.
+  if (!isTerm(academicYear)) {
+    return { ok: false, error: 'Invalid semester' }
   }
   const instructorResult = validateName(body.instructor, { maxLength: 80, fieldLabel: 'Instructor name' })
   if (!instructorResult.ok) return { ok: false, error: instructorResult.error }

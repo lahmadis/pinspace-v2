@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseServiceRole } from '@/lib/supabase/server'
 import { generateInviteCode } from '@/lib/workspaceUtils'
-import { currentAcademicYear } from '@/lib/academicYear'
+import { currentTerm } from '@/lib/term'
 
 /**
  * Shared workspace creation.
@@ -116,22 +116,25 @@ export async function createWorkspace(input: CreateWorkspaceInput): Promise<Crea
   const organizationId = input.organizationId ?? null
   const createdByAdmin = input.createdByAdmin ?? null
 
-  // Stamp the academic year at creation. It was never set here, so it stayed
-  // NULL until (and unless) someone opened the publish modal — which left 31
-  // of 45 workspaces with no year and made the explore year filter drop them
-  // silently. Derived server-side from server time so the stored value cannot
-  // be shaped by the client's clock or timezone; the migration-032 backfill
-  // reads created_at in UTC for the same reason, so both agree.
+  // Stamp the term at creation. It was never set here, so it stayed NULL until
+  // (and unless) someone opened the publish modal — which left 31 of 45
+  // workspaces with no term and made the explore filter drop them silently.
+  // Derived server-side from server time so the stored value cannot be shaped
+  // by the client's clock or timezone; the migration-046 backfill reads
+  // created_at in UTC for the same reason, so both agree.
   // An instructor can still override it later via network-metadata.
+  //
+  // The column is still called academic_year and now holds 'Fall 2025'. See
+  // lib/term for why the storage name did not follow the value.
   const insertData: Record<string, unknown> = {
     name,
     description,
     owner_id: ownerId,
-    academic_year: currentAcademicYear(),
+    academic_year: currentTerm(),
   }
   // Section creation carries its own network filing, so it overrides the
-  // server-stamped academic year above with the term the instructor picked —
-  // a section set up in July for the coming Fall is the case that matters.
+  // server-stamped term above with the semester the instructor picked — a
+  // section set up in July for the coming Fall is the case that matters.
   if (input.network) {
     insertData.network_metadata = {
       department: input.network.department,
