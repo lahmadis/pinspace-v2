@@ -37,7 +37,133 @@ import ModelViewer from './ModelViewer'
 import type { Session, AuthChangeEvent, User } from '@supabase/supabase-js'
 import { toast } from '@/lib/toast'
 import { getBoardSizeInches } from '@/lib/boardDimensions'
+import { createXRStore, XR, XROrigin, useXR } from '@react-three/xr'
 
+
+/**
+ * The room's unit, as a conversion factor. The scene is 1 unit = 1 INCH
+ * (lib/room/cameraViews.ts, lib/wallLayout.ts), while WebXR reports head pose
+ * and takes its depth range in METRES. Every number below is derived from this
+ * rather than written out, so there is one place to change if the room's unit
+ * ever does.
+ */
+const METERS_PER_INCH = 0.0254
+
+/**
+ * Scale applied to the XR origin — world units per metre of real movement.
+ *
+ * Without it a 1.7m viewer arrives 1.7 units off a floor whose walls are 120
+ * units tall: an inch and a half tall in a 10ft room. Scaling the ORIGIN (the
+ * player's feet) rather than wrapping the scene in a group is what keeps this
+ * off the existing content — no board, wall, table or grid position changes,
+ * and the desktop camera path never sees it.
+ *
+ * three does not strip the parent scale out of the XR view matrix, which is
+ * what makes this size the viewer correctly rather than merely move them: the
+ * inverse scale converts the inch-world into the metres the device's own
+ * projection matrices assume. Controllers and hands inherit it too, so
+ * metre-authored controller models come out physically right.
+ *
+ * KNOWN VR-ONLY CONSEQUENCE: scene.fog stops engaging. View-space depth is
+ * metres in a session while getRoomFogParams (WallSystem.tsx) authors fogNear
+ * ≥ 800 and fogFar ≥ 3000 in INCHES, and the whole room is under ~15m of view
+ * depth — so the ground plane's fade-to-horizon disappears and the slab edge
+ * becomes visible. Desktop fog is untouched. Left as a follow-up rather than
+ * guessed at, same as `far` on the near-plane component below.
+ */
+const XR_ORIGIN_SCALE = 1 / METERS_PER_INCH
+
+/**
+ * Camera near plane while a session presents, in METRES.
+ *
+ * three.js hands `camera.near` straight to `session.updateRenderState({
+ * depthNear })` (three.module.js:27260), and the WebXR spec defines that value
+ * in metres — NOT in world units. So the room's desktop `near = 5` is read by
+ * the compositor as 5 METRES and clips everything within ~16ft of the viewer,
+ * which is most of the room including the floor under their feet.
+ *
+ * 0.1m is the conventional VR near plane — about 4in from the eye, so you can
+ * put your face close to a sheet without it vanishing. Against the origin scale
+ * above that is 0.1 * (1/0.0254) ≈ 3.9 world units of apparent distance.
+ *
+ * The desktop value is NOT touched: XrSessionNearPlane below captures whatever
+ * is on the camera when a session starts and restores exactly that on exit.
+ */
+const XR_SESSION_NEAR_METERS = 0.1
+
+/**
+ * WebXR session store for the room — MODULE SCOPE, not per-render.
+ *
+ * createXRStore() builds a zustand store and, with it, the input/pointer
+ * plumbing an XR session runs on. Creating it inside the component would mint
+ * a fresh store on every render of a component that re-renders constantly
+ * (board drags, presence, realtime), so <XR> would be handed a different store
+ * each time and any live session's state would be dropped on the floor. One
+ * store per module load is the documented shape.
+ *
+ * Safe as a module singleton because exactly one StudioRoom is ever mounted at
+ * a time — it is the whole page.
+ *
+ * `emulate: false` IS LOAD-BEARING, do not drop it. The default is
+ * `emulate: 'metaQuest3'` with `inject: { hostname: 'localhost' }`
+ * (@pmndrs/xr/dist/store.js:94-105), which on `next dev` pulls in iwer +
+ * @iwer/devui and installs a FAKE navigator.xr. That would put the Enter VR
+ * button on every local desktop session and make clicking it genuinely
+ * present — freezing the camera and killing OrbitControls on an ordinary dev
+ * box, at one-unit-per-inch scale. It also registers a permanent window
+ * keydown listener that a module-scope store never cleans up. All of it fires
+ * on import, before any Canvas mounts.
+ */
+const xrStore = createXRStore({ emulate: false })
+
+/**
+ * Swaps the camera's near plane for the duration of an XR session, and puts the
+ * desktop one back on the way out.
+ *
+ * Scoped to the SESSION, not to the mount: the effect keys on `session`, so it
+ * applies on entry and its cleanup runs on exit (and on unmount mid-session).
+ * Each cleanup closes over the same camera object its effect wrote to, and
+ * restores the value read off THAT object at entry — so whichever order React
+ * sees `session` and `camera` change in, the desktop camera ends back on its
+ * own 5 and nothing here ever writes the desktop near or far.
+ *
+ * Note the camera it writes to is usually NOT the <PerspectiveCamera> below:
+ * @react-three/xr swaps R3F's default camera for gl.xr.getCamera() on session
+ * start, so this most often lands on the XR ArrayCamera (which extends
+ * PerspectiveCamera, so the guard passes). That is the correct target anyway —
+ * three reads `cameraXR.near` for updateRenderState.
+ *
+ * `useXR` is safe HERE and only here: this component is rendered inside <XR>.
+ * CameraController is not — it is shared with three other canvases — which is
+ * why that file reads gl.xr.isPresenting instead. See its note.
+ *
+ * `far` IS DELIBERATELY LEFT ALONE, and that has a visible cost in VR: it is
+ * read as metres too, so the room presents with depthNear 0.1m against a
+ * depthFar of ~2400m. At that ratio the near-coplanar floor/grid/ground planes
+ * z-fight again — which is the exact thing the desktop `near = 5` exists to
+ * prevent (see its comment on the <PerspectiveCamera>). Fixing it is another
+ * numbers decision, not a guess, so it is left for a follow-up.
+ */
+function XrSessionNearPlane() {
+  const camera = useThree((s) => s.camera)
+  const session = useXR((s) => s.session)
+
+  useEffect(() => {
+    if (session == null) return
+    if (!(camera instanceof THREE.PerspectiveCamera)) return
+    const desktopNear = camera.near
+    // eslint-disable-next-line react-hooks/immutability -- three.js projection state is imperative; this is the documented way to set an XR depth range.
+    camera.near = XR_SESSION_NEAR_METERS
+    camera.updateProjectionMatrix()
+    return () => {
+      // eslint-disable-next-line react-hooks/immutability -- restores the value captured above; same imperative camera.
+      camera.near = desktopNear
+      camera.updateProjectionMatrix()
+    }
+  }, [session, camera])
+
+  return null
+}
 
 /**
  * Vertical space the view switcher and revision strip occupy at the bottom of
@@ -341,7 +467,8 @@ function SceneContent({
    *  the boards' callout-count badges, which are z-60 and would paint over it. */
   suppressCallouts: boolean
 }) {
-  useThree()
+  // `gl` is the renderer, read for its WebXRManager (gl.xr.isPresenting) below.
+  const { gl } = useThree()
   const maxWallHeightRef = useRef<number>(96)
   const [targetY, setTargetY] = useState<number>(48) // inches; focus point for zoom
   const sceneInitLoggedRef = useRef(false)
@@ -373,9 +500,15 @@ function SceneContent({
     const controlsObj = orbitControlsRef.current?.get ? orbitControlsRef.current.get() : orbitControlsRef.current
     if (controlsObj?.target) {
       controlsObj.target.set(0, targetY, 0)
-      controlsObj.update?.()
+      // Not while a headset is presenting. OrbitControls.update() re-derives
+      // camera.position and camera.quaternion from its spherical offset, so
+      // calling it here would yank the view out of the wearer's head the
+      // moment targetY changes. The target itself is bookkeeping and is still
+      // set, so the desktop view is correct again as soon as the loop in
+      // CameraController resumes calling update() on exit.
+      if (!gl.xr.isPresenting) controlsObj.update?.()
     }
-  }, [targetY])
+  }, [targetY, gl])
 
   // Removed aggressive wheel clamping; let OrbitControls zoom to cursor naturally
   
@@ -698,6 +831,25 @@ function SceneContent({
 
 export default function StudioRoom(props: StudioRoomProps) {
   const [user, setUser] = useState<User | null>(null)
+  /**
+   * Whether to offer Enter VR at all — true only once we are on the client AND
+   * the browser exposes the WebXR entry point.
+   *
+   * Starts false and is only ever raised in an effect, which is what keeps it
+   * SSR-safe: `navigator` does not exist while this renders on the server, and
+   * reading it during render would also hydrate-mismatch (server says no
+   * button, client says button). An effect runs after hydration, on the client
+   * only, so both passes agree on "no button" and the client then adds it.
+   *
+   * `'xr' in navigator` is the presence check, not a support check —
+   * isSessionSupported('immersive-vr') is the real one, but it is async and
+   * gated behind permissions policy in some browsers. Presence is what item 4
+   * asked for; the button surfaces the rest by failing on click.
+   */
+  const [enterVrAvailable, setEnterVrAvailable] = useState(false)
+  useEffect(() => {
+    setEnterVrAvailable(typeof navigator !== 'undefined' && 'xr' in navigator)
+  }, [])
   /**
    * Boards selected in wall-edit mode. A Set purely so COPY can take several at
    * once — selection drives nothing else in bulk.
@@ -2734,7 +2886,10 @@ export default function StudioRoom(props: StudioRoomProps) {
           handleWallDoubleClick — unchanged. */}
       {roomView === 'room' && (
       <div
-        className="w-full h-screen"
+        // `relative` is new: it makes this the positioning context for the
+        // Enter VR button below. The Canvas is a static full-size child, so
+        // establishing a containing block here moves nothing.
+        className="relative w-full h-screen"
         // Double-click into the space to leave wall-edit mode — the same thing
         // Save & Exit does. Every 3D object that handles a double click
         // consumes the native event too (see consumeDoubleClick), so anything
@@ -2758,6 +2913,29 @@ export default function StudioRoom(props: StudioRoomProps) {
               JSX parent, and only the scene's .fog is read by the renderer.
               See getRoomFogParams' comment in WallSystem.tsx. */}
           <fog attach="fog" args={[ROOM_SKY_COLOR, roomFog.fogNear, roomFog.fogFar]} />
+          {/* The scene, inside the XR context.
+              <XR> ITSELF is pure React context (xrContext.Provider ->
+              RootCombinedPointer -> XRElements + children) and adds no Object3D,
+              so nothing below moves in the scene graph and no existing content
+              changes. Its internal useFrame priorities (-1000, -50) are negative,
+              so R3F keeps auto-rendering the canvas rather than handing render
+              control to XR.
+              <XROrigin> below DOES add one — an empty scaled group that holds the
+              XR camera, present from mount. It renders nothing and has no
+              handlers, so it is inert on the desktop path, but it is a real node
+              and not part of the "no Object3D" claim above.
+              The <fog> above is left OUTSIDE it. Attach actually resolves against
+              the nearest parent INSTANCE and context components are transparent,
+              so inside would have worked too — but the room's whole horizon
+              depends on that fog landing on scene.fog, fog is scene-wide either
+              way, and there is nothing to gain by moving it.
+              Children are NOT re-indented — that would be a ~130-line
+              whitespace diff over a two-line change. */}
+          <XR store={xrStore}>
+          {/* Puts the viewer at human scale and gives the session a sane near
+              plane. Both are session-scoped and inert on the desktop path. */}
+          <XROrigin scale={XR_ORIGIN_SCALE} />
+          <XrSessionNearPlane />
           <CameraController
             orbitControlsRef={orbitControlsRef}
             editingWall={editingWall}
@@ -2825,7 +3003,40 @@ export default function StudioRoom(props: StudioRoomProps) {
             dimmedExceptWall={editingWall ?? focusedWall?.wallIndex ?? null}
             onTableModelClick={handleTableModelClick}
           />
+          </XR>
         </Canvas>
+        {enterVrAvailable && (
+          /*
+           * Enter VR — outside <Canvas>, inside the room's existing wrapper.
+           *
+           * It has to be outside the Canvas because it is DOM: enterVR() is a
+           * user-gesture-gated call (requestSession throws without one), so it
+           * needs a real button, not an <Html> billboard in the scene.
+           *
+           * The unit mismatch this scene has with WebXR (inches vs metres) is
+           * handled by XR_ORIGIN_SCALE and XR_SESSION_NEAR_METERS above, both
+           * applied only for the duration of a session.
+           *
+           * `'xr' in navigator` gates rendering, but that is a PRESENCE test,
+           * not a support test — desktop Chrome and Edge both expose
+           * navigator.xr with no headset attached, so most people who see this
+           * button cannot use it. enterVR() rejects for them, hence the catch:
+           * without it every such click is an uncaught promise rejection.
+           * The real check, isSessionSupported('immersive-vr'), is async and
+           * permissions-policy gated; wiring it is the obvious next step.
+           */
+          <button
+            type="button"
+            onClick={() => {
+              xrStore.enterVR().catch(() => {
+                toast.error('This browser or device cannot open an immersive VR session.')
+              })
+            }}
+            className="absolute bottom-6 right-6 z-30 rounded-xl border border-[#16181D]/[0.10] bg-white px-4 py-2.5 text-sm font-medium text-[#16181D] shadow-lg transition-colors hover:bg-[#F4F6FB]"
+          >
+            Enter VR
+          </button>
+        )}
       </div>
       )}
 

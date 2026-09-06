@@ -190,6 +190,7 @@ export function CameraController({
   focusedWall = null,
   presetRequest = null,
 }: CameraControllerProps) {
+  // `gl` is read for its WebXRManager — see xrPresenting in the frame loop.
   const { camera, gl } = useThree()
   const SWOOSH_DURATION_SECONDS = 0.95
   const MAX_SWOOSH_STEP_SECONDS = 1 / 45
@@ -528,6 +529,29 @@ export function CameraController({
     const controls = getControls(orbitControlsRef)
     if (!controls) return
 
+    /**
+     * True while a WebXR session is presenting through this renderer — the
+     * frames in which the HEADSET owns the camera and nothing here may touch
+     * it. Every camera mutation below is gated on it, while the surrounding
+     * bookkeeping (animation clock, completion callback, controls.target)
+     * deliberately keeps running, so the desktop camera state machine stays
+     * coherent and exiting the headset does not land mid-transition.
+     *
+     * Read off three.js's own WebXRManager rather than @react-three/xr's
+     * `useXR` / `useXRStore`, and that is deliberate: both of those THROW
+     * ("XR features can only be used inside the <XR> component") when no <XR>
+     * provider is above them, and this component is mounted by FOUR canvases —
+     * StudioRoom's (which is wrapped), the read-only view page, and the two
+     * demo pages (which are not). Using the hooks here would crash three
+     * surfaces that have nothing to do with VR, and tsc would not catch it.
+     *
+     * `gl.xr.isPresenting` is the same flag three.js itself arbitrates on, is
+     * simply `false` whenever no session is running, and can be read every
+     * frame without triggering a React render. Read per-frame rather than
+     * captured at render, so the first frame after entry or exit is correct.
+     */
+    const xrPresenting = gl.xr.isPresenting
+
     if (listenerControlsRef.current !== controls) {
       // Remove from old instance if there was one
       if (listenerControlsRef.current && endHandlerRef.current) {
@@ -557,26 +581,33 @@ export function CameraController({
         ? 2 * t * t
         : 1 - Math.pow(-2 * t + 2, 2) / 2
 
-      camera.position.lerpVectors(startPosition.current, endPosition.current, easeT)
       const currentTarget = new THREE.Vector3().lerpVectors(startTarget.current, endTarget.current, easeT)
       controls.target.copy(currentTarget)
-      camera.lookAt(currentTarget)
-      camera.up.set(0, 1, 0)
+      if (!xrPresenting) {
+        camera.position.lerpVectors(startPosition.current, endPosition.current, easeT)
+        camera.lookAt(currentTarget)
+        camera.up.set(0, 1, 0)
 
-      if (camera instanceof THREE.PerspectiveCamera) {
-        // eslint-disable-next-line react-hooks/immutability -- Three.js projection state is intentionally updated in the render loop.
-        camera.fov = THREE.MathUtils.lerp(startFov.current, endFov.current, easeT)
-        camera.updateProjectionMatrix()
+        if (camera instanceof THREE.PerspectiveCamera) {
+          // eslint-disable-next-line react-hooks/immutability -- Three.js projection state is intentionally updated in the render loop.
+          camera.fov = THREE.MathUtils.lerp(startFov.current, endFov.current, easeT)
+          camera.updateProjectionMatrix()
+        }
       }
 
       if (t >= 1) {
         isAnimating.current = false
-        camera.position.copy(endPosition.current)
         controls.target.copy(endTarget.current)
-        if (camera instanceof THREE.PerspectiveCamera) {
-          camera.fov = endFov.current
-          camera.updateProjectionMatrix()
+        if (!xrPresenting) {
+          camera.position.copy(endPosition.current)
+          if (camera instanceof THREE.PerspectiveCamera) {
+            camera.fov = endFov.current
+            camera.updateProjectionMatrix()
+          }
         }
+        // Fires either way: the callback is UI bookkeeping (StudioRoom clears
+        // its pending-transition state on it), and swallowing it in XR would
+        // strand that state until the next transition.
         if (shouldNotifyOnComplete.current) {
           onTransitionComplete?.()
         }
@@ -587,7 +618,9 @@ export function CameraController({
     // animation take priority (gated below), so following resumes after a swoosh
     // and never overrides edit framing. Lerp toward the latest pose so ~10Hz
     // packets render continuously instead of snapping.
-    const followingNow = isFollowing && editingWall === null && !isAnimating.current
+    // ...and XR outranks all of it: a follower in a headset would have the
+    // presenter's desktop pose lerped onto its head every frame.
+    const followingNow = isFollowing && editingWall === null && !isAnimating.current && !xrPresenting
     const pose = followPoseRef?.current
     if (followingNow && pose) {
       const alpha = 1 - Math.exp(-delta * 10)
@@ -616,18 +649,25 @@ export function CameraController({
     // doesn't.
     const holdingFocus = focusPoseArmed.current && editingWall === null && !isFollowing
     controls.enabled =
-      editingWall === null && !holdingFocus && !isAnimating.current && !isFollowing
+      !xrPresenting && editingWall === null && !holdingFocus && !isAnimating.current && !isFollowing
     const c = controls as { enableDamping?: boolean }
     c.enableDamping = false
-    controls.update()
+    // `enabled = false` is NOT enough to keep OrbitControls off the camera —
+    // it only detaches the input listeners, while update() still re-derives
+    // camera.position and camera.quaternion from its spherical offset every
+    // time it is called. Skipping the call is the part that actually leaves
+    // the headset pose alone.
+    if (!xrPresenting) controls.update()
 
     if (restoreOnNextFrame.current) {
-      camera.position.copy(positionOnEnd.current)
-      controls.target.copy(targetOnEnd.current)
       restoreOnNextFrame.current = false
+      if (!xrPresenting) {
+        camera.position.copy(positionOnEnd.current)
+        controls.target.copy(targetOnEnd.current)
+      }
     }
 
-    if ((editingWall !== null || holdingFocus) && !isAnimating.current) {
+    if ((editingWall !== null || holdingFocus) && !isAnimating.current && !xrPresenting) {
       camera.lookAt(targetTarget.current)
       camera.up.set(0, 1, 0)
       camera.updateProjectionMatrix()
@@ -658,6 +698,10 @@ export function CameraController({
     const axis = new THREE.Vector3()
 
     const onWheel = (e: WheelEvent) => {
+      // Not while a headset is presenting. The canvas keeps receiving wheel
+      // events from the desktop mirror window, and dollying the camera along
+      // the wall axis under someone wearing it is the worst version of this.
+      if (gl.xr.isPresenting) return
       // Not while the swoosh is flying: the animation writes camera.position
       // every frame and would eat the scroll, which reads as a dead wheel.
       if (isAnimating.current) return
